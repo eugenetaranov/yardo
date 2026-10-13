@@ -6,6 +6,8 @@
 //	yardo --dry-run        ask, then show what would happen
 //	sudo yardo --profile team.toml --profile me.toml [--yes]
 //	                              apply profiles (review first without --yes)
+//	yardo version [up [--check] [--yes] [--version vX.Y.Z]]
+//	                              the version; upgrade to the latest release
 //	sudo yardo export [--lock] [file]
 //	                              write the saved choices as a profile
 //	                              (--lock: with the installed versions)
@@ -54,6 +56,20 @@ const (
 )
 
 func main() {
+	// yardo version [up]: no share dir, no root except to replace a plain
+	// binary.
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		if len(os.Args) > 2 && os.Geteuid() != 0 && needsRootUpgrade(os.Args[2:]) {
+			err := asRoot(os.Args[1:])
+			fmt.Fprintf(os.Stderr, "yardo: %v\n", err)
+			os.Exit(1)
+		}
+		if err := versionCmd(os.Args[2:], os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintf(os.Stderr, "yardo: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	// The bash part, mcp-sync and the MCP catalog are read from disk:
 	// put this version's there (as root; once per version).
 	if os.Getenv("YARDO_LEGACY") == "" && os.Geteuid() == 0 {
@@ -843,3 +859,5 @@ func envOr(k, def string) string {
 	}
 	return def
 }
+
+func isTerminal(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }

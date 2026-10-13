@@ -27,6 +27,11 @@ it against the release's `checksums.txt`; `--version v0.1.0` (or
 eugenetaranov/tap/yardo`. From source: `go install
 github.com/eugenetaranov/yardo/cmd/yardo@latest`.
 
+To upgrade later, run `yardo version up` (`--check` only says whether a newer
+release is out). It downloads the release, checks it against
+`checksums.txt` and that it runs, and replaces the binary (as root); a
+Homebrew install upgrades through `brew`.
+
 In cloud-init, to set a machine up unattended at first boot:
 
 ```yaml
