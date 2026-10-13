@@ -49,12 +49,15 @@ type Answers struct {
 	// bypass it; CA where an internal CA bundle comes from.
 	Proxy      Proxy    `json:"proxy,omitzero"`
 	CA         CA       `json:"ca,omitzero"`
-	GitHub     GitHub   `json:"github"`
+	GitHub     GitHost  `json:"github"`
+	GitLab     GitHost  `json:"gitlab,omitzero"`
+	Bitbucket  GitHost  `json:"bitbucket,omitzero"`
 	NPM        NPM      `json:"npm"`
 	Registries []string `json:"registries"`
 	// Dotfiles is the user's dotfiles repo (cloned to ~/.dotfiles).
 	Dotfiles string `json:"dotfiles,omitempty"`
-	// GitKeyHosts are the git hosts the git SSH key (gitkey) is used for.
+	// GitKeyHosts are other git hosts the sent SSH key (yardo gitkey) is
+	// used for, besides GitHub, GitLab and Bitbucket in the "sent" mode.
 	GitKeyHosts []string `json:"gitkey_hosts,omitempty"`
 	// Layers are the picks each named profile set, by its name. Applying
 	// a profile with that name again replaces its layer (SetLayer).
@@ -86,9 +89,86 @@ type CA struct {
 	SHA256 string `json:"sha256"`
 }
 
-// GitHub holds how the VM reaches GitHub: agent, key or token ("" = key).
-type GitHub struct {
+// GitHost holds how the VM reaches a git host: agent (the SSH agent
+// forwarded with ssh -A), key (~/.ssh/id_ed25519, made here), sent
+// (~/.ssh/yardo_git_key, sent with yardo gitkey) or, GitHub only, token
+// (HTTPS). "" is key.
+type GitHost struct {
 	Mode string `json:"mode"`
+	// Host is a self-managed GitLab ("" = gitlab.com).
+	Host string `json:"host,omitempty"`
+}
+
+// GitLabHost is the GitLab host name.
+func (a *Answers) GitLabHost() string {
+	if a.GitLab.Host != "" {
+		return a.GitLab.Host
+	}
+	return "gitlab.com"
+}
+
+// SendKeyTo sets up the sent SSH key for hosts (none: github.com):
+// GitHub, GitLab and Bitbucket switch to the "sent" mode, other hosts go
+// in GitKeyHosts. It returns the items to pick: the host items, and the
+// hidden gitkey item when other hosts need it.
+func (a *Answers) SendKeyTo(hosts []string) (picks []string) {
+	if len(hosts) == 0 {
+		hosts = []string{"github.com"}
+	}
+	for _, h := range hosts {
+		switch h {
+		case "github.com":
+			a.GitHub.Mode, picks = "sent", Merge(picks, []string{"github"})
+		case "bitbucket.org":
+			a.Bitbucket.Mode, picks = "sent", Merge(picks, []string{"bitbucket"})
+		case a.GitLabHost():
+			a.GitLab.Mode, picks = "sent", Merge(picks, []string{"gitlab"})
+		default:
+			a.GitKeyHosts, picks = Merge(a.GitKeyHosts, []string{h}), Merge(picks, []string{"gitkey"})
+		}
+	}
+	return picks
+}
+
+// SentKeyHosts are the hosts the sent SSH key is for: the picked host
+// items in the "sent" mode, then GitKeyHosts.
+func (a *Answers) SentKeyHosts() []string {
+	var out []string
+	for _, h := range []struct {
+		id, host string
+		m        GitHost
+	}{{"github", "github.com", a.GitHub}, {"gitlab", a.GitLabHost(), a.GitLab}, {"bitbucket", "bitbucket.org", a.Bitbucket}} {
+		if h.m.Mode == "sent" && slices.Contains(a.Picks, h.id) {
+			out = append(out, h.host)
+		}
+	}
+	return Merge(out, a.GitKeyHosts)
+}
+
+// migrateGitKey turns a pick of the old gitkey item (one SSH key for the
+// hosts in GitKeyHosts, github.com when none) into the host items.
+func (a *Answers) migrateGitKey() (notes []string) {
+	if !slices.Contains(a.Picks, "gitkey") && !slices.Contains(a.Hand, "gitkey") {
+		return nil
+	}
+	hosts := a.GitKeyHosts
+	a.GitKeyHosts = nil
+	picks := a.SendKeyTo(hosts)
+	if slices.Equal(picks, []string{"gitkey"}) {
+		return nil // other hosts only: still the gitkey item
+	}
+	swap := func(l []string) []string {
+		if i := slices.Index(l, "gitkey"); i >= 0 {
+			l = Merge(slices.Delete(slices.Clone(l), i, i+1), picks)
+		}
+		return l
+	}
+	a.Picks, a.Hand = swap(a.Picks), swap(a.Hand)
+	for n, l := range a.Layers {
+		a.Layers[n] = swap(l)
+	}
+	return []string{"The git SSH key is now part of the GitHub, GitLab and Bitbucket items (each asks how to reach it): picked " +
+		strings.Join(slices.DeleteFunc(slices.Clone(picks), func(p string) bool { return p == "gitkey" }), ", ") + " with the key you send."}
 }
 
 // NPM is the private npm registry's settings (its token is never saved).
@@ -106,11 +186,14 @@ var PickMap = map[string][]string{
 	"kotlin":     {"java"},
 	"editors":    {"editors", "neovim"}, // Neovim moved to its own (mise) item
 	"chrony":     {},                    // no longer an item: clock sync is the launcher's job
+	"glab":       {"gitlab"},            // the GitLab item: glab and the SSH key
+	"sshkey":     {},                    // the GitHub, GitLab and Bitbucket items make the key
 }
 
 // pickNotes explain a migration to the user.
 var pickNotes = map[string]string{
 	"chrony": "chrony is no longer an item (clock sync is set up when the machine is launched); this machine keeps the chrony it has.",
+	"sshkey": "The SSH key item is gone: ~/.ssh/id_ed25519 stays, and the GitHub, GitLab and Bitbucket items make it when they use it.",
 }
 
 // MigratePicks applies PickMap, keeping order and dropping duplicates. It
@@ -175,8 +258,10 @@ func Read(state string) (a *Answers, notes []string, err error) {
 		return nil, nil, err
 	}
 	a.clean()
-	var more []string
-	a.Picks, more = MigratePicks(a.Picks)
+	more := a.migrateGitKey()
+	var mp []string
+	a.Picks, mp = MigratePicks(a.Picks)
+	more = append(more, mp...)
 	a.Hand, _ = MigratePicks(a.Hand)
 	for n, l := range a.Layers {
 		a.Layers[n], _ = MigratePicks(l)

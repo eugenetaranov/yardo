@@ -56,7 +56,9 @@ type userFile struct {
 	MCPServers  []string            `json:"mcp_servers"`
 	WireAgents  *bool               `json:"wire_agents"`
 	Git         Git                 `json:"git"`
-	GitHub      GitHub              `json:"github"`
+	GitHub      GitHost             `json:"github"`
+	GitLab      GitHost             `json:"gitlab,omitzero"`
+	Bitbucket   GitHost             `json:"bitbucket,omitzero"`
 	NPM         NPM                 `json:"npm"`
 	Registries  []string            `json:"registries"`
 	Dotfiles    string              `json:"dotfiles,omitempty"`
@@ -218,13 +220,16 @@ func (s *Store) Load(name string) (*Answers, []string, error) {
 		}
 		a.MiseExtra, a.MCPListen, a.MCPServers, a.WireAgents = uf.MiseExtra, uf.MCPListen, uf.MCPServers, uf.WireAgents
 		a.Git, a.GitHub, a.NPM, a.Registries, a.Dotfiles, a.GitKeyHosts = uf.Git, uf.GitHub, uf.NPM, uf.Registries, uf.Dotfiles, uf.GitKeyHosts
+		a.GitLab, a.Bitbucket = uf.GitLab, uf.Bitbucket
 	}
 	if len(a.Layers) == 0 {
 		a.Layers = nil
 	}
 	a.clean()
-	var more []string
-	a.Picks, more = MigratePicks(a.Picks)
+	more := a.migrateGitKey()
+	var mp []string
+	a.Picks, mp = MigratePicks(a.Picks)
+	more = append(more, mp...)
 	a.Hand, _ = MigratePicks(a.Hand)
 	for n, l := range a.Layers {
 		a.Layers[n], _ = MigratePicks(l)
@@ -254,7 +259,7 @@ func (s *Store) Save(a *Answers) error {
 		return Merge(nil, system), Merge(nil, own)
 	}
 	uf := &userFile{Version: Version, MiseExtra: a.MiseExtra, MCPListen: a.MCPListen, MCPServers: a.MCPServers,
-		WireAgents: a.WireAgents, Git: a.Git, GitHub: a.GitHub, NPM: a.NPM, Registries: a.Registries, Dotfiles: a.Dotfiles, GitKeyHosts: a.GitKeyHosts}
+		WireAgents: a.WireAgents, Git: a.Git, GitHub: a.GitHub, GitLab: a.GitLab, Bitbucket: a.Bitbucket, NPM: a.NPM, Registries: a.Registries, Dotfiles: a.Dotfiles, GitKeyHosts: a.GitKeyHosts}
 	sys.Version, sys.TZ, sys.DevPorts, sys.Proxy, sys.CA = Version, a.TZ, a.DevPorts, a.Proxy, a.CA
 	sys.Picks, uf.Picks = split(a.Picks)
 	sys.Hand, uf.Hand = split(a.Hand)

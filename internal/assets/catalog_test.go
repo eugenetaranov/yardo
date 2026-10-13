@@ -30,7 +30,7 @@ func TestCatalogConsistent(t *testing.T) {
 	screens := map[string]bool{}
 	for _, m := range regexp.MustCompile(`"(\w+)\|[^"]+"`).FindAllStringSubmatch(script[strings.Index(script, "SCREENS=("):], -1) {
 		screens[m[1]] = true
-		if m[1] == "accounts" {
+		if m[1] == "git" {
 			break
 		}
 	}

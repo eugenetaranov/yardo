@@ -29,7 +29,7 @@ func loadErr(t *testing.T, local fstest.MapFS) string {
 
 func TestEmbeddedCatalogLoads(t *testing.T) {
 	c := load(t, nil)
-	if len(c.Tabs) != 9 || c.Tabs[0].ID != "system" || c.Tabs[8].ID != "accounts" {
+	if len(c.Tabs) != 9 || c.Tabs[0].ID != "system" || c.Tabs[8].ID != "git" {
 		t.Errorf("tabs = %+v", c.Tabs)
 	}
 	if c.Item("zsh") == nil || c.Item("mise") == nil || !c.Item("mise").Hidden() {
@@ -75,7 +75,7 @@ func TestMatchesBashCatalog(t *testing.T) {
 
 // goOnly are items added after the port: the bash installer, the fallback
 // until the cut-over, doesn't offer them.
-var goOnly = map[string]bool{"sudopw": true, "autoupdate-tools": true, "proxy": true, "corpca": true, "dotfiles": true, "agentsafe": true, "gitkey": true, "misebuild": true}
+var goOnly = map[string]bool{"sudopw": true, "autoupdate-tools": true, "proxy": true, "corpca": true, "dotfiles": true, "agentsafe": true, "misebuild": true, "gitlab": true, "bitbucket": true}
 
 const teamTab = `
 [[item]]

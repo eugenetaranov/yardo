@@ -176,9 +176,22 @@ def score(it, q):
     return max(cands) + (0 if it["tab"] == MISE else 200)
 
 
+def strict(it, q):
+    """q is a substring of the item's names, label, source or description
+    (not only an in-order subsequence of them)."""
+    q = q.lower()
+    primary, secondary = names_of(it)
+    return (any(q in n for n in primary + secondary) or q in it["label"].lower()
+            or q in it.get("text", it["source"]).lower())
+
+
 def search(items, q, limit=MAX_RESULTS):
+    """Subsequence-only matches count only when nothing has q as a
+    substring, so "ssh" doesn't list every label with s...s...h in it."""
     scored = [(score(it, q), n, it) for n, it in enumerate(items)]
     scored = [x for x in scored if x[0] is not None]
+    if any(strict(it, q) for _, _, it in scored):
+        scored = [x for x in scored if strict(x[2], q)]
     scored.sort(key=lambda x: (-x[0], x[2]["tab"] == MISE, len(x[2]["label"]), x[1]))
     return [it for _, _, it in scored[:limit]]
 

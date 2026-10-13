@@ -127,9 +127,12 @@ clears the search; Esc on an empty search quits.
    Gemini CLI, OpenCode and Goose. The gateway listens on this machine only,
    on the VM's Tailscale address only (when Tailscale is up), or on every
    interface (no auth: trusted networks only).
-9. **Accounts and keys:** git identity, git defaults (rebase on pull, push
-   sets upstream, delta diffs, aliases, a global ignore file), an SSH key,
-   GitHub login, commit signing with SSH, GitLab CLI, global git ignores in
+9. **Git & repos:** git identity, git defaults (rebase on pull, push
+   sets upstream, delta diffs, aliases, a global ignore file), one item per
+   git host (GitHub with the gh login, GitLab with glab and gitlab.com or
+   your own host, Bitbucket), each asking how this machine reaches it over
+   SSH (a forwarded agent, a key made here, or a key you send; GitHub also
+   a token), commit signing with SSH, global git ignores in
    `~/.config/git/ignore` (`.claude/`, `.python-version`, `.env`, `.venv/`,
    `node_modules/`, caches, editor files; yardo keeps them as a block at the
    top and leaves your own lines below it alone), and your dotfiles repo:
@@ -196,7 +199,7 @@ MCP servers through the gateway but can't read their tokens. `mcp-sync` and
 `mcp-sync edit <name>` switch to that user through sudo for you. This only
 holds while the agent can't get root: with passwordless sudo (the default
 for the VM's user) or membership of the docker group, it can. The opt-in
-"sudo asks for your password" item (Accounts) removes `NOPASSWD` from your
+"sudo asks for your password" item (System) removes `NOPASSWD` from your
 sudo rules, after setting a password if you have none; tools that run sudo
 on the machine over SSH then need that password too.
 
@@ -244,21 +247,23 @@ secrets, and are only read as data, never run:
 own MCPJungle gateway (`mcpjungle@<user>`, on port 8080, 8081, …), wired into
 their own agents.
 
-**An SSH key for git.** Send a private key (a deploy key, or one on your
-GitHub account) from your machine:
+**An SSH key for git you send.** Send a private key (a deploy key, or one
+on your GitHub, GitLab or Bitbucket account) from your machine:
 
 ```sh
 ssh ubuntu@web1 'sudo yardo gitkey' < ~/.ssh/deploy_key
 ssh ubuntu@web1 'sudo yardo gitkey --host gitlab.example.com' < ~/.ssh/id_ed25519
 ```
 
-yardo's "SSH key for git" item puts it in `~/.ssh/yardo_git_key` (0600),
-makes every connection to github.com (or the `--host` ones) use it in
-`~/.ssh/config`, and adds GitHub's host keys. It then works for any repo the
-key may reach: a deploy key's one repo, or all of yours for an account key.
-yardo saves only the hosts; send it again to replace it. Picking the item in
-`sudo yardo` without sending a key makes one on the machine, and the closing
-notes show its public key and where to add it.
+yardo puts it in `~/.ssh/yardo_git_key` (0600), switches the host's item
+(github.com by default; GitLab for your GitLab host, Bitbucket for
+bitbucket.org) to "a key you send", makes every connection to the host use
+it in `~/.ssh/config`, and adds GitHub's host keys (other hosts are trusted
+on first use). It then works for any repo the key may reach: a deploy key's
+one repo, or all of yours for an account key. yardo saves only the hosts;
+send it again to replace it. Choosing "a key you send" in `sudo yardo`
+before sending one makes one on the machine, and the closing notes show its
+public key and where to add it.
 
 **Your team's own items and MCP servers.** yardo reads extra items from
 `/etc/yardo/catalog.d/*.toml` (the catalog's format; see

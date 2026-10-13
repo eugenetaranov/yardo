@@ -262,7 +262,7 @@ func TestGitKeySubcommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "SSH key for git") || !strings.Contains(got, "write the key sent on stdin") || !strings.Contains(got, "github.com, git.acme.io") {
+	if !strings.Contains(got, "SSH for the git hosts") || !strings.Contains(got, "write the key sent on stdin") || !strings.Contains(got, "github.com, git.acme.io") {
 		t.Errorf("plan:\n%s", got)
 	}
 	if strings.Contains(got, "zsh (login shell)") {

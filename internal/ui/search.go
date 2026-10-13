@@ -280,17 +280,43 @@ func Score(e *Entry, q string) (int, bool) {
 	return best, true
 }
 
-// Search returns the entries matching q, best first.
+// strict reports whether q is a substring of e's names, label, source or
+// description (not only an in-order subsequence of them).
+func strict(e *Entry, q string) bool {
+	q = strings.ToLower(q)
+	primary, secondary := namesOf(e)
+	for _, n := range append(primary, secondary...) {
+		if strings.Contains(n, q) {
+			return true
+		}
+	}
+	text := e.Source
+	if e.Text != "" {
+		text = e.Text
+	}
+	return strings.Contains(strings.ToLower(e.Label), q) || strings.Contains(strings.ToLower(text), q)
+}
+
+// Search returns the entries matching q, best first. Subsequence-only
+// matches ("lzgt" for lazygit) count only when nothing has q as a
+// substring, so "ssh" doesn't list every label with s…s…h in it.
 func Search(entries []*Entry, q string) []*Entry {
 	type hit struct {
 		s, n int
 		e    *Entry
 	}
-	var hits []hit
+	var hits, loose []hit
 	for n, e := range entries {
 		if s, ok := Score(e, q); ok {
-			hits = append(hits, hit{s, n, e})
+			if strict(e, q) {
+				hits = append(hits, hit{s, n, e})
+			} else {
+				loose = append(loose, hit{s, n, e})
+			}
 		}
+	}
+	if len(hits) == 0 {
+		hits = loose
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
 		a, b := hits[i], hits[j]

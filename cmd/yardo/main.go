@@ -329,8 +329,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		changed = true
 	} else {
 		if o.only != "" {
-			a.Pick([]string{o.only})
-			a.GitKeyHosts = answers.Merge(a.GitKeyHosts, o.gitHosts)
+			a.Pick(a.SendKeyTo(o.gitHosts))
 			sec.GitKey = o.gitKey
 			changed = true
 		}
@@ -472,7 +471,7 @@ func (o *options) gitKeyArgs(args []string, stderr io.Writer) error {
 	fs := flag.NewFlagSet("yardo gitkey", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var hosts list
-	fs.Var(&hosts, "host", "a git host to use the key for (repeatable; default github.com)")
+	fs.Var(&hosts, "host", "a git host to use the key for: github.com, bitbucket.org, your GitLab or another (repeatable; default github.com)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

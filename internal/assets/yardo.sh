@@ -155,17 +155,16 @@ CATALOG_ROWS=(
   "agentkeys|ai|Agent API keys (Anthropic, OpenAI, Gemini)|fn|||~/.config/yardo/agent.env (0600) · read by interactive shells"
   "mcpjungle|ai|MCPJungle + MCP servers (Docker)|fn||docker|release binary · systemd mcpjungle · mcp-sync"
 
-  "gitid|accounts|Git name and email|ask||essentials|git config --global user.name/email"
-  "gitcfg|accounts|Git defaults (rebase pulls, auto upstream, delta diffs)|fn||essentials|git config --global · aliases st co br sw lg amend · ~/.config/git/ignore"
-  "sshkey|accounts|SSH key (ed25519)|fn|||ssh-keygen → ~/.ssh/id_ed25519 (kept if present)"
-  "github|accounts|GitHub login (forwarded agent, key or token)|fn||essentials|gh auth login · forwarded agent, ~/.ssh/id_ed25519 (gh ssh-key add) or a token"
-  "gitsign|accounts|Sign commits with SSH|fn||github|git gpg.format=ssh · signing key on GitHub · ~/.config/git/allowed_signers"
-  "glab|accounts|GitLab CLI (glab)|mise|glab@latest||"
+  "gitid|git|Git name and email|ask||essentials|git config --global user.name/email"
+  "gitcfg|git|Git defaults (rebase pulls, auto upstream, delta diffs)|fn||essentials|git config --global · aliases st co br sw lg amend · ~/.config/git/ignore"
+  "github|git|GitHub: gh login + SSH key for git|fn||essentials gitkey|gh auth login · git over SSH: forwarded agent, a key made here (gh ssh-key add) or one you send (yardo gitkey); or a token"
+  "gitsign|git|Sign commits with SSH|fn||github|git gpg.format=ssh · signing key on GitHub · ~/.config/git/allowed_signers"
 )
 # Hidden helpers pulled in by "needs".
 HIDDEN_ROWS=(
   "rubydeps|-|Ruby build dependencies|apt|libssl-dev libyaml-dev zlib1g-dev libffi-dev libreadline-dev libgmp-dev||"
   "mise|-|mise|fn|||apt mise (mise.jdx.dev repo)"
+  "gitkey|-|SSH for the git hosts|fn|||~/.ssh/yardo_git_key or ~/.ssh/id_ed25519 · ~/.ssh/config · host keys"
 )
 # Credentials the items above ask for, once (empty = later):
 #   item | KEY | kind | prompt | where to get it | only when this is picked or installed | default
@@ -180,7 +179,7 @@ CRED_ROWS=(
   "npmrc|NPM_TOKEN|secret|npm registry token|for GitHub Packages: a token with read:packages at https://github.com/settings/tokens||"
 )
 SCREENS=("system|System" "shell|Shell & CLI" "dev|Dev tools" "lang|Languages"
-         "cloud|Cloud" "iac|IaC" "k8s|Kubernetes" "ai|AI" "accounts|Accounts")
+         "cloud|Cloud" "iac|IaC" "k8s|Kubernetes" "ai|AI" "git|Git & repos")
 
 YES=0 DRY=0 FORGET=0 ONLY= BEGIN=0 FINISH=0 SECRETS=0
 ARGS=("$@")
@@ -578,6 +577,7 @@ ask_tz() {
 ask_github() {
   local agent="Forwarded SSH agent (no key on this VM; connect with ssh -A)" \
         key="A key on this VM (~/.ssh/id_ed25519, uploaded to GitHub)" \
+        sent="A key you send from your machine (ssh <this machine> 'sudo yardo gitkey' < <key file>)" \
         token="A fine-grained token (git over HTTPS; no key)" def c
   def=${A_GH_MODE:-}
   if [ -z "$def" ]; then
@@ -585,8 +585,8 @@ ask_github() {
   fi
   echo
   header "GitHub"
-  c=$(gum choose --header "How should this VM reach GitHub?" --selected "${!def}" "$agent" "$key" "$token" || true)
-  case "$c" in "$agent") A_GH_MODE=agent ;; "$token") A_GH_MODE=token ;; *) A_GH_MODE=key ;; esac
+  c=$(gum choose --header "How should this VM reach GitHub?" --selected "${!def}" "$agent" "$key" "$sent" "$token" || true)
+  case "$c" in "$agent") A_GH_MODE=agent ;; "$sent") A_GH_MODE=sent ;; "$token") A_GH_MODE=token ;; *) A_GH_MODE=key ;; esac
   if [ "$A_GH_MODE" = key ] && [ ! -f "$(user_home)/.ssh/id_ed25519" ]; then
     if gum confirm "Protect the new key with a passphrase? (ssh-keygen asks after the installs)" --default=false; then
       GH_PASSPHRASE=yes
@@ -1395,6 +1395,9 @@ install_gitcfg() {
   return 0
 }
 
+# The Go yardo's gitkey step sets up SSH for the git hosts.
+install_gitkey() { :; }
+
 install_sshkey() {
   local home; home=$(user_home)
   [ -f "$home/.ssh/id_ed25519" ] && return 0
@@ -1405,7 +1408,8 @@ install_sshkey() {
 # GitHub login is interactive (device code in the browser), so it runs after
 # the spinner steps, in the foreground. A_GH_MODE says how the VM reaches
 # GitHub: agent (the SSH agent forwarded with `ssh -A`; no key on
-# this VM), key (~/.ssh/id_ed25519, uploaded) or token (a pasted
+# this VM), key (~/.ssh/id_ed25519, uploaded), sent (~/.ssh/yardo_git_key,
+# sent with yardo gitkey; the Go gitkey step sets it up) or token (a pasted
 # fine-grained token; git over HTTPS). Unset (answers from before modes) is key.
 github_login() {
   local home pub title mode scopes; home=$(user_home); pub="$home/.ssh/id_ed25519.pub"; title="$(hostname) ($A_USER)"
@@ -1449,6 +1453,12 @@ github_login() {
   case "$mode" in
     token)
       as_user sh -c 'cd && gh config set -h github.com git_protocol https && gh auth setup-git' ;;
+    sent)
+      local out; out=$(as_user ssh -T -o BatchMode=yes git@github.com 2>&1 || true)
+      case "$out" in
+        *"successfully authenticated"*) ok "✓ git over SSH works with ~/.ssh/yardo_git_key" ;;
+        *) note "GitHub: add ~/.ssh/yardo_git_key.pub as a deploy key (repo → Settings → Deploy keys) or at https://github.com/settings/keys, or send yours: ssh <this machine> 'sudo yardo gitkey' < <key file>" ;;
+      esac ;;
     agent)
       if [ -n "${SSH_AUTH_SOCK:-}" ] && as_user ssh-add -l >/dev/null 2>&1; then
         local out; out=$(as_user ssh -T -o BatchMode=yes git@github.com 2>&1 || true)
@@ -1528,9 +1538,11 @@ install_gitsign() {
     fi
     signingkey="key::$key"
   else
-    key=$(cat "$home/.ssh/id_ed25519.pub" 2>/dev/null || true)
-    [ -n "$key" ] || { note "Commit signing: no ~/.ssh/id_ed25519.pub yet; run 'sudo yardo --yes' after the GitHub step."; return 0; }
-    signingkey="$home/.ssh/id_ed25519.pub"
+    local pub=id_ed25519.pub
+    [ "$mode" = sent ] && pub=yardo_git_key.pub
+    key=$(cat "$home/.ssh/$pub" 2>/dev/null || true)
+    [ -n "$key" ] || { note "Commit signing: no ~/.ssh/$pub yet; run 'sudo yardo --yes' after the GitHub step."; return 0; }
+    signingkey="$home/.ssh/$pub"
   fi
   email=$(as_user git config --global user.email 2>/dev/null || true)
   allowed="$home/.config/git/allowed_signers"

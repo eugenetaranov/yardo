@@ -219,8 +219,8 @@ func (c *Catalog) validate() error {
 			fail(it, "unknown tab %q", it.Tab)
 		case it.Label == "" && !it.Hidden():
 			fail(it, "no label")
-		case len(it.Steps) == 0:
-			fail(it, "no steps")
+		case len(it.Steps) == 0 && len(it.Needs) == 0:
+			fail(it, "no steps") // only a bundle of what it needs may have none
 		case it.Scope != "" && it.Scope != "system" && it.Scope != "user":
 			fail(it, "scope %q: want system or user", it.Scope)
 		}

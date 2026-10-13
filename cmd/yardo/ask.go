@@ -143,11 +143,6 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			return nil, err
 		}
 	}
-	if has("gitkey") {
-		if err := k.askGitKey(); err != nil {
-			return nil, err
-		}
-	}
 	return c, k.askSecrets(c, has)
 }
 
@@ -210,6 +205,16 @@ func (k *asker) askSecrets(c *choices, has func(string) bool) error {
 	var err error
 	if has("github") {
 		if err := k.askGitHub(c); err != nil {
+			return err
+		}
+	}
+	if has("gitlab") {
+		if err := k.askGitLab(); err != nil {
+			return err
+		}
+	}
+	if has("bitbucket") {
+		if err := k.askGitHost("Bitbucket", "bitbucket.org", &k.a.Bitbucket); err != nil {
 			return err
 		}
 	}
@@ -376,33 +381,6 @@ func (k *asker) askCA() error {
 	}
 }
 
-// askGitKey asks which git hosts the git SSH key is for.
-func (k *asker) askGitKey() error {
-	cur := strings.Join(k.a.GitKeyHosts, " ")
-	if cur == "" {
-		cur = "github.com"
-	}
-	fmt.Fprintln(k.out, "\nSSH key for git: send yours from your machine with  ssh <this machine> 'sudo yardo gitkey' < <key file>\n(or a tool that does it for you), or yardo makes one here (the closing notes show where to add it).")
-	for {
-		v, err := ui.Input("Git hosts to use it for, space-separated", "", cur)
-		if err != nil {
-			return err
-		}
-		var bad []string
-		for _, h := range strings.Fields(v) {
-			if !answers.ValidHost(h) {
-				bad = append(bad, h)
-			}
-		}
-		if len(bad) == 0 && v != "" {
-			k.a.GitKeyHosts = strings.Fields(v)
-			return nil
-		}
-		fmt.Fprintf(k.out, "Not host names: %s\n", strings.Join(bad, " "))
-		cur = v
-	}
-}
-
 // askDotfiles asks for the dotfiles repo.
 func (k *asker) askDotfiles() error {
 	cur := k.a.Dotfiles
@@ -543,26 +521,90 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool) e
 	return nil
 }
 
-func (k *asker) askGitHub(c *choices) error {
-	agent := "Forwarded SSH agent (no key on this machine; connect with ssh -A)"
-	key := "A key on this VM (~/.ssh/id_ed25519, uploaded to GitHub)"
-	token := "A fine-grained token (git over HTTPS; no key)"
-	labels := map[string]string{"agent": agent, "key": key, "token": token}
-	def := k.a.GitHub.Mode
-	if def == "" {
-		def = "key"
+// The ways to reach a git host over SSH, as the host prompts offer them.
+const (
+	wayAgent = "Forwarded SSH agent (no key on this machine; connect with ssh -A)"
+	waySent  = "A key you send from your machine (ssh <this machine> 'sudo yardo gitkey' < <key file>; a deploy or account key)"
+)
+
+// chooseWay asks how to reach a git host: ways maps each mode to its
+// label, in the order given; the saved mode, else the agent when one is
+// forwarded, else a key made here, is the default.
+func chooseWay(title, cur string, modes []string, ways map[string]string) (string, error) {
+	if cur == "" {
+		cur = "key"
 		if os.Getenv("SSH_AUTH_SOCK") != "" && exec.Command("ssh-add", "-l").Run() == nil {
-			def = "agent"
+			cur = "agent"
 		}
 	}
-	ch, err := ui.Choose("How should this VM reach GitHub?", []string{agent, key, token}, labels[def])
+	var opts []string
+	for _, m := range modes {
+		opts = append(opts, ways[m])
+	}
+	ch, err := ui.Choose(title, opts, ways[cur])
+	if err != nil {
+		return "", err
+	}
+	for _, m := range modes {
+		if ways[m] == ch {
+			return m, nil
+		}
+	}
+	return cur, nil
+}
+
+// sentHint says how to send the key for host.
+func (k *asker) sentHint(host string) {
+	fmt.Fprintf(k.out, "Send the key from your machine:  ssh <this machine> 'sudo yardo gitkey --host %s' < <key file>\n(until then yardo makes one here; the closing notes say where to add it).\n", host)
+}
+
+// askGitHost asks how to reach a git host without a CLI login (Bitbucket).
+func (k *asker) askGitHost(name, host string, m *answers.GitHost) error {
+	mode, err := chooseWay("How should this VM reach "+name+"?", m.Mode, []string{"agent", "key", "sent"}, map[string]string{
+		"agent": wayAgent, "key": "A key made here (~/.ssh/id_ed25519; the closing notes say where to add it on " + name + ")", "sent": waySent})
 	if err != nil {
 		return err
 	}
-	for m, l := range labels {
-		if l == ch {
-			k.a.GitHub.Mode = m
+	m.Mode = mode
+	if mode == "sent" {
+		k.sentHint(host)
+	}
+	return nil
+}
+
+// askGitLab asks for the GitLab host (gitlab.com or your own) and how to
+// reach it.
+func (k *asker) askGitLab() error {
+	cur := k.a.GitLabHost()
+	for {
+		v, err := ui.Input("GitLab host (gitlab.com, or your own GitLab's host name)", "", cur)
+		if err != nil {
+			return err
 		}
+		v = strings.TrimSpace(v)
+		if answers.ValidHost(v) {
+			k.a.GitLab.Host = v
+			if v == "gitlab.com" {
+				k.a.GitLab.Host = ""
+			}
+			break
+		}
+		fmt.Fprintf(k.out, "Not a host name: %q\n", v)
+		cur = v
+	}
+	return k.askGitHost("GitLab", k.a.GitLabHost(), &k.a.GitLab)
+}
+
+func (k *asker) askGitHub(c *choices) error {
+	mode, err := chooseWay("How should this VM reach GitHub?", k.a.GitHub.Mode, []string{"agent", "key", "sent", "token"}, map[string]string{
+		"agent": wayAgent, "key": "A key made here (~/.ssh/id_ed25519, uploaded to GitHub)", "sent": waySent,
+		"token": "A fine-grained token (git over HTTPS; no key)"})
+	if err != nil {
+		return err
+	}
+	k.a.GitHub.Mode = mode
+	if mode == "sent" {
+		k.sentHint("github.com")
 	}
 	home := homeOf(k.a.User)
 	if k.a.GitHub.Mode == "key" {

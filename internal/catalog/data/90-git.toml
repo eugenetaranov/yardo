@@ -1,9 +1,10 @@
-# yardo catalog: the Accounts tab.
+# yardo catalog: the Git & repos tab: git itself, the git hosts
+# (GitHub, GitLab, Bitbucket) and how this machine reaches them, dotfiles.
 # `legacy` steps run the bundled bash installer until the item is ported.
 
 [[item]]
 id = "gitid"
-tab = "accounts"
+tab = "git"
 label = "Git name and email"
 needs = ["essentials"]
 source = "git config --global user.name/email"
@@ -14,7 +15,7 @@ values = { "user.name" = "{{git_name}}", "user.email" = "{{git_email}}", "init.d
 
 [[item]]
 id = "gitcfg"
-tab = "accounts"
+tab = "git"
 label = "Git defaults (rebase pulls, auto upstream, delta diffs)"
 needs = ["essentials"]
 source = "git config --global · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore"
@@ -64,44 +65,52 @@ type = "block"
 src = "gitignore_global"
 to = "~/.config/git/ignore"
 
-[[item]]
-id = "sshkey"
-tab = "accounts"
-label = "SSH key (ed25519)"
-source = "ssh-keygen → ~/.ssh/id_ed25519 (kept if present)"
-
-[[item.step]]
-type = "run"
-cmd = 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keygen -q -t ed25519 -N "" -C "{{user}}@$(hostname)" -f ~/.ssh/id_ed25519'
-as_user = true
-creates = "~/.ssh/id_ed25519"
-
-# The SSH key git uses for github.com (and other git hosts): one sent
-# from your machine with `ssh <host> 'sudo yardo gitkey' < <key>` (a deploy key, or
-# your account's), or one made here. ~/.ssh/config points every
-# connection to those hosts at it, so it works for any repo it may reach.
+# SSH for the git hosts, as each host item's mode says: the key sent from
+# your machine with `ssh <host> 'sudo yardo gitkey' < <key>` (a deploy key,
+# or your account's; one is made here when none was sent), which
+# ~/.ssh/config points every connection to those hosts at, so it works for
+# any repo it may reach; ~/.ssh/id_ed25519 made here (GitLab, Bitbucket;
+# GitHub's is made and uploaded by its login); host keys.
 [[item]]
 id = "gitkey"
-tab = "accounts"
-label = "SSH key for git (send yours with yardo gitkey, or make one)"
-source = "~/.ssh/yardo_git_key · ~/.ssh/config Host github.com … IdentitiesOnly · GitHub host keys"
+tab = "-"
+label = "SSH for the git hosts"
+source = "~/.ssh/yardo_git_key or ~/.ssh/id_ed25519 · ~/.ssh/config · host keys"
 
 [[item.step]]
 type = "go:gitkey"
 
 [[item]]
 id = "github"
-tab = "accounts"
-label = "GitHub login (forwarded agent, key or token)"
-needs = ["essentials"]
-source = "gh auth login · forwarded agent, ~/.ssh/id_ed25519 (gh ssh-key add) or a token"
+tab = "git"
+label = "GitHub: gh login + SSH key for git"
+needs = ["essentials", "gitkey"]
+source = "gh auth login · git over SSH: forwarded agent, a key made here (gh ssh-key add) or one you send (yardo gitkey); or a token"
 
 [[item.step]]
 type = "legacy"
 
 [[item]]
+id = "gitlab"
+tab = "git"
+label = "GitLab: glab + SSH key for git"
+needs = ["gitkey"]
+source = "mise use -g glab · git over SSH: forwarded agent, a key made here or one you send (yardo gitkey) · gitlab.com or your own"
+
+[[item.step]]
+type = "mise"
+tools = ["glab@latest"]
+
+[[item]]
+id = "bitbucket"
+tab = "git"
+label = "Bitbucket: SSH key for git"
+needs = ["gitkey"]
+source = "git over SSH: forwarded agent, a key made here or one you send (yardo gitkey) · bitbucket.org"
+
+[[item]]
 id = "gitsign"
-tab = "accounts"
+tab = "git"
 label = "Sign commits with SSH"
 needs = ["github"]
 source = "git gpg.format=ssh · signing key on GitHub · ~/.config/git/allowed_signers"
@@ -109,32 +118,11 @@ source = "git gpg.format=ssh · signing key on GitHub · ~/.config/git/allowed_s
 [[item.step]]
 type = "legacy"
 
-[[item]]
-id = "glab"
-tab = "accounts"
-label = "GitLab CLI (glab)"
-
-[[item.step]]
-type = "mise"
-tools = ["glab@latest"]
-
-# Opt-in: the login user's sudo asks for their password, so an agent
-# running as them can't sudo (and read the MCP tokens) unasked. Tools
-# commands that use sudo on the VM then need that password too.
-[[item]]
-id = "sudopw"
-tab = "accounts"
-label = "sudo asks for your password (drops NOPASSWD; tools that sudo over SSH then ask too)"
-source = "sets a password if there is none · removes NOPASSWD from your /etc/sudoers.d rules"
-
-[[item.step]]
-type = "go:sudopw"
-
 # Your own dotfiles, applied last so they win: cloned (or pulled) on every
 # run, then the repo's install script, or stow.
 [[item]]
 id = "dotfiles"
-tab = "accounts"
+tab = "git"
 label = "Your dotfiles repo (~/.dotfiles: its install script, or stow)"
 last = true
 source = "git clone/pull · install.sh, bootstrap.sh or setup.sh, else stow each directory · runs last"

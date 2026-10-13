@@ -78,6 +78,20 @@ func TestSearch(t *testing.T) {
 	if n := len(Search(items, "starsh")); n >= 10 {
 		t.Errorf("descriptions aren't fuzzy-matched: starsh gave %d results", n)
 	}
+	// Subsequence matches count only when nothing has the query in it:
+	// "ssh" lists what mentions SSH, the git host items near the top, not
+	// every label with s…s…h in it ("zsh config").
+	ssh := Search(items, "ssh")
+	for _, want := range []string{"github", "gitlab", "bitbucket"} {
+		if !has(ids(ssh, 5), want) {
+			t.Errorf("ssh: %s not in the top 5: %v", want, ids(ssh, 5))
+		}
+	}
+	for _, e := range ssh {
+		if !strict(e, "ssh") {
+			t.Errorf("ssh: %s matches only as a subsequence", e.ID)
+		}
+	}
 	if n := len(Search(items, "qqqqzzzz")); n != 0 {
 		t.Errorf("no match expected, got %d", n)
 	}

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -23,7 +24,7 @@ func TestWriteReadRoundTrip(t *testing.T) {
 	yes := true
 	in := &Answers{User: "ada", Picks: []string{"cli", "zsh"}, MiseExtra: []string{"starship"}, MCPListen: "127.0.0.1",
 		MCPServers: []string{"github"}, WireAgents: &yes, Git: Git{"Ada L", "ada@example.com"}, TZ: "UTC",
-		GitHub: GitHub{"agent"}, NPM: NPM{"@acme", "https://npm.pkg.github.com"}, Registries: []string{"ghcr.io"}}
+		GitHub: GitHost{Mode: "agent"}, NPM: NPM{"@acme", "https://npm.pkg.github.com"}, Registries: []string{"ghcr.io"}}
 	if err := Write(state, in); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +132,7 @@ func TestSharedWithPickerPy(t *testing.T) {
 		t.Skip("picker.py gone")
 	}
 	state := t.TempDir()
-	if err := Write(state, &Answers{User: "ada", Picks: []string{"cli"}, GitHub: GitHub{"token"}, NPM: NPM{Scope: "@acme"}}); err != nil {
+	if err := Write(state, &Answers{User: "ada", Picks: []string{"cli"}, GitHub: GitHost{Mode: "token"}, NPM: NPM{Scope: "@acme"}}); err != nil {
 		t.Fatal(err)
 	}
 	out, err := exec.Command("python3", picker, "answers", "read", state).Output()
@@ -212,5 +213,38 @@ func TestCheckRepo(t *testing.T) {
 		if err := CheckRepo(u); (err == nil) != ok {
 			t.Errorf("%q: err = %v", u, err)
 		}
+	}
+}
+
+// The old gitkey item becomes the host items in the "sent" mode; other
+// hosts keep it. glab is the GitLab item; the sshkey item is gone.
+func TestMigrateGitKey(t *testing.T) {
+	state := t.TempDir()
+	if err := Write(state, &Answers{User: "ada", Picks: []string{"zsh", "gitkey", "glab", "sshkey"},
+		GitKeyHosts: []string{"github.com", "gitlab.com", "git.acme.io:2222"}}); err != nil {
+		t.Fatal(err)
+	}
+	a, notes, err := Read(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"github", "gitkey", "gitlab", "zsh"}; !slices.Equal(slices.Sorted(slices.Values(a.Picks)), want) {
+		t.Errorf("picks = %v, want %v", a.Picks, want)
+	}
+	if a.GitHub.Mode != "sent" || a.GitLab.Mode != "sent" || a.Bitbucket.Mode != "" || !slices.Equal(a.GitKeyHosts, []string{"git.acme.io:2222"}) {
+		t.Errorf("github %+v gitlab %+v bitbucket %+v hosts %v", a.GitHub, a.GitLab, a.Bitbucket, a.GitKeyHosts)
+	}
+	if len(notes) != 2 {
+		t.Errorf("notes = %q", notes)
+	}
+	if got := a.SentKeyHosts(); !slices.Equal(got, []string{"github.com", "gitlab.com", "git.acme.io:2222"}) {
+		t.Errorf("SentKeyHosts = %v", got)
+	}
+	// The old default: no hosts is GitHub.
+	if err := Write(state, &Answers{User: "ada", Picks: []string{"gitkey"}, GitHub: GitHost{Mode: "agent"}}); err != nil {
+		t.Fatal(err)
+	}
+	if a, _, _ = Read(state); !slices.Equal(a.Picks, []string{"github"}) || a.GitHub.Mode != "sent" {
+		t.Errorf("picks %v github %+v", a.Picks, a.GitHub)
 	}
 }

@@ -30,8 +30,8 @@ type Profile struct {
 	MCP       *MCP     `toml:"mcp"`
 	// Dotfiles is the dotfiles item's repo (a personal profile's).
 	Dotfiles *Dotfiles `toml:"dotfiles,omitempty"`
-	// GitKey is the gitkey item's hosts (the key itself never: yardo gitkey
-	// gitkey sends it).
+	// GitKey is the git hosts the key sent with yardo gitkey is for (the
+	// key itself never is here).
 	GitKey *GitKey `toml:"gitkey,omitempty"`
 	// Lock pins versions (export --lock).
 	Lock *answers.Lock `toml:"lock,omitempty"`
@@ -154,8 +154,22 @@ func ValidUser(name string) bool { return userName.MatchString(name) }
 func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnings []string) {
 	picks, notes := answers.MigratePicks(p.Picks)
 	warnings = append(warnings, notes...)
+	// The hosts the sent key is for: GitHub, GitLab and Bitbucket in the
+	// "sent" mode (their items picked), others with the gitkey item. A
+	// gitkey pick without hosts is the old item's default, GitHub.
+	if p.GitKey != nil || slices.Contains(picks, "gitkey") {
+		var hosts []string
+		if p.GitKey != nil {
+			hosts = p.GitKey.Hosts
+		}
+		picks = answers.Merge(slices.DeleteFunc(picks, func(id string) bool { return id == "gitkey" }), a.SendKeyTo(hosts))
+	}
 	var keep []string
 	for _, id := range picks {
+		if id == "gitkey" { // other hosts than the host items'
+			keep = append(keep, id)
+			continue
+		}
 		if it := c.Item(id); it == nil || it.Hidden() {
 			warnings = append(warnings, fmt.Sprintf("profile: %q is not a yardo item; skipped", id))
 			continue
@@ -172,9 +186,6 @@ func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnin
 	}
 	if p.Dotfiles != nil && p.Dotfiles.Repo != "" {
 		a.Dotfiles = p.Dotfiles.Repo
-	}
-	if p.GitKey != nil {
-		a.GitKeyHosts = answers.Merge(a.GitKeyHosts, p.GitKey.Hosts)
 	}
 	a.MiseExtra = answers.Merge(a.MiseExtra, p.MiseExtra)
 	if p.Git != nil {
@@ -226,8 +237,8 @@ func Export(a *answers.Answers, lock *answers.Lock) []byte {
 	if a.Dotfiles != "" {
 		p.Dotfiles = &Dotfiles{Repo: a.Dotfiles}
 	}
-	if len(a.GitKeyHosts) > 0 {
-		p.GitKey = &GitKey{Hosts: a.GitKeyHosts}
+	if hosts := a.SentKeyHosts(); len(hosts) > 0 {
+		p.GitKey = &GitKey{Hosts: hosts}
 	}
 	if len(a.MCPServers) > 0 || a.MCPListen != "" || a.WireAgents != nil {
 		p.MCP = &MCP{Servers: a.MCPServers, Listen: a.MCPListen, WireAgents: a.WireAgents}
