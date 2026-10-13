@@ -285,7 +285,10 @@ func (p *Picker) View() string {
 	cur := min(p.cursor[view], max(0, len(items)-1))
 	p.cursor[view] = cur
 
-	labelW := 10
+	// Labels only: the focused item's install details are on the line
+	// below the list, so rows stay one line and easy to scan. Search
+	// results also show their tab.
+	labelW := max(14, w-10)
 	srcHead := 0
 	if view == searchTab {
 		for _, e := range items {
@@ -293,10 +296,6 @@ func (p *Picker) View() string {
 		}
 		srcHead = min(14, max(4, srcHead))
 		labelW = max(14, w-7-srcHead-3)
-	} else {
-		// Labels only: the focused item's install details are on the
-		// line below the list, so rows stay one line and easy to scan.
-		labelW = max(14, w-10)
 	}
 	srcX := 7 + labelW
 	srcW := max(4, w-srcX-3)

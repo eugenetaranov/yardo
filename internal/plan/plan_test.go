@@ -84,18 +84,6 @@ func index(l []string, s string) int {
 	return -1
 }
 
-func sameSet(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for _, x := range a {
-		if !contains(b, x) {
-			return false
-		}
-	}
-	return true
-}
-
 // registries goes after the GitHub login when both are installed (ghcr.io
 // can use gh's token), and doesn't pull it in.
 func TestAfterOrdersWithoutPulling(t *testing.T) {
