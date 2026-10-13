@@ -18,6 +18,8 @@ type fakeExec struct {
 	installed map[string]bool
 	badPkg    string
 	miseFail  bool
+	// badTool is an extra mise tool whose install fails like a source build.
+	badTool string
 }
 
 func (f *fakeExec) Run(_ context.Context, c steps.Cmd) ([]byte, error) {
@@ -47,6 +49,9 @@ func (f *fakeExec) Run(_ context.Context, c steps.Cmd) ([]byte, error) {
 		}
 		if c.Args[0] == "ls" {
 			return []byte("{}"), nil
+		}
+		if f.badTool != "" && c.Args[len(c.Args)-1] == f.badTool {
+			return []byte("mise ✗ " + f.badTool + "@2.2.0 failed: ./autogen.sh: 18: aclocal: not found\nmise ERROR Failed to install vfox:jdx/vfox-" + f.badTool + "@latest"), errors.New("exit status 1")
 		}
 	}
 	return nil, nil
@@ -121,7 +126,7 @@ func TestMiseFailureSkipsMiseItems(t *testing.T) {
 	mise.Tab = catalog.HiddenTab
 	tf := item("terraform", nil, catalog.Step{Type: "mise", Tools: []string{"terraform@latest"}})
 	res := r.Run(context.Background(), []*catalog.Item{mise, tf}, []string{"starship"})
-	if strings.Join(res.Failed, " ") != "mise" || strings.Join(res.Skipped, " ") != "terraform mise-extra" {
+	if strings.Join(res.Failed, " ") != "mise" || strings.Join(res.Skipped, " ") != "terraform mise:starship" {
 		t.Errorf("failed %v skipped %v", res.Failed, res.Skipped)
 	}
 }
@@ -287,5 +292,19 @@ func TestLiveProgress(t *testing.T) {
 	}
 	if got := l.label("apt: installing 87 packages (git curl wget ca-certificates unzip)", 75*time.Second); len([]rune(got)) > 37 || !strings.HasSuffix(got, "… (1m15s)") {
 		t.Errorf("label %q", got)
+	}
+}
+
+// Extra mise tools install one by one: a source build that fails is
+// reported alone, with a hint, and the others still install.
+func TestExtraMiseToolsOneByOne(t *testing.T) {
+	x := &fakeExec{installed: map[string]bool{}, badTool: "ag"}
+	r, _ := runner(t, x)
+	res := r.Run(context.Background(), nil, []string{"ag", "starship"})
+	if strings.Join(res.Failed, " ") != "mise:ag" || strings.Join(res.Changed, " ") != "mise:starship" {
+		t.Errorf("failed %v changed %v", res.Failed, res.Changed)
+	}
+	if e := res.Errors["mise:ag"]; !strings.Contains(e, "no prebuilt binary in mise") || !strings.Contains(e, "apt-cache search ag") {
+		t.Errorf("ag's error = %q", e)
 	}
 }

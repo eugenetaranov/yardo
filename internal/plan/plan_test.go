@@ -156,3 +156,22 @@ func TestDotfilesLast(t *testing.T) {
 		t.Errorf("order = %v", ids)
 	}
 }
+
+// Extra mise tools bring mise and its build tools.
+func TestExtraMiseBringsBuildTools(t *testing.T) {
+	c, err := catalog.Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := Resolve(c, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(IDs(items), " "); !strings.Contains(got, MiseID) || !strings.Contains(got, MiseBuildID) {
+		t.Errorf("items = %s", got)
+	}
+	items, _ = Resolve(c, []string{"terraform"}, false)
+	if strings.Contains(strings.Join(IDs(items), " "), MiseBuildID) {
+		t.Error("build tools without extra mise tools")
+	}
+}

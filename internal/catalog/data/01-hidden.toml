@@ -50,3 +50,16 @@ type = "line"
 to = "~/.bashrc"
 line = 'export PATH="$HOME/.local/share/mise/shims:$PATH"'
 top = true
+
+# Build tools for extra mise tools that mise builds from source (asdf or
+# vfox plugins with no prebuilt binary): autotools and pkg-config. A tool
+# may need libraries too; yardo says so when one fails.
+[[item]]
+id = "misebuild"
+tab = "-"
+label = "Build tools for mise tools built from source"
+source = "apt build-essential autoconf automake libtool pkg-config"
+
+[[item.step]]
+type = "apt"
+packages = ["build-essential", "autoconf", "automake", "libtool", "pkg-config"]

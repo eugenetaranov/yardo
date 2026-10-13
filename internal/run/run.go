@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/eugenetaranov/yardo/internal/catalog"
@@ -124,27 +125,32 @@ func (r *Runner) Run(ctx context.Context, items []*catalog.Item, extraMise []str
 		}
 	}
 
-	if len(extraMise) > 0 {
-		title := "mise: " + strings.Join(extraMise, " ")
+	// Extra mise tools one by one: one that can't install doesn't stop the
+	// others, and its failure names it.
+	for _, tool := range extraMise {
+		id, title := "mise:"+steps.MiseName(tool), "mise: "+tool
 		if failed[plan.MiseID] {
-			res.Skipped = append(res.Skipped, "mise-extra")
+			res.Skipped = append(res.Skipped, id)
 			r.Progress.Done("skip", title+" (skipped: mise failed)")
-		} else {
-			r.Progress.Start(title)
-			var out bytes.Buffer
-			if done, _ := steps.MiseHas(ctx, r.Env, extraMise); done {
-				res.Unchanged = append(res.Unchanged, "mise-extra")
-				r.Progress.Done("done", title+" (already done)")
-				return res
-			}
-			if err := r.withLog(&out, func() error { return steps.MiseUse(ctx, r.Env, extraMise) }); err != nil {
-				fail("mise-extra", err, out.Bytes())
-				r.Progress.Done("fail", title)
-			} else {
-				res.Changed = append(res.Changed, "mise-extra")
-				r.Progress.Done("ok", title)
-			}
+			continue
 		}
+		r.Progress.Start(title)
+		if done, _ := steps.MiseHas(ctx, r.Env, []string{tool}); done {
+			res.Unchanged = append(res.Unchanged, id)
+			r.Progress.Done("done", title+" (already done)")
+			continue
+		}
+		var out bytes.Buffer
+		if err := r.withLog(&out, func() error { return steps.MiseUse(ctx, r.Env, []string{tool}) }); err != nil {
+			if hint := miseBuildHint(tool, out.Bytes()); hint != "" {
+				err = fmt.Errorf("%w\n%s", err, hint)
+			}
+			fail(id, err, out.Bytes())
+			r.Progress.Done("fail", title)
+			continue
+		}
+		res.Changed = append(res.Changed, id)
+		r.Progress.Done("ok", title)
 	}
 	return res
 }
@@ -354,4 +360,19 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// sourceBuild matches mise's output when it built a tool from source and
+// the build failed (an asdf or vfox plugin compiling it).
+var sourceBuild = regexp.MustCompile(`(?i)autogen\.sh|configure: error|aclocal|automake|make(\[\d+\])?: \*\*\*|Failed to install (vfox|asdf):|: not found`)
+
+// miseBuildHint explains a failed extra mise tool that mise builds from
+// source: it needs libraries yardo can't guess.
+func miseBuildHint(tool string, out []byte) string {
+	if !sourceBuild.Match(out) {
+		return ""
+	}
+	name := steps.MiseName(tool)
+	return fmt.Sprintf("%s has no prebuilt binary in mise, so mise builds it from source, which needs development libraries yardo doesn't know about. "+
+		"Try it from apt instead (apt-cache search %s), or a tool with prebuilt releases; then remove it from the extra mise tools (sudo yardo).", name, name)
 }

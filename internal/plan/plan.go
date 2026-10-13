@@ -9,8 +9,12 @@ import (
 	"github.com/eugenetaranov/yardo/internal/catalog"
 )
 
-// MiseID is the hidden item that installs mise itself.
-const MiseID = "mise"
+// MiseID is the hidden item that installs mise itself; MiseBuildID the
+// build tools that extra mise tools without prebuilt binaries compile with.
+const (
+	MiseID      = "mise"
+	MiseBuildID = "misebuild"
+)
 
 // Resolve returns picks plus everything they need, in install order. A
 // pick that isn't in the catalog is an error. extraMise says whether
@@ -42,9 +46,13 @@ func Resolve(c *catalog.Catalog, picks []string, extraMise bool) ([]*catalog.Ite
 			return nil, err
 		}
 	}
-	if extraMise && c.Item(MiseID) != nil {
-		if err := add(MiseID); err != nil {
-			return nil, err
+	if extraMise {
+		for _, id := range []string{MiseID, MiseBuildID} {
+			if c.Item(id) != nil {
+				if err := add(id); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 
