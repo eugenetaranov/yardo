@@ -46,7 +46,7 @@ type Git struct {
 // System holds machine settings.
 type System struct {
 	TZ string `toml:"tz"`
-	// DevPorts are opened by ufw ("3000", "8000-8010", "5353/udp").
+	// DevPorts was for the ufw item, which is gone: ignored with a warning.
 	DevPorts []string `toml:"dev_ports,omitempty"`
 	// Proxy and NoProxy (proxy item); CABundle and CASHA256 (corpca).
 	Proxy    string `toml:"proxy,omitempty"`
@@ -104,11 +104,6 @@ func Parse(name string, b []byte) (*Profile, error) {
 		}
 		if err := answers.CheckCA(answers.CA{Source: p.System.CABundle, SHA256: p.System.CASHA256}); err != nil {
 			return nil, fmt.Errorf("%s: system.ca_bundle: %w", name, err)
-		}
-		for _, port := range p.System.DevPorts {
-			if !answers.ValidPort(port) {
-				return nil, fmt.Errorf("%s: system.dev_ports: %q: want a port, a range (8000-8010), or either with /udp", name, port)
-			}
 		}
 	}
 	if p.GitKey != nil {
@@ -200,7 +195,9 @@ func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnin
 		a.TZ = p.System.TZ
 	}
 	if p.System != nil {
-		a.DevPorts = answers.Merge(a.DevPorts, p.System.DevPorts)
+		if len(p.System.DevPorts) > 0 {
+			warnings = append(warnings, "profile: system.dev_ports is ignored: yardo no longer sets up a firewall")
+		}
 		if p.System.Proxy != "" {
 			a.Proxy = answers.Proxy{URL: p.System.Proxy, NoProxy: p.System.NoProxy}
 		}
@@ -231,8 +228,8 @@ func Export(a *answers.Answers, lock *answers.Lock) []byte {
 	if a.Git.Name != "" || a.Git.Email != "" {
 		p.Git = &Git{Name: a.Git.Name, Email: a.Git.Email}
 	}
-	if a.TZ != "" || len(a.DevPorts) > 0 || a.Proxy.URL != "" || a.CA.Source != "" {
-		p.System = &System{TZ: a.TZ, DevPorts: a.DevPorts, Proxy: a.Proxy.URL, NoProxy: a.Proxy.NoProxy, CABundle: a.CA.Source, CASHA256: a.CA.SHA256}
+	if a.TZ != "" || a.Proxy.URL != "" || a.CA.Source != "" {
+		p.System = &System{TZ: a.TZ, Proxy: a.Proxy.URL, NoProxy: a.Proxy.NoProxy, CABundle: a.CA.Source, CASHA256: a.CA.SHA256}
 	}
 	if a.Dotfiles != "" {
 		p.Dotfiles = &Dotfiles{Repo: a.Dotfiles}

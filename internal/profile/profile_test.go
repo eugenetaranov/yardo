@@ -19,7 +19,7 @@ func cat(t *testing.T) *catalog.Catalog {
 }
 
 const sample = `
-picks      = ["essentials", "cli", "zsh", "zshcfg", "p10k", "docker", "go", "k8s"]
+picks      = ["essentials", "zsh", "neovim", "tmux", "docker", "go", "k8s", "terraform"]
 mise_extra = ["starship", "terraform@1.9"]
 [git]
 name  = "Ada Lovelace"
@@ -47,7 +47,7 @@ func TestOldAndUnknownIDs(t *testing.T) {
 	}
 	a := &answers.Answers{}
 	_, warn := p.Apply(a, cat(t))
-	if want := []string{"zsh", "zshcfg", "p10k"}; !reflect.DeepEqual(a.Picks, want) {
+	if want := []string{"zsh"}; !reflect.DeepEqual(a.Picks, want) {
 		t.Errorf("picks = %v, want %v", a.Picks, want)
 	}
 	if len(warn) != 2 || !strings.Contains(warn[0], `"nope"`) || !strings.Contains(warn[1], `"mise"`) {
@@ -72,7 +72,7 @@ func TestApplyAccumulates(t *testing.T) {
 // Exported on one machine, applied on a fresh one: the same answers.
 func TestRoundTrip(t *testing.T) {
 	yes := true
-	src := &answers.Answers{Picks: []string{"cli", "zsh"}, MiseExtra: []string{"starship"}, Git: answers.Git{Name: "Ada", Email: "ada@example.com"},
+	src := &answers.Answers{Picks: []string{"lazygit", "zsh"}, MiseExtra: []string{"starship"}, Git: answers.Git{Name: "Ada", Email: "ada@example.com"},
 		TZ: "UTC", MCPServers: []string{"github"}, MCPListen: "127.0.0.1", WireAgents: &yes}
 	b := Export(src, nil)
 	p, err := Parse("exported", b)
@@ -136,18 +136,18 @@ picks = ["docker", "k8s", "go", "terraform"]`)
 picks = ["terraform"]`)
 	a.Pick([]string{"docker"}) // by hand, after the team listed it
 	dropped := apply(t, a, `name = "team"
-picks = ["cli"]`)
+picks = ["neovim"]`)
 	if want := []string{"k8s"}; !reflect.DeepEqual(dropped, want) {
 		t.Errorf("dropped = %v, want %v", dropped, want)
 	}
-	if want := []string{"lazygit", "go", "docker", "terraform", "cli"}; !reflect.DeepEqual(a.Picks, want) {
+	if want := []string{"lazygit", "go", "docker", "terraform", "neovim"}; !reflect.DeepEqual(a.Picks, want) {
 		t.Errorf("picks = %v, want %v", a.Picks, want)
 	}
-	if want := []string{"cli"}; !reflect.DeepEqual(a.Layers["team"], want) {
+	if want := []string{"neovim"}; !reflect.DeepEqual(a.Layers["team"], want) {
 		t.Errorf("team layer = %v", a.Layers["team"])
 	}
 	// The same profile again drops nothing.
-	if d := apply(t, a, "name = \"team\"\npicks = [\"cli\"]\n"); len(d) != 0 {
+	if d := apply(t, a, "name = \"team\"\npicks = [\"neovim\"]\n"); len(d) != 0 {
 		t.Errorf("re-apply dropped %v", d)
 	}
 }
@@ -184,16 +184,5 @@ func TestLock(t *testing.T) {
 		if _, err := Parse("p.toml", []byte(bad)); err == nil {
 			t.Errorf("%q: want an error", bad)
 		}
-	}
-}
-
-func TestDevPortsInProfile(t *testing.T) {
-	a := &answers.Answers{DevPorts: []string{"3000"}}
-	apply(t, a, "[system]\ndev_ports = [\"8000-8010\", \"3000\"]\n")
-	if strings.Join(a.DevPorts, " ") != "3000 8000-8010" {
-		t.Errorf("dev ports = %v", a.DevPorts)
-	}
-	if _, err := Parse("p", []byte("[system]\ndev_ports = [\"22;x\"]\n")); err == nil {
-		t.Error("want an error for a bad port")
 	}
 }

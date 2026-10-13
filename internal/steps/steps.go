@@ -196,6 +196,55 @@ type BeforeApt interface{ BeforeApt() bool }
 // a change, and a failure is a note, not a failed item.
 type Always interface{ Always() bool }
 
+// checkAll reports whether every step but the followers has nothing to
+// do: a Go step made of other steps.
+func checkAll(ctx context.Context, e *Env, sts []Step) (bool, error) {
+	for _, st := range sts {
+		if f, ok := st.(Follower); ok && f.Follows() {
+			continue
+		}
+		if done, err := st.Check(ctx, e); err != nil || !done {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// applyAll applies the steps as the runner does an item's: each one that
+// has something to do, a follower only after a change (changed: one
+// already happened).
+func applyAll(ctx context.Context, e *Env, sts []Step, changed bool) error {
+	for _, st := range sts {
+		if f, ok := st.(Follower); ok && f.Follows() {
+			if !changed {
+				continue
+			}
+		} else if done, err := st.Check(ctx, e); err != nil {
+			return err
+		} else if done {
+			continue
+		}
+		if err := st.Apply(ctx, e); err != nil {
+			return err
+		}
+		changed = true
+	}
+	return nil
+}
+
+// mustSteps makes the steps of a fixed list (a Go step's parts).
+func mustSteps(id string, ss ...catalog.Step) []Step {
+	out := make([]Step, len(ss))
+	for i, s := range ss {
+		st, err := New(id, s)
+		if err != nil {
+			panic(err)
+		}
+		out[i] = st
+	}
+	return out
+}
+
 // GoStep makes a registered Go step for an item.
 type GoStep func(s catalog.Step) Step
 

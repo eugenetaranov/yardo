@@ -113,7 +113,13 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			return nil, err
 		}
 	}
-	if has("tzlocale") {
+	if has("zsh") {
+		if err := k.askPrompt(); err != nil {
+			return nil, err
+		}
+	}
+	// Every plan has tzlocale: asked once.
+	if has("tzlocale") && k.a.TZ == "" {
 		if err := k.askTZ(); err != nil {
 			return nil, err
 		}
@@ -125,11 +131,6 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 	}
 	if has("corpca") {
 		if err := k.askCA(); err != nil {
-			return nil, err
-		}
-	}
-	if has("ufw") {
-		if err := k.askDevPorts(); err != nil {
 			return nil, err
 		}
 	}
@@ -226,7 +227,7 @@ func (k *asker) askSecrets(c *choices, has func(string) bool) error {
 			return err
 		}
 	}
-	if has("agekey") {
+	if has("sops") {
 		if err := k.askAgeKey(c); err != nil {
 			return err
 		}
@@ -381,6 +382,25 @@ func (k *asker) askCA() error {
 	}
 }
 
+// askPrompt asks which zsh prompt to set up.
+func (k *asker) askPrompt() error {
+	p10k := "Powerlevel10k (lean, one line, icons; p10k configure restyles it)"
+	starship := "Starship (one line, fast; ~/.config/starship.toml)"
+	cur := p10k
+	if k.a.Prompt == "starship" {
+		cur = starship
+	}
+	ch, err := ui.Choose("zsh prompt", []string{p10k, starship}, cur)
+	if err != nil {
+		return err
+	}
+	k.a.Prompt = "p10k"
+	if ch == starship {
+		k.a.Prompt = "starship"
+	}
+	return nil
+}
+
 // askDotfiles asks for the dotfiles repo.
 func (k *asker) askDotfiles() error {
 	cur := k.a.Dotfiles
@@ -396,29 +416,6 @@ func (k *asker) askDotfiles() error {
 		}
 		k.a.Dotfiles = v
 		return nil
-	}
-}
-
-// askDevPorts asks which dev server ports ufw opens.
-func (k *asker) askDevPorts() error {
-	cur := strings.Join(k.a.DevPorts, " ")
-	for {
-		v, err := ui.Input("Dev server ports for ufw to open, space-separated (e.g. 3000 8000-8010 5353/udp), blank for none", "", cur)
-		if err != nil {
-			return err
-		}
-		var bad []string
-		for _, p := range strings.Fields(v) {
-			if !answers.ValidPort(p) {
-				bad = append(bad, p)
-			}
-		}
-		if len(bad) == 0 {
-			k.a.DevPorts = strings.Fields(v)
-			return nil
-		}
-		fmt.Fprintf(k.out, "Not a port or range: %s\n", strings.Join(bad, " "))
-		cur = v
 	}
 }
 
@@ -743,14 +740,22 @@ func (k *asker) review(c *choices, options ...string) string {
 	} else {
 		fmt.Fprintf(k.out, "\nFor user: %s\n", k.a.User)
 	}
+	var always []string
 	for _, it := range c.items {
-		if it.Hidden() {
-			continue
+		switch {
+		case it.Hidden():
+		case it.Always:
+			short, _, _ := strings.Cut(it.Label, " (")
+			always = append(always, short)
+		default:
+			fmt.Fprintf(k.out, "  ✓ %s\n", it.Label)
 		}
-		fmt.Fprintf(k.out, "  ✓ %-40s %s\n", it.Label, it.Describe())
+	}
+	if len(always) > 0 {
+		fmt.Fprintf(k.out, "  Always: %s\n", strings.Join(always, " · "))
 	}
 	if len(c.miseExtra) > 0 {
-		fmt.Fprintf(k.out, "  ✓ %-40s mise use -g %s\n", "Extra mise tools", strings.Join(c.miseExtra, " "))
+		fmt.Fprintf(k.out, "  ✓ Extra mise tools: %s\n", strings.Join(c.miseExtra, " "))
 	}
 	if len(c.mcpServers) > 0 {
 		port := k.a.MCPPort

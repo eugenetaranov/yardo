@@ -1,9 +1,6 @@
 package plan
 
 import (
-	"os"
-	"os/exec"
-	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -30,17 +27,33 @@ func resolve(t *testing.T, picks ...string) []string {
 }
 
 func TestNeedsBeforeAndCatalogOrder(t *testing.T) {
-	if got, want := resolve(t, "p10k", "cli"), []string{"cli", "zsh", "zshcfg", "p10k"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("plan = %v, want %v", got, want)
+	got := resolve(t, "zsh")
+	for _, pair := range [][2]string{{"zshbin", "zshcfg"}, {"zshcfg", "prompt"}, {"prompt", "zshrc"}, {"zshcfg", "fzftab"}, {"cli", "fzftab"}, {"fzftab", "zsh"}, {"mise", "prompt"}} {
+		if i, j := index(got, pair[0]), index(got, pair[1]); i < 0 || j < 0 || i > j {
+			t.Errorf("%s should come before %s: %v", pair[0], pair[1], got)
+		}
+	}
+}
+
+// Every plan gets the baseline; an empty one stays empty.
+func TestAlwaysItems(t *testing.T) {
+	got := resolve(t, "lazygit")
+	for _, id := range []string{"essentials", "autoupdates", "sshharden", "fail2ban", "devlimits", "zram", "journald", "tzlocale"} {
+		if !contains(got, id) {
+			t.Errorf("%s missing: %v", id, got)
+		}
+	}
+	if items, err := Resolve(cat(t), nil, false); err != nil || len(items) != 0 {
+		t.Errorf("no picks: %v, %v", IDs(items), err)
 	}
 }
 
 func TestMiseFirst(t *testing.T) {
-	got := resolve(t, "terraform", "cli")
+	got := resolve(t, "terraform", "lazygit")
 	if got[0] != "mise" || !contains(got, "terraform") {
 		t.Errorf("plan = %v, want mise first", got)
 	}
-	items, _ := Resolve(cat(t), []string{"cli"}, true)
+	items, _ := Resolve(cat(t), []string{"zram"}, true)
 	if IDs(items)[0] != "mise" {
 		t.Errorf("extra mise tools should pull in mise: %v", IDs(items))
 	}
@@ -57,43 +70,6 @@ func TestCrossTabNeeds(t *testing.T) {
 func TestUnknownPick(t *testing.T) {
 	if _, err := Resolve(cat(t), []string{"nope"}, false); err == nil || !strings.Contains(err.Error(), `"nope"`) {
 		t.Errorf("err = %v", err)
-	}
-}
-
-// Same plan as the bash installer's resolve(), for a spread of picks.
-func TestMatchesBashResolve(t *testing.T) {
-	bash, err := exec.LookPath("bash")
-	if err != nil {
-		t.Skip("no bash")
-	}
-	b, err := os.ReadFile("../assets/yardo.sh")
-	if err != nil {
-		t.Skip("bash installer gone")
-	}
-	script := string(b)
-	part := func(start, end string) string {
-		i := strings.Index(script, start) + 1
-		j := strings.Index(script[i:], end)
-		return "\n" + script[i:i+j+len(end)]
-	}
-	src := part("\nCATALOG_ROWS=(", "\n)\n") + part("\nHIDDEN_ROWS=(", "\n)\n") +
-		part("\nrow() {", "\n}\n") + part("\nfield() {", "\n") + part("\nhow_of()", "\n") + part("\nneeds_of()", "\n") +
-		part("\nresolve() {", "\n}\n") + "RUN_MISE_EXTRA=\nresolve $PICKS\n"
-	for _, picks := range [][]string{
-		{"p10k", "cli"}, {"fzftab"}, {"terraform", "k8sextra", "docker"}, {"gemini", "ecc"}, {"ruby", "rust"},
-		{"gitsign", "registries", "agekey"}, {"mcpjungle", "act", "ufw"},
-	} {
-		cmd := exec.Command(bash, "-c", src)
-		cmd.Env = append(os.Environ(), "PICKS="+strings.Join(picks, " "))
-		out, err := cmd.Output()
-		if err != nil {
-			t.Fatalf("bash resolve: %v", err)
-		}
-		bashSet := strings.Fields(string(out))
-		goPlan := resolve(t, picks...)
-		if !sameSet(bashSet, goPlan) {
-			t.Errorf("%v: bash %v, go %v", picks, bashSet, goPlan)
-		}
 	}
 }
 

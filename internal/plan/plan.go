@@ -16,7 +16,8 @@ const (
 	MiseBuildID = "misebuild"
 )
 
-// Resolve returns picks plus everything they need, in install order. A
+// Resolve returns picks plus everything they need, and the Always items,
+// in install order. A
 // pick that isn't in the catalog is an error. extraMise says whether
 // extra mise tools are to be installed (which needs mise too).
 func Resolve(c *catalog.Catalog, picks []string, extraMise bool) ([]*catalog.Item, error) {
@@ -44,6 +45,16 @@ func Resolve(c *catalog.Catalog, picks []string, extraMise bool) ([]*catalog.Ite
 	for _, p := range picks {
 		if err := add(p); err != nil {
 			return nil, err
+		}
+	}
+	// The baseline: in every plan that installs anything.
+	if len(want) > 0 || extraMise {
+		for _, it := range c.Items {
+			if it.Always {
+				if err := add(it.ID); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 	if extraMise {

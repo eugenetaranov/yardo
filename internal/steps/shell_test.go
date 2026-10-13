@@ -1,10 +1,11 @@
 package steps
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -108,6 +109,40 @@ func TestZshrcTheme(t *testing.T) {
 	}
 }
 
+// Starship: no oh-my-zsh theme, starship's init instead of ~/.p10k.zsh,
+// even with p10k cloned; the prompt step installs starship, not p10k.
+func TestZshrcStarship(t *testing.T) {
+	x := &fakeExec{}
+	e := shellEnv(t)
+	e.Exec = x
+	e.Answers = &answers.Answers{Prompt: "starship"}
+	if err := os.MkdirAll(e.Path(p10kDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	apply(t, e, step(t, catalog.Step{Type: "go:zshrc"}))
+	got := read(t, e.Path("~/.zshrc"))
+	if !strings.Contains(got, "ZSH_THEME=\"\"\n") || !strings.Contains(got, `eval "$(starship init zsh)"`) {
+		t.Errorf(".zshrc:\n%s", got)
+	}
+	if zsh, err := exec.LookPath("zsh"); err == nil {
+		if out, err := exec.Command(zsh, "-n", e.Path("~/.zshrc")).CombinedOutput(); err != nil {
+			t.Errorf("zsh -n: %v\n%s", err, out)
+		}
+	}
+	pr := step(t, catalog.Step{Type: "go:prompt"})
+	if plan := fmt.Sprint(pr.Plan(e)); !strings.Contains(plan, "starship") || strings.Contains(plan, "powerlevel10k") {
+		t.Errorf("starship plan = %s", plan)
+	}
+	apply(t, e, pr)
+	if !strings.Contains(read(t, e.Path("~/.config/starship.toml")), "format") {
+		t.Error("no starship.toml")
+	}
+	e.Answers.Prompt = ""
+	if plan := fmt.Sprint(pr.Plan(e)); !strings.Contains(plan, "powerlevel10k") || strings.Contains(plan, "starship") {
+		t.Errorf("p10k plan = %s", plan)
+	}
+}
+
 // The steps of zshcfg, shellcfg, p10k and agentkeys all touch .zshrc: once
 // each has run, none has more to do (a re-run changes nothing).
 func TestZshrcSettles(t *testing.T) {
@@ -129,29 +164,6 @@ func TestZshrcSettles(t *testing.T) {
 	for name, st := range map[string]Step{"zshrc": zshrc, "dropin": dropin, "theme": theme} {
 		if !check(t, e, st) {
 			t.Errorf("%s: Check = false on a settled .zshrc", name)
-		}
-	}
-}
-
-// The Go steps write the same lines as the bash installer still does.
-func TestShellMatchesBash(t *testing.T) {
-	b, err := os.ReadFile("../assets/yardo.sh")
-	if err != nil {
-		t.Skip("bash installer gone")
-	}
-	val := func(name string) string {
-		m := regexp.MustCompile(`(?m)^` + name + `=(?:'([^']*)'|"([^"]*)")`).FindStringSubmatch(string(b))
-		if m == nil {
-			t.Fatalf("%s not in the bash installer", name)
-		}
-		return m[1] + m[2]
-	}
-	for name, want := range map[string]string{
-		"DROPIN_LINE": Dropins[0].Line, "AGENTENV_LINE": Dropins[1].Line,
-		"P10K_THEME": P10kTheme, "DEFAULT_ZSH_THEME": DefaultZshTheme,
-	} {
-		if got := val(name); got != want {
-			t.Errorf("%s: bash %q, Go %q", name, got, want)
 		}
 	}
 }

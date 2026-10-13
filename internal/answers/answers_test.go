@@ -22,7 +22,7 @@ func TestReadMissingIsEmpty(t *testing.T) {
 func TestWriteReadRoundTrip(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "state")
 	yes := true
-	in := &Answers{User: "ada", Picks: []string{"cli", "zsh"}, MiseExtra: []string{"starship"}, MCPListen: "127.0.0.1",
+	in := &Answers{User: "ada", Picks: []string{"lazygit", "zsh"}, MiseExtra: []string{"starship"}, MCPListen: "127.0.0.1",
 		MCPServers: []string{"github"}, WireAgents: &yes, Git: Git{"Ada L", "ada@example.com"}, TZ: "UTC",
 		GitHub: GitHost{Mode: "agent"}, NPM: NPM{"@acme", "https://npm.pkg.github.com"}, Registries: []string{"ghcr.io"}}
 	if err := Write(state, in); err != nil {
@@ -43,8 +43,8 @@ func TestWriteReadRoundTrip(t *testing.T) {
 }
 
 func TestMigratePicks(t *testing.T) {
-	got, notes := MigratePicks([]string{"cli", "shell", "kubectl", "helm", "chrony", "zsh"})
-	if want := []string{"cli", "zsh", "zshcfg", "p10k", "k8s"}; !reflect.DeepEqual(got, want) {
+	got, notes := MigratePicks([]string{"cli", "shell", "kubectl", "helm", "chrony", "zsh", "krew", "tmuxcfg", "agekey"})
+	if want := []string{"zsh", "k8s", "tmux", "sops"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("picks = %v, want %v", got, want)
 	}
 	if len(notes) != 1 || !strings.Contains(notes[0], "clock sync") {
@@ -75,7 +75,7 @@ func TestLegacyConverted(t *testing.T) {
 	if a.User != "ubuntu" || a.Git.Name != "Ada 'L'" || a.TZ != "Europe/Berlin" || a.WireAgents == nil || !*a.WireAgents {
 		t.Errorf("a = %+v", a)
 	}
-	if want := []string{"cli", "zsh", "zshcfg", "p10k"}; !reflect.DeepEqual(a.Picks, want) {
+	if want := []string{"zsh"}; !reflect.DeepEqual(a.Picks, want) {
 		t.Errorf("picks = %v, want %v", a.Picks, want)
 	}
 	if len(notes) != 1 || !strings.Contains(notes[0], "NOT_OURS") {
@@ -132,7 +132,7 @@ func TestSharedWithPickerPy(t *testing.T) {
 		t.Skip("picker.py gone")
 	}
 	state := t.TempDir()
-	if err := Write(state, &Answers{User: "ada", Picks: []string{"cli"}, GitHub: GitHost{Mode: "token"}, NPM: NPM{Scope: "@acme"}}); err != nil {
+	if err := Write(state, &Answers{User: "ada", Picks: []string{"lazygit"}, GitHub: GitHost{Mode: "token"}, NPM: NPM{Scope: "@acme"}}); err != nil {
 		t.Fatal(err)
 	}
 	out, err := exec.Command("python3", picker, "answers", "read", state).Output()
@@ -144,7 +144,7 @@ func TestSharedWithPickerPy(t *testing.T) {
 	for i := 0; i+1 < len(parts); i += 2 {
 		vals[parts[i]] = parts[i+1]
 	}
-	if vals["A_USER"] != "ada" || vals["A_PICKS"] != "cli" || vals["A_GH_MODE"] != "token" || vals["A_NPM_SCOPE"] != "@acme" {
+	if vals["A_USER"] != "ada" || vals["A_PICKS"] != "lazygit" || vals["A_GH_MODE"] != "token" || vals["A_NPM_SCOPE"] != "@acme" {
 		t.Errorf("picker.py read %v", vals)
 	}
 
@@ -175,19 +175,6 @@ func TestSharedWithPickerPy(t *testing.T) {
 func TestMerge(t *testing.T) {
 	if got := Merge([]string{"a", "b"}, []string{"b", "c", ""}); !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
 		t.Errorf("Merge = %v", got)
-	}
-}
-
-func TestDevPorts(t *testing.T) {
-	for p, rule := range map[string]string{"3000": "allow 3000/tcp", "8000-8010": "allow 8000:8010/tcp", "5353/udp": "allow 5353/udp", "60000-61000/udp": "allow 60000:61000/udp"} {
-		if !ValidPort(p) || UFWRule(p) != rule {
-			t.Errorf("%s: valid %v, rule %q, want %q", p, ValidPort(p), UFWRule(p), rule)
-		}
-	}
-	for _, p := range []string{"", "0", "70000", "9-3", "22/sctp", "3000;rm", "a"} {
-		if ValidPort(p) {
-			t.Errorf("%q: valid", p)
-		}
 	}
 }
 

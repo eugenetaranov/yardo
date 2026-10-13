@@ -1,161 +1,25 @@
-# yardo catalog: the Shell & CLI tab.
+# yardo catalog: the Shell & CLI tab. zsh is one item; the hidden items
+# below it are its parts.
 
+# One opinionated zsh: the login shell, oh-my-zsh with its plugins,
+# fzf-tab, the modern CLI tools and aliases it relies on, man pages; the
+# prompt is asked (Powerlevel10k or Starship).
 [[item]]
-id = "cli"
+id = "zsh"
 tab = "shell"
-label = "CLI upgrades (ripgrep, fd, bat, eza, fzf, zoxide, delta, direnv)"
-source = "apt install ripgrep fd-find bat eza zoxide fzf git-delta direnv tree (+ fd/bat links)"
-
-[[item.step]]
-type = "apt"
-packages = ["ripgrep", "fd-find", "bat", "eza", "zoxide", "fzf", "git-delta", "direnv", "tree"]
-
-# Ubuntu renames these two; link the usual names.
-[[item.step]]
-type = "link"
-src = "/usr/bin/fdfind"
-to = "/usr/local/bin/fd"
-
-[[item.step]]
-type = "link"
-src = "/usr/bin/batcat"
-to = "/usr/local/bin/bat"
+label = "zsh, ready to use (asks: Powerlevel10k or Starship prompt)"
+needs = ["zshbin", "zshcfg", "prompt", "zshrc", "fzftab", "shellcfg", "cli", "docs"]
+source = "oh-my-zsh + autosuggestions, syntax highlighting, history search, fzf-tab · ripgrep fd bat eza fzf zoxide delta direnv · z, fzf keys, aliases · man pages, tldr"
 
 [[item]]
 id = "editors"
 tab = "shell"
-label = "Vim"
+source = "apt vim · vim-plug · curated ~/.vimrc (.vimrc.orig kept)"
+label = "Vim (curated .vimrc + plugins)"
 
 [[item.step]]
 type = "apt"
 packages = ["vim"]
-
-[[item]]
-id = "neovim"
-tab = "shell"
-label = "Neovim (latest)"
-
-[[item.step]]
-type = "mise"
-tools = ["neovim@latest"]
-
-[[item]]
-id = "tmux"
-tab = "shell"
-label = "tmux"
-
-[[item.step]]
-type = "apt"
-packages = ["tmux"]
-
-[[item]]
-id = "zellij"
-tab = "shell"
-label = "zellij (tmux alternative)"
-
-[[item.step]]
-type = "mise"
-tools = ["zellij@latest"]
-
-[[item]]
-id = "mosh"
-tab = "shell"
-label = "mosh (SSH that survives sleep and roaming)"
-
-[[item.step]]
-type = "apt"
-packages = ["mosh"]
-
-[[item]]
-id = "zsh"
-tab = "shell"
-label = "zsh (login shell)"
-source = "apt zsh · chsh to zsh"
-
-[[item.step]]
-type = "apt"
-packages = ["zsh", "git"]
-
-[[item.step]]
-type = "user_shell"
-shell = "/usr/bin/zsh"
-
-# Without a .zshrc, zsh opens its new-user menu at first login.
-[[item.step]]
-type = "run"
-cmd = "touch ~/.zshrc"
-as_user = true
-creates = "~/.zshrc"
-
-[[item]]
-id = "zshcfg"
-tab = "shell"
-label = "zsh config: oh-my-zsh + autosuggestions, syntax highlighting, history search, completions"
-needs = ["zsh"]
-source = "git clone ~/.oh-my-zsh + plugins · ~/.zshrc (.zshrc.orig kept)"
-
-[[item.step]]
-type = "git_clone"
-repo = "https://github.com/ohmyzsh/ohmyzsh.git"
-to = "~/.oh-my-zsh"
-
-[[item.step]]
-type = "git_clone"
-repo = "https://github.com/joshskidmore/zsh-fzf-history-search.git"
-to = "~/.oh-my-zsh/custom/plugins/zsh-fzf-history-search"
-
-[[item.step]]
-type = "git_clone"
-repo = "https://github.com/zsh-users/zsh-autosuggestions.git"
-to = "~/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
-
-[[item.step]]
-type = "git_clone"
-repo = "https://github.com/zsh-users/zsh-syntax-highlighting.git"
-to = "~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
-
-# ~/.zshrc from zshrc.tmpl (.zshrc.orig kept): plugins are chosen at shell
-# start from the installed tools; the theme follows the p10k clone.
-[[item.step]]
-type = "go:zshrc"
-
-[[item.step]]
-type = "file"
-src = "completions.zsh"
-to = "~/.config/yardo/completions.zsh"
-
-[[item]]
-id = "p10k"
-tab = "shell"
-label = "Powerlevel10k zsh prompt (lean, one line, Nerd Font icons)"
-needs = ["zshcfg"]
-source = "git clone powerlevel10k · ~/.p10k.zsh if absent · p10k configure to restyle"
-
-[[item.step]]
-type = "git_clone"
-repo = "https://github.com/romkatv/powerlevel10k.git"
-to = "~/.oh-my-zsh/custom/themes/powerlevel10k"
-
-# A ready prompt (lean preset + yardo style); the user's own is kept.
-[[item.step]]
-type = "file"
-src = "p10k-yardo.zsh"
-to = "~/.p10k.zsh"
-if_absent = true
-
-[[item.step]]
-type = "line"
-to = "~/.zshrc"
-match = "^ZSH_THEME="
-line = 'ZSH_THEME="powerlevel10k/powerlevel10k"'
-if_exists = true
-
-[[item]]
-id = "vimcfg"
-tab = "shell"
-label = "Vim config + plugins (writes .vimrc)"
-needs = ["editors"]
-source = "vim-plug · curated ~/.vimrc · .vimrc.orig kept"
 
 [[item.step]]
 type = "apt"
@@ -181,8 +45,140 @@ as_user = true
 creates = "~/.vim/plugged"
 
 [[item]]
-id = "shellcfg"
+id = "neovim"
 tab = "shell"
+label = "Neovim (latest)"
+
+[[item.step]]
+type = "mise"
+tools = ["neovim@latest"]
+
+[[item]]
+id = "tmux"
+tab = "shell"
+source = "apt tmux · ~/.tmux.conf (.tmux.conf.orig kept)"
+label = "tmux (mouse, splits, 50k history)"
+
+[[item.step]]
+type = "apt"
+packages = ["tmux"]
+
+[[item.step]]
+type = "file"
+src = "tmux.conf"
+to = "~/.tmux.conf"
+keep_orig = true
+
+[[item]]
+id = "zellij"
+tab = "shell"
+label = "zellij (tmux alternative)"
+
+[[item.step]]
+type = "mise"
+tools = ["zellij@latest"]
+
+[[item]]
+id = "mosh"
+tab = "shell"
+label = "mosh (SSH that survives sleep and roaming)"
+
+[[item.step]]
+type = "apt"
+packages = ["mosh"]
+
+[[item]]
+id = "zshbin"
+tab = "-"
+label = "zsh (login shell)"
+source = "apt zsh · chsh to zsh"
+
+[[item.step]]
+type = "apt"
+packages = ["zsh", "git"]
+
+[[item.step]]
+type = "user_shell"
+shell = "/usr/bin/zsh"
+
+# Without a .zshrc, zsh opens its new-user menu at first login.
+[[item.step]]
+type = "run"
+cmd = "touch ~/.zshrc"
+as_user = true
+creates = "~/.zshrc"
+
+# The prompt chosen, into oh-my-zsh once it's cloned: Powerlevel10k (lean preset + yardo style in
+# ~/.p10k.zsh, unless you have one) or Starship (mise; ~/.config/starship.toml
+# unless you have one).
+[[item]]
+id = "prompt"
+tab = "-"
+label = "zsh prompt"
+needs = ["zshcfg", "mise"]
+
+[[item.step]]
+type = "go:prompt"
+
+# ~/.zshrc from zshrc.tmpl (.zshrc.orig kept), once oh-my-zsh and the
+# prompt are in place: plugins are chosen at shell start from the installed
+# tools; the theme is the chosen prompt's.
+[[item]]
+id = "zshrc"
+tab = "-"
+label = "~/.zshrc"
+needs = ["zshcfg", "prompt"]
+
+[[item.step]]
+type = "go:zshrc"
+
+[[item]]
+id = "zshcfg"
+tab = "-"
+label = "zsh config: oh-my-zsh + autosuggestions, syntax highlighting, history search, completions"
+needs = ["zshbin"]
+source = "git clone ~/.oh-my-zsh + plugins · ~/.zshrc (.zshrc.orig kept)"
+
+[[item.step]]
+type = "git_clone"
+repo = "https://github.com/ohmyzsh/ohmyzsh.git"
+to = "~/.oh-my-zsh"
+
+[[item.step]]
+type = "git_clone"
+repo = "https://github.com/joshskidmore/zsh-fzf-history-search.git"
+to = "~/.oh-my-zsh/custom/plugins/zsh-fzf-history-search"
+
+[[item.step]]
+type = "git_clone"
+repo = "https://github.com/zsh-users/zsh-autosuggestions.git"
+to = "~/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+
+[[item.step]]
+type = "git_clone"
+repo = "https://github.com/zsh-users/zsh-syntax-highlighting.git"
+to = "~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+
+[[item.step]]
+type = "file"
+src = "completions.zsh"
+to = "~/.config/yardo/completions.zsh"
+
+[[item]]
+id = "fzftab"
+tab = "-"
+label = "zsh fuzzy Tab completion (fzf-tab)"
+needs = ["zshcfg", "cli"]
+source = "git clone Aloxaf/fzf-tab → ~/.oh-my-zsh/custom/plugins"
+
+[[item.step]]
+type = "git_clone"
+repo = "https://github.com/Aloxaf/fzf-tab.git"
+to = "~/.oh-my-zsh/custom/plugins/fzf-tab"
+
+[[item]]
+id = "shellcfg"
+tab = "-"
 label = "Shell niceties for zsh and bash: z, fzf keys, direnv, eza/bat aliases"
 source = "~/.config/yardo/shell.sh, sourced from .zshrc and .bashrc"
 
@@ -203,33 +199,29 @@ line = '[ -r ~/.config/yardo/shell.sh ] && . ~/.config/yardo/shell.sh'
 if_exists = true
 
 [[item]]
-id = "fzftab"
-tab = "shell"
-label = "zsh fuzzy Tab completion (fzf-tab)"
-needs = ["zshcfg", "cli"]
-source = "git clone Aloxaf/fzf-tab → ~/.oh-my-zsh/custom/plugins"
+id = "cli"
+tab = "-"
+label = "CLI upgrades (ripgrep, fd, bat, eza, fzf, zoxide, delta, direnv)"
+source = "apt install ripgrep fd-find bat eza zoxide fzf git-delta direnv tree (+ fd/bat links)"
 
 [[item.step]]
-type = "git_clone"
-repo = "https://github.com/Aloxaf/fzf-tab.git"
-to = "~/.oh-my-zsh/custom/plugins/fzf-tab"
+type = "apt"
+packages = ["ripgrep", "fd-find", "bat", "eza", "zoxide", "fzf", "git-delta", "direnv", "tree"]
 
-[[item]]
-id = "tmuxcfg"
-tab = "shell"
-label = "tmux config (mouse, splits, 50k history)"
-needs = ["tmux"]
-source = "~/.tmux.conf · .tmux.conf.orig kept"
+# Ubuntu renames these two; link the usual names.
+[[item.step]]
+type = "link"
+src = "/usr/bin/fdfind"
+to = "/usr/local/bin/fd"
 
 [[item.step]]
-type = "file"
-src = "tmux.conf"
-to = "~/.tmux.conf"
-keep_orig = true
+type = "link"
+src = "/usr/bin/batcat"
+to = "/usr/local/bin/bat"
 
 [[item]]
 id = "docs"
-tab = "shell"
+tab = "-"
 label = "Man pages, completion, tldr"
 source = "apt man-db manpages-dev bash-completion command-not-found plocate tealdeer · unminimize if needed"
 

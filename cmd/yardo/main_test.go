@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 func TestDryRunPlan(t *testing.T) {
 	state := t.TempDir()
 	me, _ := user.Current()
-	if err := answers.Write(state, &answers.Answers{User: me.Username, Picks: []string{"p10k", "terraform"}, MiseExtra: []string{"starship"}}); err != nil {
+	if err := answers.Write(state, &answers.Answers{User: me.Username, Picks: []string{"zsh", "terraform"}, MiseExtra: []string{"starship"}}); err != nil {
 		t.Fatal(err)
 	}
 	var out, errb bytes.Buffer
@@ -37,7 +37,7 @@ func TestDryRunPlan(t *testing.T) {
 		t.Fatalf("run: %v\n%s", err, errb.String())
 	}
 	got := out.String()
-	for _, want := range []string{"For user: " + me.Username, "zsh (login shell)\n  apt    zsh git\n  shell  ", "  clone  https://github.com/romkatv/powerlevel10k.git", "mise   terraform@latest", "Extra mise tools\n  mise   starship"} {
+	for _, want := range []string{"For user: " + me.Username, "zsh (login shell)\n  apt    zsh git\n  shell  ", "  clone  https://github.com/romkatv/powerlevel10k.git", "mise   terraform@latest terragrunt@latest", "Extra mise tools\n  mise   starship"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}
@@ -79,7 +79,7 @@ func TestBashHandles(t *testing.T) {
 func TestExportAndProfile(t *testing.T) {
 	me, _ := user.Current()
 	src := t.TempDir()
-	if err := answers.Write(src, &answers.Answers{User: me.Username, Picks: []string{"cli", "terraform"}, TZ: "UTC"}); err != nil {
+	if err := answers.Write(src, &answers.Answers{User: me.Username, Picks: []string{"lazygit", "terraform"}, TZ: "UTC"}); err != nil {
 		t.Fatal(err)
 	}
 	f := t.TempDir() + "/team.toml"
@@ -107,7 +107,7 @@ func TestExportAndProfile(t *testing.T) {
 	if err := cli([]string{"--state", dst, "--profile", f, "--profile", me2, "--yes", "--dry-run"}, &out, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Terraform") || !strings.Contains(out.String(), "CLI upgrades") {
+	if !strings.Contains(out.String(), "Terraform") || !strings.Contains(out.String(), "lazygit") {
 		t.Errorf("dry run of the profile:\n%s", out.String())
 	}
 	if _, err := os.Stat(dst + "/answers.json"); err == nil {
@@ -123,12 +123,12 @@ func TestExportAndProfile(t *testing.T) {
 func TestProfileLayersAndUser(t *testing.T) {
 	me, _ := user.Current()
 	state := t.TempDir()
-	a := &answers.Answers{User: me.Username, Picks: []string{"lazygit", "cli", "terraform"}, Layers: map[string][]string{"team": {"cli", "terraform"}}}
+	a := &answers.Answers{User: me.Username, Picks: []string{"lazygit", "neovim", "terraform"}, Layers: map[string][]string{"team": {"neovim", "terraform"}}}
 	if err := answers.Write(state, a); err != nil {
 		t.Fatal(err)
 	}
 	f := t.TempDir() + "/team.toml"
-	if err := os.WriteFile(f, []byte("name = \"team\"\npicks = [\"cli\"]\n"), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte("name = \"team\"\npicks = [\"neovim\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -144,7 +144,7 @@ func TestProfileLayersAndUser(t *testing.T) {
 	if strings.Count(got, "Dropped by the profile") != 1 {
 		t.Errorf("want one drop list (for %s):\n%s", me.Username, got)
 	}
-	for _, want := range []string{"Dropped by the profile (still installed, no longer re-applied):\n  - Terraform (terraform)\n", "Would create user yardonewuser", "For user: yardonewuser\n"} {
+	for _, want := range []string{"Dropped by the profile (still installed, no longer re-applied):\n  - Terraform + terragrunt, tflint, terraform-docs (terraform)\n", "Would create user yardonewuser", "For user: yardonewuser\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}
@@ -198,7 +198,7 @@ func TestProfileLockPlan(t *testing.T) {
 	if err := cli([]string{"--state", t.TempDir(), "--profile", f, "--yes", "--dry-run"}, &out, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"apt    zsh=5.9-6ubuntu2 git\n", "mise   terraform@1.9.8\n", "Extra mise tools\n  mise   starship@1.21.1\n"} {
+	for _, want := range []string{"apt    zsh=5.9-6ubuntu2 git\n", "mise   terraform@1.9.8 ", "Extra mise tools\n  mise   starship@1.21.1\n"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
 		}
@@ -242,7 +242,7 @@ func TestGitKeySubcommand(t *testing.T) {
 	me, _ := user.Current()
 	t.Setenv("SUDO_USER", me.Username)
 	state := t.TempDir()
-	if err := answers.Write(state, &answers.Answers{User: me.Username, Picks: []string{"zsh", "cli"}}); err != nil {
+	if err := answers.Write(state, &answers.Answers{User: me.Username, Picks: []string{"zsh", "lazygit"}}); err != nil {
 		t.Fatal(err)
 	}
 	keyf := filepath.Join(t.TempDir(), "key")

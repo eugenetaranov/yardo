@@ -3,6 +3,8 @@ package steps
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"os"
 	"strings"
 	"testing"
@@ -44,13 +46,15 @@ func TestDockerDaemonFreshEngineOnly(t *testing.T) {
 	}
 }
 
-func TestSSHHardenRefusesWithoutKey(t *testing.T) {
+func TestSSHHardenSkipsWithoutKey(t *testing.T) {
 	x := &fakeExec{}
 	e := shellEnv(t)
 	e.Exec = x
+	var notes []string
+	e.Note = func(s string) { notes = append(notes, s) }
 	st := step(t, catalog.Step{Type: "go:sshharden"})
-	if err := st.Apply(t.Context(), e); err == nil || !strings.Contains(err.Error(), "lock ada out") {
-		t.Fatalf("err = %v", err)
+	if err := st.Apply(t.Context(), e); err != nil || len(notes) != 1 || !strings.Contains(notes[0], "lock ada out") {
+		t.Fatalf("err = %v, notes = %q", err, notes)
 	}
 	if _, err := os.Stat(e.Path(sshdDropin)); err == nil {
 		t.Error("config written with no SSH key")
@@ -86,52 +90,6 @@ func TestSSHHardenRollsBack(t *testing.T) {
 		if strings.HasPrefix(c, "systemctl") {
 			t.Errorf("ssh reloaded after a rejected config: %s", c)
 		}
-	}
-}
-
-func TestUFWRules(t *testing.T) {
-	status, added := "Status: inactive\n", "(None)\n"
-	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
-		switch {
-		case c.Name == "sh":
-			return nil, errors.New("not installed")
-		case c.Name == "ufw" && c.Args[0] == "status":
-			return []byte(status), nil
-		case c.Name == "ufw" && c.Args[0] == "show":
-			return []byte(added), nil
-		}
-		return nil, nil
-	}}
-	e := testEnv(t, x)
-	e.Answers = &answers.Answers{Picks: []string{"mosh", "mcpjungle"}, MCPListen: "0.0.0.0"}
-	st := step(t, catalog.Step{Type: "go:ufw"})
-	if check(t, e, st) {
-		t.Fatal("Check = true with ufw inactive")
-	}
-	apply(t, e, st)
-	want := "ufw default deny incoming; ufw default allow outgoing; ufw limit OpenSSH; ufw allow 60000:61000/udp; ufw allow 8080/tcp; ufw --force enable"
-	if got := strings.Join(x.commands()[len(x.commands())-6:], "; "); got != want {
-		t.Errorf("ran %s\nwant %s", got, want)
-	}
-	status = "Status: active\nLogging: on (low)\nDefault: deny (incoming), allow (outgoing), disabled (routed)\n"
-	added = "Added user rules (see 'ufw status' for running firewall):\nufw limit OpenSSH\nufw allow 60000:61000/udp\nufw allow 8080/tcp\n"
-	if !check(t, e, st) {
-		t.Error("Check = false with every rule added")
-	}
-	e.Answers.MCPListen = "127.0.0.1"
-	added = "ufw limit OpenSSH\n"
-	if check(t, e, st) {
-		t.Error("Check = true without the mosh rule")
-	}
-	// Another user's gateway on every interface is opened too.
-	put(t, e.Path("/etc/mcpjungle/bob.env"), "MCP_HOST=0.0.0.0\nMCP_PORT=8081\nMCP_DIR=/home/bob/.mcp\n")
-	put(t, e.Path("/etc/mcpjungle/cy.env"), "MCP_HOST=127.0.0.1\nMCP_PORT=8082\n")
-	if r := strings.Join(ufwStep{}.rules(context.Background(), e), "; "); r != "limit OpenSSH; allow 60000:61000/udp; allow 8081/tcp" {
-		t.Errorf("rules = %s", r)
-	}
-	e.Answers.DevPorts = []string{"3000", "8000-8010"}
-	if r := strings.Join(ufwStep{}.rules(context.Background(), e), "; "); !strings.HasSuffix(r, "; allow 3000/tcp; allow 8000:8010/tcp") {
-		t.Errorf("rules with dev ports = %s", r)
 	}
 }
 
@@ -296,5 +254,45 @@ func TestSudoPW(t *testing.T) {
 	apply(t, e, st)
 	if got := read(t, e.Path("/etc/sudoers.d/90-yardo-ada")); got != "ada ALL=(ALL) ALL\n" {
 		t.Errorf("with a password already: %q", got)
+	}
+}
+
+// fail2ban only on a machine with a public IPv4: private, Tailscale and
+// link-local addresses don't count.
+func TestFail2banPublicIPv4(t *testing.T) {
+	old := interfaceAddrs
+	defer func() { interfaceAddrs = old }()
+	set := func(cidrs ...string) {
+		interfaceAddrs = func() ([]net.Addr, error) {
+			var out []net.Addr
+			for _, c := range cidrs {
+				ip, n, err := net.ParseCIDR(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				n.IP = ip
+				out = append(out, n)
+			}
+			return out, nil
+		}
+	}
+	e := shellEnv(t)
+	x := &fakeExec{}
+	e.Exec = x
+	st := step(t, catalog.Step{Type: "go:fail2ban"})
+	set("127.0.0.1/8", "10.0.0.5/24", "192.168.1.9/24", "172.17.0.1/16", "100.101.102.103/32", "169.254.1.1/16", "fe80::1/64", "2001:db8::5/64")
+	if publicIPv4() != "" || !check(t, e, st) {
+		t.Errorf("private only: public = %q, Check should be true", publicIPv4())
+	}
+	apply(t, e, st)
+	if got := x.commands(); len(got) != 0 {
+		t.Errorf("ran %q without a public IPv4", got)
+	}
+	set("10.0.0.5/24", "203.0.113.7/24")
+	if got := publicIPv4(); got != "203.0.113.7" {
+		t.Errorf("public = %q", got)
+	}
+	if plan := fmt.Sprint(st.Plan(e)); !strings.Contains(plan, "fail2ban python3-systemd (public IPv4 203.0.113.7)") {
+		t.Errorf("plan = %s", plan)
 	}
 }

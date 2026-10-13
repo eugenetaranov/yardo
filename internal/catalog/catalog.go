@@ -51,8 +51,12 @@ type Item struct {
 	// System tab, else user.
 	Scope string `toml:"scope"`
 	// Last puts the item after every other item in the plan (dotfiles).
-	Last  bool   `toml:"last"`
-	Steps []Step `toml:"step"`
+	Last bool `toml:"last"`
+	// Always puts the item in every plan, unpicked (the baseline every
+	// machine gets: security updates, SSH hardening, …); the picker
+	// doesn't offer it.
+	Always bool   `toml:"always"`
+	Steps  []Step `toml:"step"`
 
 	// From is the file the item came from (for error messages).
 	From string `toml:"-"`

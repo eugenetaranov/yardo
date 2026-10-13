@@ -11,40 +11,13 @@ type = "mise"
 tools = ["lazygit@latest"]
 
 [[item]]
-id = "runners"
+id = "devcli"
 tab = "dev"
-label = "just + watchexec + hyperfine"
+label = "Dev CLIs (just, Task, watchexec, hyperfine, yq, xh, hurl)"
 
 [[item.step]]
 type = "mise"
-tools = ["just@latest", "watchexec@latest", "hyperfine@latest"]
-
-[[item]]
-id = "task"
-tab = "dev"
-label = "Task (Makefile alternative)"
-
-[[item.step]]
-type = "mise"
-tools = ["task@latest"]
-
-[[item]]
-id = "yq"
-tab = "dev"
-label = "yq (YAML processor)"
-
-[[item.step]]
-type = "mise"
-tools = ["yq@latest"]
-
-[[item]]
-id = "http"
-tab = "dev"
-label = "HTTP clients (xh, hurl)"
-
-[[item.step]]
-type = "mise"
-tools = ["xh@latest", "hurl@latest"]
+tools = ["just@latest", "task@latest", "watchexec@latest", "hyperfine@latest", "yq@latest", "xh@latest", "hurl@latest"]
 
 [[item]]
 id = "lint"
@@ -58,16 +31,12 @@ tools = ["shellcheck@latest", "shfmt@latest", "actionlint@latest", "gitleaks@lat
 [[item]]
 id = "dbclients"
 tab = "dev"
-label = "DB clients (psql, mariadb, sqlite3, redis-cli)"
+label = "DB clients (psql, pgcli, usql, mariadb, sqlite3, redis-cli)"
+source = "apt postgresql-client mariadb-client sqlite3 redis-tools · mise pgcli usql"
 
 [[item.step]]
 type = "apt"
 packages = ["postgresql-client", "mariadb-client", "sqlite3", "redis-tools"]
-
-[[item]]
-id = "pgcli"
-tab = "dev"
-label = "pgcli + usql (friendlier DB shells)"
 
 [[item.step]]
 type = "mise"

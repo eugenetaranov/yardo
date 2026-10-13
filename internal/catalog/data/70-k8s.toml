@@ -1,31 +1,22 @@
-# yardo catalog: the Kubernetes tab.
+# yardo catalog: the Containers & Kubernetes tab (Docker, Podman and
+# registry logins are in 10-system.toml, installed with the system).
 # `legacy` steps run the bundled bash installer until the item is ported.
 
 [[item]]
 id = "k8s"
 tab = "k8s"
-label = "Kubernetes CLIs (kubectl, kubectx, helm 3, k9s, kubelogin)"
+label = "Kubernetes CLIs (kubectl, helm, k9s, kubectx, stern, kustomize, helmfile, krew, …)"
+source = "mise use -g kubectl kubectx kubens helm k9s kubelogin stern kustomize kubecolor kubie kubeconform helmfile · helm-diff · krew + neat, tree, view-secret"
 
 [[item.step]]
 type = "mise"
-tools = ["kubectl@latest", "kubectx@latest", "kubens@latest", "helm@3", "k9s@latest", "kubelogin@latest"]
-
-[[item]]
-id = "k8sextra"
-tab = "k8s"
-label = "K8s extras (stern, kustomize, kubecolor, kubie, kubeconform)"
-needs = ["k8s"]
+tools = ["kubectl@latest", "kubectx@latest", "kubens@latest", "helm@3", "k9s@latest", "kubelogin@latest", "stern@latest", "kustomize@latest", "kubecolor@latest", "kubie@latest", "kubeconform@latest", "helmfile@latest"]
 
 [[item.step]]
-type = "mise"
-tools = ["stern@latest", "kustomize@latest", "kubecolor@latest", "kubie@latest", "kubeconform@latest"]
-
-[[item]]
-id = "krew"
-tab = "k8s"
-label = "kubectl krew + plugins (neat, tree, view-secret)"
-needs = ["k8s"]
-source = "krew release → ~/.krew · kubectl krew install neat tree view-secret"
+type = "run"
+cmd = "helm plugin install https://github.com/databus23/helm-diff"
+as_user = true
+check = "helm plugin list | grep -q '^diff'"
 
 [[item.step]]
 type = "run"
@@ -50,23 +41,6 @@ type = "run"
 cmd = 'PATH="$HOME/.krew/bin:$PATH" kubectl krew install neat tree view-secret'
 as_user = true
 check = 'l=$(PATH="$HOME/.krew/bin:$PATH" kubectl krew list) && for p in neat tree view-secret; do printf "%s\n" "$l" | grep -qx "$p" || exit 1; done'
-
-[[item]]
-id = "helmfile"
-tab = "k8s"
-label = "helmfile + helm-diff"
-needs = ["k8s"]
-source = "mise use -g helmfile · helm plugin install helm-diff"
-
-[[item.step]]
-type = "mise"
-tools = ["helmfile@latest"]
-
-[[item.step]]
-type = "run"
-cmd = "helm plugin install https://github.com/databus23/helm-diff"
-as_user = true
-check = "helm plugin list | grep -q '^diff'"
 
 [[item]]
 id = "gitops"

@@ -13,7 +13,8 @@ packages = ["etckeeper"]
 [[item]]
 id = "essentials"
 tab = "system"
-label = "Essentials (recommended)"
+always = true
+label = "Essentials (git, curl, jq, gh, build tools)"
 
 [[item.step]]
 type = "apt"
@@ -48,7 +49,8 @@ action = "restart"
 
 [[item]]
 id = "docker"
-tab = "system"
+tab = "k8s"
+scope = "system"
 label = "Docker Engine + Compose"
 source = "apt docker-ce (download.docker.com repo) · log rotation, 10.200/16 networks · docker group = root"
 
@@ -90,7 +92,8 @@ text = "{{user}} is now in the docker group: log in again (or run 'newgrp docker
 
 [[item]]
 id = "podman"
-tab = "system"
+tab = "k8s"
+scope = "system"
 label = "Podman (rootless) + skopeo + buildah"
 
 [[item.step]]
@@ -99,7 +102,8 @@ packages = ["podman", "uidmap", "slirp4netns", "passt", "skopeo", "buildah"]
 
 [[item]]
 id = "ctools"
-tab = "system"
+tab = "k8s"
+scope = "system"
 label = "Container tools (lazydocker, dive, hadolint, crane, cosign)"
 needs = ["docker"]
 
@@ -161,7 +165,8 @@ tools = ["uv@latest", "pipx:glances"]
 [[item]]
 id = "devlimits"
 tab = "system"
-label = "Dev limits: inotify watches, open files, map count"
+always = true
+label = "Dev limits (inotify watches, open files, map count)"
 source = "/etc/sysctl.d, limits.d, system.conf.d: 60-yardo.conf"
 
 [[item.step]]
@@ -187,6 +192,7 @@ on_change = true
 [[item]]
 id = "zram"
 tab = "system"
+always = true
 label = "Compressed swap in RAM (zram)"
 source = "apt systemd-zram-generator · zram0 = half of RAM, max 8 GB"
 
@@ -216,7 +222,8 @@ action = "restart"
 [[item]]
 id = "journald"
 tab = "system"
-label = "Cap the journal at 200 MB"
+always = true
+label = "Journal capped at 200 MB"
 source = "/etc/systemd/journald.conf.d/60-yardo.conf"
 
 [[item.step]]
@@ -232,6 +239,7 @@ action = "restart"
 [[item]]
 id = "tzlocale"
 tab = "system"
+always = true
 label = "Timezone + en_US.UTF-8 locale"
 source = "timedatectl set-timezone · locale-gen · apt locales-all"
 
@@ -250,8 +258,9 @@ check = "grep -qx 'LANG=en_US.UTF-8' /etc/default/locale && locale -a | grep -qi
 [[item]]
 id = "autoupdates"
 tab = "system"
-label = "Automatic security updates (no auto-reboot)"
-source = "unattended-upgrades · /etc/yardo/auto-upgrades keeps them on past a launcher's boot-time switch-off"
+always = true
+label = "Security updates (automatic, no reboot; quiet service restarts)"
+source = "unattended-upgrades · needrestart restarts services without asking · /etc/yardo/auto-upgrades keeps updates on past a launcher's boot-time switch-off"
 
 [[item.step]]
 type = "apt"
@@ -286,12 +295,6 @@ type = "note"
 text = "This VM's cloud-init turns automatic updates off at every boot (its launcher doesn't know /etc/yardo/auto-upgrades): after a reboot, run 'sudo yardo --yes' again."
 when = "ud=/var/lib/cloud/instance/user-data.txt; [ -r $ud ] && grep -qF 'systemctl disable --now apt-daily.timer' $ud && ! grep -qF /etc/yardo/auto-upgrades $ud"
 
-[[item]]
-id = "needrestart"
-tab = "system"
-label = "needrestart: restart services quietly after apt"
-source = "/etc/needrestart/conf.d/yardo.conf · no kernel pop-ups"
-
 [[item.step]]
 type = "apt"
 packages = ["needrestart"]
@@ -304,58 +307,29 @@ to = "/etc/needrestart/conf.d/yardo.conf"
 [[item]]
 id = "sshharden"
 tab = "system"
-label = "SSH: keys only, no root login (advanced)"
-source = "/etc/ssh/sshd_config.d/10-yardo.conf · refuses if you have no authorized key"
+always = true
+label = "SSH keys only (no passwords, no root login)"
+source = "/etc/ssh/sshd_config.d/10-yardo.conf · skipped (with a note) while you have no authorized key"
 
-# Refuses when the user has no SSH key; rolls back a config sshd rejects.
+# Skipped while the user has no SSH key; rolls back a config sshd rejects.
 [[item.step]]
 type = "go:sshharden"
 
-[[item]]
-id = "ufw"
-tab = "system"
-label = "Firewall: only SSH, Tailscale, mosh in (advanced)"
-source = "ufw · note: Docker's published ports bypass it"
-
-[[item.step]]
-type = "apt"
-packages = ["ufw"]
-
-[[item.step]]
-type = "go:ufw"
-
-[[item.step]]
-type = "note"
-text = "ufw: ports published by Docker (-p) bypass the firewall; bind them to 127.0.0.1 or use the DOCKER-USER chain."
-when = "command -v docker"
-
+# Only on a machine with a public IPv4: one behind NAT or on a LAN isn't
+# brute-forced from the internet.
 [[item]]
 id = "fail2ban"
 tab = "system"
-label = "fail2ban: ban SSH brute force (internet-facing VMs)"
-source = "apt fail2ban · sshd jail · Tailscale IPs never banned"
+always = true
+label = "fail2ban (machines with a public IPv4)"
+source = "apt fail2ban · sshd jail · Tailscale IPs never banned · only when an interface has a public IPv4"
 
 [[item.step]]
-type = "apt"
-packages = ["fail2ban", "python3-systemd"]
-
-[[item.step]]
-type = "file"
-src = "fail2ban-yardo.local"
-to = "/etc/fail2ban/jail.d/yardo.local"
-
-[[item.step]]
-type = "systemctl"
-unit = "fail2ban"
-
-[[item.step]]
-type = "systemctl"
-unit = "fail2ban"
-action = "restart"
+type = "go:fail2ban"
 
 [[item]]
 id = "registries"
-tab = "system"
+tab = "k8s"
 scope = "user"
 label = "Container registry logins (ghcr.io, …)"
 needs = ["docker"]

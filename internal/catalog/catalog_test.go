@@ -35,47 +35,10 @@ func TestEmbeddedCatalogLoads(t *testing.T) {
 	if c.Item("zsh") == nil || c.Item("mise") == nil || !c.Item("mise").Hidden() {
 		t.Error("zsh and the hidden mise item should load")
 	}
-	if got := c.Item("terraform").Describe(); got != "mise use -g terraform" {
+	if got := c.Item("terraform").Describe(); got != "mise use -g terraform terragrunt tflint terraform-docs" {
 		t.Errorf("terraform source = %q", got)
 	}
 }
-
-// While the bash installer exists, the TOML catalog must offer exactly its
-// items, with the same tabs, labels and needs.
-func TestMatchesBashCatalog(t *testing.T) {
-	b, err := os.ReadFile("../assets/yardo.sh")
-	if err != nil {
-		t.Skip("bash catalog gone")
-	}
-	script := string(b)
-	c := load(t, nil)
-	seen := map[string]bool{}
-	for _, name := range []string{"HIDDEN_ROWS", "CATALOG_ROWS"} {
-		body := regexp.MustCompile(`(?ms)^` + name + `=\((.*?)^\)`).FindStringSubmatch(script)[1]
-		for _, m := range regexp.MustCompile(`(?m)^\s*"([^"]+)"`).FindAllStringSubmatch(body, -1) {
-			f := strings.Split(m[1], "|")
-			id := f[0]
-			seen[id] = true
-			it := c.Item(id)
-			if it == nil {
-				t.Errorf("%s: in the bash catalog, not in the TOML one", id)
-				continue
-			}
-			if it.Tab != f[1] || it.Label != f[2] || strings.Join(it.Needs, " ") != strings.Join(strings.Fields(f[5]), " ") {
-				t.Errorf("%s: TOML has tab %q label %q needs %v; bash has %q %q %q", id, it.Tab, it.Label, it.Needs, f[1], f[2], f[5])
-			}
-		}
-	}
-	for _, it := range c.Items {
-		if !seen[it.ID] && !goOnly[it.ID] {
-			t.Errorf("%s: in the TOML catalog, not in the bash one", it.ID)
-		}
-	}
-}
-
-// goOnly are items added after the port: the bash installer, the fallback
-// until the cut-over, doesn't offer them.
-var goOnly = map[string]bool{"sudopw": true, "autoupdate-tools": true, "proxy": true, "corpca": true, "dotfiles": true, "agentsafe": true, "misebuild": true, "gitlab": true, "bitbucket": true}
 
 const teamTab = `
 [[item]]
@@ -224,7 +187,7 @@ func TestScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for id, want := range map[string]bool{"ufw": true, "docker": true, "k3s": true, "ollama": true, "registries": false, "zsh": false, "mcpjungle": false, "go": false} {
+	for id, want := range map[string]bool{"docker": true, "k3s": true, "ollama": true, "registries": false, "zsh": false, "mcpjungle": false, "go": false} {
 		if got := c.Item(id).System(); got != want {
 			t.Errorf("%s: System() = %v, want %v", id, got, want)
 		}
@@ -264,7 +227,7 @@ func TestUnverifiedList(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	if want := "k3s krew ollama omp tailscale vimcfg"; strings.Join(got, " ") != want {
+	if want := "editors k3s k8s ollama omp tailscale"; strings.Join(got, " ") != want {
 		t.Errorf("unverified downloads: %s\nwant %s (update this list when that's intended)", strings.Join(got, " "), want)
 	}
 }

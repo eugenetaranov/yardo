@@ -4,11 +4,11 @@
 [[item]]
 id = "terraform"
 tab = "iac"
-label = "Terraform"
+label = "Terraform + terragrunt, tflint, terraform-docs"
 
 [[item.step]]
 type = "mise"
-tools = ["terraform@latest"]
+tools = ["terraform@latest", "terragrunt@latest", "tflint@latest", "terraform-docs@latest"]
 
 [[item]]
 id = "opentofu"
@@ -18,15 +18,6 @@ label = "OpenTofu"
 [[item.step]]
 type = "mise"
 tools = ["opentofu@latest"]
-
-[[item]]
-id = "iaclint"
-tab = "iac"
-label = "Terraform helpers (terragrunt, tflint, terraform-docs)"
-
-[[item.step]]
-type = "mise"
-tools = ["terragrunt@latest", "tflint@latest", "terraform-docs@latest"]
 
 [[item]]
 id = "iacscan"
@@ -58,27 +49,12 @@ tools = ["uv@latest", "pipx:ansible"]
 [[item]]
 id = "sops"
 tab = "iac"
-label = "sops + age (secrets in git)"
+source = "mise use -g sops age · ~/.config/sops/age/keys.txt (0600) · SOPS_AGE_KEY_FILE"
+label = "sops + age, with your age key (generate or paste)"
 
 [[item.step]]
 type = "mise"
 tools = ["sops@latest", "age@latest"]
-
-[[item]]
-id = "vault"
-tab = "iac"
-label = "Vault CLI"
-
-[[item.step]]
-type = "mise"
-tools = ["vault@latest"]
-
-[[item]]
-id = "agekey"
-tab = "iac"
-label = "age key for sops (generate or paste)"
-needs = ["sops"]
-source = "~/.config/sops/age/keys.txt (0600) · SOPS_AGE_KEY_FILE"
 
 [[item.step]]
 type = "go:agekey"
@@ -93,3 +69,12 @@ type = "line"
 to = "~/.bashrc"
 line = 'export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"'
 top = true
+
+[[item]]
+id = "vault"
+tab = "iac"
+label = "Vault CLI"
+
+[[item.step]]
+type = "mise"
+tools = ["vault@latest"]

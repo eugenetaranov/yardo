@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 )
 
@@ -42,9 +41,6 @@ type Answers struct {
 	WireAgents *bool  `json:"wire_agents"`
 	Git        Git    `json:"git"`
 	TZ         string `json:"tz"`
-	// DevPorts are the ports ufw opens for dev servers ("3000",
-	// "8000-8010", "5353/udp").
-	DevPorts []string `json:"dev_ports,omitempty"`
 	// Proxy is the corporate proxy (no credentials) and the hosts that
 	// bypass it; CA where an internal CA bundle comes from.
 	Proxy      Proxy    `json:"proxy,omitzero"`
@@ -54,6 +50,8 @@ type Answers struct {
 	Bitbucket  GitHost  `json:"bitbucket,omitzero"`
 	NPM        NPM      `json:"npm"`
 	Registries []string `json:"registries"`
+	// Prompt is the zsh prompt: "p10k" (also "") or "starship".
+	Prompt string `json:"prompt,omitempty"`
 	// Dotfiles is the user's dotfiles repo (cloned to ~/.dotfiles).
 	Dotfiles string `json:"dotfiles,omitempty"`
 	// GitKeyHosts are other git hosts the sent SSH key (yardo gitkey) is
@@ -181,19 +179,29 @@ type NPM struct {
 // replaced them.
 var PickMap = map[string][]string{
 	"kubectl": {"k8s"}, "kubectx": {"k8s"}, "helm": {"k8s"}, "k9s": {"k8s"},
-	"shell":      {"zsh", "zshcfg", "p10k"}, // split into three in v0.38
+	"shell":      {"zsh"}, // split into three in v0.38, one again in v0.2
 	"typescript": {"node"},
 	"kotlin":     {"java"},
 	"editors":    {"editors", "neovim"}, // Neovim moved to its own (mise) item
 	"chrony":     {},                    // no longer an item: clock sync is the launcher's job
 	"glab":       {"gitlab"},            // the GitLab item: glab and the SSH key
 	"sshkey":     {},                    // the GitHub, GitLab and Bitbucket items make the key
+	// v0.2: one zsh item with its parts, tools folded into their bundles,
+	// hardening always on.
+	"p10k": {"zsh"}, "zshcfg": {"zsh"}, "fzftab": {"zsh"}, "shellcfg": {"zsh"}, "cli": {"zsh"}, "docs": {"zsh"},
+	"tmuxcfg": {"tmux"}, "vimcfg": {"editors"},
+	"k8sextra": {"k8s"}, "krew": {"k8s"}, "helmfile": {"k8s"},
+	"runners": {"devcli"}, "task": {"devcli"}, "yq": {"devcli"}, "http": {"devcli"},
+	"pgcli": {"dbclients"}, "iaclint": {"terraform"}, "agekey": {"sops"},
+	"needrestart": {}, // with security updates, which every machine gets
+	"ufw":         {}, // no longer an item
 }
 
 // pickNotes explain a migration to the user.
 var pickNotes = map[string]string{
 	"chrony": "chrony is no longer an item (clock sync is set up when the machine is launched); this machine keeps the chrony it has.",
 	"sshkey": "The SSH key item is gone: ~/.ssh/id_ed25519 stays, and the GitHub, GitLab and Bitbucket items make it when they use it.",
+	"ufw":    "The firewall (ufw) is no longer an item: yardo leaves this machine's ufw as it is (turn it off with 'sudo ufw disable').",
 }
 
 // MigratePicks applies PickMap, keeping order and dropping duplicates. It
@@ -272,7 +280,7 @@ func Read(state string) (a *Answers, notes []string, err error) {
 // clean drops list entries that aren't single words (the bash side splits
 // them on spaces).
 func (a *Answers) clean() {
-	for _, l := range []*[]string{&a.Picks, &a.MiseExtra, &a.MCPServers, &a.Registries, &a.DevPorts} {
+	for _, l := range []*[]string{&a.Picks, &a.MiseExtra, &a.MCPServers, &a.Registries} {
 		out := (*l)[:0]
 		for _, s := range *l {
 			if s != "" && !strings.ContainsAny(s, " \t\n") {
@@ -388,32 +396,6 @@ func (a *Answers) inLayer(id, except string) bool {
 		}
 	}
 	return false
-}
-
-var portRe = regexp.MustCompile(`^([0-9]{1,5})(-([0-9]{1,5}))?(/(tcp|udp))?$`)
-
-// ValidPort reports whether p is a dev port spec: "3000", "8000-8010",
-// either with /tcp or /udp.
-func ValidPort(p string) bool {
-	m := portRe.FindStringSubmatch(p)
-	if m == nil {
-		return false
-	}
-	lo, _ := strconv.Atoi(m[1])
-	hi := lo
-	if m[3] != "" {
-		hi, _ = strconv.Atoi(m[3])
-	}
-	return lo >= 1 && hi <= 65535 && lo <= hi
-}
-
-// UFWRule is ufw's rule for a dev port spec ("8000-8010" → "8000:8010/tcp").
-func UFWRule(p string) string {
-	proto := "tcp"
-	if i := strings.LastIndexByte(p, '/'); i >= 0 {
-		p, proto = p[:i], p[i+1:]
-	}
-	return "allow " + strings.Replace(p, "-", ":", 1) + "/" + proto
 }
 
 // CheckProxy checks a proxy URL: http(s)://host[:port], without

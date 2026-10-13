@@ -281,7 +281,7 @@ func (p *Picker) View() string {
 	b.WriteString(muted.Render(strings.Repeat("─", max(1, w-1))) + "\n")
 
 	items := p.items(view)
-	listH := max(1, h-6)
+	listH := max(1, h-7) // the focused item's details take a line
 	cur := min(p.cursor[view], max(0, len(items)-1))
 	p.cursor[view] = cur
 
@@ -294,10 +294,9 @@ func (p *Picker) View() string {
 		srcHead = min(14, max(4, srcHead))
 		labelW = max(14, w-7-srcHead-3)
 	} else {
-		for _, e := range items {
-			labelW = max(labelW, runewidth.StringWidth(e.Label))
-		}
-		labelW = min(42, labelW+2, max(14, (w-7)/2))
+		// Labels only: the focused item's install details are on the
+		// line below the list, so rows stay one line and easy to scan.
+		labelW = max(14, w-10)
 	}
 	srcX := 7 + labelW
 	srcW := max(4, w-srcX-3)
@@ -313,11 +312,10 @@ func (p *Picker) View() string {
 		} else {
 			lab = wrap(e.Label, labelW-2)
 		}
-		rt := e.Source
+		var src []string
 		if view == searchTab {
-			rt = p.tabTitle(e.Tab)
+			src = wrap(p.tabTitle(e.Tab), srcW)
 		}
-		src := wrap(rt, srcW)
 		rows[i] = row{lab, src, max(len(lab), len(src))}
 	}
 	top := p.top[view]
@@ -384,6 +382,11 @@ func (p *Picker) View() string {
 	for ; lines < listH; lines++ {
 		b.WriteString("\n")
 	}
+	detail := ""
+	if cur < len(items) {
+		detail = runewidth.Truncate(items[cur].Source, max(4, w-5), "…")
+	}
+	b.WriteString("   " + muted.Render(detail) + "\n")
 	keys := "type to search · ←/→ category · ↑/↓ move · space toggle · enter next · esc quit"
 	switch view {
 	case searchTab:

@@ -49,57 +49,67 @@ apply|verify|gitkey`).
 `sudo yardo` sets up the user who ran it (`--user ada` for another; a missing
 account is created) and opens the picker. Categories are tabs across the top (←/→ or
 1–9 to switch) above a checklist: nothing is preselected and only space ticks
-an item. Every item shows how it will be installed, e.g. `mise use -g
-terraform`, wrapped to fit the terminal. The last tab, Review, lists
-everything ticked.
+an item. Each row is one line; the line under the list shows how the item
+under the cursor is installed, e.g. `mise use -g terraform`. The last tab,
+Review, lists everything ticked.
 
-Just start typing to fuzzy-search every tab at once: `zsh` lists the zsh
-items wherever they live, each with its category. The search also covers
+yardo is opinionated: what every machine should have isn't offered, it's
+always applied (see "Always" below), and related tools come as one item.
+
+Just start typing to fuzzy-search every tab at once: `ssh` lists what
+mentions SSH wherever it lives, each with its category. The search also covers
 the ~940 tools in mise's registry, with their descriptions (`find` turns up
 `fd`). A tool you tick there is installed with `mise use -g <tool>` (to pin a
 version or use a `backend:tool`, list it under `mise_extra` in a profile). Esc
 clears the search; Esc on an empty search quits.
 
-1. **System (root):** etckeeper, essentials (git, curl, jq, gh, build tools),
-   admin and debug tools (dig, mtr, tcpdump, iperf3, nmap, strace, btop, …),
-   Docker (with log rotation and 10.200.0.0/16 networks), Podman + skopeo +
-   buildah, container tools (lazydocker, dive, hadolint, crane, cosign),
-   Tailscale, NFS/SMB clients, node_exporter + glances, container registry
-   logins (`docker login`; ghcr.io can use your gh token). Settings: dev limits
-   (inotify, open files), zram swap, a journal size cap, timezone + locale
-   (keeping the clock in sync is left to the machine's launcher). Opt-in hardening: automatic
-   security updates, quiet needrestart, SSH keys only, ufw (it asks which dev
-   server ports to open), fail2ban. Behind a corporate network: a proxy (apt,
-   Docker, mise and shells use it; no credentials in the URL) and an internal
-   CA bundle (a PEM file on the VM, or an https URL with its sha256), trusted
-   system-wide and by Node, Python and the AWS CLI. Both are applied before
-   anything is installed, and can be set in a profile's `[system]`
-   (`proxy`, `no_proxy`, `ca_bundle`, `ca_sha256`).
-2. **Shell and CLI:** modern CLI tools (ripgrep, fd, bat, eza, zoxide, fzf,
-   delta, direnv), Vim, Neovim (latest, from mise), tmux, zellij, mosh,
-   a curated vim config, man pages + tldr. zsh comes as separate items (type
-   `zsh` to see them all): zsh itself as the login shell; "zsh config"
-   (oh-my-zsh with autosuggestions, syntax highlighting, fzf history search
-   and completions); and the Powerlevel10k prompt, which comes ready in a
-   one-line lean style with the OS icon, time and Nerd Font icons (needs a
-   Nerd Font in your terminal; `p10k configure` restyles it, and an existing
-   `~/.p10k.zsh` is kept). zsh's plugins follow what's installed: git, wd, sudo, extract and fzf history search
-   always, and aws, terraform, opentofu, kubectl, kubectx, helm, docker, gh,
-   mise, rust and golang whenever the tool is on PATH, so a tool added later
-   completes in the next shell. Tools without an oh-my-zsh plugin (k9s, stern,
-   just, task, uv, terragrunt, vault, packer, …) get Tab completion from their
-   own scripts, cached in `~/.cache/yardo/zsh-completions` and refreshed only
-   when the tool is upgraded. "zsh fuzzy Tab completion" (fzf-tab) turns Tab
-   into an fzf list with directory previews. "Shell niceties"
-   turns the CLI tools on (zoxide, fzf keys, direnv, eza/bat aliases, a
-   shared Terraform/OpenTofu provider cache, kubecolor) through
-   `~/.config/yardo/shell.sh`, sourced from `.zshrc` and `.bashrc`; "tmux
-   config" writes `~/.tmux.conf`. The shell, vim and tmux entries replace your
-   files, keeping the old ones as `.orig`; keep your own lines in the local
-   files instead (see [Your own settings](#your-own-settings)).
-3. **Dev tools:** lazygit, just + watchexec + hyperfine, Task, yq, xh + hurl,
-   linters and hooks (shellcheck, shfmt, actionlint, gitleaks, pre-commit),
-   database clients, pgcli + usql, perf/valgrind/bpftrace, act, a private npm
+**Always**, on every machine, with nothing to pick: essentials (git, curl,
+jq, gh, build tools); automatic security updates (no auto-reboot) with
+needrestart restarting services quietly; SSH keys only, no root login
+(skipped, with a note, while you have no authorized key; a config sshd
+rejects is rolled back); fail2ban for SSH, on a machine with a public IPv4
+on an interface (Tailscale addresses are never banned; a cloud VM behind
+1:1 NAT only sees its private address, so it gets none); dev limits
+(inotify, open files), zram swap, a journal size cap, timezone (asked once)
++ locale. Keeping the clock in sync is left to the machine's launcher.
+
+1. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
+   iperf3, nmap, strace, btop, …), Tailscale, NFS/SMB clients,
+   node_exporter + glances, "sudo asks for your password". Behind a
+   corporate network: a proxy (apt, Docker, mise and shells use it; no
+   credentials in the URL) and an internal CA bundle (a PEM file on the VM,
+   or an https URL with its sha256), trusted system-wide and by Node,
+   Python and the AWS CLI. Both are applied before anything is installed,
+   and can be set in a profile's `[system]` (`proxy`, `no_proxy`,
+   `ca_bundle`, `ca_sha256`).
+2. **Shell and CLI:** one zsh item that brings everything: zsh as the login
+   shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
+   search and completions, fzf-tab (Tab opens an fzf list with directory
+   previews), the modern CLI tools (ripgrep, fd, bat, eza, zoxide, fzf,
+   delta, direnv) turned on with keys and aliases (z, fzf keys, direnv,
+   eza/bat aliases, a shared Terraform/OpenTofu provider cache, kubecolor)
+   through `~/.config/yardo/shell.sh` (sourced from `.zshrc` and `.bashrc`
+   too), and man pages + tldr. It asks for the prompt: Powerlevel10k (ready
+   in a one-line lean style with the OS icon, time and Nerd Font icons;
+   needs a Nerd Font in your terminal; `p10k configure` restyles it, and an
+   existing `~/.p10k.zsh` is kept) or Starship (one line;
+   `~/.config/starship.toml`, kept if you have one). zsh's plugins follow
+   what's installed: git, wd, sudo, extract and fzf history search always,
+   and aws, terraform, opentofu, kubectl, kubectx, helm, docker, gh, mise,
+   rust and golang whenever the tool is on PATH, so a tool added later
+   completes in the next shell. Tools without an oh-my-zsh plugin (k9s,
+   stern, just, task, uv, terragrunt, vault, packer, …) get Tab completion
+   from their own scripts, cached in `~/.cache/yardo/zsh-completions` and
+   refreshed only when the tool is upgraded. Also: Vim (with a curated
+   `.vimrc` and plugins), Neovim (latest, from mise), tmux (with
+   `~/.tmux.conf`: mouse, splits, 50k history), zellij, mosh. The zsh, vim
+   and tmux files replace yours, keeping the old ones as `.orig`; keep your
+   own lines in the local files instead (see [Your own
+   settings](#your-own-settings)).
+3. **Dev tools:** lazygit, dev CLIs (just, Task, watchexec, hyperfine, yq,
+   xh, hurl), linters and hooks (shellcheck, shfmt, actionlint, gitleaks,
+   pre-commit), database clients (psql, pgcli, usql, mariadb, sqlite3,
+   redis-cli), perf/valgrind/bpftrace, act, a private npm
    registry (scope and token in `~/.npmrc`), weekly tool updates (a systemd
    timer running `mise up` and `krew upgrade` as you).
 4. **Languages** (mise, except PHP and C/C++ from apt): Go + gopls, delve,
@@ -108,13 +118,17 @@ clears the search; Esc on an empty search quits.
    rust-analyzer + cargo-binstall; Ruby; PHP + Composer; C/C++; Zig; .NET.
 5. **Cloud** (mise): AWS, Google Cloud, Azure, DigitalOcean, Hetzner,
    cloudflared, restic + rclone.
-6. **IaC** (mise): Terraform, OpenTofu, terragrunt + tflint + terraform-docs,
-   trivy + checkov, Packer, Ansible, sops + age (and an age key: generate or
-   paste), Vault.
-7. **Kubernetes:** kubectl, kubectx/kubens, Helm 3, k9s, kubelogin (OIDC); stern, kustomize,
-   kubecolor, kubie, kubeconform; krew with plugins; helmfile + helm-diff;
-   Argo CD and Flux CLIs; kind, k3d, or k3s as a real cluster on the VM;
-   Tilt, Skaffold, ctlptl; talosctl.
+6. **IaC** (mise): Terraform with terragrunt, tflint and terraform-docs,
+   OpenTofu, trivy + checkov, Packer, Ansible, sops + age with your age key
+   (generate or paste), Vault.
+7. **Containers & Kubernetes:** Docker (with log rotation and
+   10.200.0.0/16 networks), Podman + skopeo + buildah, container tools
+   (lazydocker, dive, hadolint, crane, cosign), container registry logins
+   (`docker login`; ghcr.io can use your gh token); the Kubernetes CLIs as
+   one item (kubectl, kubectx/kubens, Helm 3, k9s, kubelogin, stern,
+   kustomize, kubecolor, kubie, kubeconform, helmfile + helm-diff, krew with
+   plugins); Argo CD and Flux CLIs; kind, k3d, or k3s as a real cluster on
+   the VM; Tilt, Skaffold, ctlptl; talosctl.
 8. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,
    Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no hooks), a `CLAUDE.md` /
    `AGENTS.md` describing the VM, settings for agents left to run unattended

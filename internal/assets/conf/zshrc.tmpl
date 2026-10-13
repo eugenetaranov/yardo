@@ -38,8 +38,13 @@ fi
 
 export EDITOR=vim
 
-# powerlevel10k: run `p10k configure` to generate ~/.p10k.zsh, then it loads here.
-[ -f ~/.p10k.zsh ] && source ~/.p10k.zsh
+# The prompt: Powerlevel10k (`p10k configure` restyles it, in ~/.p10k.zsh)
+# or, with no theme, Starship (~/.config/starship.toml).
+if [[ $ZSH_THEME == powerlevel10k/* ]]; then
+  [ -f ~/.p10k.zsh ] && source ~/.p10k.zsh
+elif [[ -z $ZSH_THEME ]] && (( $+commands[starship] )); then
+  eval "$(starship init zsh)"
+fi
 
 # yardo: local overrides (keep last)
 # Your own settings go in ~/.zshrc.local: yardo never writes it, and

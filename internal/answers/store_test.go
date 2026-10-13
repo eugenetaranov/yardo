@@ -16,7 +16,7 @@ func testStore(t *testing.T) (*Store, func(string) string) {
 	home := func(u string) string { return filepath.Join(root, "home", u) }
 	s := &Store{
 		State:    filepath.Join(root, "state"),
-		IsSystem: func(id string) bool { return id == "ufw" || id == "docker" },
+		IsSystem: func(id string) bool { return id == "zram" || id == "docker" },
 		Account: func(name string) (Account, error) {
 			if err := os.MkdirAll(home(name), 0o755); err != nil {
 				return Account{}, err
@@ -80,7 +80,7 @@ func TestStoreUserFileCantPickSystemItems(t *testing.T) {
 	}
 	p := userPath(home("ada"))
 	b, _ := os.ReadFile(p)
-	if err := os.WriteFile(p, []byte(strings.Replace(string(b), `"zsh"`, `"zsh", "ufw"`, 1)), 0o600); err != nil {
+	if err := os.WriteFile(p, []byte(strings.Replace(string(b), `"zsh"`, `"zsh", "zram"`, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	a, notes, err := s.Load("ada")
@@ -90,7 +90,7 @@ func TestStoreUserFileCantPickSystemItems(t *testing.T) {
 	if !reflect.DeepEqual(a.Picks, []string{"zsh"}) {
 		t.Errorf("picks = %v", a.Picks)
 	}
-	if len(notes) != 1 || !strings.Contains(notes[0], "ignored ufw") {
+	if len(notes) != 1 || !strings.Contains(notes[0], "ignored zram") {
 		t.Errorf("notes = %v", notes)
 	}
 }
@@ -154,7 +154,7 @@ func TestStoreBadJSONNotQuoted(t *testing.T) {
 // Phase 1's answers.json is split on first use; its gateway keeps 8080.
 func TestStoreMigrates(t *testing.T) {
 	s, home := testStore(t)
-	old := &Answers{User: "ada", Picks: []string{"ufw", "mcpjungle"}, Git: Git{Name: "Ada"}, TZ: "UTC"}
+	old := &Answers{User: "ada", Picks: []string{"zram", "mcpjungle"}, Git: Git{Name: "Ada"}, TZ: "UTC"}
 	if err := Write(s.State, old); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestStoreMigrates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(a.Picks, []string{"ufw", "mcpjungle"}) || a.Git.Name != "Ada" || a.TZ != "UTC" || a.MCPPort != 8080 {
+	if !reflect.DeepEqual(a.Picks, []string{"zram", "mcpjungle"}) || a.Git.Name != "Ada" || a.TZ != "UTC" || a.MCPPort != 8080 {
 		t.Errorf("migrated = %+v", a)
 	}
 	for _, f := range []string{filepath.Join(s.State, SystemFile), filepath.Join(s.State, File+".old"), userPath(home("ada"))} {

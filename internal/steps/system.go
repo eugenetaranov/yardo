@@ -5,15 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
+	"net"
+	"net/netip"
 	"os"
-	"path/filepath"
 	"regexp"
-	"slices"
-	"strconv"
 	"strings"
 
-	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/catalog"
 )
 
@@ -22,7 +19,7 @@ func init() {
 	RegisterGo("timezone", func(catalog.Step) Step { return timezoneStep{} })
 	RegisterGo("tailscale_up", func(catalog.Step) Step { return tailscaleUpStep{} })
 	RegisterGo("sshharden", func(catalog.Step) Step { return sshHardenStep{} })
-	RegisterGo("ufw", func(catalog.Step) Step { return ufwStep{} })
+	RegisterGo("fail2ban", func(catalog.Step) Step { return fail2banStep{} })
 }
 
 // root reports whether a command is on root's PATH.
@@ -142,9 +139,9 @@ func (tailscaleUpStep) Apply(ctx context.Context, e *Env) error {
 
 // --- go:sshharden ------------------------------------------------------------
 
-// sshHardenStep turns off password and root login, refusing when the user
-// has no SSH key (they'd be locked out) and rolling back a config sshd
-// rejects.
+// sshHardenStep turns off password and root login, skipping (with a note)
+// while the user has no SSH key (they'd be locked out), and rolling back a
+// config sshd rejects.
 type sshHardenStep struct{}
 
 const sshdDropin = "/etc/ssh/sshd_config.d/10-yardo.conf"
@@ -169,7 +166,8 @@ func (s sshHardenStep) Apply(ctx context.Context, e *Env) error {
 	keys := e.Path("~/.ssh/authorized_keys")
 	b, _ := os.ReadFile(keys)
 	if !keyLine.Match(b) {
-		return fmt.Errorf("%s has no SSH key: turning off password login would lock %s out", keys, e.User)
+		e.note(fmt.Sprintf("SSH still takes passwords: %s has no SSH key, and keys-only login would lock %s out. Add one, then run 'sudo yardo --yes'.", keys, e.User))
+		return nil
 	}
 	want, err := s.want(e)
 	if err != nil {
@@ -190,83 +188,83 @@ func (s sshHardenStep) Apply(ctx context.Context, e *Env) error {
 	return err
 }
 
-// --- go:ufw ------------------------------------------------------------------
+// --- go:fail2ban -------------------------------------------------------------
 
-// ufwStep: deny incoming but SSH (rate-limited), and the ports of what is
-// installed: Tailscale's interface, mosh, MCPJungle when it listens on
-// every interface.
-type ufwStep struct{}
+// fail2banStep bans SSH brute force on a machine with a public IPv4 (one
+// behind NAT or on a LAN isn't brute-forced from the internet): the
+// package, yardo's sshd jail (Tailscale's addresses are never banned) and
+// the service. Without one it does nothing.
+type fail2banStep struct{}
 
-func (ufwStep) picked(e *Env, id string) bool {
-	return e.Answers != nil && slices.Contains(e.Answers.Picks, id)
-}
+var fail2banPkgs = []string{"fail2ban", "python3-systemd"}
 
-func (u ufwStep) rules(ctx context.Context, e *Env) []string {
-	rules := []string{"limit OpenSSH"}
-	if u.picked(e, "tailscale") || root(ctx, e, "tailscale") {
-		rules = append(rules, "allow in on tailscale0")
-	}
-	if u.picked(e, "mosh") || root(ctx, e, "mosh-server") {
-		rules = append(rules, "allow 60000:61000/udp")
-	}
-	// Every user's gateway that listens on all interfaces, this run's too.
-	ports := map[int]bool{}
-	if (u.picked(e, "mcpjungle") || root(ctx, e, "mcpjungle")) && listen(e) == "0.0.0.0" {
-		ports[MCPPort(e)] = true
-	}
-	envs, _ := filepath.Glob(e.Path(filepath.Join(mcpEnvDir, "*.env")))
-	for _, f := range envs {
-		b, _ := os.ReadFile(f)
-		if p, err := strconv.Atoi(EnvGet(b, "MCP_PORT")); err == nil && EnvGet(b, "MCP_HOST") == "0.0.0.0" {
-			ports[p] = true
-		}
-	}
-	for _, p := range slices.Sorted(maps.Keys(ports)) {
-		rules = append(rules, fmt.Sprintf("allow %d/tcp", p))
-	}
-	if e.Answers != nil {
-		for _, p := range e.Answers.DevPorts {
-			if answers.ValidPort(p) {
-				rules = append(rules, answers.UFWRule(p))
-			}
-		}
-	}
-	return rules
-}
+// interfaceAddrs is net.InterfaceAddrs (tests replace it).
+var interfaceAddrs = net.InterfaceAddrs
 
-func (ufwStep) Plan(*Env) []Action {
-	return []Action{{"run", "ufw: deny incoming, limit OpenSSH, allow what is installed; enable"}}
-}
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 
-func (u ufwStep) Check(ctx context.Context, e *Env) (bool, error) {
-	status, err := e.Exec.Run(ctx, Cmd{Name: "ufw", Args: []string{"status", "verbose"}})
-	if err != nil || !strings.Contains(string(status), "Status: active") ||
-		!strings.Contains(string(status), "deny (incoming), allow (outgoing)") {
-		return false, nil
-	}
-	added, err := e.Exec.Run(ctx, Cmd{Name: "ufw", Args: []string{"show", "added"}})
+// publicIPv4 is the first public IPv4 address on the machine's
+// interfaces, "" when none: not private, not Tailscale's or carrier-grade
+// NAT's 100.64.0.0/10, not loopback or link-local. A cloud VM behind 1:1
+// NAT (an elastic IP) only sees its private address, so it has none.
+func publicIPv4() string {
+	addrs, err := interfaceAddrs()
 	if err != nil {
-		return false, nil
+		return ""
 	}
-	for _, r := range u.rules(ctx, e) {
-		if !hasLine(added, "ufw "+r) {
-			return false, nil
+	for _, a := range addrs {
+		p, err := netip.ParsePrefix(a.String())
+		if err != nil {
+			continue
+		}
+		if ip := p.Addr(); ip.Is4() && ip.IsGlobalUnicast() && !ip.IsPrivate() && !cgnat.Contains(ip) {
+			return ip.String()
 		}
 	}
-	return true, nil
+	return ""
 }
 
-func (u ufwStep) Apply(ctx context.Context, e *Env) error {
-	cmds := [][]string{{"default", "deny", "incoming"}, {"default", "allow", "outgoing"}}
-	for _, r := range u.rules(ctx, e) {
-		cmds = append(cmds, strings.Fields(r))
+func (fail2banStep) inner() []Step {
+	return mustSteps("fail2ban",
+		catalog.Step{Type: "file", Src: "fail2ban-yardo.local", To: "/etc/fail2ban/jail.d/yardo.local"},
+		catalog.Step{Type: "systemctl", Unit: "fail2ban"},
+		catalog.Step{Type: "systemctl", Unit: "fail2ban", Action: "restart"})
+}
+
+func (f fail2banStep) Plan(e *Env) []Action {
+	ip := publicIPv4()
+	if ip == "" {
+		return []Action{{"skip", "fail2ban: no public IPv4 on this machine"}}
 	}
-	// Last, once SSH is allowed.
-	cmds = append(cmds, []string{"--force", "enable"})
-	for _, args := range cmds {
-		if _, err := e.run(ctx, Cmd{Name: "ufw", Args: args}); err != nil {
+	out := []Action{{"apt", strings.Join(fail2banPkgs, " ") + " (public IPv4 " + ip + ")"}}
+	for _, st := range f.inner() {
+		out = append(out, st.Plan(e)...)
+	}
+	return out
+}
+
+func (f fail2banStep) Check(ctx context.Context, e *Env) (bool, error) {
+	if publicIPv4() == "" {
+		return true, nil
+	}
+	if missing, err := MissingPackages(ctx, e, fail2banPkgs); err != nil || len(missing) > 0 {
+		return false, err
+	}
+	return checkAll(ctx, e, f.inner())
+}
+
+func (f fail2banStep) Apply(ctx context.Context, e *Env) error {
+	if publicIPv4() == "" {
+		return nil
+	}
+	missing, err := MissingPackages(ctx, e, fail2banPkgs)
+	if err != nil {
+		return err
+	}
+	if len(missing) > 0 {
+		if err := AptInstall(ctx, e, missing); err != nil {
 			return err
 		}
 	}
-	return nil
+	return applyAll(ctx, e, f.inner(), len(missing) > 0)
 }
