@@ -91,19 +91,15 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 		return nil, ui.ErrQuit
 	}
 	c := &choices{secrets: creds.New()}
-	var fromSearch []string
 	for _, id := range picked {
 		if t, ok := strings.CutPrefix(id, "mise:"); ok {
-			fromSearch = append(fromSearch, t)
+			c.miseExtra = append(c.miseExtra, t)
 		} else {
 			c.picks = append(c.picks, id)
 		}
 	}
 
 	// 2. Type: every text prompt in one place.
-	if c.miseExtra, err = k.askMiseExtra(ctx, fromSearch); err != nil {
-		return nil, err
-	}
 	if c.items, err = plan.Resolve(k.cat, c.picks, len(c.miseExtra) > 0); err != nil {
 		return nil, err
 	}
@@ -265,35 +261,6 @@ func miseRegistry(ctx context.Context, share string) string {
 		}
 	}
 	return string(assets.MiseRegistry())
-}
-
-func (k *asker) askMiseExtra(ctx context.Context, prefill []string) ([]string, error) {
-	val := strings.Join(prefill, " ")
-	for {
-		v, err := ui.Input("Extra mise tools, space-separated (e.g. just sops@3), blank to skip", "", val)
-		if err != nil {
-			return nil, err
-		}
-		tools := strings.Fields(v)
-		if len(tools) == 0 || !k.installed("mise") {
-			return tools, nil
-		}
-		var bad []string
-		for _, t := range tools {
-			name := strings.SplitN(t, "@", 2)[0]
-			if strings.Contains(name, ":") {
-				continue // backend:tool, can't check offline
-			}
-			if exec.CommandContext(ctx, "mise", "registry", name).Run() != nil {
-				bad = append(bad, name)
-			}
-		}
-		if len(bad) == 0 {
-			return tools, nil
-		}
-		fmt.Fprintf(k.out, "Not in mise's registry: %s — fix or clear them.\n", strings.Join(bad, " "))
-		val = v
-	}
 }
 
 func (k *asker) gitConfig(key string) string {

@@ -56,8 +56,8 @@ everything ticked.
 Just start typing to fuzzy-search every tab at once: `zsh` lists the zsh
 items wherever they live, each with its category. The search also covers
 the ~940 tools in mise's registry, with their descriptions (`find` turns up
-`fd`). A tool you tick there is installed with `mise use -g <tool>`, and the
-"Extra mise tools" prompt comes prefilled so you can pin a version. Esc
+`fd`). A tool you tick there is installed with `mise use -g <tool>` (to pin a
+version or use a `backend:tool`, list it under `mise_extra` in a profile). Esc
 clears the search; Esc on an empty search quits.
 
 1. **System (root):** etckeeper, essentials (git, curl, jq, gh, build tools),
