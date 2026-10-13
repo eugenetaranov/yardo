@@ -268,3 +268,17 @@ func TestUnverifiedList(t *testing.T) {
 		t.Errorf("unverified downloads: %s\nwant %s (update this list when that's intended)", strings.Join(got, " "), want)
 	}
 }
+
+func TestBlockStepNeedsSrcAndTo(t *testing.T) {
+	item := func(step string) fstest.MapFS {
+		return fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\n[[item.step]]\n" + step)}}
+	}
+	for step, want := range map[string]string{
+		"type = \"block\"\nto = \"~/.config/git/ignore\"\n": "src",
+		"type = \"block\"\nsrc = \"gitignore_global\"\n":    "to",
+	} {
+		if got := loadErr(t, item(step)); !strings.Contains(got, want) {
+			t.Errorf("%q: err = %q, want it to name %s", step, got, want)
+		}
+	}
+}

@@ -17,7 +17,7 @@ id = "gitcfg"
 tab = "accounts"
 label = "Git defaults (rebase pulls, auto upstream, delta diffs)"
 needs = ["essentials"]
-source = "git config --global · aliases st co br sw lg amend · ~/.config/git/ignore"
+source = "git config --global · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore"
 
 [[item.step]]
 type = "git_config"
@@ -57,11 +57,12 @@ if_tool = "delta"
 "delta.navigate" = "true"
 "delta.line-numbers" = "true"
 
+# Global ignores: yardo's defaults as a block it keeps up to date, first in
+# the file; your own lines go below it and are kept.
 [[item.step]]
-type = "file"
+type = "block"
 src = "gitignore_global"
 to = "~/.config/git/ignore"
-if_absent = true
 
 [[item]]
 id = "sshkey"

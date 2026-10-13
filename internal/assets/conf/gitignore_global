@@ -1,11 +1,35 @@
-# Global git ignores, written by yardo ("Git defaults") once.
+# Global git ignores for every repo (yardo's "Git defaults"). A repo can
+# still track one: `!.claude/` in its .gitignore, or `git add -f <path>`.
+
+# OS and editors
 .DS_Store
 Thumbs.db
 *.swp
+*.swo
 *~
 .idea/
 .vscode/
-.direnv/
-.env.local
+
+# AI coding agents' per-machine state
+.claude/
+.aider*
+
+# Python
+.python-version
 __pycache__/
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Environment and secrets
+.env
+.env.local
+.direnv/
+
+# JavaScript
 node_modules/
+npm-debug.log*
+
+# Terraform working directories (not .terraform.lock.hcl)
+.terraform/

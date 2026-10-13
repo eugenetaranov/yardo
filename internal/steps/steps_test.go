@@ -384,3 +384,43 @@ func TestRunStepNote(t *testing.T) {
 		t.Errorf("notes = %q", notes)
 	}
 }
+
+// A block step keeps yardo's lines as a marked block first in the file,
+// replaced in place on later runs; the user's own lines stay.
+func TestBlockStep(t *testing.T) {
+	e := testEnv(t, &fakeExec{})
+	e.Files = fstest.MapFS{"ignore": {Data: []byte(".claude/\n.env\n")}}
+	st := step(t, catalog.Step{Type: "block", Src: "ignore", To: "~/.config/git/ignore"})
+	p := e.Path("~/.config/git/ignore")
+	block := BlockBegin + "\n.claude/\n.env\n" + BlockEnd + "\n"
+
+	// A missing file is created with the block.
+	if check(t, e, st) {
+		t.Fatal("Check = true without the file")
+	}
+	apply(t, e, st)
+	if got := read(t, p); got != block {
+		t.Errorf("new file = %q", got)
+	}
+	if !check(t, e, st) {
+		t.Error("Check = false after Apply")
+	}
+
+	// An existing file keeps its lines, below the block.
+	put(t, p, "secrets/\n*.local\n")
+	apply(t, e, st)
+	if got := read(t, p); got != block+"\nsecrets/\n*.local\n" {
+		t.Errorf("with user lines = %q", got)
+	}
+
+	// New defaults replace the block in place, once.
+	e.Files = fstest.MapFS{"ignore": {Data: []byte(".claude/\n.env\n.python-version\n")}}
+	if check(t, e, st) {
+		t.Error("Check = true with new defaults")
+	}
+	apply(t, e, st)
+	got := read(t, p)
+	if strings.Count(got, BlockBegin) != 1 || !strings.Contains(got, ".python-version\n"+BlockEnd) || !strings.HasSuffix(got, "\nsecrets/\n*.local\n") {
+		t.Errorf("after an update = %q", got)
+	}
+}

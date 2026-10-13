@@ -74,15 +74,7 @@ func configBlock(hosts []string) string {
 // withConfigBlock puts the block first in ~/.ssh/config (ssh takes the
 // first value it finds), replacing an earlier one.
 func withConfigBlock(cur []byte, block string) []byte {
-	s := string(cur)
-	if i, j := strings.Index(s, gitBegin), strings.Index(s, gitEnd); i >= 0 && j > i {
-		s = s[:i] + strings.TrimPrefix(s[j+len(gitEnd):], "\n")
-	}
-	s = strings.TrimLeft(s, "\n")
-	if s != "" {
-		s = "\n" + s
-	}
-	return []byte(block + s)
+	return WithBlock(cur, gitBegin, gitEnd, block)
 }
 
 // sshRead and sshWrite reach the user's ~/.ssh as the user when running

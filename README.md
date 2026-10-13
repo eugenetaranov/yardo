@@ -123,7 +123,10 @@ clears the search; Esc on an empty search quits.
    interface (no auth: trusted networks only).
 9. **Accounts and keys:** git identity, git defaults (rebase on pull, push
    sets upstream, delta diffs, aliases, a global ignore file), an SSH key,
-   GitHub login, commit signing with SSH, GitLab CLI, and your dotfiles repo:
+   GitHub login, commit signing with SSH, GitLab CLI, global git ignores in
+   `~/.config/git/ignore` (`.claude/`, `.python-version`, `.env`, `.venv/`,
+   `node_modules/`, caches, editor files; yardo keeps them as a block at the
+   top and leaves your own lines below it alone), and your dotfiles repo:
    cloned to `~/.dotfiles` (pulled on later runs), then its `install.sh`,
    `bootstrap.sh` or `setup.sh`, or else `stow` for each top-level
    directory. It runs after everything else, so your files win (`[dotfiles]

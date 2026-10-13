@@ -27,7 +27,8 @@ type Step struct {
 	KeyFingerprint string `toml:"key_fingerprint"`
 	Source         string `toml:"source"`
 
-	// file, template (Src in the catalog's files), link (Src is a path)
+	// file, template, block (Src in the catalog's files; a block step keeps
+	// Src as a marked block first in To, the rest of To kept), link (Src is a path)
 	Src      string            `toml:"src"`
 	To       string            `toml:"to"`
 	Mode     string            `toml:"mode"`
@@ -174,7 +175,7 @@ func (s *Step) validate(files fs.FS) error {
 		if !fprRe.MatchString(s.KeyFingerprint) {
 			return errors.New("key_fingerprint: want the signing key's 40 uppercase hex digits")
 		}
-	case s.Type == "file", s.Type == "template":
+	case s.Type == "file", s.Type == "template", s.Type == "block":
 		if err := src(); err != nil {
 			return err
 		}

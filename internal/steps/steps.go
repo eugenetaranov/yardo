@@ -208,6 +208,8 @@ func New(id string, s catalog.Step) (Step, error) {
 		return linkStep{s}, nil
 	case "line":
 		return lineStep{s}, nil
+	case "block":
+		return blockStep{s}, nil
 	case "git_clone":
 		return gitCloneStep{s}, nil
 	case "systemctl":

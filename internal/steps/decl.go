@@ -805,3 +805,72 @@ func (r runStep) Apply(ctx context.Context, e *Env) error {
 	}
 	return err
 }
+
+// --- block -------------------------------------------------------------------
+
+// The markers of a block step's block (comment lines with #).
+const (
+	BlockBegin = "# >>> yardo (managed; your own lines go outside this block)"
+	BlockEnd   = "# <<< yardo"
+)
+
+// WithBlock returns cur with the block that starts at the line begin and
+// ends at the line end replaced by block (which carries both), or with
+// block put first when there is none. Everything else is kept.
+func WithBlock(cur []byte, begin, end, block string) []byte {
+	s := string(cur)
+	if i, j := strings.Index(s, begin), strings.Index(s, end); i >= 0 && j > i {
+		s = s[:i] + strings.TrimPrefix(s[j+len(end):], "\n")
+	}
+	s = strings.TrimLeft(s, "\n")
+	if s != "" {
+		s = "\n" + s
+	}
+	return []byte(block + s)
+}
+
+// blockStep keeps a marked block of Src (in the catalog's files) in the
+// file To, first in it, and leaves the lines outside the block alone, so
+// yardo can update its defaults while the user's own lines stay.
+type blockStep struct{ s catalog.Step }
+
+func (b blockStep) Plan(*Env) []Action {
+	return []Action{{"block", b.s.To + " (yardo's block from " + b.s.Src + ")"}}
+}
+
+func (b blockStep) want(e *Env) (cur, want []byte, err error) {
+	body, err := fs.ReadFile(e.Files, b.s.Src)
+	if err != nil {
+		return nil, nil, err
+	}
+	cur, err = os.ReadFile(e.Path(b.s.To))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, err
+	}
+	block := BlockBegin + "\n" + strings.TrimRight(string(body), "\n") + "\n" + BlockEnd + "\n"
+	return cur, WithBlock(cur, BlockBegin, BlockEnd, block), nil
+}
+
+func (b blockStep) Check(_ context.Context, e *Env) (bool, error) {
+	cur, want, err := b.want(e)
+	return err == nil && bytes.Equal(cur, want), err
+}
+
+func (b blockStep) Apply(_ context.Context, e *Env) error {
+	_, want, err := b.want(e)
+	if err != nil {
+		return err
+	}
+	p := e.Path(b.s.To)
+	mode := fileStep{s: b.s}.mode()
+	if fi, err := os.Stat(p); err == nil {
+		mode = fi.Mode().Perm()
+	} else if err := mkdirFor(e, p, b.s); err != nil {
+		return err
+	}
+	if err := writeFile(p, want, mode); err != nil {
+		return err
+	}
+	uid, gid, _ := e.owner(b.s)
+	return e.chown(p, uid, gid)
+}
