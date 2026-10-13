@@ -1,0 +1,91 @@
+# https://taskfile.dev
+version: '3'
+
+vars:
+  BINARY: yardo
+  BUILD_DIR: bin
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  LDFLAGS: -s -w -X main.version={{.VERSION}}
+
+tasks:
+  default:
+    desc: Show available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  build:
+    desc: Build yardo for this machine (bin/yardo)
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY}} ./cmd/yardo
+
+  build:linux:
+    desc: Build the linux amd64 and arm64 binaries (bin/yardo-linux-<arch>)
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - for a in amd64 arm64; do CGO_ENABLED=0 GOOS=linux GOARCH=$a go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY}}-linux-$a ./cmd/yardo; done
+
+  test:
+    desc: Run the tests
+    cmds:
+      - go test -race ./...
+
+  lint:
+    desc: Run the linter
+    cmds:
+      - golangci-lint run
+
+  e2e:
+    desc: "End-to-end run on a throwaway machine over SSH (HOST=user@host; ITEMS=\"cli tmux\" for a subset)"
+    deps: [build:linux]
+    cmds:
+      - ./scripts/e2e.sh
+
+  assets:sync:
+    desc: Refresh the MCP files (mcp-sync, MCP catalog) from a tack-roles checkout (TACK_ROLES=path)
+    vars:
+      TACK_ROLES: '{{.TACK_ROLES | default "../tack-roles"}}'
+      DST: internal/assets
+    cmds:
+      # Only the files yardo and tack-roles both install; conf/ is yardo's own.
+      - rm -rf {{.DST}}/mcp-catalog && mkdir -p {{.DST}}/mcp-catalog
+      - cp {{.TACK_ROLES}}/roles/ai-tools/files/mcp-sync {{.DST}}/mcp-sync
+      - cp {{.TACK_ROLES}}/roles/ai-tools/files/mcp-catalog/*.spec {{.DST}}/mcp-catalog/
+      - git -C {{.TACK_ROLES}} log -1 --format='tack-roles %H %cs' > {{.DST}}/SOURCE
+
+  assets:mise-registry:
+    desc: Refresh the snapshot of mise's registry from the local mise
+    cmds:
+      - mise registry -J --hide-aliased | python3 internal/assets/picker.py --registry-tsv > internal/assets/mise-registry.tsv
+      - wc -l internal/assets/mise-registry.tsv
+
+  clean:
+    desc: Remove build output
+    cmds:
+      - rm -rf {{.BUILD_DIR}} dist
+
+  release:
+    desc: Create and push a release tag (TAG=vX.Y.Z, prompts with a suggestion when omitted)
+    interactive: true
+    cmds:
+      - |
+        TAG="{{.TAG}}"
+        if [ -z "$TAG" ]; then
+          LATEST=$(git tag --sort=-version:refname 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$LATEST" ]; then
+            SUGGESTED="v0.1.0"
+          else
+            IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+            SUGGESTED="v$MAJOR.$MINOR.$((PATCH + 1))"
+          fi
+          echo "Latest tag: ${LATEST:-none}"
+          printf "Enter tag [%s]: " "$SUGGESTED"
+          read -r INPUT_TAG
+          TAG="${INPUT_TAG:-$SUGGESTED}"
+        fi
+        echo "Creating release $TAG..."
+        git tag -a "$TAG" -m "Release $TAG"
+        git push origin "$TAG"
+        echo "Release $TAG pushed. GitHub Actions will build and publish it."

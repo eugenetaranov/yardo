@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: '1.26'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Build (linux amd64, arm64)
+        run: |
+          for a in amd64 arm64; do CGO_ENABLED=0 GOOS=linux GOARCH=$a go build -o bin/yardo-linux-$a ./cmd/yardo; done
+          ./bin/yardo-linux-amd64 --version
+          ./bin/yardo-linux-amd64 --list | head
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run tests
+        run: go test -v -race ./...
+      - name: Bash syntax and the picker's Python tests
+        run: |
+          bash -n internal/assets/yardo.sh
+          (cd internal/assets && python3 picker_test.py)
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+          args: --timeout=3m

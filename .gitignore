@@ -1,0 +1,19 @@
+# Build output
+bin/
+dist/
+/yardo
+
+# Test artifacts
+coverage.out
+*.test
+__pycache__/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local
+.env
+.claude

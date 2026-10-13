@@ -1,0 +1,125 @@
+# GoReleaser configuration for yardo
+# Documentation: https://goreleaser.com
+
+version: 2
+
+project_name: yardo
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: yardo
+    binary: yardo
+    main: ./cmd/yardo
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # yardo sets up Linux machines.
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: eugenetaranov
+    name: yardo
+  draft: false
+  prerelease: auto
+  mode: replace
+  extra_files:
+    - glob: ./install.sh
+  header: |
+    ## yardo {{ .Version }}
+
+    Set up a Linux dev machine for you and your AI agents: a picker, then everything installed and configured.
+  footer: |
+    ## Installation
+
+    ### Script (on the machine)
+    ```bash
+    curl -fsSL https://github.com/eugenetaranov/yardo/releases/download/{{ .Tag }}/install.sh | sudo sh
+    sudo yardo
+    ```
+
+    ### Homebrew (Linux)
+    ```bash
+    brew install eugenetaranov/tap/yardo
+    ```
+
+    ### Build from source
+    ```bash
+    go install github.com/eugenetaranov/yardo/cmd/yardo@{{ .Tag }}
+    ```
+
+# Homebrew tap (Linux: yardo sets up Linux machines)
+brews:
+  - name: yardo
+    repository:
+      owner: eugenetaranov
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/eugenetaranov/yardo"
+    description: "Set up a Linux dev machine for you and your AI agents"
+    license: "MIT"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+    test: |
+      system "#{bin}/yardo", "--version"
+    install: |
+      bin.install "yardo"
+
+announce:
+  skip: true
