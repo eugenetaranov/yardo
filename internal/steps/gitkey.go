@@ -45,6 +45,8 @@ type gitHost struct {
 	keys string
 }
 
+const gitHubKeys = "a deploy key (repo → Settings → Deploy keys; one repo) or on your account (https://github.com/settings/keys; all your repos)"
+
 // gitHosts are the picked host items' hosts (GitHub over a token needs no
 // SSH), then the other hosts the sent key is for.
 func gitHosts(e *Env) []gitHost {
@@ -62,17 +64,17 @@ func gitHosts(e *Env) []gitHost {
 			out = append(out, gitHost{host, mode, keys})
 		}
 	}
-	add("github", "github.com", a.GitHub, "a deploy key (repo → Settings → Deploy keys; one repo) or on your account (https://github.com/settings/keys; all your repos)")
+	add("github", "github.com", a.GitHub, gitHubKeys)
 	add("gitlab", a.GitLabHost(), a.GitLab, "a deploy key (project → Settings → Repository → Deploy keys) or on your account (https://"+a.GitLabHost()+"/-/user_settings/ssh_keys)")
 	add("bitbucket", "bitbucket.org", a.Bitbucket, "an access key (repository settings → Access keys) or on your account (https://bitbucket.org/account/settings/ssh-keys/)")
 	for _, h := range a.GitKeyHosts {
 		if !slices.ContainsFunc(out, func(g gitHost) bool { return g.host == h }) {
-			out = append(out, gitHost{h, "sent", "that host"})
+			out = append(out, gitHost{h, "sent", "a deploy key or on your account there"})
 		}
 	}
 	// A key sent before any host was set up is for GitHub.
 	if sentKey(e) != nil && !slices.ContainsFunc(out, func(g gitHost) bool { return g.mode == "sent" }) {
-		out = append(out, gitHost{"github.com", "sent", ""})
+		out = append(out, gitHost{"github.com", "sent", gitHubKeys})
 	}
 	return out
 }
@@ -221,7 +223,7 @@ func (gitKeyStep) knownDone(ctx context.Context, e *Env, hosts []gitHost) (bool,
 	return err == nil && bytes.Contains(kh, []byte("github.com ssh-ed25519 ")), err
 }
 
-// generate makes an ed25519 key at path and notes where to add it.
+// generate makes an ed25519 key at path and shows it, with where to add it.
 func generate(ctx context.Context, e *Env, path, comment string, hosts []gitHost) error {
 	if _, err := e.run(ctx, Cmd{Name: "sh", Args: []string{"-c",
 		`umask 077 && mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N "" -C "$1" -f "$2"`, "_", comment, e.Path(path)}, AsUser: true}); err != nil {
@@ -229,9 +231,7 @@ func generate(ctx context.Context, e *Env, path, comment string, hosts []gitHost
 	}
 	pub, _ := sshRead(ctx, e, path+".pub")
 	for _, g := range hosts {
-		if g.keys != "" {
-			e.note(fmt.Sprintf("A new SSH key for %s: add it as %s: %s", g.host, g.keys, strings.TrimSpace(string(pub))))
-		}
+		e.key(NewKey{Host: g.host, Where: g.keys, Path: path + ".pub", Pub: strings.TrimSpace(string(pub))})
 	}
 	return nil
 }

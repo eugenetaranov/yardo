@@ -424,6 +424,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	notesFile := filepath.Join(o.state, ".notes")
 	if bash == nil {
 		_ = os.Remove(notesFile) // bash's --begin does this when it runs
+		_ = os.Remove(filepath.Join(o.state, keysFile))
 	}
 	r := &run.Runner{Env: env, Progress: prog, TailLines: 25}
 	res := r.Run(ctx, items, extra)
@@ -455,6 +456,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		}
 	}
 	fmt.Fprintf(stdout, "How each tool was installed and how to update it: %s/yardo.txt\nLog: %s\n", env.Home, o.log)
+	printKeys(stdout, o.state, env.Home)
 	if !res.OK() {
 		for _, id := range res.Failed {
 			fmt.Fprintf(stderr, "✗ %s: %s\n", id, res.Errors[id])
@@ -572,7 +574,60 @@ func (o *options) env(a *answers.Answers, sec *creds.Secrets, log io.Writer) (*s
 		defer f.Close()
 		fmt.Fprintln(f, text)
 	}
+	env.Key = func(k steps.NewKey) {
+		if log != nil {
+			fmt.Fprintf(log, "NEW KEY for %s: %s\n", k.Host, k.Pub)
+		}
+		f, err := os.OpenFile(filepath.Join(o.state, keysFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		fmt.Fprintf(f, "%s\t%s\t%s\t%s\n", k.Host, k.Where, k.Path, k.Pub)
+	}
 	return env, nil
+}
+
+// keysFile holds the public keys made this run (host, where to add it,
+// file, key per line), shown last.
+const keysFile = ".keys"
+
+// printKeys shows the run's new public keys after everything else: where
+// to add each, then the key alone on a line between blank lines, so a
+// triple-click copies exactly it.
+func printKeys(w io.Writer, state, home string) {
+	b, err := os.ReadFile(filepath.Join(state, keysFile))
+	if err != nil {
+		return
+	}
+	type key struct {
+		path, pub string
+		where     []string
+	}
+	var keys []*key
+	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		f := strings.SplitN(l, "\t", 4)
+		if len(f) != 4 || f[3] == "" {
+			continue
+		}
+		i := slices.IndexFunc(keys, func(k *key) bool { return k.pub == f[3] })
+		if i < 0 {
+			keys = append(keys, &key{path: f[2], pub: f[3]})
+			i = len(keys) - 1
+		}
+		keys[i].where = append(keys[i].where, f[0]+": "+f[1])
+	}
+	for _, k := range keys {
+		path := k.path
+		if rest, ok := strings.CutPrefix(path, "~/"); ok {
+			path = filepath.Join(home, rest)
+		}
+		fmt.Fprintf(w, "\nSSH key to add\n")
+		for _, wh := range k.where {
+			fmt.Fprintf(w, "  %s\n", wh)
+		}
+		fmt.Fprintf(w, "\n%s\n\nShow it again: cat %s\n", k.pub, path)
+	}
 }
 
 // share is the directory yardo's files are installed in (next to

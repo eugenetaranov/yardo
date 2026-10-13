@@ -288,3 +288,26 @@ func TestDryRunGitIgnores(t *testing.T) {
 		t.Errorf("plan:\n%s", out.String())
 	}
 }
+
+// New keys come last: where to add each, then the key alone on its line.
+func TestPrintKeys(t *testing.T) {
+	state := t.TempDir()
+	rows := "github.com\ton GitHub\t~/.ssh/yardo_git_key.pub\tssh-ed25519 AAAA1 ada@vm (git)\n" +
+		"git.acme.io\tthere\t~/.ssh/yardo_git_key.pub\tssh-ed25519 AAAA1 ada@vm (git)\n" +
+		"bitbucket.org\ton Bitbucket\t~/.ssh/id_ed25519.pub\tssh-ed25519 BBBB2 ada@vm\n"
+	if err := os.WriteFile(filepath.Join(state, keysFile), []byte(rows), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	printKeys(&out, state, "/home/ada")
+	want := "\nSSH key to add\n  github.com: on GitHub\n  git.acme.io: there\n\nssh-ed25519 AAAA1 ada@vm (git)\n\nShow it again: cat /home/ada/.ssh/yardo_git_key.pub\n" +
+		"\nSSH key to add\n  bitbucket.org: on Bitbucket\n\nssh-ed25519 BBBB2 ada@vm\n\nShow it again: cat /home/ada/.ssh/id_ed25519.pub\n"
+	if out.String() != want {
+		t.Errorf("got:\n%s\nwant:\n%s", out.String(), want)
+	}
+	out.Reset()
+	printKeys(&out, t.TempDir(), "/home/ada")
+	if out.Len() != 0 {
+		t.Errorf("no keys: %q", out.String())
+	}
+}

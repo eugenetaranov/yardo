@@ -1624,7 +1624,7 @@ FAILED=
 # begin_run — the start of an install run: a fresh log and notes, and apt
 # settings for vendor scripts.
 begin_run() {
-  mkdir -p "$STATE"; : > "$LOG"; chmod 600 "$LOG"; rm -f "$STATE/.apt-fresh" "$STATE/.notes"
+  mkdir -p "$STATE"; : > "$LOG"; chmod 600 "$LOG"; rm -f "$STATE/.apt-fresh" "$STATE/.notes" "$STATE/.keys"
   # Every apt-get waits for the dpkg lock instead of failing, including
   # those inside vendor install scripts (tailscale, …), so a busy
   # unattended-upgrades doesn't fail the run.

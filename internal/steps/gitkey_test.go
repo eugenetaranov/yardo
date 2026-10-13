@@ -57,15 +57,15 @@ func TestGitKeyGenerated(t *testing.T) {
 	x := &fakeExec{}
 	e := shellEnv(t)
 	e.Exec = x
-	var notes []string
-	e.Note = func(s string) { notes = append(notes, s) }
+	var keys []NewKey
+	e.Key = func(k NewKey) { keys = append(keys, k) }
 	e.Answers = &answers.Answers{Picks: []string{"github"}, GitHub: answers.GitHost{Mode: "sent"}}
 	apply(t, e, step(t, catalog.Step{Type: "go:gitkey"}))
 	if got := x.commands(); len(got) != 1 || !strings.Contains(got[0], "ssh-keygen -q -t ed25519") {
 		t.Errorf("ran %q", got)
 	}
-	if len(notes) != 1 || !strings.Contains(notes[0], "Deploy keys") {
-		t.Errorf("notes = %q", notes)
+	if len(keys) != 1 || keys[0].Host != "github.com" || !strings.Contains(keys[0].Where, "Deploy keys") || keys[0].Path != GitKeyPath+".pub" {
+		t.Errorf("keys = %+v", keys)
 	}
 	if !strings.Contains(read(t, e.Path("~/.ssh/config")), "Host github.com\n") {
 		t.Error("no github.com block")
@@ -79,8 +79,8 @@ func TestGitKeyModes(t *testing.T) {
 	x := &fakeExec{}
 	e := shellEnv(t)
 	e.Exec = x
-	var notes []string
-	e.Note = func(s string) { notes = append(notes, s) }
+	var keys []NewKey
+	e.Key = func(k NewKey) { keys = append(keys, k) }
 	e.Answers = &answers.Answers{Picks: []string{"github", "gitlab", "bitbucket"},
 		GitHub: answers.GitHost{Mode: "agent"}, GitLab: answers.GitHost{Mode: "agent", Host: "gitlab.acme.io"}, Bitbucket: answers.GitHost{Mode: "key"}}
 	put(t, e.Path("~/.ssh/config"), gitBegin+"\nHost github.com\n  IdentityFile ~/.ssh/yardo_git_key\n"+gitEnd+"\n\nHost *\n  ServerAliveInterval 30\n")
@@ -89,8 +89,8 @@ func TestGitKeyModes(t *testing.T) {
 	if got := x.commands(); len(got) != 1 || !strings.Contains(got[0], "id_ed25519") {
 		t.Errorf("ran %q", got)
 	}
-	if len(notes) != 1 || !strings.Contains(notes[0], "bitbucket.org") {
-		t.Errorf("notes = %q", notes)
+	if len(keys) != 1 || keys[0].Host != "bitbucket.org" || keys[0].Path != "~/.ssh/id_ed25519.pub" {
+		t.Errorf("keys = %+v", keys)
 	}
 	cfg := read(t, e.Path("~/.ssh/config"))
 	want := gitBegin + "\nHost gitlab.acme.io\n  User git\n  StrictHostKeyChecking accept-new\n" +

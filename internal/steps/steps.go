@@ -89,11 +89,27 @@ type Env struct {
 	// Note shows text after the run (a step that has to leave something
 	// for the user to do).
 	Note func(text string)
+	// Key shows a public key made this run, last, on a line of its own.
+	Key func(NewKey)
+}
+
+// NewKey is a public key made on the machine, to add on a git host.
+type NewKey struct {
+	// Host is the git host; Where says where on it to add the key.
+	Host, Where string
+	// Path is the public key's file (~/.ssh/…pub); Pub its text.
+	Path, Pub string
 }
 
 func (e *Env) note(text string) {
 	if e.Note != nil {
 		e.Note(text)
+	}
+}
+
+func (e *Env) key(k NewKey) {
+	if e.Key != nil {
+		e.Key(k)
 	}
 }
 
