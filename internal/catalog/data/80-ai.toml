@@ -18,8 +18,8 @@ key_url = "https://downloads.claude.ai/keys/claude-code.asc"
 key_fingerprint = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
 source = """
 Types: deb
-URIs: https://downloads.claude.ai/claude-code/apt/stable
-Suites: stable
+URIs: https://downloads.claude.ai/claude-code/apt/latest
+Suites: latest
 Components: main
 Signed-By: {{keyring}}
 """

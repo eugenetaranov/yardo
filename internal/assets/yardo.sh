@@ -1171,7 +1171,7 @@ install_agentcfg() {
 install_claude() {
   apt_install curl gnupg ca-certificates
   add_key claude-code.asc https://downloads.claude.ai/keys/claude-code.asc
-  echo "deb [signed-by=$KEYRINGS/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main" \
+  echo "deb [signed-by=$KEYRINGS/claude-code.asc] https://downloads.claude.ai/claude-code/apt/latest latest main" \
     | put_file /etc/apt/sources.list.d/claude-code.list 0644 || true
   apt_install claude-code
 }
