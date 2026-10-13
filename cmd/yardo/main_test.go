@@ -224,6 +224,10 @@ func TestTargets(t *testing.T) {
 	if got, _ := o.targets(st, []*profile.Profile{{User: "cy"}, {}}, false, &bytes.Buffer{}); strings.Join(got, " ") != "cy" {
 		t.Errorf("profile user: %v", got)
 	}
+	// Interactive: the user who ran sudo, without asking.
+	if got, err := o.targets(st, nil, true, &bytes.Buffer{}); err != nil || strings.Join(got, " ") != "ubuntu" {
+		t.Errorf("interactive: %v, %v", got, err)
+	}
 	if got, _ := o.targets(st, []*profile.Profile{{}}, false, &bytes.Buffer{}); strings.Join(got, " ") != "ubuntu" {
 		t.Errorf("profile without a user: %v", got)
 	}
@@ -266,5 +270,21 @@ func TestGitKeySubcommand(t *testing.T) {
 	}
 	if err := cli([]string{"--state", state, "--dry-run", "gitkey", "--host", "bad host"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
 		t.Error("want an error for a bad --host")
+	}
+}
+
+// Git defaults keeps the global ignores as a block, not a one-off file.
+func TestDryRunGitIgnores(t *testing.T) {
+	me, _ := user.Current()
+	state := t.TempDir()
+	if err := answers.Write(state, &answers.Answers{User: me.Username, Picks: []string{"gitcfg"}}); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := cli([]string{"--yes", "--dry-run", "--state", state}, &out, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "block  ~/.config/git/ignore (yardo's block from gitignore_global)") {
+		t.Errorf("plan:\n%s", out.String())
 	}
 }

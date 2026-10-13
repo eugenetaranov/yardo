@@ -74,7 +74,7 @@ func (k *asker) ask(ctx context.Context) (*choices, error) {
 }
 
 func (k *asker) once(ctx context.Context) (*choices, error) {
-	fmt.Fprintln(k.out, "yardo — pick what to install: nothing is preselected. Run it again any time to add more.")
+	fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). Nothing is preselected; run it again any time to add more.\n", k.a.User)
 
 	// 1. Pick: one tabbed checklist over every category, plus mise's registry.
 	var tabs []ui.Tab

@@ -223,8 +223,10 @@ func (o *options) store(cat *catalog.Catalog) *answers.Store {
 }
 
 // targets are the users this run sets up: --user, else the profiles'
-// user, else (profiles) the sudo user, else (interactive) the one asked
-// for, else (--yes, --verify) every user set up.
+// user, else (interactive or profiles) the user who ran sudo, else
+// (--yes, --verify) every user set up. Only an interactive run with no
+// sudo user to go by (a root login) and not exactly one user set up
+// asks.
 func (o *options) targets(st *answers.Store, profs []*profile.Profile, interactive bool, stderr io.Writer) ([]string, error) {
 	if o.user != "" {
 		return []string{o.user}, nil
@@ -242,12 +244,17 @@ func (o *options) targets(st *answers.Store, profs []*profile.Profile, interacti
 		return nil, err
 	}
 	sudoUser := os.Getenv("SUDO_USER")
+	if sudoUser == "root" {
+		sudoUser = "" // sudo from a root shell: no login user to go by
+	}
 	switch {
-	case len(profs) > 0 && sudoUser != "":
+	case (interactive || len(profs) > 0) && sudoUser != "":
 		return []string{sudoUser}, nil
+	case interactive && len(saved) == 1:
+		return saved, nil
 	case interactive:
-		def := sudoUser
-		if def == "" && len(saved) > 0 {
+		def := ""
+		if len(saved) > 0 {
 			def = saved[0]
 		}
 		u, err := askUser(def)

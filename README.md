@@ -41,7 +41,8 @@ apply|verify|gitkey`).
 
 ## Using it
 
-`sudo yardo` opens the picker. Categories are tabs across the top (←/→ or
+`sudo yardo` sets up the user who ran it (`--user ada` for another; a missing
+account is created) and opens the picker. Categories are tabs across the top (←/→ or
 1–9 to switch) above a checklist: nothing is preselected and only space ticks
 an item. Every item shows how it will be installed, e.g. `mise use -g
 terraform`, wrapped to fit the terminal. The last tab, Review, lists
