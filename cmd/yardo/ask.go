@@ -76,22 +76,42 @@ func (k *asker) ask(ctx context.Context) (*choices, error) {
 func (k *asker) once(ctx context.Context) (*choices, error) {
 	fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). Nothing is preselected; run it again any time to add more.\n", k.a.User)
 
-	// 1. Pick: one tabbed checklist over every category, plus mise's registry.
-	var tabs []ui.Tab
-	for _, t := range k.cat.Tabs {
-		tabs = append(tabs, ui.Tab{ID: t.ID, Title: t.Title})
-	}
-	entries := ui.CatalogEntries(k.cat)
-	entries = ui.Dedupe(append(entries, ui.LoadMise(miseRegistry(ctx, k.share))...))
-	picked, ok, err := ui.NewPicker("yardo — pick what to install", tabs, entries, true).Run()
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, ui.ErrQuit
+	// 1. Pick, on two screens: what to install (every install category,
+	// plus mise's registry), then what to configure (logins, keys,
+	// settings) for it. Esc on the second goes back to the first.
+	inst := ui.NewPicker("yardo [1/2] Install", uiTabs(k.cat.PhaseTabs(catalog.PhaseInstall)),
+		ui.Dedupe(append(ui.CatalogEntries(k.cat, catalog.PhaseInstall), ui.LoadMise(miseRegistry(ctx, k.share))...)),
+		ui.Options{Next: "configure"})
+	conf := ui.CatalogEntries(k.cat, catalog.PhaseConfigure)
+	var installs, configures []string
+	for {
+		var out ui.Outcome
+		var err error
+		if installs, out, err = inst.Run(); err != nil {
+			return nil, err
+		}
+		if out != ui.Done {
+			return nil, ui.ErrQuit
+		}
+		shown := k.configurable(conf, installs)
+		note := "Installing: nothing"
+		if len(installs) > 0 {
+			note = "Installing: " + strings.Join(k.shortLabels(installs), " · ")
+		}
+		cfg := ui.NewPicker("yardo [2/2] Configure", uiTabs(k.cat.PhaseTabs(catalog.PhaseConfigure)), shown,
+			ui.Options{Review: true, Back: true, Note: note + " (esc to change)"})
+		if configures, out, err = cfg.Run(); err != nil {
+			return nil, err
+		}
+		if out == ui.Done {
+			break
+		}
+		if out == ui.Quit {
+			return nil, ui.ErrQuit
+		}
 	}
 	c := &choices{secrets: creds.New()}
-	for _, id := range picked {
+	for _, id := range append(installs, configures...) {
 		if t, ok := strings.CutPrefix(id, "mise:"); ok {
 			c.miseExtra = append(c.miseExtra, t)
 		} else {
@@ -100,6 +120,7 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 	}
 
 	// 2. Type: every text prompt in one place.
+	var err error
 	if c.items, err = plan.Resolve(k.cat, c.picks, len(c.miseExtra) > 0); err != nil {
 		return nil, err
 	}
@@ -131,6 +152,11 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 	}
 	if has("corpca") {
 		if err := k.askCA(); err != nil {
+			return nil, err
+		}
+	}
+	if has("mcpjungle-install") {
+		if err := k.askMCPListen(); err != nil {
 			return nil, err
 		}
 	}
@@ -172,6 +198,60 @@ func (k *asker) fromProfile(ctx context.Context) (*choices, error) {
 		}
 	}
 	return c, k.askSecrets(c, has)
+}
+
+func uiTabs(tabs []catalog.Tab) []ui.Tab {
+	out := make([]ui.Tab, len(tabs))
+	for i, t := range tabs {
+		out[i] = ui.Tab{ID: t.ID, Title: t.Title}
+	}
+	return out
+}
+
+// shortLabels are the items' labels without their parenthesized details
+// (mise tools by name).
+func (k *asker) shortLabels(ids []string) []string {
+	var out []string
+	for _, id := range ids {
+		if it := k.cat.Item(id); it != nil {
+			short, _, _ := strings.Cut(it.Label, " (")
+			out = append(out, short)
+		} else {
+			out = append(out, strings.TrimPrefix(id, "mise:"))
+		}
+	}
+	return out
+}
+
+// configurable are the configure entries that make sense with what's
+// installed: those whose install items are picked now, were picked on an
+// earlier run, or whose tool is already on PATH (registry logins only
+// with Docker, the npm registry only with Node). Entries left out are
+// unticked, so going back and dropping Docker drops its logins too.
+func (k *asker) configurable(conf []*ui.Entry, installs []string) []*ui.Entry {
+	avail := map[string]bool{}
+	if items, err := plan.Resolve(k.cat, answers.Merge(k.a.Picks, installs), false); err == nil {
+		for _, it := range items {
+			avail[it.ID] = true
+		}
+	}
+	ok := func(id string) bool {
+		it := k.cat.Item(id)
+		if it == nil || it.Hidden() || it.Always || it.Configure() || avail[id] {
+			return true
+		}
+		return k.installed != nil && k.installed(strings.TrimSuffix(id, "-install"))
+	}
+	var out []*ui.Entry
+	for _, e := range conf {
+		it := k.cat.Item(e.ID)
+		if it == nil || !slices.ContainsFunc(it.Needs, func(n string) bool { return !ok(n) }) {
+			out = append(out, e)
+		} else {
+			e.On = false
+		}
+	}
+	return out
 }
 
 // planHas reports whether an id is in the plan.
@@ -419,7 +499,8 @@ func (k *asker) askDotfiles() error {
 	}
 }
 
-func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool) error {
+// askMCPListen asks where the gateway listens (its unit binds it).
+func (k *asker) askMCPListen() error {
 	one, ts, all := "this machine only", "the Tailscale address only (your tailnet)", "all interfaces (no auth — trusted networks only)"
 	opts := []string{one}
 	if out, err := exec.Command("tailscale", "ip", "-4").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
@@ -435,7 +516,12 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool) e
 		return err
 	}
 	k.a.MCPListen = map[string]string{one: "127.0.0.1", ts: "tailscale", all: "0.0.0.0"}[l]
+	return nil
+}
 
+// askMCP asks for the MCP servers, their keys, and whether to add the
+// gateway to the agents.
+func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool) error {
 	dirs := mcp.Dirs(k.share)
 	var entries []*ui.Entry
 	specs := map[string]*mcp.Spec{}
@@ -447,11 +533,11 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool) e
 		specs[n] = s
 		entries = append(entries, &ui.Entry{Tab: "mcp", ID: n, Label: n, Source: s.Description + " · " + s.Image + s.URL})
 	}
-	servers, ok, err := ui.NewPicker("MCPJungle — which MCP servers?", []ui.Tab{{ID: "mcp", Title: "MCP servers"}}, entries, false).Run()
+	servers, out, err := ui.NewPicker("MCPJungle — which MCP servers?", []ui.Tab{{ID: "mcp", Title: "MCP servers"}}, entries, ui.Options{}).Run()
 	if err != nil {
 		return err
 	}
-	if !ok {
+	if out != ui.Done {
 		return ui.ErrQuit
 	}
 	c.mcpServers = servers
@@ -483,11 +569,11 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool) e
 			for _, o := range s.Optional {
 				opt = append(opt, &ui.Entry{Tab: "opt", ID: o, Label: o, Source: "optional · leave unticked to skip"})
 			}
-			chosen, ok, err := ui.NewPicker(n+" — optional settings (enter to skip)", []ui.Tab{{ID: "opt", Title: "Optional settings"}}, opt, false).Run()
+			chosen, out, err := ui.NewPicker(n+" — optional settings (enter to skip)", []ui.Tab{{ID: "opt", Title: "Optional settings"}}, opt, ui.Options{}).Run()
 			if err != nil {
 				return err
 			}
-			if ok {
+			if out == ui.Done {
 				keys = append(keys, chosen...)
 			}
 		}
@@ -740,22 +826,34 @@ func (k *asker) review(c *choices, options ...string) string {
 	} else {
 		fmt.Fprintf(k.out, "\nFor user: %s\n", k.a.User)
 	}
-	var always []string
-	for _, it := range c.items {
-		switch {
-		case it.Hidden():
-		case it.Always:
-			short, _, _ := strings.Cut(it.Label, " (")
-			always = append(always, short)
-		default:
-			fmt.Fprintf(k.out, "  ✓ %s\n", it.Label)
+	// Installing first, then configuring: the order the run takes.
+	for _, conf := range []bool{false, true} {
+		var picked, always []string
+		for _, it := range c.items {
+			switch {
+			case it.Hidden() || (it.Configure() || it.Last) != conf:
+			case it.Always:
+				short, _, _ := strings.Cut(it.Label, " (")
+				always = append(always, short)
+			case conf && beforeApt(it):
+				picked = append(picked, it.Label+" — applied first")
+			default:
+				picked = append(picked, it.Label)
+			}
 		}
-	}
-	if len(always) > 0 {
-		fmt.Fprintf(k.out, "  Always: %s\n", strings.Join(always, " · "))
-	}
-	if len(c.miseExtra) > 0 {
-		fmt.Fprintf(k.out, "  ✓ Extra mise tools: %s\n", strings.Join(c.miseExtra, " "))
+		if !conf && len(c.miseExtra) > 0 {
+			picked = append(picked, "Extra mise tools: "+strings.Join(c.miseExtra, " "))
+		}
+		fmt.Fprintln(k.out, map[bool]string{false: "Install:", true: "Configure:"}[conf])
+		for _, l := range picked {
+			fmt.Fprintf(k.out, "  ✓ %s\n", l)
+		}
+		if len(always) > 0 {
+			fmt.Fprintf(k.out, "  Always: %s\n", strings.Join(always, " · "))
+		}
+		if len(picked)+len(always) == 0 {
+			fmt.Fprintln(k.out, "  (nothing)")
+		}
 	}
 	if len(c.mcpServers) > 0 {
 		port := k.a.MCPPort
@@ -777,6 +875,19 @@ func (k *asker) review(c *choices, options ...string) string {
 		return "Quit"
 	}
 	return ch
+}
+
+// beforeApt reports whether the item is applied before anything installs
+// (the proxy, the CA bundle), wherever its phase puts it.
+func beforeApt(it *catalog.Item) bool {
+	for _, s := range it.Steps {
+		if st, err := steps.New(it.ID, s); err == nil {
+			if b, ok := st.(steps.BeforeApt); ok && b.BeforeApt() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func homeOf(name string) string {

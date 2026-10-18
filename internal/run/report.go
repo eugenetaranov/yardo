@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/eugenetaranov/yardo/internal/catalog"
+	"github.com/eugenetaranov/yardo/internal/plan"
 	"github.com/eugenetaranov/yardo/internal/steps"
 )
 
@@ -15,9 +16,22 @@ import (
 // nothing.
 func DryRun(w io.Writer, e *steps.Env, items []*catalog.Item, extraMise []string) error {
 	fmt.Fprintf(w, "For user: %s\n", e.User)
-	for _, x := range build(items) {
+	extra := func() {
+		if len(extraMise) > 0 {
+			fmt.Fprintf(w, "Extra mise tools\n  %-6s %s\n", "mise", strings.Join(steps.LockedTools(e, extraMise), " "))
+		}
+	}
+	n := plan.Configuring(items)
+	if n > 0 || len(extraMise) > 0 {
+		fmt.Fprintln(w, "== Install")
+	}
+	for i, x := range build(items) {
 		if x.err != nil {
 			return fmt.Errorf("%s: %w", x.item.ID, x.err)
+		}
+		if i == n {
+			extra()
+			fmt.Fprintln(w, "== Configure")
 		}
 		fmt.Fprintf(w, "%s\n", label(x.item))
 		for _, st := range x.steps {
@@ -26,8 +40,8 @@ func DryRun(w io.Writer, e *steps.Env, items []*catalog.Item, extraMise []string
 			}
 		}
 	}
-	if len(extraMise) > 0 {
-		fmt.Fprintf(w, "Extra mise tools\n  %-6s %s\n", "mise", strings.Join(steps.LockedTools(e, extraMise), " "))
+	if n == len(items) {
+		extra()
 	}
 	return nil
 }

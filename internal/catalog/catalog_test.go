@@ -29,8 +29,20 @@ func loadErr(t *testing.T, local fstest.MapFS) string {
 
 func TestEmbeddedCatalogLoads(t *testing.T) {
 	c := load(t, nil)
-	if len(c.Tabs) != 9 || c.Tabs[0].ID != "system" || c.Tabs[8].ID != "git" {
+	inst, conf := c.PhaseTabs(PhaseInstall), c.PhaseTabs(PhaseConfigure)
+	if len(c.Tabs) != 12 || len(inst) != 8 || len(conf) != 4 || inst[0].ID != "system" || conf[0].ID != "sysconf" {
 		t.Errorf("tabs = %+v", c.Tabs)
+	}
+	// Install tabs first, then configure: the picker's two screens.
+	for i, tb := range c.Tabs {
+		if (i < 8) != (tb.PhaseOf() == PhaseInstall) {
+			t.Errorf("tab %d %s: phase %s", i, tb.ID, tb.PhaseOf())
+		}
+	}
+	for id, want := range map[string]bool{"docker": false, "mise": false, "gitkey": true, "registries": true, "github": true, "tailscale": true, "tailscale-install": false} {
+		if got := c.Item(id).Configure(); got != want {
+			t.Errorf("%s: Configure() = %v, want %v", id, got, want)
+		}
 	}
 	if c.Item("zsh") == nil || c.Item("mise") == nil || !c.Item("mise").Hidden() {
 		t.Error("zsh and the hidden mise item should load")
@@ -139,14 +151,14 @@ func TestPinsMatchBash(t *testing.T) {
 		t.Skip("bash installer gone")
 	}
 	c := load(t, nil)
-	for id, name := range map[string]string{"ecc": "ECC_VERSION", "mcpjungle": "MCPJUNGLE_VERSION"} {
+	for id, name := range map[string]string{"ecc": "ECC_VERSION", "mcpjungle-install": "MCPJUNGLE_VERSION"} {
 		v := regexp.MustCompile(`(?m)^` + name + `=(\S+)`).FindStringSubmatch(string(b))[1]
 		n := 0
 		for _, s := range c.Item(id).Steps {
 			n += strings.Count(s.Cmd+s.Check, v)
 		}
 		// ecc's check names the version too, so a new pin reinstalls.
-		if want := map[string]int{"ecc": 2, "mcpjungle": 1}[id]; n != want {
+		if want := map[string]int{"ecc": 2, "mcpjungle-install": 1}[id]; n != want {
 			t.Errorf("%s: %d step fields use %s=%s, want %d", id, n, name, v, want)
 		}
 	}
@@ -187,10 +199,45 @@ func TestScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for id, want := range map[string]bool{"docker": true, "k3s": true, "ollama": true, "registries": false, "zsh": false, "mcpjungle": false, "go": false} {
-		if got := c.Item(id).System(); got != want {
-			t.Errorf("%s: System() = %v, want %v", id, got, want)
+	// Every machine-wide item, pinned: an item moved off the System tab
+	// keeps its scope only through an explicit `scope`.
+	var got []string
+	for _, it := range c.Items {
+		if it.System() {
+			got = append(got, it.ID)
 		}
+	}
+	sort.Strings(got)
+	want := "autoupdates corpca ctools debug devlimits docker essentials etckeeper fail2ban journald k3s monitoring netfs ollama podman proxy sshharden tailscale tailscale-install tzlocale zram"
+	if strings.Join(got, " ") != want {
+		t.Errorf("system items: %s\nwant %s", strings.Join(got, " "), want)
+	}
+}
+
+func TestPhases(t *testing.T) {
+	for file, want := range map[string]string{
+		"[[tab]]\nid = \"x\"\ntitle = \"X\"\nphase = \"later\"\n": "phase \"later\"",
+		"[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\nphase = \"configure\"\n[[item.step]]\ntype = \"apt\"\npackages = [\"jq\"]\n": "phase comes from the tab",
+		"[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\nneeds = [\"registries\"]\n":                                                          "can't need or come after \"registries\"",
+	} {
+		var err error
+		if strings.HasPrefix(file, "[[tab]]") { // only the embedded catalog adds tabs
+			c := &Catalog{byID: map[string]*Item{}}
+			if err = c.addFile("x.toml", []byte(file), false); err == nil {
+				err = c.validate()
+			}
+		} else {
+			_, err = Load(fstest.MapFS{"x.toml": {Data: []byte(file)}}, nil)
+		}
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: err = %v, want %q", file, err, want)
+		}
+	}
+	// A local item on a configure tab is a configure item, and may need
+	// install and configure items alike.
+	c := load(t, fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"x\"\ntab = \"git\"\nlabel = \"X\"\nneeds = [\"docker\", \"github\"]\n")}})
+	if !c.Item("x").Configure() {
+		t.Error("an item on the git tab should be a configure item")
 	}
 }
 
@@ -227,7 +274,7 @@ func TestUnverifiedList(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	if want := "editors k3s k8s ollama omp tailscale"; strings.Join(got, " ") != want {
+	if want := "editors k3s k8s ollama omp tailscale-install"; strings.Join(got, " ") != want {
 		t.Errorf("unverified downloads: %s\nwant %s (update this list when that's intended)", strings.Join(got, " "), want)
 	}
 }

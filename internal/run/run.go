@@ -75,7 +75,8 @@ func build(items []*catalog.Item) []built {
 	return out
 }
 
-// Run installs items (in plan order) and then extra mise tools.
+// Run applies items in plan order, with the extra mise tools at the end
+// of installing (before the first configure item).
 func (r *Runner) Run(ctx context.Context, items []*catalog.Item, extraMise []string) *Result {
 	res := &Result{Errors: map[string]string{}}
 	failed := map[string]bool{}
@@ -91,23 +92,23 @@ func (r *Runner) Run(ctx context.Context, items []*catalog.Item, extraMise []str
 	b := build(items)
 	pkgDone := r.batchApt(ctx, b, failed, fail)
 
-	for _, x := range b {
+	apply := func(x built) {
 		it := x.item
 		title := label(it)
 		if failed[it.ID] {
 			r.Progress.Done("fail", title+": "+firstLine(res.Errors[it.ID]))
-			continue
+			return
 		}
 		if why := skipReason(it, failed); why != "" {
 			failed[it.ID] = true
 			res.Skipped = append(res.Skipped, it.ID)
 			r.Progress.Done("skip", fmt.Sprintf("%s (skipped: %s failed)", title, why))
-			continue
+			return
 		}
 		if x.err != nil {
 			fail(it.ID, x.err, nil)
 			r.Progress.Done("fail", title+": "+x.err.Error())
-			continue
+			return
 		}
 		r.Progress.Start(title)
 		var out bytes.Buffer
@@ -127,30 +128,44 @@ func (r *Runner) Run(ctx context.Context, items []*catalog.Item, extraMise []str
 
 	// Extra mise tools one by one: one that can't install doesn't stop the
 	// others, and its failure names it.
-	for _, tool := range extraMise {
-		id, title := "mise:"+steps.MiseName(tool), "mise: "+tool
-		if failed[plan.MiseID] {
-			res.Skipped = append(res.Skipped, id)
-			r.Progress.Done("skip", title+" (skipped: mise failed)")
-			continue
-		}
-		r.Progress.Start(title)
-		if done, _ := steps.MiseHas(ctx, r.Env, []string{tool}); done {
-			res.Unchanged = append(res.Unchanged, id)
-			r.Progress.Done("done", title+" (already done)")
-			continue
-		}
-		var out bytes.Buffer
-		if err := r.withLog(&out, func() error { return steps.MiseUse(ctx, r.Env, []string{tool}) }); err != nil {
-			if hint := miseBuildHint(tool, out.Bytes()); hint != "" {
-				err = fmt.Errorf("%w\n%s", err, hint)
+	extra := func() {
+		for _, tool := range extraMise {
+			id, title := "mise:"+steps.MiseName(tool), "mise: "+tool
+			if failed[plan.MiseID] {
+				res.Skipped = append(res.Skipped, id)
+				r.Progress.Done("skip", title+" (skipped: mise failed)")
+				continue
 			}
-			fail(id, err, out.Bytes())
-			r.Progress.Done("fail", title)
-			continue
+			r.Progress.Start(title)
+			if done, _ := steps.MiseHas(ctx, r.Env, []string{tool}); done {
+				res.Unchanged = append(res.Unchanged, id)
+				r.Progress.Done("done", title+" (already done)")
+				continue
+			}
+			var out bytes.Buffer
+			if err := r.withLog(&out, func() error { return steps.MiseUse(ctx, r.Env, []string{tool}) }); err != nil {
+				if hint := miseBuildHint(tool, out.Bytes()); hint != "" {
+					err = fmt.Errorf("%w\n%s", err, hint)
+				}
+				fail(id, err, out.Bytes())
+				r.Progress.Done("fail", title)
+				continue
+			}
+			res.Changed = append(res.Changed, id)
+			r.Progress.Done("ok", title)
 		}
-		res.Changed = append(res.Changed, id)
-		r.Progress.Done("ok", title)
+	}
+
+	// Installing, the extra mise tools, then configuring.
+	n := plan.Configuring(items)
+	for i, x := range b {
+		if i == n {
+			extra()
+		}
+		apply(x)
+	}
+	if n == len(b) {
+		extra()
 	}
 	return res
 }

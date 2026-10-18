@@ -16,7 +16,7 @@ func newTestPicker(t *testing.T) *Picker {
 		{Tab: "shell", ID: "tmux", Label: "tmux", Source: "apt install tmux"},
 		{Tab: MiseTab, ID: "mise:starship", Label: "starship — prompt", Source: "mise use -g starship", Names: []string{"starship"}},
 	}
-	p := NewPicker("yardo", tabs, entries, true)
+	p := NewPicker("yardo", tabs, entries, Options{Review: true})
 	p.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	return p
 }
@@ -50,7 +50,7 @@ func TestPickerTabsAndToggle(t *testing.T) {
 	if p.view() != reviewTab || len(p.items(reviewTab)) != 2 {
 		t.Errorf("enter on the last category should go to Review: %s", p.view())
 	}
-	if cmd := press(p, tea.KeyEnter); cmd == nil || !p.Confirmed() {
+	if cmd := press(p, tea.KeyEnter); cmd == nil || p.Outcome() != Done {
 		t.Error("enter on Review confirms")
 	}
 }
@@ -76,7 +76,7 @@ func TestPickerSearch(t *testing.T) {
 	if p.query != "" {
 		t.Error("esc clears the search")
 	}
-	if cmd := press(p, tea.KeyEsc); cmd == nil || p.Confirmed() {
+	if cmd := press(p, tea.KeyEsc); cmd == nil || p.Outcome() != Quit {
 		t.Error("esc on an empty search quits")
 	}
 }
@@ -86,6 +86,47 @@ func TestPickerEnterOnSearchGoesToReview(t *testing.T) {
 	press(p, "z", "s", "h", tea.KeySpace, tea.KeyEnter)
 	if p.view() != reviewTab || p.query != "" {
 		t.Errorf("view %s query %q", p.view(), p.query)
+	}
+}
+
+// The install screen: enter on a search only clears it (the configure
+// screen is a step away, not a search result away); enter on the last tab
+// moves on.
+func TestPickerInstallScreen(t *testing.T) {
+	tabs := []Tab{{"system", "System"}, {"shell", "Shell & CLI"}}
+	entries := []*Entry{{Tab: "system", ID: "docker", Label: "Docker"}, {Tab: "shell", ID: "zsh", Label: "zsh"}}
+	p := NewPicker("yardo [1/2] Install", tabs, entries, Options{Next: "configure"})
+	p.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if cmd := press(p, "z", "s", "h", tea.KeySpace, tea.KeyEnter); cmd != nil || p.query != "" || p.Outcome() != Quit {
+		t.Errorf("enter on a search: cmd %v query %q", cmd, p.query)
+	}
+	press(p, "2")
+	if v := p.View(); !strings.Contains(v, "enter configure →") {
+		t.Errorf("last tab should say where enter goes:\n%s", v)
+	}
+	if cmd := press(p, tea.KeyEnter); cmd == nil || p.Outcome() != Done {
+		t.Error("enter on the last tab is done")
+	}
+}
+
+// The configure screen: esc goes back to the install screen, ctrl-c quits.
+func TestPickerBack(t *testing.T) {
+	entries := []*Entry{{Tab: "git", ID: "gitid", Label: "Git name and email"}}
+	p := NewPicker("yardo [2/2] Configure", []Tab{{"git", "Git & SSH"}}, entries, Options{Review: true, Back: true, Note: "Installing: Docker"})
+	p.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if !strings.Contains(p.View(), "esc back") {
+		t.Errorf("hint should say esc goes back:\n%s", p.View())
+	}
+	press(p, tea.KeyRight)
+	if !strings.Contains(p.View(), "Installing: Docker") {
+		t.Errorf("Review should show the note:\n%s", p.View())
+	}
+	if cmd := press(p, tea.KeyEsc); cmd == nil || p.Outcome() != Back {
+		t.Errorf("esc: outcome %v, want Back", p.Outcome())
+	}
+	p.back = false
+	if cmd := press(p, tea.KeyCtrlC); cmd == nil || p.Outcome() != Quit {
+		t.Errorf("ctrl-c: outcome %v, want Quit", p.Outcome())
 	}
 }
 

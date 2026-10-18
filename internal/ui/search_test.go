@@ -10,14 +10,15 @@ import (
 	"github.com/eugenetaranov/yardo/internal/catalog"
 )
 
-// everything is the picker's search set: the catalog and mise's registry.
+// everything is the catalog (both screens) and mise's registry.
 func everything(t *testing.T) []*Entry {
 	t.Helper()
 	c, err := catalog.Load(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Dedupe(append(CatalogEntries(c), LoadMise(string(assets.MiseRegistry()))...))
+	all := append(CatalogEntries(c, catalog.PhaseInstall), CatalogEntries(c, catalog.PhaseConfigure)...)
+	return Dedupe(append(all, LoadMise(string(assets.MiseRegistry()))...))
 }
 
 func ids(es []*Entry, n int) []string {

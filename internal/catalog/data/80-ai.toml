@@ -131,7 +131,7 @@ check = "grep -q '\"repoVersion\": \"2.2.3\"' ~/.claude/ecc/install-state.json"
 
 [[item]]
 id = "agentcfg"
-tab = "ai"
+tab = "agents"
 label = "Describe this VM to agents (CLAUDE.md, AGENTS.md)"
 source = "~/.claude/CLAUDE.md · ~/.codex/AGENTS.md · only if absent"
 
@@ -151,7 +151,7 @@ if_absent = true
 # after the agents and their notes (agentcfg writes those only if absent).
 [[item]]
 id = "agentsafe"
-tab = "ai"
+tab = "agents"
 label = "Safer unattended agents (deny force-push, sudo, token reads; Codex sandbox)"
 after = ["claude", "codex", "agentcfg"]
 source = "~/.claude/settings.json deny rules · ~/.codex/config.toml sandbox · a Pushing section in CLAUDE.md/AGENTS.md"
@@ -161,7 +161,7 @@ type = "go:agentsafe"
 
 [[item]]
 id = "agentkeys"
-tab = "ai"
+tab = "agents"
 label = "Agent API keys (Anthropic, OpenAI, Gemini)"
 source = "~/.config/yardo/agent.env (0600) · read by interactive shells"
 
@@ -213,11 +213,11 @@ line = '[ -r ~/.config/yardo/agent-env.sh ] && . ~/.config/yardo/agent-env.sh'
 if_exists = true
 
 [[item]]
-id = "mcpjungle"
+id = "mcpjungle-install"
 tab = "ai"
-label = "MCPJungle + MCP servers (Docker)"
+label = "MCPJungle MCP gateway (Docker; servers: Configure → Agents)"
 needs = ["docker"]
-source = "release binary · systemd mcpjungle@<user> as mcp-<user> · mcp-sync"
+source = "release binary · systemd mcpjungle@<user> as mcp-<user>"
 
 [[item.step]]
 type = "apt"
@@ -253,6 +253,15 @@ type = "go:mcpjungle_unit"
 
 [[item.step]]
 type = "go:mcp_wait"
+
+# The servers, and the agents wired to the gateway. Keeps the old id, so an
+# old pick still means install + servers.
+[[item]]
+id = "mcpjungle"
+tab = "agents"
+label = "MCP servers on MCPJungle, added to your agents"
+needs = ["mcpjungle-install"]
+source = "~/.mcp/<server>/env (0600) · mcp-sync · Claude Code, Codex, Gemini CLI, OpenCode, Goose"
 
 # Each picked server's ~/.mcp/<name>/env (0600): its skeleton, with the
 # keys typed this run.

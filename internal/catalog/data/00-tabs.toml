@@ -1,4 +1,6 @@
-# The picker's tabs, in order (Review comes last on its own).
+# The picker's tabs, in order: the install screen's, then the configure
+# screen's (phase = "configure"; Review comes last on its own). The plan
+# installs everything first, then configures.
 
 [[tab]]
 id = "system"
@@ -33,5 +35,21 @@ id = "ai"
 title = "AI"
 
 [[tab]]
+id = "sysconf"
+title = "System settings"
+phase = "configure"
+
+[[tab]]
 id = "git"
-title = "Git & repos"
+title = "Git & SSH"
+phase = "configure"
+
+[[tab]]
+id = "agents"
+title = "Agents"
+phase = "configure"
+
+[[tab]]
+id = "logins"
+title = "Logins & keys"
+phase = "configure"

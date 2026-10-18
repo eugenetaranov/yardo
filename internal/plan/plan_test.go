@@ -59,11 +59,44 @@ func TestMiseFirst(t *testing.T) {
 	}
 }
 
-// npmrc is on the Dev tools tab but needs node (Languages): it goes after.
+// npmrc (Logins & keys) needs node (Languages): it goes after.
 func TestCrossTabNeeds(t *testing.T) {
 	got := resolve(t, "npmrc")
 	if index(got, "node") > index(got, "npmrc") || index(got, "mise") > index(got, "node") {
 		t.Errorf("plan = %v, want mise, node, npmrc in that order", got)
+	}
+}
+
+// Installing comes first: every install item before every configure item,
+// and dotfiles last of all.
+func TestInstallThenConfigure(t *testing.T) {
+	items, err := Resolve(cat(t), []string{"dotfiles", "registries", "github", "tailscale", "npmrc", "docker", "sops", "mcpjungle", "agentsafe", "claude"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := IDs(items)
+	n := Configuring(items)
+	for i, it := range items {
+		if (i < n) == (it.Configure() || it.Last) {
+			t.Errorf("%s at %d, configuring starts at %d: %v", it.ID, i, n, ids)
+		}
+	}
+	if ids[len(ids)-1] != "dotfiles" {
+		t.Errorf("dotfiles should be last: %v", ids)
+	}
+	if index(ids, "gitkey") < index(ids, "docker") {
+		t.Errorf("gitkey (configure) should come after the installs: %v", ids)
+	}
+}
+
+// The configure half of a split item kept the old id: an old pick still
+// installs both halves.
+func TestSplitItemsPullInTheirInstall(t *testing.T) {
+	for cfg, inst := range map[string]string{"tailscale": "tailscale-install", "sops": "sops-install", "mcpjungle": "mcpjungle-install"} {
+		got := resolve(t, cfg)
+		if i, j := index(got, inst), index(got, cfg); i < 0 || i > j {
+			t.Errorf("%s should pull in %s before it: %v", cfg, inst, got)
+		}
 	}
 }
 

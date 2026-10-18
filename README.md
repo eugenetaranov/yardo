@@ -47,25 +47,41 @@ apply|verify|gitkey`).
 ## Using it
 
 `sudo yardo` sets up the user who ran it (`--user ada` for another; a missing
-account is created) and opens the picker. Categories are tabs across the top (←/→ or
-1–9 to switch) above a checklist: nothing is preselected and only space ticks
-an item. Each row is one line; the line under the list shows how the item
-under the cursor is installed, e.g. `mise use -g terraform`. The last tab,
-Review, lists everything ticked.
+account is created) and opens the picker, on two screens: first **what to
+install**, then **how to configure it**. On each, categories are tabs across
+the top (←/→ or 1–9 to switch) above a checklist: nothing is preselected and
+only space ticks an item. Each row is one line; the line under the list shows
+how the item under the cursor is installed or applied, e.g. `mise use -g
+terraform`.
+
+- **[1/2] Install:** System, Shell & CLI, Dev tools, Languages, Cloud, IaC,
+  Containers & Kubernetes, AI. Enter on the last tab goes on to Configure.
+- **[2/2] Configure:** System settings, Git & SSH, Agents, Logins & keys, then
+  Review, which lists what you ticked on this screen under a line naming what
+  you're installing. Esc goes back to Install, with your ticks kept. This
+  screen offers only what fits what's installed: registry logins once Docker
+  is picked (now, on an earlier run, or already on the machine), the npm
+  registry with Node, the Tailscale login with Tailscale, and so on.
+
+The run follows the same order: everything is installed first (the extra
+mise tools at the end of that), then configured, with your dotfiles last.
+The proxy and CA bundle are the exception: they're applied before anything
+is downloaded.
 
 yardo is opinionated: what every machine should have isn't offered, it's
 always applied (see "Always" below), and related tools come as one item.
 
-Just start typing to fuzzy-search every tab at once: `ssh` lists what
-mentions SSH wherever it lives, each with its category. The search also covers
-the ~940 tools in mise's registry, with their descriptions (`find` turns up
-`fd`). A tool you tick there is installed with `mise use -g <tool>` (to pin a
-version or use a `backend:tool`, list it under `mise_extra` in a profile). Esc
-clears the search; Esc on an empty search quits.
+Just start typing to fuzzy-search every tab of the screen at once: `ssh`
+lists what mentions SSH wherever it lives, each with its category. On the
+Install screen the search also covers the ~940 tools in mise's registry,
+with their descriptions (`find` turns up `fd`). A tool you tick there is
+installed with `mise use -g <tool>` (to pin a version or use a
+`backend:tool`, list it under `mise_extra` in a profile). Esc clears the
+search; Esc on an empty search quits (on Configure: goes back).
 
-**Always**, on every machine, with nothing to pick: essentials (git, curl,
-jq, gh, build tools); automatic security updates (no auto-reboot) with
-needrestart restarting services quietly; SSH keys only, no root login
+**Always**, on every machine, with nothing to pick. Installing: essentials
+(git, curl, jq, gh, build tools). Configuring: automatic security updates
+(no auto-reboot) with needrestart restarting services quietly; SSH keys only, no root login
 (skipped, with a note, while you have no authorized key; a config sshd
 rejects is rolled back); fail2ban for SSH, on a machine with a public IPv4
 on an interface (Tailscale addresses are never banned; a cloud VM behind
@@ -73,15 +89,11 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 (inotify, open files), zram swap, a journal size cap, timezone (asked once)
 + locale. Keeping the clock in sync is left to the machine's launcher.
 
+### [1/2] Install
+
 1. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
-   iperf3, nmap, strace, btop, …), Tailscale, NFS/SMB clients,
-   node_exporter + glances, "sudo asks for your password". Behind a
-   corporate network: a proxy (apt, Docker, mise and shells use it; no
-   credentials in the URL) and an internal CA bundle (a PEM file on the VM,
-   or an https URL with its sha256), trusted system-wide and by Node,
-   Python and the AWS CLI. Both are applied before anything is installed,
-   and can be set in a profile's `[system]` (`proxy`, `no_proxy`,
-   `ca_bundle`, `ca_sha256`).
+   iperf3, nmap, strace, btop, …), Tailscale (log in under Configure), NFS/SMB
+   clients, node_exporter + glances.
 2. **Shell and CLI:** one zsh item that brings everything: zsh as the login
    shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
    search and completions, fzf-tab (Tab opens an fzf list with directory
@@ -109,9 +121,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 3. **Dev tools:** lazygit, dev CLIs (just, Task, watchexec, hyperfine, yq,
    xh, hurl), linters and hooks (shellcheck, shfmt, actionlint, gitleaks,
    pre-commit), database clients (psql, pgcli, usql, mariadb, sqlite3,
-   redis-cli), perf/valgrind/bpftrace, act, a private npm
-   registry (scope and token in `~/.npmrc`), weekly tool updates (a systemd
-   timer running `mise up` and `krew upgrade` as you).
+   redis-cli), perf/valgrind/bpftrace, act, glab (GitLab's CLI).
 4. **Languages** (mise, except PHP and C/C++ from apt): Go + gopls, delve,
    govulncheck, golangci-lint; Python 3.13 + uv + ruff; Node + pnpm +
    TypeScript; Bun; Deno; Java 25 + Maven + Gradle + Kotlin; Rust +
@@ -119,32 +129,32 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 5. **Cloud** (mise): AWS, Google Cloud, Azure, DigitalOcean, Hetzner,
    cloudflared, restic + rclone.
 6. **IaC** (mise): Terraform with terragrunt, tflint and terraform-docs,
-   OpenTofu, trivy + checkov, Packer, Ansible, sops + age with your age key
-   (generate or paste), Vault.
+   OpenTofu, trivy + checkov, Packer, Ansible, sops + age, Vault.
 7. **Containers & Kubernetes:** Docker (with log rotation and
    10.200.0.0/16 networks), Podman + skopeo + buildah, container tools
-   (lazydocker, dive, hadolint, crane, cosign), container registry logins
-   (`docker login`; ghcr.io can use your gh token); the Kubernetes CLIs as
+   (lazydocker, dive, hadolint, crane, cosign); the Kubernetes CLIs as
    one item (kubectl, kubectx/kubens, Helm 3, k9s, kubelogin, stern,
    kustomize, kubecolor, kubie, kubeconform, helmfile + helm-diff, krew with
    plugins); Argo CD and Flux CLIs; kind, k3d, or k3s as a real cluster on
    the VM; Tilt, Skaffold, ctlptl; talosctl.
 8. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,
-   Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no hooks), a `CLAUDE.md` /
-   `AGENTS.md` describing the VM, settings for agents left to run unattended
-   (Claude Code may not force-push, sudo, or read `~/.mcp`, `~/.ssh` or the
-   agent keys; Codex asks first and works in a sandbox; both are told to push
-   only to non-default branches; merged into your settings, not replacing
-   them), agent API keys (Anthropic, OpenAI, Gemini),
-   and the MCPJungle gateway with MCP servers (GitHub, Linear, Postgres,
-   Playwright, Jira, AWS, Jenkins, context7, …), added to Claude Code, Codex,
-   Gemini CLI, OpenCode and Goose. The gateway listens on this machine only,
-   on the VM's Tailscale address only (when Tailscale is up), or on every
-   interface (no auth: trusted networks only).
-9. **Git & repos:** git identity, git defaults (rebase on pull, push
+   Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no
+   hooks), and the MCPJungle gateway (its servers: Configure → Agents).
+
+### [2/2] Configure
+
+1. **System settings:** "sudo asks for your password", weekly tool updates
+   (a systemd timer running `mise up` and `krew upgrade` as you). Behind a
+   corporate network: a proxy (apt, Docker, mise and shells use it; no
+   credentials in the URL) and an internal CA bundle (a PEM file on the VM,
+   or an https URL with its sha256), trusted system-wide and by Node,
+   Python and the AWS CLI. Both are applied before anything is installed,
+   and can be set in a profile's `[system]` (`proxy`, `no_proxy`,
+   `ca_bundle`, `ca_sha256`).
+2. **Git & SSH:** git identity, git defaults (rebase on pull, push
    sets upstream, delta diffs, aliases, a global ignore file), one item per
-   git host (GitHub with the gh login, GitLab with glab and gitlab.com or
-   your own host, Bitbucket), each asking how this machine reaches it over
+   git host (GitHub with the gh login, GitLab with gitlab.com or your own
+   host, Bitbucket), each asking how this machine reaches it over
    SSH (a forwarded agent, a key made here, or a key you send; GitHub also
    a token), commit signing with SSH, global git ignores in
    `~/.config/git/ignore` (`.claude/`, `.python-version`, `.env`, `.venv/`,
@@ -154,6 +164,26 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    `bootstrap.sh` or `setup.sh`, or else `stow` for each top-level
    directory. It runs after everything else, so your files win (`[dotfiles]
    repo = "…"` in a personal profile).
+3. **Agents:** a `CLAUDE.md` / `AGENTS.md` describing the VM, settings for
+   agents left to run unattended (Claude Code may not force-push, sudo, or
+   read `~/.mcp`, `~/.ssh` or the agent keys; Codex asks first and works in
+   a sandbox; both are told to push only to non-default branches; merged
+   into your settings, not replacing them), agent API keys (Anthropic,
+   OpenAI, Gemini), and MCP servers on the MCPJungle gateway (GitHub,
+   Linear, Postgres, Playwright, Jira, AWS, Jenkins, context7, …), added to
+   Claude Code, Codex, Gemini CLI, OpenCode and Goose. The gateway listens
+   on this machine only, on the VM's Tailscale address only (when Tailscale
+   is up), or on every interface (no auth: trusted networks only).
+4. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
+   up` later), container registry logins (`docker login`; ghcr.io can use
+   your gh token), a private npm registry (scope and token in `~/.npmrc`),
+   and your age key for sops (generate or paste).
+
+In a profile, a split item's old id means both halves: `tailscale`,
+`sops` and `mcpjungle` are the configure items, and each pulls in its
+install item (`tailscale-install`, `sops-install`, `mcpjungle-install`),
+which a profile can also list alone. `gitlab` no longer installs glab:
+list `gitlab-cli` for that.
 
 Downloads are pinned: vendor apt keys are checked against their
 fingerprints and release binaries against their sha256 before they're
@@ -163,9 +193,9 @@ lists the installed ones under "Installed without a pinned checksum", with
 why. A `catalog.d` item that downloads must do the same (`sha256`, or
 `unverified = "why"`), or yardo refuses to load it.
 
-After the checklists, it asks every typed question in one place: extra mise
-tools, git name and email, timezone, how to reach GitHub, and the
-credentials of the items you picked. Then a review screen offers Install,
+After the two screens, it asks every typed question in one place: git name
+and email, timezone, how to reach GitHub, and the credentials of the items
+you picked. Then a review screen offers Install,
 Start over or Quit. `~/yardo.txt` lists everything installed so far,
 grouped by how it was installed, with how to update or remove it.
 

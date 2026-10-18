@@ -1,6 +1,7 @@
 // Package plan turns picks into the ordered list of items to install:
 // every pick, everything it needs (mise for mise items), in catalog order
-// with each item after what it needs.
+// with each item after what it needs; the install items first, then the
+// configure items (logins, keys, settings), then the ones that go last.
 package plan
 
 import (
@@ -90,15 +91,23 @@ func Resolve(c *catalog.Catalog, picks []string, extraMise bool) ([]*catalog.Ite
 		}
 		out = append(out, it)
 	}
-	// Hidden helpers first when wanted (as the bash installer did), then
-	// the rest in catalog order.
+	// Installing first: hidden helpers when wanted (as the bash installer
+	// did), then the rest in catalog order. The catalog guarantees an
+	// install item needs no configure item, so this places none.
 	for _, it := range c.Items {
-		if want[it.ID] && it.Hidden() {
+		if want[it.ID] && it.Hidden() && !it.Configure() {
 			place(it)
 		}
 	}
 	for _, it := range c.Items {
-		if want[it.ID] && !it.Last {
+		if want[it.ID] && !it.Configure() && !it.Last {
+			place(it)
+		}
+	}
+	// Then configuring: logins, keys, settings (and their hidden helpers,
+	// through needs).
+	for _, it := range c.Items {
+		if want[it.ID] && it.Configure() && !it.Last {
 			place(it)
 		}
 	}
@@ -110,6 +119,17 @@ func Resolve(c *catalog.Catalog, picks []string, extraMise bool) ([]*catalog.Ite
 		}
 	}
 	return out, nil
+}
+
+// Configuring returns the index of the first configure item (or Last
+// item) in a resolved plan: where installing ends. len(items) if none.
+func Configuring(items []*catalog.Item) int {
+	for i, it := range items {
+		if it.Configure() || it.Last {
+			return i
+		}
+	}
+	return len(items)
 }
 
 // IDs returns the items' ids.

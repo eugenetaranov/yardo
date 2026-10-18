@@ -27,10 +27,27 @@ const HiddenTab = "-"
 // LocalDir is where local catalog additions are read from.
 const LocalDir = "/etc/yardo/catalog.d"
 
+// Phases: the picker's two screens, and the plan's two halves. Install
+// items go first, then the configure items (logins, keys, settings).
+const (
+	PhaseInstall   = "install"
+	PhaseConfigure = "configure"
+)
+
 // Tab is one picker tab.
 type Tab struct {
 	ID    string `toml:"id"`
 	Title string `toml:"title"`
+	// Phase is install (the default) or configure.
+	Phase string `toml:"phase"`
+}
+
+// PhaseOf is the tab's phase, install when unset.
+func (t Tab) PhaseOf() string {
+	if t.Phase == "" {
+		return PhaseInstall
+	}
+	return t.Phase
 }
 
 // Item is one thing the picker offers.
@@ -55,12 +72,19 @@ type Item struct {
 	// Always puts the item in every plan, unpicked (the baseline every
 	// machine gets: security updates, SSH hardening, …); the picker
 	// doesn't offer it.
-	Always bool   `toml:"always"`
-	Steps  []Step `toml:"step"`
+	Always bool `toml:"always"`
+	// Phase sets a hidden item's phase (a visible one takes its tab's).
+	Phase string `toml:"phase"`
+	Steps []Step `toml:"step"`
 
 	// From is the file the item came from (for error messages).
 	From string `toml:"-"`
+	// configure: the item is in the configure phase (set by validate).
+	configure bool
 }
+
+// Configure reports whether the item is in the configure phase.
+func (it *Item) Configure() bool { return it.configure }
 
 // System reports whether the item is machine-wide (see Scope).
 func (it *Item) System() bool {
@@ -117,6 +141,17 @@ func (c *Catalog) Item(id string) *Item { return c.byID[id] }
 
 // Files is the file tree `file` and `template` steps read from.
 func (c *Catalog) Files() fs.FS { return c.files }
+
+// PhaseTabs returns the tabs of phase, in order.
+func (c *Catalog) PhaseTabs(phase string) []Tab {
+	var out []Tab
+	for _, t := range c.Tabs {
+		if t.PhaseOf() == phase {
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 // TabItems returns the visible items of tab, in catalog order.
 func (c *Catalog) TabItems(tab string) []*Item {
@@ -209,11 +244,23 @@ func (c *Catalog) validate() error {
 		errs = append(errs, fmt.Errorf("%s: item %q: %s", it.From, it.ID, fmt.Sprintf(format, a...)))
 	}
 	tabs := map[string]bool{HiddenTab: true}
+	phase := map[string]string{}
 	for _, t := range c.Tabs {
 		if t.ID == "" || t.Title == "" || tabs[t.ID] {
 			errs = append(errs, fmt.Errorf("tab %q: needs a unique id and a title", t.ID))
 		}
+		if p := t.PhaseOf(); p != PhaseInstall && p != PhaseConfigure {
+			errs = append(errs, fmt.Errorf("tab %q: phase %q: want install or configure", t.ID, t.Phase))
+		}
 		tabs[t.ID] = true
+		phase[t.ID] = t.PhaseOf()
+	}
+	for _, it := range c.Items {
+		p := phase[it.Tab]
+		if it.Hidden() {
+			p = it.Phase
+		}
+		it.configure = p == PhaseConfigure
 	}
 	for _, it := range c.Items {
 		switch {
@@ -227,6 +274,10 @@ func (c *Catalog) validate() error {
 			fail(it, "no steps") // only a bundle of what it needs may have none
 		case it.Scope != "" && it.Scope != "system" && it.Scope != "user":
 			fail(it, "scope %q: want system or user", it.Scope)
+		case it.Phase != "" && !it.Hidden():
+			fail(it, "phase comes from the tab (only a hidden item sets its own)")
+		case it.Phase != "" && it.Phase != PhaseInstall && it.Phase != PhaseConfigure:
+			fail(it, "phase %q: want install or configure", it.Phase)
 		}
 		for _, n := range it.Needs {
 			if c.byID[n] == nil {
@@ -236,6 +287,14 @@ func (c *Catalog) validate() error {
 		for _, n := range it.After {
 			if c.byID[n] == nil {
 				fail(it, "after %q, which is not an item", n)
+			}
+		}
+		// Installing comes first: an install item can't wait on configuring.
+		if !it.configure {
+			for _, n := range append(append([]string{}, it.Needs...), it.After...) {
+				if d := c.byID[n]; d != nil && d.configure {
+					fail(it, "an install item can't need or come after %q, a configure item", n)
+				}
 			}
 		}
 		for i, s := range it.Steps {

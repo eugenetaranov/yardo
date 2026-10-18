@@ -28,6 +28,29 @@ var (
 	accentBd = accent.Bold(true)
 )
 
+// Options shape a picker for its place in the flow.
+type Options struct {
+	// Review adds the Review tab, last.
+	Review bool
+	// Back: esc on an empty search returns Back instead of quitting
+	// (ctrl-c still quits).
+	Back bool
+	// Next names the screen enter on the last tab goes to (key hints).
+	Next string
+	// Note is a muted line atop the Review tab (what the other screen
+	// picked).
+	Note string
+}
+
+// Outcome is how a picker run ended.
+type Outcome int
+
+const (
+	Quit Outcome = iota
+	Done
+	Back
+)
+
 // Picker is the tabbed checklist: categories as tabs, type to search every
 // tab and mise's registry, space toggles, Review last. Only space changes
 // a selection.
@@ -35,7 +58,7 @@ type Picker struct {
 	title   string
 	tabs    []Tab
 	entries []*Entry
-	review  bool
+	opt     Options
 
 	tab            int
 	query          string
@@ -43,12 +66,13 @@ type Picker struct {
 	cursor, top    map[string]int
 	width, height  int
 	confirmed, out bool
+	back           bool
 }
 
 // NewPicker builds a picker over entries (catalog rows, then mise tools,
-// which only appear in search results). review adds the Review tab.
-func NewPicker(title string, tabs []Tab, entries []*Entry, review bool) *Picker {
-	p := &Picker{title: title, entries: entries, review: review, cursor: map[string]int{}, top: map[string]int{}, width: 100, height: 30}
+// which only appear in search results).
+func NewPicker(title string, tabs []Tab, entries []*Entry, o Options) *Picker {
+	p := &Picker{title: title, entries: entries, opt: o, cursor: map[string]int{}, top: map[string]int{}, width: 100, height: 30}
 	for _, t := range tabs {
 		for _, e := range entries {
 			if e.Tab == t.ID {
@@ -57,7 +81,7 @@ func NewPicker(title string, tabs []Tab, entries []*Entry, review bool) *Picker 
 			}
 		}
 	}
-	if review {
+	if o.Review {
 		p.tabs = append(p.tabs, Tab{reviewTab, "Review"})
 	}
 	return p
@@ -74,8 +98,16 @@ func (p *Picker) Selected() []string {
 	return out
 }
 
-// Confirmed reports whether the user confirmed (not quit).
-func (p *Picker) Confirmed() bool { return p.confirmed }
+// Outcome is how the last run ended.
+func (p *Picker) Outcome() Outcome {
+	switch {
+	case p.confirmed:
+		return Done
+	case p.back:
+		return Back
+	}
+	return Quit
+}
 
 func (p *Picker) Init() tea.Cmd { return nil }
 
@@ -162,8 +194,11 @@ func (p *Picker) key(k tea.KeyMsg) tea.Cmd {
 			r := []rune(p.query)
 			p.setQuery(string(r[:len(r)-1]))
 		}
-	case tea.KeyEsc, tea.KeyCtrlC:
-		if p.query == "" || k.Type == tea.KeyCtrlC {
+	case tea.KeyCtrlC:
+		return tea.Quit
+	case tea.KeyEsc:
+		if p.query == "" {
+			p.back = p.opt.Back
 			return tea.Quit
 		}
 		p.setQuery("")
@@ -171,11 +206,13 @@ func (p *Picker) key(k tea.KeyMsg) tea.Cmd {
 		switch {
 		case p.query != "":
 			p.setQuery("")
-			if !p.review {
+			switch {
+			case p.opt.Review:
+				p.tab = len(p.tabs) - 1
+			case len(p.tabs) == 1: // a one-list picker: done
 				p.confirmed = true
 				return tea.Quit
 			}
-			p.tab = len(p.tabs) - 1
 		case p.tab == len(p.tabs)-1:
 			p.confirmed = true
 			return tea.Quit
@@ -282,6 +319,13 @@ func (p *Picker) View() string {
 
 	items := p.items(view)
 	listH := max(1, h-7) // the focused item's details take a line
+	if view == reviewTab && p.opt.Note != "" {
+		for _, l := range wrap(p.opt.Note, max(4, w-4)) {
+			b.WriteString("   " + muted.Render(l) + "\n")
+			listH--
+		}
+		listH = max(1, listH)
+	}
 	cur := min(p.cursor[view], max(0, len(items)-1))
 	p.cursor[view] = cur
 
@@ -386,15 +430,27 @@ func (p *Picker) View() string {
 		detail = runewidth.Truncate(items[cur].Source, max(4, w-5), "…")
 	}
 	b.WriteString("   " + muted.Render(detail) + "\n")
-	keys := "type to search · ←/→ category · ↑/↓ move · space toggle · enter next · esc quit"
+	esc := "esc quit"
+	if p.opt.Back {
+		esc = "esc back"
+	}
+	enter := "enter next"
+	if p.tab == len(p.tabs)-1 && p.opt.Next != "" {
+		enter = "enter " + p.opt.Next + " →"
+	}
+	keys := "type to search · ←/→ category · ↑/↓ move · space toggle · " + enter + " · " + esc
 	switch view {
 	case searchTab:
-		keys = "esc clear · ↑/↓ move · space toggle · enter review"
-		if !p.review {
+		switch {
+		case p.opt.Review:
+			keys = "esc clear · ↑/↓ move · space toggle · enter review"
+		case len(p.tabs) == 1:
 			keys = "esc clear · ↑/↓ move · space toggle · enter confirm"
+		default:
+			keys = "esc clear · ↑/↓ move · space toggle · enter done"
 		}
 	case reviewTab:
-		keys = "space untick · ← back · type to search · enter confirm · esc quit"
+		keys = "space untick · ← back · type to search · enter confirm · " + esc
 	}
 	b.WriteString(" " + muted.Render(keys))
 	return b.String()
@@ -451,12 +507,13 @@ func (p *Picker) tabBar(w, chosen int) string {
 	return b.String()
 }
 
-// Run shows the picker on the terminal; it returns the ticked ids, or
-// ok=false when the user quit.
-func (p *Picker) Run() (ids []string, ok bool, err error) {
+// Run shows the picker on the terminal; it returns the ticked ids and how
+// it ended. It can run again (after Back), keeping its ticks.
+func (p *Picker) Run() (ids []string, o Outcome, err error) {
+	p.out, p.confirmed, p.back = false, false, false
 	if _, err := tea.NewProgram(p, tea.WithAltScreen()).Run(); err != nil {
-		return nil, false, err
+		return nil, Quit, err
 	}
 	p.out = true
-	return p.Selected(), p.confirmed, nil
+	return p.Selected(), p.Outcome(), nil
 }

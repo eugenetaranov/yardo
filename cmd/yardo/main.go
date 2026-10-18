@@ -344,7 +344,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		}
 		listDropped(stdout, cat, dropped)
 	}
-	if a.MCPPort == 0 && slices.ContainsFunc(items, func(it *catalog.Item) bool { return it.ID == "mcpjungle" }) {
+	if a.MCPPort == 0 && slices.ContainsFunc(items, func(it *catalog.Item) bool { return it.ID == "mcpjungle-install" }) {
 		if a.MCPPort, err = st.Port(a.User); err != nil {
 			return err
 		}

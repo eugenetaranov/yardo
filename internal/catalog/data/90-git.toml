@@ -1,4 +1,4 @@
-# yardo catalog: the Git & repos tab: git itself, the git hosts
+# yardo catalog: the Git & SSH tab (Configure): git itself, the git hosts
 # (GitHub, GitLab, Bitbucket) and how this machine reaches them, dotfiles.
 # `legacy` steps run the bundled bash installer until the item is ported.
 
@@ -74,6 +74,7 @@ to = "~/.config/git/ignore"
 [[item]]
 id = "gitkey"
 tab = "-"
+phase = "configure"
 label = "SSH for the git hosts"
 source = "~/.ssh/yardo_git_key or ~/.ssh/id_ed25519 · ~/.ssh/config · host keys"
 
@@ -93,13 +94,9 @@ type = "legacy"
 [[item]]
 id = "gitlab"
 tab = "git"
-label = "GitLab: glab + SSH key for git"
+label = "GitLab: SSH key for git"
 needs = ["gitkey"]
-source = "mise use -g glab · git over SSH: forwarded agent, a key made here or one you send (yardo gitkey) · gitlab.com or your own"
-
-[[item.step]]
-type = "mise"
-tools = ["glab@latest"]
+source = "git over SSH: forwarded agent, a key made here or one you send (yardo gitkey) · gitlab.com or your own"
 
 [[item]]
 id = "bitbucket"

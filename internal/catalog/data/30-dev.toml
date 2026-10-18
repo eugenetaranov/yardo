@@ -64,7 +64,7 @@ tools = ["act@latest"]
 
 [[item]]
 id = "npmrc"
-tab = "dev"
+tab = "logins"
 label = "Private npm registry (scope + token)"
 needs = ["node"]
 source = "~/.npmrc (a yardo block, 0600)"
@@ -97,7 +97,7 @@ when = "[ -z {{npm_scope}} ]"
 
 [[item]]
 id = "autoupdate-tools"
-tab = "dev"
+tab = "sysconf"
 label = "Weekly tool updates (mise up, krew upgrade; a systemd timer)"
 needs = ["mise"]
 source = "yardo-update@<user>.timer: weekly, as you · run now: sudo systemctl start yardo-update@<user>"
@@ -116,3 +116,13 @@ to = "/etc/systemd/system/yardo-update@.timer"
 type = "run"
 cmd = "systemctl daemon-reload && systemctl enable --now yardo-update@{{user}}.timer"
 check = "systemctl is-enabled --quiet yardo-update@{{user}}.timer && systemctl is-active --quiet yardo-update@{{user}}.timer"
+
+# glab, GitLab's CLI. Its SSH key and host: Configure → Git & SSH.
+[[item]]
+id = "gitlab-cli"
+tab = "dev"
+label = "glab (GitLab CLI)"
+
+[[item.step]]
+type = "mise"
+tools = ["glab@latest"]

@@ -37,7 +37,7 @@ func TestDryRunPlan(t *testing.T) {
 		t.Fatalf("run: %v\n%s", err, errb.String())
 	}
 	got := out.String()
-	for _, want := range []string{"For user: " + me.Username, "zsh (login shell)\n  apt    zsh git\n  shell  ", "  clone  https://github.com/romkatv/powerlevel10k.git", "mise   terraform@latest terragrunt@latest", "Extra mise tools\n  mise   starship"} {
+	for _, want := range []string{"For user: " + me.Username, "zsh (login shell)\n  apt    zsh git\n  shell  ", "  clone  https://github.com/romkatv/powerlevel10k.git", "mise   terraform@latest terragrunt@latest", "Extra mise tools\n  mise   starship", "== Install\n", "== Configure\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}

@@ -47,14 +47,21 @@ type = "mise"
 tools = ["uv@latest", "pipx:ansible"]
 
 [[item]]
-id = "sops"
+id = "sops-install"
 tab = "iac"
-source = "mise use -g sops age · ~/.config/sops/age/keys.txt (0600) · SOPS_AGE_KEY_FILE"
-label = "sops + age, with your age key (generate or paste)"
+label = "sops + age (your age key: Configure → Logins & keys)"
 
 [[item.step]]
 type = "mise"
 tools = ["sops@latest", "age@latest"]
+
+# Keeps the old id, so an old pick still means install + key.
+[[item]]
+id = "sops"
+tab = "logins"
+needs = ["sops-install"]
+source = "~/.config/sops/age/keys.txt (0600) · SOPS_AGE_KEY_FILE"
+label = "age key for sops (generate or paste)"
 
 [[item.step]]
 type = "go:agekey"

@@ -308,3 +308,15 @@ func TestExtraMiseToolsOneByOne(t *testing.T) {
 		t.Errorf("ag's error = %q", e)
 	}
 }
+
+// Extra mise tools install at the end of installing, before configuring.
+func TestExtraMiseToolsBeforeConfiguring(t *testing.T) {
+	x := &fakeExec{installed: map[string]bool{}}
+	r, out := runner(t, x)
+	last := aptItem("dots", "stow")
+	last.Last = true
+	r.Run(context.Background(), []*catalog.Item{aptItem("a", "jq"), last}, []string{"starship"})
+	if got, want := out.String(), "✓ a\n✓ mise: starship\n✓ dots\n"; !strings.HasSuffix(got, want) {
+		t.Errorf("progress:\n%s\nwant\n%s", got, want)
+	}
+}
