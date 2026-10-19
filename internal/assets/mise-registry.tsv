@@ -302,6 +302,7 @@ gam		command line management for Google Workspace
 gator		Gatekeeper - Policy Controller for Kubernetes
 gcc-arm-none-eabi		Arm GNU Toolchain
 gcloud		GCloud CLI (Google Cloud SDK)
+gdal		GDAL is a translator library for raster and vector geospatial data formats
 gdu		Fast disk usage analyzer with console interface written in Go
 gemini-cli	gemini	Gemini CLI, a command-line AI workflow tool that connects to your tools, understands your code and accelerates your workflows
 gentle-ai		Ecosystem, frameworks, and workflows for AI coding agents
@@ -549,6 +550,7 @@ mark		Sync your markdown files with Confluence pages
 markdownlint-cli2		A fast, flexible, configuration-based command-line interface for linting Markdown/CommonMark files with the markdownlint library
 marksman		Write Markdown with code assist and intelligence in the comfort of your favourite editor
 marp-cli		A CLI interface for Marp and Marpit based converters
+martin		Blazing fast and lightweight PostGIS, MBTiles and PMTiles tile server, tile generation, and MBTiles tooling
 mas		Mac App Store command-line interface
 mask		A CLI task runner defined by a simple markdown file
 maturin		Build and publish crates with pyo3, cffi and uniffi bindings as well as rust binaries as python packages with minimal configuration.
@@ -725,6 +727,7 @@ railway		Railway CLI
 rancher		Rancher CLI
 rbac-lookup		Easily find roles and cluster roles attached to any user, service account, or group name in your Kubernetes cluster
 rclone		"rsync for cloud storage" - Google Drive, S3, Dropbox, Backblaze B2, One Drive, Swift, Hubic, Wasabi, Google Cloud Storage, Yandex Files
+rea		Reverse engineer anything with agents, from app behavior down to native binaries
 rebar		Erlang build tool that makes it easy to compile and test Erlang applications and releases
 reckoner		Declaratively install and manage multiple Helm chart releases
 redis		Cache & in-memory datastore
