@@ -352,6 +352,7 @@ golines		A golang formatter that fixes long lines
 gomigrate		Database migrations. CLI and Golang library
 gomplate		A flexible commandline tool for template rendering. Supports lots of local and remote datasources
 google-java-format		Reformats Java source code to comply with Google Java Style
+goose-agent		An open source, extensible AI agent that goes beyond code suggestions
 gopass		The slightly more awesome standard unix password manager for teams
 goreleaser		Deliver Go binaries as fast and easily as possible
 goss		Quick and Easy server testing/validation
