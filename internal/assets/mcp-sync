@@ -72,8 +72,10 @@ render() {
   dir="$MCP_DIR/$1"
   case "$KIND" in
     docker)
-      # shellcheck disable=SC2086 # DOCKER_ARGS is intentionally word-split
-      set -- run -i --rm --env-file "$dir/env" -v "$dir:/mcp:ro" ${DOCKER_ARGS:-} "$IMAGE"
+      # DOCKER_ARGS go before the image, IMAGE_ARGS (the server's command
+      # or flags) after it.
+      # shellcheck disable=SC2086 # both are intentionally word-split
+      set -- run -i --rm --env-file "$dir/env" -v "$dir:/mcp:ro" ${DOCKER_ARGS:-} "$IMAGE" ${IMAGE_ARGS:-}
       printf '%s\n' "$@" | jq -Rn --arg name "$NAME" --arg desc "${DESCRIPTION:-}" \
         '{name: $name, description: $desc, transport: "stdio", command: "docker", args: [inputs], session_mode: "stateful"}' ;;
     http)
@@ -107,7 +109,7 @@ for NAME in $want; do
     echo "$NAME: no spec (not in $CATALOG and no $MCP_DIR/$NAME/spec) — skipped"
     continue
   fi
-  KIND= IMAGE= DOCKER_ARGS= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION=
+  KIND= IMAGE= DOCKER_ARGS= IMAGE_ARGS= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION=
   unset -f skeleton 2>/dev/null || true
   # shellcheck disable=SC1090
   . "$spec"

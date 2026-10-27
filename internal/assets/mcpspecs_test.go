@@ -32,7 +32,7 @@ func TestMCPSpecNamesDistinct(t *testing.T) {
 			t.Errorf("MCP spec %q is in both assets/mcp-catalog (tack-roles) and conf/mcp-catalog (yardo)", n)
 		}
 	}
-	for _, want := range []string{"github", "postgres", "playwright", "linear"} {
+	for _, want := range []string{"github", "postgres", "playwright", "linear", "grafana", "opensearch"} {
 		if !own[want] {
 			t.Errorf("conf/mcp-catalog has no %s.spec", want)
 		}

@@ -180,7 +180,8 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    a sandbox; both are told never to rewrite pushed history; merged
    into your settings, not replacing them), agent API keys (Anthropic,
    OpenAI, Gemini), and MCP servers on the MCPJungle gateway (GitHub,
-   Linear, Postgres, Playwright, Jira, AWS, Jenkins, context7, …), added to
+   Linear, Postgres, Playwright, Jira, AWS, Jenkins, Grafana, OpenSearch,
+   context7, …), added to
    Claude Code, Codex, Gemini CLI, OpenCode and Goose. The gateway listens
    on this machine only, on the VM's Tailscale address only (when Tailscale
    is up), or on every interface (no auth: trusted networks only).
