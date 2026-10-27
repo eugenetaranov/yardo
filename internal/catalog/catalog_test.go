@@ -39,7 +39,7 @@ func TestEmbeddedCatalogLoads(t *testing.T) {
 			t.Errorf("tab %d %s: phase %s", i, tb.ID, tb.PhaseOf())
 		}
 	}
-	for id, want := range map[string]bool{"docker": false, "mise": false, "gitkey": true, "registries": true, "github": true, "tailscale": true, "tailscale-install": false} {
+	for id, want := range map[string]bool{"docker": false, "mise": false, "gitkey": true, "sops": true, "github": true, "tailscale": true, "tailscale-install": false} {
 		if got := c.Item(id).Configure(); got != want {
 			t.Errorf("%s: Configure() = %v, want %v", id, got, want)
 		}
@@ -176,13 +176,12 @@ func TestCredKeysMatchBash(t *testing.T) {
 	for _, m := range regexp.MustCompile(`(?m)^\s*"([^"]+)"`).FindAllStringSubmatch(body, -1) {
 		bash[m[1]] = true
 	}
-	answer := map[string]string{"": "secret", "npm.scope": "A_NPM_SCOPE", "npm.registry": "A_NPM_REGISTRY"}
 	n := 0
 	for _, it := range load(t, nil).Items {
 		for _, s := range it.Steps {
 			for _, k := range s.Keys {
 				n++
-				row := strings.Join([]string{it.ID, k.Name, answer[k.Answer], k.Prompt, k.How, k.When, k.Default}, "|")
+				row := strings.Join([]string{it.ID, k.Name, "secret", k.Prompt, k.How, k.When, ""}, "|")
 				if !bash[row] {
 					t.Errorf("not in bash's CRED_ROWS: %s", row)
 				}
@@ -218,7 +217,7 @@ func TestPhases(t *testing.T) {
 	for file, want := range map[string]string{
 		"[[tab]]\nid = \"x\"\ntitle = \"X\"\nphase = \"later\"\n": "phase \"later\"",
 		"[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\nphase = \"configure\"\n[[item.step]]\ntype = \"apt\"\npackages = [\"jq\"]\n": "phase comes from the tab",
-		"[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\nneeds = [\"registries\"]\n":                                                          "can't need or come after \"registries\"",
+		"[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\nneeds = [\"tailscale\"]\n":                                                   "can't need or come after \"tailscale\"",
 	} {
 		var err error
 		if strings.HasPrefix(file, "[[tab]]") { // only the embedded catalog adds tabs

@@ -70,7 +70,6 @@ CATALOG_ROWS=(
   "sshharden|system|SSH: keys only, no root login (advanced)|fn|||/etc/ssh/sshd_config.d/10-yardo.conf · refuses if you have no authorized key"
   "ufw|system|Firewall: only SSH, Tailscale, mosh in (advanced)|fn|||ufw · note: Docker's published ports bypass it"
   "fail2ban|system|fail2ban: ban SSH brute force (internet-facing VMs)|fn|||apt fail2ban · sshd jail · Tailscale IPs never banned"
-  "registries|system|Container registry logins (ghcr.io, …)|fn||docker|docker login per registry · ~/.docker/config.json"
 
   "cli|shell|CLI upgrades (ripgrep, fd, bat, eza, fzf, zoxide, delta, direnv)|fn|||apt install ripgrep fd-find bat eza zoxide fzf git-delta direnv tree (+ fd/bat links)"
   "editors|shell|Vim|apt|vim||"
@@ -110,7 +109,6 @@ CATALOG_ROWS=(
   "cpp|lang|C/C++ (gcc clang cmake gdb)|apt|clang clangd cmake ninja-build gdb pkg-config|essentials|"
   "zig|lang|Zig|mise|zig@latest||"
   "dotnet|lang|.NET SDK|mise|dotnet@latest||"
-  "npmrc|dev|Private npm registry (scope + token)|fn||node|~/.npmrc (a yardo block, 0600)"
 
   "aws|cloud|AWS CLI|mise|aws-cli@latest||"
   "gcloud|cloud|Google Cloud CLI (large)|mise|gcloud@latest||"
@@ -175,9 +173,6 @@ CRED_ROWS=(
   "agentkeys|ANTHROPIC_API_KEY|secret|Anthropic API key (empty: log in with 'claude' instead)|https://console.anthropic.com/settings/keys|claude|"
   "agentkeys|OPENAI_API_KEY|secret|OpenAI API key (Codex)|https://platform.openai.com/api-keys|codex|"
   "agentkeys|GEMINI_API_KEY|secret|Gemini API key|https://aistudio.google.com/apikey|gemini|"
-  "npmrc|NPM_SCOPE|A_NPM_SCOPE|npm scope (e.g. @acme)|||"
-  "npmrc|NPM_REGISTRY|A_NPM_REGISTRY|npm registry URL|||https://npm.pkg.github.com"
-  "npmrc|NPM_TOKEN|secret|npm registry token|for GitHub Packages: a token with read:packages at https://github.com/settings/tokens||"
 )
 SCREENS=("system|System" "shell|Shell & CLI" "dev|Dev tools" "lang|Languages"
          "cloud|Cloud" "iac|IaC" "k8s|Kubernetes" "ai|AI" "git|Git & repos")

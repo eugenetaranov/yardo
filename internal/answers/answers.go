@@ -190,6 +190,8 @@ var PickMap = map[string][]string{
 	"devloop":     {"k8stools"},
 	"talos":       {"k8stools"},
 	"corpca":      {}, // no longer an item
+	"registries":  {}, // no longer an item
+	"npmrc":       {}, // no longer an item
 	"monitoring":  {}, // no longer an item
 	"sudopw":      {}, // no longer an item
 	// always applied now
@@ -207,6 +209,8 @@ var pickNotes = map[string]string{
 	"corpca":     "The internal CA bundle is no longer an item: certificates it installed stay trusted (remove them from /usr/local/share/ca-certificates and run 'sudo update-ca-certificates').",
 	"monitoring": "node_exporter + glances is no longer an item: what it installed stays (remove with 'sudo apt remove prometheus-node-exporter').",
 	"editors":    "Vim is no longer an item: Neovim, set up the same way, replaces it. Vim and ~/.vimrc stay as they are.",
+	"registries": "Container registry logins are no longer an item: logins already made stay (sudo yardo forget still logs out of them); log in with 'docker login <registry>'.",
+	"npmrc":      "The private npm registry is no longer an item: yardo's block in ~/.npmrc stays (sudo yardo forget still removes it); edit ~/.npmrc yourself.",
 }
 
 // MigratePicks applies PickMap, keeping order and dropping duplicates. It

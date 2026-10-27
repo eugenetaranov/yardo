@@ -82,9 +82,9 @@ type Step struct {
 	When string `toml:"when"`
 
 	// cred: a credential file the user fills in (To, mode 0600). Format
-	// is env (KEY=value lines; a new file is Header plus a commented line
-	// per key) or npmrc (a yardo block in ~/.npmrc). Keys are asked
-	// for, or skipped and left empty.
+	// is env: KEY=value lines; a new file is Header plus a commented line
+	// per key. Keys are secrets, asked for without echo and never saved,
+	// or skipped and left empty.
 	Format string    `toml:"format"`
 	Header string    `toml:"header"`
 	Keys   []CredKey `toml:"key"`
@@ -103,20 +103,10 @@ type CredKey struct {
 	How    string `toml:"how"` // where to get it
 	// When: asked only if this item is picked or this tool installed.
 	When string `toml:"when"`
-	// Answer is the saved answer a plain setting goes in (npm.scope,
-	// npm.registry); none: a secret, read without echo and never saved.
-	Answer  string `toml:"answer"`
-	Default string `toml:"default"`
 	// LoggedIn is a file whose presence means the tool has its own login,
 	// so an empty key isn't missing.
 	LoggedIn string `toml:"logged_in"`
 }
-
-// Secret reports whether the key is a secret.
-func (k CredKey) Secret() bool { return k.Answer == "" }
-
-// CredAnswers are the saved answers a cred key may set.
-var CredAnswers = map[string]bool{"npm.scope": true, "npm.registry": true}
 
 var keyNameRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
@@ -233,8 +223,8 @@ func (s *Step) validate(files fs.FS) error {
 	case s.Type == "note":
 		return need("text", s.Text)
 	case s.Type == "cred":
-		if s.Format != "env" && s.Format != "npmrc" {
-			return fmt.Errorf("format %q: want env or npmrc", s.Format)
+		if s.Format != "env" {
+			return fmt.Errorf("format %q: want env", s.Format)
 		}
 		if len(s.Keys) == 0 {
 			return errors.New("needs keys")
@@ -242,9 +232,6 @@ func (s *Step) validate(files fs.FS) error {
 		for _, k := range s.Keys {
 			if !keyNameRe.MatchString(k.Name) || k.Prompt == "" {
 				return fmt.Errorf("key %q: needs an UPPER_CASE name and a prompt", k.Name)
-			}
-			if k.Answer != "" && !CredAnswers[k.Answer] {
-				return fmt.Errorf("key %s: answer %q is not a saved answer", k.Name, k.Answer)
 			}
 		}
 		return need("to", s.To)

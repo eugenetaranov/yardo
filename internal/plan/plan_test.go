@@ -59,18 +59,18 @@ func TestMiseFirst(t *testing.T) {
 	}
 }
 
-// npmrc (Logins & keys) needs node (Languages): it goes after.
+// sops (Logins & keys) needs sops-install (IaC): it goes after.
 func TestCrossTabNeeds(t *testing.T) {
-	got := resolve(t, "npmrc")
-	if index(got, "node") > index(got, "npmrc") || index(got, "mise") > index(got, "node") {
-		t.Errorf("plan = %v, want mise, node, npmrc in that order", got)
+	got := resolve(t, "sops")
+	if index(got, "sops-install") > index(got, "sops") || index(got, "mise") > index(got, "sops-install") {
+		t.Errorf("plan = %v, want mise, sops-install, sops in that order", got)
 	}
 }
 
 // Installing comes first: every install item before every configure item,
 // and dotfiles last of all.
 func TestInstallThenConfigure(t *testing.T) {
-	items, err := Resolve(cat(t), []string{"dotfiles", "registries", "github", "tailscale", "npmrc", "docker", "sops", "mcpjungle", "agentcfg", "claude"}, false)
+	items, err := Resolve(cat(t), []string{"dotfiles", "github", "tailscale", "docker", "sops", "mcpjungle", "agentcfg", "claude"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,24 +117,24 @@ func index(l []string, s string) int {
 	return -1
 }
 
-// registries goes after the GitHub login when both are installed (ghcr.io
-// can use gh's token), and doesn't pull it in.
+// Neovim goes after the languages it has servers for when both are
+// picked (its file comes first), and doesn't pull them in.
 func TestAfterOrdersWithoutPulling(t *testing.T) {
 	c, err := catalog.Load(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	items, err := Resolve(c, []string{"registries", "github"}, false)
+	items, err := Resolve(c, []string{"neovim", "go"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ids := " " + strings.Join(IDs(items), " ") + " "
-	if strings.Index(ids, " github ") > strings.Index(ids, " registries ") {
-		t.Errorf("order %s: want github before registries", ids)
+	if strings.Index(ids, " go ") > strings.Index(ids, " neovim ") {
+		t.Errorf("order %s: want go before neovim", ids)
 	}
-	items, _ = Resolve(c, []string{"registries"}, false)
-	if strings.Contains(" "+strings.Join(IDs(items), " ")+" ", " github ") {
-		t.Errorf("registries pulled in github: %v", IDs(items))
+	items, _ = Resolve(c, []string{"neovim"}, false)
+	if strings.Contains(" "+strings.Join(IDs(items), " ")+" ", " go ") {
+		t.Errorf("neovim pulled in go: %v", IDs(items))
 	}
 }
 

@@ -41,17 +41,17 @@ func TestConfigurable(t *testing.T) {
 			t.Errorf("%s should always be offered: %v", id, got)
 		}
 	}
-	for _, id := range []string{"registries", "npmrc", "tailscale", "sops", "mcpjungle"} {
+	for _, id := range []string{"tailscale", "sops", "mcpjungle"} {
 		if slices.Contains(got, id) {
 			t.Errorf("%s offered without its install: %v", id, got)
 		}
 	}
-	if got := shown("docker", "node"); !slices.Contains(got, "registries") || !slices.Contains(got, "npmrc") {
-		t.Errorf("picked docker and node: %v", got)
+	if got := shown("mcpjungle-install"); !slices.Contains(got, "mcpjungle") {
+		t.Errorf("picked the MCPJungle gateway: %v", got)
 	}
 	k.a.Picks = []string{"tailscale-install"} // an earlier run
 	onPath["sops"] = true                      // installed by hand
-	if got := shown(); !slices.Contains(got, "tailscale") || !slices.Contains(got, "sops") || slices.Contains(got, "registries") {
+	if got := shown(); !slices.Contains(got, "tailscale") || !slices.Contains(got, "sops") || slices.Contains(got, "mcpjungle") {
 		t.Errorf("saved tailscale, sops on PATH: %v", got)
 	}
 }

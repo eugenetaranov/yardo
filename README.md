@@ -69,9 +69,9 @@ terraform`.
 - **[2/2] Configure:** System settings, Git & SSH, Agents, Logins & keys, then
   Review, which lists what you ticked on this screen under a line naming what
   you're installing. Esc goes back to Install, with your ticks kept. This
-  screen offers only what fits what's installed: registry logins once Docker
-  is picked (now, on an earlier run, or already on the machine), the npm
-  registry with Node, the Tailscale login with Tailscale, and so on.
+  screen offers only what fits what's installed: the Tailscale login once
+  Tailscale is picked (now, on an earlier run, or already on the machine),
+  the age key with sops, and so on.
 
 The run follows the same order: everything is installed first (the extra
 mise tools at the end of that), then configured, with your dotfiles last.
@@ -185,9 +185,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    on this machine only, on the VM's Tailscale address only (when Tailscale
    is up), or on every interface (no auth: trusted networks only).
 3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
-   up` later), container registry logins (`docker login`; ghcr.io can use
-   your gh token), a private npm registry (scope and token in `~/.npmrc`),
-   and your age key for sops (generate or paste).
+   up` later) and your age key for sops (generate or paste).
 
 In a profile, a split item's old id means both halves: `tailscale`,
 `sops` and `mcpjungle` are the configure items, and each pulls in its
@@ -238,14 +236,12 @@ config file, readable only by you (0600). Leave a value empty, or run with
 comment saying where to get it. Either way, `~/yardo.txt` ends with
 **Secrets to fill in**: one line per value still missing, with its file,
 the key, where to get it, and the command that applies it (`mcp-sync`,
-`docker login ghcr.io`, …). The run ends with how many are missing.
+…). The run ends with how many are missing.
 
 | Item | File |
 |---|---|
 | Agent API keys | `~/.config/yardo/agent.env`, exported by interactive shells only (not services or cron) |
 | MCP servers | `~/.mcp/<name>/env`, owned by the gateway's user: `mcp-sync edit <name>`, then `mcp-sync` |
-| Private npm registry | a yardo block in `~/.npmrc` (your own lines are kept) |
-| Registry logins | `~/.docker/config.json`, through `docker login` |
 | age key | `~/.config/sops/age/keys.txt`, with `SOPS_AGE_KEY_FILE` set |
 
 Each user's MCPJungle gateway runs as a system user of its own,
@@ -279,9 +275,10 @@ signs commits and tags with the agent's key or the VM's key, uploads it as
 a signing key, and writes `~/.config/git/allowed_signers`.
 
 **`sudo yardo forget`** undoes what yardo created, and only
-that: the GitHub keys it uploaded, its registry logins, the values in the
-credential files it wrote (the keys stay, so a re-run asks again), its
-`~/.npmrc` block, and the gh and Tailscale logins it made. It lists them and
+that: the GitHub keys it uploaded, the values in the credential files it
+wrote (the keys stay, so a re-run asks again), the gh and Tailscale
+logins it made, and the registry logins and `~/.npmrc` block that older
+versions made. It lists them and
 asks first (`--yes` doesn't), then prints where to revoke the tokens it
 can't revoke itself. Run it before you throw a machine away.
 

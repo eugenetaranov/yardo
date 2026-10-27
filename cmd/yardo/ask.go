@@ -361,11 +361,6 @@ func (k *asker) askSecrets(c *choices, has func(string) bool) error {
 	if err := k.askCreds(c, has); err != nil {
 		return err
 	}
-	if has("registries") {
-		if err := k.askRegistries(c); err != nil {
-			return err
-		}
-	}
 	if has("sops") {
 		if err := k.askAgeKey(c); err != nil {
 			return err
@@ -693,63 +688,12 @@ func (k *asker) askCreds(c *choices, has func(string) bool) error {
 					fmt.Fprintf(k.out, "\n%s\nLeave a value empty to fill it in later: ~/yardo.txt lists what is missing.\n", it.Label)
 					shown = true
 				}
-				if key.Secret() {
-					v, err := ui.Password(key.Prompt, "")
-					if err != nil {
-						return err
-					}
-					c.secrets.Cred[it.ID+" "+key.Name] = v
-					continue
-				}
-				p := answerField(k.a, key.Answer)
-				cur := *p
-				if cur == "" {
-					cur = key.Default
-				}
-				v, err := ui.Input(key.Prompt, "", cur)
+				v, err := ui.Password(key.Prompt, "")
 				if err != nil {
 					return err
 				}
-				*p = v
+				c.secrets.Cred[it.ID+" "+key.Name] = v
 			}
-		}
-	}
-	if s := k.a.NPM.Scope; s != "" && !strings.HasPrefix(s, "@") {
-		k.a.NPM.Scope = "@" + s
-	}
-	return nil
-}
-
-// answerField is the saved answer a cred key's setting goes in
-// (catalog.CredAnswers).
-func answerField(a *answers.Answers, name string) *string {
-	switch name {
-	case "npm.scope":
-		return &a.NPM.Scope
-	case "npm.registry":
-		return &a.NPM.Registry
-	}
-	var discard string
-	return &discard
-}
-
-func (k *asker) askRegistries(c *choices) error {
-	def := strings.Join(k.a.Registries, " ")
-	if def == "" {
-		def = "ghcr.io"
-	}
-	v, err := ui.Input("Registries, space-separated (e.g. ghcr.io registry.gitlab.com)",
-		"Each is logged in with 'docker login'. Empty password: later (ghcr.io uses the gh token when it has read:packages).", def)
-	if err != nil {
-		return err
-	}
-	k.a.Registries = strings.Fields(v)
-	for _, r := range k.a.Registries {
-		if c.secrets.RegUser[r], err = ui.Input(r+": username", "", ""); err != nil {
-			return err
-		}
-		if c.secrets.RegPass[r], err = ui.Password(r+": password or token", ""); err != nil {
-			return err
 		}
 	}
 	return nil

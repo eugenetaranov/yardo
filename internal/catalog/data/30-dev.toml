@@ -41,39 +41,6 @@ type = "apt"
 packages = ["linux-tools-common", "linux-tools-{{kernel}}", "valgrind", "bpftrace", "bpfcc-tools"]
 
 [[item]]
-id = "npmrc"
-tab = "logins"
-label = "Private npm registry (scope + token)"
-needs = ["node"]
-source = "~/.npmrc (a yardo block, 0600)"
-
-[[item.step]]
-type = "cred"
-format = "npmrc"
-to = "~/.npmrc"
-
-[[item.step.key]]
-name = "NPM_SCOPE"
-prompt = "npm scope (e.g. @acme)"
-answer = "npm.scope"
-
-[[item.step.key]]
-name = "NPM_REGISTRY"
-prompt = "npm registry URL"
-answer = "npm.registry"
-default = "https://npm.pkg.github.com"
-
-[[item.step.key]]
-name = "NPM_TOKEN"
-prompt = "npm registry token"
-how = "for GitHub Packages: a token with read:packages at https://github.com/settings/tokens"
-
-[[item.step]]
-type = "note"
-text = "npmrc: no npm scope set; run 'sudo yardo' and pick 'Private npm registry' again."
-when = "[ -z {{npm_scope}} ]"
-
-[[item]]
 id = "autoupdate-tools"
 tab = "sysconf"
 label = "Weekly tool updates (mise up, krew upgrade; a systemd timer)"

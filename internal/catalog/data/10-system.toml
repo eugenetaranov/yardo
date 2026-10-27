@@ -313,15 +313,3 @@ source = "apt fail2ban · sshd jail · Tailscale IPs never banned · only when a
 [[item.step]]
 type = "go:fail2ban"
 
-[[item]]
-id = "registries"
-tab = "logins"
-scope = "user"
-label = "Container registry logins (ghcr.io, …)"
-needs = ["docker"]
-after = ["github"]
-source = "docker login per registry · ~/.docker/config.json"
-
-# After the GitHub login: ghcr.io can use gh's token.
-[[item.step]]
-type = "go:registries"
