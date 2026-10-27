@@ -12,6 +12,16 @@ import (
 // MaxResults caps the search results.
 const MaxResults = 200
 
+// MaxLoose is the longest query that can match as an in-order
+// subsequence alone.
+const MaxLoose = 4
+
+var extraRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@:/+-]*$`)
+
+// ValidExtra reports whether q can be an extra mise tool spec ("pulumi",
+// "pipx:pytest", "github:owner/repo@1.2").
+func ValidExtra(q string) bool { return len(q) <= 200 && extraRe.MatchString(q) }
+
 // Entry is one row the picker can show: a catalog item (or an MCP server).
 type Entry struct {
 	Tab, ID, Label, Source string
@@ -158,7 +168,9 @@ func strict(e *Entry, q string) bool {
 
 // Search returns the entries matching q, best first. Subsequence-only
 // matches ("lzgt" for lazygit) count only when nothing has q as a
-// substring, so "ssh" doesn't list every label with s…s…h in it.
+// substring, so "ssh" doesn't list every label with s…s…h in it, and
+// only for short queries: "pulumi" is a tool the catalog lacks, not
+// p…u…l…u…m…i in a long label.
 func Search(entries []*Entry, q string) []*Entry {
 	type hit struct {
 		s, n int
@@ -174,7 +186,7 @@ func Search(entries []*Entry, q string) []*Entry {
 			}
 		}
 	}
-	if len(hits) == 0 {
+	if len(hits) == 0 && len([]rune(q)) <= MaxLoose {
 		hits = loose
 	}
 	sort.SliceStable(hits, func(i, j int) bool {

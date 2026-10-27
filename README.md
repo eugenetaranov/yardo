@@ -78,10 +78,14 @@ always applied (see "Always" below), and related tools come as one item.
 
 Just start typing to fuzzy-search every tab of the screen at once: `ssh`
 lists what mentions SSH wherever it lives, each with its category. For a
-tool the catalog doesn't have, run `mise use -g <tool>` yourself, or list
-it under `mise_extra` in a profile (a version or a `backend:tool` works
-too): yardo installs those and keeps them on re-runs. Esc clears the
-search; Esc on an empty search quits (on Configure: goes back).
+tool the catalog doesn't have, search for it and press ctrl-a on Install:
+it's added, ticked, as an extra mise tool (`mise use -g <tool>`; a
+version or a `backend:tool` such as `pipx:pytest` or
+`github:owner/repo` works too), under an Extra tools tab. A profile lists
+them under `mise_extra`. yardo keeps them on re-runs until you untick
+one. Extra tools aren't pinned: mise fetches whatever the name resolves
+to. Esc clears the search; Esc on an empty search quits (on Configure:
+goes back).
 
 **Always**, on every machine, with nothing to pick. Installing: essentials
 (git, curl, jq, gh, build tools). Configuring: automatic security updates

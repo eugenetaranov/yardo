@@ -325,7 +325,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		}
 		a.Unpick(c.dropped)
 		a.Pick(c.picks)
-		a.MiseExtra = answers.Merge(a.MiseExtra, c.miseExtra)
+		a.MiseExtra = c.miseExtra
 		items, extra, sec = c.items, c.miseExtra, c.secrets
 		changed = true
 	} else {

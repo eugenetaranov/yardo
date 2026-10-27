@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,7 +18,14 @@ type Tab struct{ ID, Title string }
 const (
 	reviewTab = "__review__"
 	searchTab = "__search__"
+	// ExtraTab holds the extra mise tools: ids "mise:<spec>".
+	ExtraTab = "__extra__"
 )
+
+// ExtraEntry is the row of an extra mise tool (a tool the catalog lacks).
+func ExtraEntry(spec string, on bool) *Entry {
+	return &Entry{Tab: ExtraTab, ID: "mise:" + spec, Label: spec + " (extra mise tool)", Source: "mise use -g " + spec, On: on}
+}
 
 var (
 	accent   = lipgloss.NewStyle().Foreground(tui.Accent)
@@ -40,6 +48,9 @@ type Options struct {
 	// Note is a muted line atop the Review tab (what the other screen
 	// picked).
 	Note string
+	// Extra: ctrl-a in a search adds the query as an extra mise tool
+	// (ExtraEntry), for a tool the catalog lacks.
+	Extra bool
 }
 
 // Outcome is how a picker run ended.
@@ -52,8 +63,8 @@ const (
 )
 
 // Picker is the tabbed checklist: categories as tabs, type to search every
-// tab and mise's registry, space toggles, Review last. Only space changes
-// a selection.
+// tab, space toggles, Review last. Only space (and ctrl-a, which adds a
+// search as an extra mise tool, ticked) changes a selection.
 type Picker struct {
 	title   string
 	tabs    []Tab
@@ -81,10 +92,43 @@ func NewPicker(title string, tabs []Tab, entries []*Entry, o Options) *Picker {
 			}
 		}
 	}
+	if o.Extra && slices.ContainsFunc(entries, func(e *Entry) bool { return e.Tab == ExtraTab }) {
+		p.extraTab()
+	}
 	if o.Review {
 		p.tabs = append(p.tabs, Tab{reviewTab, "Review"})
 	}
 	return p
+}
+
+// extraTab adds the Extra tools tab (before Review) if it isn't there,
+// and returns its index.
+func (p *Picker) extraTab() int {
+	if i := slices.IndexFunc(p.tabs, func(t Tab) bool { return t.ID == ExtraTab }); i >= 0 {
+		return i
+	}
+	i := len(p.tabs)
+	if i > 0 && p.tabs[i-1].ID == reviewTab {
+		i--
+	}
+	p.tabs = slices.Insert(p.tabs, i, Tab{ExtraTab, "Extra tools"})
+	return i
+}
+
+// addExtra ticks the query as an extra mise tool and shows its tab.
+func (p *Picker) addExtra() {
+	q := p.query
+	if !p.opt.Extra || !ValidExtra(q) {
+		return
+	}
+	if i := slices.IndexFunc(p.entries, func(e *Entry) bool { return e.ID == "mise:"+q }); i >= 0 {
+		p.entries[i].On = true
+	} else {
+		p.entries = append(p.entries, ExtraEntry(q, true))
+	}
+	p.setQuery("")
+	p.tab = p.extraTab()
+	p.cursor[ExtraTab] = len(p.items(ExtraTab)) - 1
 }
 
 // Entries are the picker's rows, to tick some before it runs.
@@ -199,6 +243,10 @@ func (p *Picker) key(k tea.KeyMsg) tea.Cmd {
 		}
 	case tea.KeyCtrlC:
 		return tea.Quit
+	case tea.KeyCtrlA:
+		if p.query != "" {
+			p.addExtra()
+		}
 	case tea.KeyCtrlX:
 		for _, e := range p.entries {
 			e.On = false
@@ -382,11 +430,18 @@ func (p *Picker) View() string {
 		switch view {
 		case searchTab:
 			msg = "No matches — backspace to edit, esc to clear."
+			if p.opt.Extra && ValidExtra(p.query) {
+				msg = fmt.Sprintf("%q isn't in the catalog — ctrl-a adds it as an extra mise tool (mise use -g %s; pipx:x or github:owner/repo work too).", p.query, p.query)
+			}
 		case reviewTab:
 			msg = "Nothing selected yet — go back with ← and tick items with space."
 		}
-		b.WriteString("\n   " + muted.Render(msg) + "\n")
-		lines = 2
+		b.WriteString("\n")
+		lines = 1
+		for _, l := range wrap(msg, max(4, w-4)) {
+			b.WriteString("   " + muted.Render(l) + "\n")
+			lines++
+		}
 	}
 	for i := top; i < len(items) && lines < listH; i++ {
 		e, r := items[i], rows[i]
@@ -450,6 +505,9 @@ func (p *Picker) View() string {
 			keys = "esc clear · ↑/↓ move · space toggle · enter confirm"
 		default:
 			keys = "esc clear · ↑/↓ move · space toggle · enter done"
+		}
+		if p.opt.Extra && ValidExtra(p.query) {
+			keys += " · ctrl-a add as mise tool"
 		}
 	case reviewTab:
 		keys = "space untick · ← back · type to search · enter confirm · " + esc

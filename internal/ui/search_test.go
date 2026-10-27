@@ -78,6 +78,24 @@ func TestSearch(t *testing.T) {
 	if n := len(Search(items, "qqqqzzzz")); n != 0 {
 		t.Errorf("no match expected, got %d", n)
 	}
+	// A longer query isn't matched as a subsequence: pulumi isn't
+	// p…u…l…u…m…i in the admin tools' label.
+	for _, q := range []string{"pulumi", "pytest"} {
+		if got := ids(Search(items, q), 5); len(got) != 0 {
+			t.Errorf("%q: want no match (not in the catalog), got %v", q, got)
+		}
+	}
+}
+
+func TestValidExtra(t *testing.T) {
+	for q, want := range map[string]bool{
+		"pulumi": true, "pipx:pytest": true, "github:tackhq/tack@1.1.4": true, "node@22": true,
+		"-rf": false, "a b": false, "x;rm": false, "": false, "$(id)": false,
+	} {
+		if ValidExtra(q) != want {
+			t.Errorf("ValidExtra(%q) = %v", q, !want)
+		}
+	}
 }
 
 func TestMiseTools(t *testing.T) {

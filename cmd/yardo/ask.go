@@ -86,11 +86,15 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 	}
 
 	// 1. Pick, on two screens: what to install (every install category,
-	// plus mise's registry), then what to configure (logins, keys,
-	// settings) for it. Esc on the second goes back to the first.
+	// plus extra mise tools the catalog lacks, added from a search), then
+	// what to configure (logins, keys, settings) for it. Esc on the second
+	// goes back to the first.
+	entries := ui.CatalogEntries(k.cat, catalog.PhaseInstall)
+	for _, t := range k.a.MiseExtra {
+		entries = append(entries, ui.ExtraEntry(t, true))
+	}
 	inst := ui.NewPicker("yardo [1/2] Install", uiTabs(k.cat.PhaseTabs(catalog.PhaseInstall)),
-		ui.CatalogEntries(k.cat, catalog.PhaseInstall),
-		ui.Options{Next: "configure"})
+		entries, ui.Options{Next: "configure", Extra: true})
 	conf := ui.CatalogEntries(k.cat, catalog.PhaseConfigure)
 	if first {
 		k.preselect(inst.Entries())
@@ -100,7 +104,7 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			e.On = slices.Contains(saved, e.ID)
 		}
 	}
-	var installs, configures []string
+	var installs, configures, extras []string
 	var shown []*ui.Entry
 	for {
 		var out ui.Outcome
@@ -111,11 +115,19 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 		if out != ui.Done {
 			return nil, ui.ErrQuit
 		}
-		shown = k.configurable(conf, installs)
 		note := "Installing: nothing"
 		if len(installs) > 0 {
 			note = "Installing: " + strings.Join(k.shortLabels(installs), " · ")
 		}
+		extras = nil
+		installs = slices.DeleteFunc(installs, func(id string) bool {
+			t, ok := strings.CutPrefix(id, "mise:")
+			if ok {
+				extras = append(extras, t)
+			}
+			return ok
+		})
+		shown = k.configurable(conf, installs)
 		cfg := ui.NewPicker("yardo [2/2] Configure", uiTabs(k.cat.PhaseTabs(catalog.PhaseConfigure)), shown,
 			ui.Options{Review: true, Back: true, Note: note + " (esc to change)"})
 		if configures, out, err = cfg.Run(); err != nil {
@@ -128,10 +140,10 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			return nil, ui.ErrQuit
 		}
 	}
-	// Extra mise tools come from a profile (mise_extra) and stay: the
-	// picker doesn't offer mise's registry (mise use -g <tool> does).
+	// Extra mise tools: those ticked (from a profile's mise_extra, an
+	// earlier run, or a search); one unticked stops being re-applied.
 	ticked := slices.Concat(installs, configures)
-	c := &choices{secrets: creds.New(), picks: ticked, miseExtra: slices.Clone(k.a.MiseExtra)}
+	c := &choices{secrets: creds.New(), picks: ticked, miseExtra: extras}
 	// Only what the screens showed can have been unticked.
 	for _, e := range slices.Concat(inst.Entries(), shown) {
 		if slices.Contains(saved, e.ID) && !slices.Contains(ticked, e.ID) {

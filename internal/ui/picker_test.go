@@ -172,3 +172,42 @@ func TestPickerUntickAll(t *testing.T) {
 		t.Error("ctrl-x offered with nothing ticked")
 	}
 }
+
+func TestPickerExtraTool(t *testing.T) {
+	tabs := []Tab{{"shell", "Shell & CLI"}}
+	entries := []*Entry{
+		{Tab: "shell", ID: "tmux", Label: "tmux", Source: "apt install tmux"},
+		ExtraEntry("pulumi", true),
+	}
+	p := NewPicker("yardo", tabs, entries, Options{Review: true, Extra: true})
+	p.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if got := []string{p.tabs[1].ID, p.tabs[2].ID}; got[0] != ExtraTab || got[1] != reviewTab {
+		t.Fatalf("tabs = %v (Extra tools before Review)", p.tabs)
+	}
+	press(p, "p", "y", "t", "e", "s", "t")
+	if v := p.View(); !strings.Contains(v, "ctrl-a adds it as an extra mise tool") {
+		t.Errorf("no-match view doesn't offer ctrl-a:\n%s", v)
+	}
+	press(p, tea.KeyCtrlA)
+	if p.query != "" || p.view() != ExtraTab {
+		t.Errorf("ctrl-a should clear the search and show Extra tools: view %s", p.view())
+	}
+	if got := strings.Join(p.Selected(), " "); got != "mise:pulumi mise:pytest" {
+		t.Errorf("selected = %q", got)
+	}
+	// Again: still one row.
+	press(p, "p", "y", "t", "e", "s", "t", tea.KeyCtrlA)
+	if n := len(p.items(ExtraTab)); n != 2 {
+		t.Errorf("extra rows = %d, want 2", n)
+	}
+	// Without Extra, or with a query that can't be a tool, nothing's added.
+	q := newTestPicker(t)
+	press(q, "p", "y", "t", "e", "s", "t", tea.KeyCtrlA)
+	if len(q.Selected()) != 0 || strings.Contains(q.View(), "ctrl-a") {
+		t.Error("ctrl-a works only with Options.Extra")
+	}
+	press(p, "-", "x", tea.KeyCtrlA)
+	if n := len(p.items(ExtraTab)); n != 2 {
+		t.Errorf("-x added: %d rows", n)
+	}
+}
