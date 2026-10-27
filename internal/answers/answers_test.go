@@ -227,3 +227,14 @@ func TestMigrateGitKey(t *testing.T) {
 		t.Errorf("picks %v github %+v", a.Picks, a.GitHub)
 	}
 }
+
+func TestUnpick(t *testing.T) {
+	a := &Answers{Picks: []string{"zsh", "docker", "tmux"}, Hand: []string{"docker"}, Layers: map[string][]string{"team": {"docker"}}}
+	a.Unpick([]string{"docker", "nope"})
+	if !reflect.DeepEqual(a.Picks, []string{"zsh", "tmux"}) || len(a.Hand) != 0 {
+		t.Errorf("Picks = %v, Hand = %v", a.Picks, a.Hand)
+	}
+	if !reflect.DeepEqual(a.Layers["team"], []string{"docker"}) {
+		t.Errorf("a profile's layer is its own: %v", a.Layers)
+	}
+}

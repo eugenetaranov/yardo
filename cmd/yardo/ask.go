@@ -25,8 +25,10 @@ import (
 // choices is what one interactive run picked and typed.
 type choices struct {
 	picks, miseExtra, mcpServers []string
-	items                        []*catalog.Item
-	secrets                      *creds.Secrets
+	// dropped are saved picks unticked this time: no longer re-applied.
+	dropped []string
+	items   []*catalog.Item
+	secrets *creds.Secrets
 }
 
 // asker runs the prompts. Its hooks are seams for tests.
@@ -74,13 +76,14 @@ func (k *asker) ask(ctx context.Context) (*choices, error) {
 }
 
 func (k *asker) once(ctx context.Context) (*choices, error) {
-	// The first run starts from the usual stack; after that, from nothing
-	// (what's saved is installed already).
+	// The first run starts from the usual stack; after that, from what was
+	// picked before (re-applied: quick, it's done already).
 	first := len(k.a.Picks) == 0
+	saved := slices.Concat(k.a.Picks, miseIDs(k.a.MiseExtra))
 	if first {
 		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). The usual stack is ticked: untick what you don't want, or ctrl-x to untick all. Run it again any time to add more.\n", k.a.User)
 	} else {
-		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). What you picked before stays installed: tick what to add.\n", k.a.User)
+		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). What you picked before is ticked: tick more to add it; untick one and yardo stops re-applying it (it stays installed).\n", k.a.User)
 	}
 
 	// 1. Pick, on two screens: what to install (every install category,
@@ -93,8 +96,13 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 	if first {
 		k.preselect(inst.Entries())
 		k.preselect(conf)
+	} else {
+		for _, e := range slices.Concat(inst.Entries(), conf) {
+			e.On = slices.Contains(saved, e.ID)
+		}
 	}
 	var installs, configures []string
+	var shown []*ui.Entry
 	for {
 		var out ui.Outcome
 		var err error
@@ -104,7 +112,7 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 		if out != ui.Done {
 			return nil, ui.ErrQuit
 		}
-		shown := k.configurable(conf, installs)
+		shown = k.configurable(conf, installs)
 		note := "Installing: nothing"
 		if len(installs) > 0 {
 			note = "Installing: " + strings.Join(k.shortLabels(installs), " · ")
@@ -122,11 +130,18 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 		}
 	}
 	c := &choices{secrets: creds.New()}
-	for _, id := range append(installs, configures...) {
+	ticked := slices.Concat(installs, configures)
+	for _, id := range ticked {
 		if t, ok := strings.CutPrefix(id, "mise:"); ok {
 			c.miseExtra = append(c.miseExtra, t)
 		} else {
 			c.picks = append(c.picks, id)
+		}
+	}
+	// Only what the screens showed can have been unticked.
+	for _, e := range slices.Concat(inst.Entries(), shown) {
+		if slices.Contains(saved, e.ID) && !slices.Contains(ticked, e.ID) {
+			c.dropped = append(c.dropped, e.ID)
 		}
 	}
 
@@ -139,13 +154,28 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 		fmt.Fprintln(k.out, "Nothing picked.")
 		return nil, nil
 	}
+	// Questions are for what's new: picks re-applied keep their answers.
 	has := planHas(c.items)
-	if has("gitid") {
+	isNew := has
+	if !first {
+		var added []string
+		for _, id := range c.picks {
+			if !slices.Contains(saved, id) {
+				added = append(added, id)
+			}
+		}
+		newItems, err := plan.Resolve(k.cat, added, false)
+		if err != nil {
+			return nil, err
+		}
+		isNew = planHas(newItems)
+	}
+	if isNew("gitid") {
 		if err := k.askGit(); err != nil {
 			return nil, err
 		}
 	}
-	if has("zsh") {
+	if isNew("zsh") {
 		if err := k.askPrompt(); err != nil {
 			return nil, err
 		}
@@ -156,27 +186,36 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			return nil, err
 		}
 	}
-	if has("corpca") {
+	if isNew("corpca") {
 		if err := k.askCA(); err != nil {
 			return nil, err
 		}
 	}
-	if has("mcpjungle-install") {
+	if isNew("mcpjungle-install") {
 		if err := k.askMCPListen(); err != nil {
 			return nil, err
 		}
 	}
-	if has("mcpjungle") {
+	if isNew("mcpjungle") {
 		if err := k.askMCP(ctx, c, has); err != nil {
 			return nil, err
 		}
 	}
-	if has("dotfiles") {
+	if isNew("dotfiles") {
 		if err := k.askDotfiles(); err != nil {
 			return nil, err
 		}
 	}
-	return c, k.askSecrets(c, has)
+	return c, k.askSecrets(c, isNew)
+}
+
+// miseIDs are the picker ids of extra mise tools.
+func miseIDs(tools []string) []string {
+	out := make([]string, len(tools))
+	for i, t := range tools {
+		out[i] = "mise:" + t
+	}
+	return out
 }
 
 // fromProfile plans the profiles' picks (already in the answers) and asks

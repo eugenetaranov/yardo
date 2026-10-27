@@ -323,7 +323,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		if err != nil || c == nil {
 			return err
 		}
+		a.Unpick(c.dropped)
 		a.Pick(c.picks)
+		a.MiseExtra = slices.DeleteFunc(a.MiseExtra, func(t string) bool { return slices.Contains(c.dropped, "mise:"+t) })
 		a.MiseExtra = answers.Merge(a.MiseExtra, c.miseExtra)
 		items, extra, sec = c.items, c.miseExtra, c.secrets
 		changed = true

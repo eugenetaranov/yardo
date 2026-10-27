@@ -54,8 +54,10 @@ The first run starts with the usual stack ticked: zsh, Neovim, tmux,
 lazygit, the linters, the dev CLIs, the admin and debug tools, Docker and
 its tools, Claude Code with OpenSpec, git (name and email, defaults,
 GitHub) and the two agent items. Untick what you don't want, or ctrl-x to
-untick everything. Later runs start empty: what you picked before stays
-installed. Each row is one line; the line under the list shows
+untick everything. Later runs start with what you picked before: tick
+more to add it; Install re-applies the rest, which is quick (it's done
+already), and asks only about what's new. Untick something and yardo
+stops re-applying it; it stays installed. Each row is one line; the line under the list shows
 how the item under the cursor is installed or applied, e.g. `mise use -g
 terraform`.
 

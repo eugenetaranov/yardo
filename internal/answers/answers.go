@@ -355,6 +355,15 @@ func (a *Answers) Pick(ids []string) {
 	a.Picks = Merge(a.Picks, ids)
 }
 
+// Unpick drops ids from the picks, so they stop being re-applied; what
+// they installed stays. A named profile that lists one adds it back when
+// applied again.
+func (a *Answers) Unpick(ids []string) {
+	drop := func(id string) bool { return slices.Contains(ids, id) }
+	a.Picks = slices.DeleteFunc(a.Picks, drop)
+	a.Hand = slices.DeleteFunc(a.Hand, drop)
+}
+
 // SetLayer makes ids the named profile's picks, replacing what it set
 // before. It returns the picks the profile no longer lists that nothing
 // else keeps (hand picks and other layers' picks stay); they leave Picks,
