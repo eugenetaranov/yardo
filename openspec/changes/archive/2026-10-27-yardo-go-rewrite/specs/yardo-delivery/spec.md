@@ -1,7 +1,13 @@
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: No size limit from user-data
-pmox SHALL install yardo as the static binary for the VM's architecture (from `uname -m`) at `/usr/local/bin/yardo`, with the mise registry snapshot embedded in it. pmox ships both builds in one copy, and the VM installs the one for its architecture. Until every item is ported, the bash yardo is copied too, to `/usr/local/share/yardo/yardo.sh`; the Go binary runs it for unported items and hands it the picker. The user-data size SHALL NOT depend on yardo.
+**Reason**: The mise registry snapshot it shipped is gone (the picker no longer searches mise's registry); how yardo reaches the VM is now "Static binary per architecture".
+**Migration**: None: pmox installs the yardo binary, which embeds everything it needs.
+
+## ADDED Requirements
+
+### Requirement: Static binary per architecture
+pmox SHALL install yardo as the static binary for the VM's architecture (from `uname -m`) at `/usr/local/bin/yardo`, with everything it needs embedded in it. pmox ships both builds in one copy, and the VM installs the one for its architecture. Until every item is ported, the bash yardo is copied too, to `/usr/local/share/yardo/yardo.sh`; the Go binary runs it for unported items and hands it the picker. The user-data size SHALL NOT depend on yardo.
 
 #### Scenario: arm64 VM
 - **WHEN** yardo is pushed to a VM whose `uname -m` is `aarch64`
@@ -10,8 +16,6 @@ pmox SHALL install yardo as the static binary for the VM's architecture (from `u
 #### Scenario: Unsupported architecture
 - **WHEN** the VM's architecture is neither x86_64 nor aarch64
 - **THEN** the bash yardo is installed instead, and a warning names the architecture
-
-## ADDED Requirements
 
 ### Requirement: Team catalog shipped by pmox
 `pmox yardo push` (and the launch push) SHALL copy `~/.config/pmox/yardo/catalog.d/*.toml` to `/etc/yardo/catalog.d/`, and `~/.config/pmox/yardo/mcp-catalog/*.spec` to the VM's MCP catalog, when they exist. Files it copied earlier but that are gone locally SHALL be removed. Other files in those directories SHALL be left alone.

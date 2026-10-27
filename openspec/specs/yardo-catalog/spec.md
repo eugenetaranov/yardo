@@ -3,7 +3,9 @@
 The tabs, items, labels and install sources yardo's picker
 offers, and how the MCPJungle gateway is wired into the installed
 coding agents.
+
 ## Requirements
+
 ### Requirement: Tabs
 The picker SHALL show these tabs in order, followed by Review: **System · Shell & CLI · Dev tools · Languages · Cloud · IaC · Kubernetes · AI · Accounts**. Moving an existing item to a new tab SHALL keep its id.
 
@@ -112,3 +114,42 @@ Each registration SHALL be skipped when that agent already has an `mcpjungle` en
 - **WHEN** yardo runs again with the same picks
 - **THEN** no duplicate mcpjungle entries are created
 
+### Requirement: Credential items
+The catalog SHALL offer these items. Each one follows the ask-or-skip contract of the `yardo-credentials` capability.
+
+| id | tab | label | what it manages | needs |
+|---|---|---|---|---|
+| agentkeys | AI | Agent API keys (Anthropic, OpenAI, Gemini) | `~/.config/yardo/agent.env` | |
+| npmrc | Dev tools | Private npm registry (scope + token) | managed block in `~/.npmrc` | node |
+| registries | System | Container registry logins (ghcr.io, …) | `docker login` per registry | docker |
+| agekey | IaC | age key for sops (generate or paste) | `~/.config/sops/age/keys.txt` | sops |
+| gitsign | Accounts | Sign commits with SSH | git signing config + signing key on GitHub | github |
+
+The `github` item's label SHALL become "GitHub login (forwarded agent, key or token)".
+
+#### Scenario: Items present
+- **WHEN** the picker opens
+- **THEN** each item above is on its tab, with its label
+
+#### Scenario: Needs pulled in
+- **WHEN** only `gitsign` is picked
+- **THEN** the plan also includes `github` and its needs
+
+### Requirement: pmox-owned MCP server specs
+pmox SHALL ship its own MCP server specs in `internal/bootstrap/conf/mcp-catalog/`, installed into the same catalog directory as the tack-roles specs. A spec name SHALL NOT exist in both directories; a test SHALL enforce this. `bootstrap:sync` SHALL NOT change the pmox-owned directory.
+
+The pmox-owned specs SHALL include:
+- `github` (docker, `GITHUB_PERSONAL_ACCESS_TOKEN`)
+- `postgres` (docker with host networking, `DATABASE_URI`)
+- `playwright` (docker, no credentials)
+- `linear` (http, bearer `LINEAR_API_KEY`)
+
+Each spec SHALL pin its image tag. Each skeleton SHALL say where to create its credential.
+
+#### Scenario: Offered in the MCP picker
+- **WHEN** the user picks `mcpjungle`
+- **THEN** the MCP server list includes github, postgres, playwright and linear next to the tack-roles servers
+
+#### Scenario: Name clash caught
+- **WHEN** a sync from tack-roles adds `github.spec` to `assets/mcp-catalog`
+- **THEN** `go test ./internal/bootstrap/...` fails, naming `github`
