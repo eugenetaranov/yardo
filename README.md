@@ -168,7 +168,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 3. **Agents:** a `CLAUDE.md` / `AGENTS.md` describing the VM, settings for
    agents left to run unattended (Claude Code may not force-push, sudo, or
    read `~/.mcp`, `~/.ssh` or the agent keys; Codex asks first and works in
-   a sandbox; both are told to push only to non-default branches; merged
+   a sandbox; both are told never to rewrite pushed history; merged
    into your settings, not replacing them), agent API keys (Anthropic,
    OpenAI, Gemini), and MCP servers on the MCPJungle gateway (GitHub,
    Linear, Postgres, Playwright, Jira, AWS, Jenkins, context7, …), added to

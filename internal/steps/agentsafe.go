@@ -45,8 +45,6 @@ const (
 	pushing   = pushBegin + `
 ## Pushing
 
-- Push only to a non-default branch, then open a pull request. Never push
-  to main or master.
 - Never force-push or rewrite history that was pushed.
 ` + pushEnd + "\n"
 )

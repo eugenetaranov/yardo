@@ -152,7 +152,7 @@ if_absent = true
 [[item]]
 id = "agentsafe"
 tab = "agents"
-label = "Safer unattended agents (deny force-push, sudo, token reads; Codex sandbox)"
+label = "Safer unattended agents (no sudo, no force-push, no reading SSH keys or tokens; Codex sandbox)"
 after = ["claude", "codex", "agentcfg"]
 source = "~/.claude/settings.json deny rules · ~/.codex/config.toml sandbox · a Pushing section in CLAUDE.md/AGENTS.md"
 
