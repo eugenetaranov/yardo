@@ -55,14 +55,5 @@ fi
 
 unset _yardo_sh
 
-# An internal CA (yardo's corpca item) is in the system store: point
-# the tools with their own trust stores at it.
-if [ -e /usr/local/share/ca-certificates/yardo-corp-1.crt ]; then
-  export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
-    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
-    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
-    AWS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
-fi
-
 # Your own settings for zsh and bash: yardo never writes local.sh.
 [ -r ~/.config/yardo/local.sh ] && . ~/.config/yardo/local.sh

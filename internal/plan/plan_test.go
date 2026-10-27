@@ -70,7 +70,7 @@ func TestCrossTabNeeds(t *testing.T) {
 // Installing comes first: every install item before every configure item,
 // and dotfiles last of all.
 func TestInstallThenConfigure(t *testing.T) {
-	items, err := Resolve(cat(t), []string{"dotfiles", "registries", "github", "tailscale", "npmrc", "docker", "sops", "mcpjungle", "agentsafe", "claude"}, false)
+	items, err := Resolve(cat(t), []string{"dotfiles", "registries", "github", "tailscale", "npmrc", "docker", "sops", "mcpjungle", "agentcfg", "claude"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

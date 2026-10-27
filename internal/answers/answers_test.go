@@ -178,14 +178,6 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-func TestCACheck(t *testing.T) {
-	for c, ok := range map[CA]bool{{}: true, {Source: "/etc/acme.pem"}: true, {Source: "acme.pem"}: false, {Source: "https://x/r.pem"}: false, {Source: "https://x/r.pem", SHA256: strings.Repeat("a", 64)}: true} {
-		if err := CheckCA(c); (err == nil) != ok {
-			t.Errorf("%+v: err = %v", c, err)
-		}
-	}
-}
-
 func TestCheckRepo(t *testing.T) {
 	for u, ok := range map[string]bool{"https://github.com/ada/dotfiles": true, "git@github.com:ada/dotfiles.git": true, "ssh://git@host/x": true,
 		"--upload-pack=x": false, "https://x/y;rm": false, "file:///etc": false, "/tmp/x": false, "": false} {

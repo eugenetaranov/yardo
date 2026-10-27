@@ -37,11 +37,9 @@ type Answers struct {
 	MCPListen  string   `json:"mcp_listen"`
 	MCPServers []string `json:"mcp_servers"`
 	// WireAgents: nil means never asked.
-	WireAgents *bool  `json:"wire_agents"`
-	Git        Git    `json:"git"`
-	TZ         string `json:"tz"`
-	// CA is where an internal CA bundle comes from.
-	CA         CA       `json:"ca,omitzero"`
+	WireAgents *bool    `json:"wire_agents"`
+	Git        Git      `json:"git"`
+	TZ         string   `json:"tz"`
 	GitHub     GitHost  `json:"github"`
 	GitLab     GitHost  `json:"gitlab,omitzero"`
 	Bitbucket  GitHost  `json:"bitbucket,omitzero"`
@@ -69,13 +67,6 @@ type Answers struct {
 type Git struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
-}
-
-// CA is an internal CA bundle: a path on the VM, or an https URL with
-// its SHA-256.
-type CA struct {
-	Source string `json:"source"`
-	SHA256 string `json:"sha256"`
 }
 
 // GitHost holds how the VM reaches a git host: agent (the SSH agent
@@ -186,14 +177,31 @@ var PickMap = map[string][]string{
 	"pgcli": {"dbclients"}, "iaclint": {"terraform"}, "agekey": {"sops"},
 	"needrestart": {}, // with security updates, which every machine gets
 	"ufw":         {}, // no longer an item
+	"act":         {}, // comes with the GitHub item
+	"ctools":      {"docker"},
+	"lint":        {"devcli"},
+	"gitcfg":      {"gitid"},
+	"gitlab-cli":  {}, // comes with the GitLab item
+	"agentsafe":   {"agentcfg"},
+	"k3d":         {"kind"},
+	"corpca":      {}, // no longer an item
+	"monitoring":  {}, // no longer an item
+	"sudopw":      {}, // no longer an item
+	// always applied now
+	"autoupdate-tools": {},
 }
 
 // pickNotes explain a migration to the user.
 var pickNotes = map[string]string{
-	"chrony":  "chrony is no longer an item (clock sync is set up when the machine is launched); this machine keeps the chrony it has.",
-	"sshkey":  "The SSH key item is gone: ~/.ssh/id_ed25519 stays, and the GitHub, GitLab and Bitbucket items make it when they use it.",
-	"ufw":     "The firewall (ufw) is no longer an item: yardo leaves this machine's ufw as it is (turn it off with 'sudo ufw disable').",
-	"editors": "Vim is no longer an item: Neovim, set up the same way, replaces it. Vim and ~/.vimrc stay as they are.",
+	"chrony":     "chrony is no longer an item (clock sync is set up when the machine is launched); this machine keeps the chrony it has.",
+	"sshkey":     "The SSH key item is gone: ~/.ssh/id_ed25519 stays, and the GitHub, GitLab and Bitbucket items make it when they use it.",
+	"ufw":        "The firewall (ufw) is no longer an item: yardo leaves this machine's ufw as it is (turn it off with 'sudo ufw disable').",
+	"act":        "act is no longer an item of its own: it comes with the GitHub item; the one installed stays.",
+	"sudopw":     "\"sudo asks for your password\" is no longer an item: yardo leaves this machine's sudo rules as they are.",
+	"gitlab-cli": "glab is no longer an item of its own: it comes with the GitLab item; the one installed stays.",
+	"corpca":     "The internal CA bundle is no longer an item: certificates it installed stay trusted (remove them from /usr/local/share/ca-certificates and run 'sudo update-ca-certificates').",
+	"monitoring": "node_exporter + glances is no longer an item: what it installed stays (remove with 'sudo apt remove prometheus-node-exporter').",
+	"editors":    "Vim is no longer an item: Neovim, set up the same way, replaces it. Vim and ~/.vimrc stay as they are.",
 }
 
 // MigratePicks applies PickMap, keeping order and dropping duplicates. It
@@ -397,24 +405,6 @@ func (a *Answers) inLayer(id, except string) bool {
 		}
 	}
 	return false
-}
-
-var sha256Re = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
-// CheckCA checks where a CA bundle comes from: an absolute path, or an
-// https URL with a 64-hex-digit SHA-256.
-func CheckCA(c CA) error {
-	switch {
-	case c.Source == "":
-		return nil
-	case strings.HasPrefix(c.Source, "https://"):
-		if !sha256Re.MatchString(c.SHA256) {
-			return errors.New("a CA bundle from a URL needs its sha256 (64 lowercase hex digits)")
-		}
-	case !filepath.IsAbs(c.Source):
-		return errors.New("want an absolute path on the VM or an https URL")
-	}
-	return nil
 }
 
 var repoRe = regexp.MustCompile(`^(https://[^\s'"\\$` + "`" + `;]+|ssh://[^\s'"\\$` + "`" + `;]+|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._/~-]+)$`)

@@ -48,9 +48,6 @@ type System struct {
 	TZ string `toml:"tz"`
 	// DevPorts was for the ufw item, which is gone: ignored with a warning.
 	DevPorts []string `toml:"dev_ports,omitempty"`
-	// CABundle and CASHA256 (corpca).
-	CABundle string `toml:"ca_bundle,omitempty"`
-	CASHA256 string `toml:"ca_sha256,omitempty"`
 }
 
 // GitKey lists the git hosts the git SSH key is used for.
@@ -90,11 +87,6 @@ func Parse(name string, b []byte) (*Profile, error) {
 	}
 	if p.MCP != nil && p.MCP.Listen != "" && p.MCP.Listen != "127.0.0.1" && p.MCP.Listen != "0.0.0.0" && p.MCP.Listen != "tailscale" {
 		return nil, fmt.Errorf("%s: mcp.listen %q: want 127.0.0.1, tailscale or 0.0.0.0", name, p.MCP.Listen)
-	}
-	if p.System != nil {
-		if err := answers.CheckCA(answers.CA{Source: p.System.CABundle, SHA256: p.System.CASHA256}); err != nil {
-			return nil, fmt.Errorf("%s: system.ca_bundle: %w", name, err)
-		}
 	}
 	if p.GitKey != nil {
 		for _, h := range p.GitKey.Hosts {
@@ -188,9 +180,6 @@ func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnin
 		if len(p.System.DevPorts) > 0 {
 			warnings = append(warnings, "profile: system.dev_ports is ignored: yardo no longer sets up a firewall")
 		}
-		if p.System.CABundle != "" {
-			a.CA = answers.CA{Source: p.System.CABundle, SHA256: p.System.CASHA256}
-		}
 	}
 	if p.MCP != nil {
 		a.MCPServers = answers.Merge(a.MCPServers, p.MCP.Servers)
@@ -215,8 +204,8 @@ func Export(a *answers.Answers, lock *answers.Lock) []byte {
 	if a.Git.Name != "" || a.Git.Email != "" {
 		p.Git = &Git{Name: a.Git.Name, Email: a.Git.Email}
 	}
-	if a.TZ != "" || a.CA.Source != "" {
-		p.System = &System{TZ: a.TZ, CABundle: a.CA.Source, CASHA256: a.CA.SHA256}
+	if a.TZ != "" {
+		p.System = &System{TZ: a.TZ}
 	}
 	if a.Dotfiles != "" {
 		p.Dotfiles = &Dotfiles{Repo: a.Dotfiles}

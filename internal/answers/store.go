@@ -34,7 +34,6 @@ type systemFile struct {
 	Version int                 `json:"version"`
 	Picks   []string            `json:"picks"`
 	TZ      string              `json:"tz"`
-	CA      CA                  `json:"ca,omitzero"`
 	Layers  map[string][]string `json:"layers,omitempty"`
 	Hand    []string            `json:"hand,omitempty"`
 	// Users are the users set up, by name.
@@ -184,7 +183,7 @@ func (s *Store) Load(name string) (*Answers, []string, error) {
 	if err != nil {
 		return nil, notes, err
 	}
-	a := &Answers{Version: Version, User: name, TZ: sys.TZ, CA: sys.CA, Layers: map[string][]string{}}
+	a := &Answers{Version: Version, User: name, TZ: sys.TZ, Layers: map[string][]string{}}
 	a.Picks = slices.DeleteFunc(slices.Clone(sys.Picks), func(id string) bool { return !s.IsSystem(id) })
 	a.Hand = slices.DeleteFunc(slices.Clone(sys.Hand), func(id string) bool { return !s.IsSystem(id) })
 	for n, l := range sys.Layers {
@@ -259,7 +258,7 @@ func (s *Store) Save(a *Answers) error {
 	}
 	uf := &userFile{Version: Version, MiseExtra: a.MiseExtra, MCPListen: a.MCPListen, MCPServers: a.MCPServers,
 		WireAgents: a.WireAgents, Git: a.Git, GitHub: a.GitHub, GitLab: a.GitLab, Bitbucket: a.Bitbucket, NPM: a.NPM, Registries: a.Registries, Dotfiles: a.Dotfiles, GitKeyHosts: a.GitKeyHosts, Prompt: a.Prompt}
-	sys.Version, sys.TZ, sys.CA = Version, a.TZ, a.CA
+	sys.Version, sys.TZ = Version, a.TZ
 	sys.Picks, uf.Picks = split(a.Picks)
 	sys.Hand, uf.Hand = split(a.Hand)
 	if len(sys.Hand) == 0 {

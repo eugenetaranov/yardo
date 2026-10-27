@@ -52,7 +52,7 @@ action = "restart"
 id = "docker"
 tab = "k8s"
 scope = "system"
-label = "Docker Engine + Compose"
+label = "Docker Engine + Compose, lazydocker, dive, hadolint, crane, cosign"
 default = true
 source = "apt docker-ce (download.docker.com repo) · log rotation, 10.200/16 networks · docker group = root"
 
@@ -92,6 +92,11 @@ cmd = "usermod -aG docker {{user}}"
 check = "id -nG {{user}} | tr ' ' '\\n' | grep -qx docker"
 text = "{{user}} is now in the docker group: log in again (or run 'newgrp docker'). VS Code and Cursor remote servers keep the old groups until restarted: run 'Remote-SSH: Kill VS Code Server on Host' from the editor."
 
+# Container tools: a TUI, image layers, Dockerfile lint, registries, signing.
+[[item.step]]
+type = "mise"
+tools = ["lazydocker@latest", "dive@latest", "hadolint@latest", "crane@latest", "cosign@latest"]
+
 [[item]]
 id = "podman"
 tab = "k8s"
@@ -101,18 +106,6 @@ label = "Podman (rootless) + skopeo + buildah"
 [[item.step]]
 type = "apt"
 packages = ["podman", "uidmap", "slirp4netns", "passt", "skopeo", "buildah"]
-
-[[item]]
-id = "ctools"
-tab = "k8s"
-scope = "system"
-label = "Container tools (lazydocker, dive, hadolint, crane, cosign)"
-default = true
-needs = ["docker"]
-
-[[item.step]]
-type = "mise"
-tools = ["lazydocker@latest", "dive@latest", "hadolint@latest", "crane@latest", "cosign@latest"]
 
 [[item]]
 id = "tailscale-install"
@@ -147,32 +140,6 @@ label = "NFS + SMB clients"
 [[item.step]]
 type = "apt"
 packages = ["nfs-common", "cifs-utils", "autofs"]
-
-[[item]]
-id = "monitoring"
-tab = "system"
-label = "node_exporter (localhost:9100) + glances"
-needs = ["mise"]
-source = "apt prometheus-node-exporter · mise pipx:glances"
-
-[[item.step]]
-type = "apt"
-packages = ["prometheus-node-exporter"]
-
-# Debian's default listens on every interface.
-[[item.step]]
-type = "file"
-src = "prometheus-node-exporter.default"
-to = "/etc/default/prometheus-node-exporter"
-
-[[item.step]]
-type = "systemctl"
-unit = "prometheus-node-exporter"
-action = "restart"
-
-[[item.step]]
-type = "mise"
-tools = ["uv@latest", "pipx:glances"]
 
 [[item]]
 id = "devlimits"
@@ -358,28 +325,3 @@ source = "docker login per registry · ~/.docker/config.json"
 # After the GitHub login: ghcr.io can use gh's token.
 [[item.step]]
 type = "go:registries"
-
-# An internal CA bundle in the system trust store (curl, apt, git, Docker),
-# with Node, Python requests and the AWS CLI pointed at it by shell.sh.
-[[item]]
-id = "corpca"
-tab = "sysconf"
-scope = "system"
-label = "Internal CA bundle (system trust store; Node, Python, AWS CLI)"
-source = "a PEM path on the VM, or an https URL + sha256 · update-ca-certificates"
-
-[[item.step]]
-type = "go:corpca"
-
-# Opt-in: the login user's sudo asks for their password, so an agent
-# running as them can't sudo (and read the MCP tokens) unasked. Tools
-# commands that use sudo on the VM then need that password too.
-[[item]]
-id = "sudopw"
-tab = "sysconf"
-scope = "user"
-label = "sudo asks for your password (drops NOPASSWD; tools that sudo over SSH then ask too)"
-source = "sets a password if there is none · removes NOPASSWD from your /etc/sudoers.d rules"
-
-[[item.step]]
-type = "go:sudopw"

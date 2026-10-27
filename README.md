@@ -72,8 +72,6 @@ terraform`.
 
 The run follows the same order: everything is installed first (the extra
 mise tools at the end of that), then configured, with your dotfiles last.
-The CA bundle is the exception: it's applied before anything is
-downloaded.
 
 yardo is opinionated: what every machine should have isn't offered, it's
 always applied (see "Always" below), and related tools come as one item.
@@ -88,7 +86,9 @@ search; Esc on an empty search quits (on Configure: goes back).
 
 **Always**, on every machine, with nothing to pick. Installing: essentials
 (git, curl, jq, gh, build tools). Configuring: automatic security updates
-(no auto-reboot) with needrestart restarting services quietly; SSH keys only, no root login
+(no auto-reboot) with needrestart restarting services quietly; weekly
+updates of your tools (a systemd timer running `mise up` and `krew upgrade`
+as you); SSH keys only, no root login
 (skipped, with a note, while you have no authorized key; a config sshd
 rejects is rolled back); fail2ban for SSH, on a machine with a public IPv4
 on an interface (Tailscale addresses are never banned; a cloud VM behind
@@ -99,8 +99,8 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 ### [1/2] Install
 
 1. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
-   iperf3, nmap, strace, htop, btop, ncdu, …), Tailscale (log in under Configure), NFS/SMB
-   clients, node_exporter + glances.
+   iperf3, nmap, strace, htop, btop, ncdu, …), Tailscale (log in under
+   Configure), NFS/SMB clients.
 2. **Shell and CLI:** one zsh item that brings everything: zsh as the login
    shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
    search and completions, fzf-tab (Tab opens an fzf list with directory
@@ -128,10 +128,10 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    Neovim and tmux files replace yours, keeping the old ones as `.orig`; keep your
    own lines in the local files instead (see [Your own
    settings](#your-own-settings)).
-3. **Dev tools:** lazygit, dev CLIs (just, Task, watchexec, hyperfine, yq,
-   xh, hurl), linters and hooks (shellcheck, shfmt, actionlint, gitleaks,
-   pre-commit), database clients (psql, pgcli, usql, mariadb, sqlite3,
-   redis-cli), perf/valgrind/bpftrace, act, glab (GitLab's CLI).
+3. **Dev tools:** lazygit, dev CLIs and linters as one item (just, Task,
+   watchexec, hyperfine, yq, xh, hurl; shellcheck, shfmt, actionlint,
+   gitleaks, pre-commit), database clients (psql, pgcli, usql, mariadb,
+   sqlite3, redis-cli), perf/valgrind/bpftrace.
 4. **Languages** (mise, except PHP and C/C++ from apt): Go + gopls, delve,
    govulncheck, golangci-lint; Python 3.13 + uv + ruff; Node + pnpm +
    TypeScript; Bun; Deno; Java 25 + Maven + Gradle + Kotlin; Rust +
@@ -141,11 +141,11 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 6. **IaC** (mise): Terraform with terragrunt, tflint and terraform-docs,
    OpenTofu, trivy + checkov, Packer, Ansible, sops + age, Vault.
 7. **Containers & Kubernetes:** Docker (with log rotation and
-   10.200.0.0/16 networks), Podman + skopeo + buildah, container tools
-   (lazydocker, dive, hadolint, crane, cosign); the Kubernetes CLIs as
+   10.200.0.0/16 networks) and its tools (lazydocker, dive, hadolint, crane,
+   cosign), Podman + skopeo + buildah; the Kubernetes CLIs as
    one item (kubectl, kubectx/kubens, Helm 3, k9s, kubelogin, stern,
    kustomize, kubecolor, kubie, kubeconform, helmfile + helm-diff, krew with
-   plugins); Argo CD and Flux CLIs; kind, k3d, or k3s as a real cluster on
+   plugins); Argo CD and Flux CLIs; kind and k3d (one item), or k3s as a real cluster on
    the VM; Tilt, Skaffold, ctlptl; talosctl.
 8. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,
    Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no
@@ -153,16 +153,10 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 
 ### [2/2] Configure
 
-1. **System settings:** "sudo asks for your password", weekly tool updates
-   (a systemd timer running `mise up` and `krew upgrade` as you). Behind a
-   corporate network: an internal CA bundle (a PEM file on the VM, or an
-   https URL with its sha256), trusted system-wide and by Node, Python and
-   the AWS CLI. It's applied before anything is installed, and can be set
-   in a profile's `[system]` (`ca_bundle`, `ca_sha256`).
-2. **Git & SSH:** git identity, git defaults (rebase on pull, push
+1. **Git & SSH:** git name, email and defaults as one item (rebase on pull, push
    sets upstream, delta diffs, aliases, a global ignore file), one item per
-   git host (GitHub with the gh login, GitLab with gitlab.com or your own
-   host, Bitbucket), each asking how this machine reaches it over
+   git host (GitHub with the gh login and act to run Actions locally,
+   GitLab with glab, for gitlab.com or your own host, Bitbucket), each asking how this machine reaches it over
    SSH (a forwarded agent, a key made here, or a key you send; GitHub also
    a token), commit signing with SSH, global git ignores in
    `~/.config/git/ignore` (`.claude/`, `.python-version`, `.env`, `.venv/`,
@@ -172,7 +166,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    `bootstrap.sh` or `setup.sh`, or else `stow` for each top-level
    directory. It runs after everything else, so your files win (`[dotfiles]
    repo = "…"` in a personal profile).
-3. **Agents:** a `CLAUDE.md` / `AGENTS.md` describing the VM, settings for
+2. **Agents:** one item for a `CLAUDE.md` / `AGENTS.md` describing the VM and settings for
    agents left to run unattended (Claude Code may not force-push, sudo, or
    read `~/.mcp`, `~/.ssh` or the agent keys; Codex asks first and works in
    a sandbox; both are told never to rewrite pushed history; merged
@@ -182,7 +176,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    Claude Code, Codex, Gemini CLI, OpenCode and Goose. The gateway listens
    on this machine only, on the VM's Tailscale address only (when Tailscale
    is up), or on every interface (no auth: trusted networks only).
-4. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
+3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
    up` later), container registry logins (`docker login`; ghcr.io can use
    your gh token), a private npm registry (scope and token in `~/.npmrc`),
    and your age key for sops (generate or paste).
@@ -190,8 +184,9 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 In a profile, a split item's old id means both halves: `tailscale`,
 `sops` and `mcpjungle` are the configure items, and each pulls in its
 install item (`tailscale-install`, `sops-install`, `mcpjungle-install`),
-which a profile can also list alone. `gitlab` no longer installs glab:
-list `gitlab-cli` for that.
+which a profile can also list alone. Merged items' old ids still work in
+saved choices: `ctools` is `docker`, `lint` is `devcli`, `gitcfg` is
+`gitid`, `agentsafe` is `agentcfg` and `k3d` is `kind`.
 
 Downloads are pinned: vendor apt keys are checked against their
 fingerprints and release binaries against their sha256 before they're
@@ -250,10 +245,8 @@ Each user's MCPJungle gateway runs as a system user of its own,
 MCP servers through the gateway but can't read their tokens. `mcp-sync` and
 `mcp-sync edit <name>` switch to that user through sudo for you. This only
 holds while the agent can't get root: with passwordless sudo (the default
-for the VM's user) or membership of the docker group, it can. The opt-in
-"sudo asks for your password" item (System) removes `NOPASSWD` from your
-sudo rules, after setting a password if you have none; tools that run sudo
-on the machine over SSH then need that password too.
+for the VM's user) or membership of the docker group, it can; the
+"Set up agents for this VM" item denies Claude Code sudo.
 
 `sudo yardo --yes` never waits for input: a step that would (the
 GitHub browser login, adding a gh scope, `tailscale up` without a key)

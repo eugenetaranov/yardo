@@ -14,19 +14,14 @@ tools = ["lazygit@latest"]
 [[item]]
 id = "devcli"
 tab = "dev"
-label = "Dev CLIs (just, Task, watchexec, hyperfine, yq, xh, hurl)"
+label = "Dev CLIs and linters (just, Task, watchexec, yq, xh, hurl, shellcheck, shfmt, actionlint, gitleaks, pre-commit, …)"
 default = true
 
 [[item.step]]
 type = "mise"
 tools = ["just@latest", "task@latest", "watchexec@latest", "hyperfine@latest", "yq@latest", "xh@latest", "hurl@latest"]
 
-[[item]]
-id = "lint"
-tab = "dev"
-label = "Linters + hooks (shellcheck, shfmt, actionlint, gitleaks, pre-commit)"
-default = true
-
+# Linters and hooks.
 [[item.step]]
 type = "mise"
 tools = ["shellcheck@latest", "shfmt@latest", "actionlint@latest", "gitleaks@latest", "uv@latest", "pipx:pre-commit"]
@@ -54,16 +49,6 @@ source = "apt linux-tools-$(uname -r) valgrind bpftrace bpfcc-tools"
 [[item.step]]
 type = "apt"
 packages = ["linux-tools-common", "linux-tools-{{kernel}}", "valgrind", "bpftrace", "bpfcc-tools"]
-
-[[item]]
-id = "act"
-tab = "dev"
-label = "act (run GitHub Actions locally)"
-needs = ["docker"]
-
-[[item.step]]
-type = "mise"
-tools = ["act@latest"]
 
 [[item]]
 id = "npmrc"
@@ -102,6 +87,7 @@ when = "[ -z {{npm_scope}} ]"
 id = "autoupdate-tools"
 tab = "sysconf"
 label = "Weekly tool updates (mise up, krew upgrade; a systemd timer)"
+always = true
 needs = ["mise"]
 source = "yardo-update@<user>.timer: weekly, as you · run now: sudo systemctl start yardo-update@<user>"
 
@@ -119,13 +105,3 @@ to = "/etc/systemd/system/yardo-update@.timer"
 type = "run"
 cmd = "systemctl daemon-reload && systemctl enable --now yardo-update@{{user}}.timer"
 check = "systemctl is-enabled --quiet yardo-update@{{user}}.timer && systemctl is-active --quiet yardo-update@{{user}}.timer"
-
-# glab, GitLab's CLI. Its SSH key and host: Configure → Git & SSH.
-[[item]]
-id = "gitlab-cli"
-tab = "dev"
-label = "glab (GitLab CLI)"
-
-[[item.step]]
-type = "mise"
-tools = ["glab@latest"]

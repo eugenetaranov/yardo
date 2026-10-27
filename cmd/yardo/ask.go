@@ -186,11 +186,6 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			return nil, err
 		}
 	}
-	if isNew("corpca") {
-		if err := k.askCA(); err != nil {
-			return nil, err
-		}
-	}
 	if isNew("mcpjungle-install") {
 		if err := k.askMCPListen(); err != nil {
 			return nil, err
@@ -368,24 +363,6 @@ func (k *asker) askSecrets(c *choices, has func(string) bool) error {
 			return err
 		}
 	}
-	if has("sudopw") && !hasPassword(k.a.User) {
-		fmt.Fprintf(k.out, "\n%s has no password; sudo will ask for one, so set it now.\n", k.a.User)
-		for {
-			pw, err := ui.Password("New password for "+k.a.User+" (empty: set it later with 'sudo passwd "+k.a.User+"')", "")
-			if err != nil || pw == "" {
-				return err
-			}
-			again, err := ui.Password("The same password again", "")
-			if err != nil {
-				return err
-			}
-			if pw == again {
-				c.secrets.SudoPW = pw
-				break
-			}
-			fmt.Fprintln(k.out, "They don't match.")
-		}
-	}
 	if has("tailscale") && exec.Command("tailscale", "status").Run() != nil {
 		if c.secrets.TSAuthKey, err = ui.Password("Tailscale auth key (empty: run 'sudo tailscale up' later)", ""); err != nil {
 			return err
@@ -448,31 +425,6 @@ func (k *asker) askTZ() error {
 		}
 		fmt.Fprintf(k.out, "Unknown timezone %q.\n", tz)
 		cur = tz
-	}
-}
-
-// askCA asks where the internal CA bundle comes from.
-func (k *asker) askCA() error {
-	cur := k.a.CA
-	for {
-		src, err := ui.Input("CA bundle: a PEM file on this VM, or an https URL", "Behind a TLS-inspecting proxy, copy it to the VM first (the URL can't be trusted yet).", cur.Source)
-		if err != nil {
-			return err
-		}
-		cur.Source = src
-		if strings.HasPrefix(src, "https://") {
-			if cur.SHA256, err = ui.Input("Its SHA-256 (sha256sum bundle.pem)", "", cur.SHA256); err != nil {
-				return err
-			}
-		} else {
-			cur.SHA256 = ""
-		}
-		if err := answers.CheckCA(cur); err != nil {
-			fmt.Fprintln(k.out, err)
-			continue
-		}
-		k.a.CA = cur
-		return nil
 	}
 }
 
@@ -926,11 +878,4 @@ func readAsOwner(login, path string) []byte {
 		return nil
 	}
 	return out
-}
-
-// hasPassword reports whether the user has a usable password (passwd -S).
-func hasPassword(name string) bool {
-	out, err := exec.Command("passwd", "-S", name).Output()
-	f := strings.Fields(string(out))
-	return err == nil && len(f) > 1 && f[1] == "P"
 }

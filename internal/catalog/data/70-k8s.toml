@@ -55,22 +55,12 @@ tools = ["argocd@latest", "flux2@latest"]
 [[item]]
 id = "kind"
 tab = "k8s"
-label = "kind (local k8s in Docker)"
+label = "Local Kubernetes in Docker (kind, k3d)"
 needs = ["docker"]
 
 [[item.step]]
 type = "mise"
-tools = ["kind@latest"]
-
-[[item]]
-id = "k3d"
-tab = "k8s"
-label = "k3d (k3s in Docker)"
-needs = ["docker"]
-
-[[item.step]]
-type = "mise"
-tools = ["k3d@latest"]
+tools = ["kind@latest", "k3d@latest"]
 
 [[item]]
 id = "k3s"

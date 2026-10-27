@@ -22,8 +22,6 @@ type Secrets struct {
 	// asks for it itself).
 	GHPassphrase      string
 	AgeChoice, AgeKey string
-	// SudoPW is a password to set for the user (sudopw), when they have none.
-	SudoPW string
 	// GitKey is a private key for gitkey, sent on stdin to yardo gitkey.
 	GitKey []byte
 }

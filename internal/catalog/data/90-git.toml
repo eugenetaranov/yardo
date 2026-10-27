@@ -5,23 +5,16 @@
 [[item]]
 id = "gitid"
 tab = "git"
-label = "Git name and email"
+label = "Git: name, email and defaults (rebase pulls, auto upstream, delta diffs, aliases)"
 default = true
 needs = ["essentials"]
-source = "git config --global user.name/email"
+source = "git config --global user.name/email and defaults · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore"
 
 [[item.step]]
 type = "git_config"
 values = { "user.name" = "{{git_name}}", "user.email" = "{{git_email}}", "init.defaultBranch" = "main" }
 
-[[item]]
-id = "gitcfg"
-tab = "git"
-label = "Git defaults (rebase pulls, auto upstream, delta diffs)"
-default = true
-needs = ["essentials"]
-source = "git config --global · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore"
-
+# Defaults: rebasing pulls, pushes that set their upstream, aliases.
 [[item.step]]
 type = "git_config"
 
@@ -86,20 +79,28 @@ type = "go:gitkey"
 [[item]]
 id = "github"
 tab = "git"
-label = "GitHub: gh login + SSH key for git"
+label = "GitHub: gh login + SSH key for git, act (run Actions locally)"
 default = true
 needs = ["essentials", "gitkey"]
-source = "gh auth login · git over SSH: forwarded agent, a key made here (gh ssh-key add) or one you send (yardo gitkey); or a token"
+source = "gh auth login · git over SSH: forwarded agent, a key made here (gh ssh-key add) or one you send (yardo gitkey); or a token · mise act (needs Docker to run)"
 
 [[item.step]]
 type = "legacy"
 
+[[item.step]]
+type = "mise"
+tools = ["act@latest"]
+
 [[item]]
 id = "gitlab"
 tab = "git"
-label = "GitLab: SSH key for git"
+label = "GitLab: SSH key for git, glab (GitLab CLI)"
 needs = ["gitkey"]
 source = "git over SSH: forwarded agent, a key made here or one you send (yardo gitkey) · gitlab.com or your own"
+
+[[item.step]]
+type = "mise"
+tools = ["glab@latest"]
 
 [[item]]
 id = "bitbucket"

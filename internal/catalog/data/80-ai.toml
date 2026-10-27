@@ -134,9 +134,10 @@ check = "grep -q '\"repoVersion\": \"2.2.3\"' ~/.claude/ecc/install-state.json"
 [[item]]
 id = "agentcfg"
 tab = "agents"
-label = "Describe this VM to agents (CLAUDE.md, AGENTS.md)"
+after = ["claude", "codex"]
+label = "Set up agents for this VM (notes; no sudo, force-push or reading SSH keys and tokens; Codex sandbox)"
 default = true
-source = "~/.claude/CLAUDE.md · ~/.codex/AGENTS.md · only if absent"
+source = "~/.claude/CLAUDE.md, ~/.codex/AGENTS.md (only if absent) · ~/.claude/settings.json deny rules · ~/.codex/config.toml sandbox"
 
 [[item.step]]
 type = "file"
@@ -150,16 +151,7 @@ src = "agent-notes.md"
 to = "~/.codex/AGENTS.md"
 if_absent = true
 
-# Settings for agents left to run unattended, merged into their own files:
-# after the agents and their notes (agentcfg writes those only if absent).
-[[item]]
-id = "agentsafe"
-tab = "agents"
-label = "Safer unattended agents (no sudo, no force-push, no reading SSH keys or tokens; Codex sandbox)"
-default = true
-after = ["claude", "codex", "agentcfg"]
-source = "~/.claude/settings.json deny rules · ~/.codex/config.toml sandbox · a Pushing section in CLAUDE.md/AGENTS.md"
-
+# Guard rails for unattended agents, merged into their own settings.
 [[item.step]]
 type = "go:agentsafe"
 

@@ -208,7 +208,7 @@ func TestScope(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	want := "autoupdates corpca ctools debug devlimits docker essentials etckeeper fail2ban journald k3s monitoring netfs ollama podman sshharden tailscale tailscale-install tzlocale zram"
+	want := "autoupdates debug devlimits docker essentials etckeeper fail2ban journald k3s netfs ollama podman sshharden tailscale tailscale-install tzlocale zram"
 	if strings.Join(got, " ") != want {
 		t.Errorf("system items: %s\nwant %s", strings.Join(got, " "), want)
 	}
@@ -303,7 +303,7 @@ func TestDefaults(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	want := "agentcfg agentsafe claude ctools debug devcli docker gitcfg github gitid lazygit lint mcpjungle mcpjungle-install neovim openspec tmux zsh"
+	want := "agentcfg claude debug devcli docker github gitid lazygit mcpjungle mcpjungle-install neovim openspec tmux zsh"
 	if strings.Join(got, " ") != want {
 		t.Errorf("defaults: %s\nwant %s", strings.Join(got, " "), want)
 	}
