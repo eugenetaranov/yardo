@@ -1,0 +1,11 @@
+bat		A cat(1) clone with wings
+fd		A simple, fast and user-friendly alternative to 'find'
+helmfile		Declaratively deploy your Kubernetes manifests, Kustomize configs, and Charts as Helm releases. Generate all-in-one manifests for use with ArgoCD
+jq		Command-line JSON processor
+k9s		Kubernetes CLI To Manage Your Clusters In Style
+kubectl		kubectl cli
+neovim		Vim-fork focused on extensibility and usability
+ripgrep	rg	ripgrep recursively searches directories for a regex pattern while respecting your gitignore
+starship		The minimal, blazing-fast, and infinitely customizable prompt for any shell
+terraform		Terraform enables you to safely and predictably create, change, and improve infrastructure. It is an open source tool that codifies APIs into declarative configuration files that can be shared amongst team members, treated as code, edited, reviewed, and versioned
+shellspec		A full-featured BDD unit testing framework for bash, ksh, zsh, dash and all POSIX shells

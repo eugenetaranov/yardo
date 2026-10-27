@@ -30,7 +30,7 @@ def catalog():
 
 
 def everything():
-    return picker.dedupe(catalog() + picker.load_mise(os.path.join(HERE, "mise-registry.tsv")))
+    return picker.dedupe(catalog() + picker.load_mise(os.path.join(HERE, "testdata", "mise-registry.tsv")))
 
 
 def ids(results, n):
