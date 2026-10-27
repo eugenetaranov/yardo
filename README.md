@@ -141,11 +141,13 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    OpenTofu, trivy + checkov, Packer, Ansible, sops + age, Vault.
 7. **Containers & Kubernetes:** Docker (with log rotation and
    10.200.0.0/16 networks) and its tools (lazydocker, dive, hadolint, crane,
-   cosign), Podman + skopeo + buildah; the Kubernetes CLIs as
-   one item (kubectl, kubectx/kubens, Helm 3, k9s, kubelogin, stern,
-   kustomize, kubecolor, kubie, kubeconform, helmfile + helm-diff, krew with
-   plugins); Argo CD and Flux CLIs; kind and k3d (one item), or k3s as a real cluster on
-   the VM; Tilt, Skaffold, ctlptl; talosctl.
+   cosign), Podman + skopeo + buildah; Kubernetes as one item (kubectl,
+   with oh-my-zsh's aliases such as `kgp`, `kdp`, `kl` under zsh;
+   kubectx/kubens, Helm 3, k9s, stern, k3d for local clusters in Docker);
+   Kubernetes extras as another (kustomize, helmfile + helm-diff,
+   kubeconform, kubelogin, kubie, kubecolor, krew with plugins, Argo CD,
+   Flux, Tilt, Skaffold, ctlptl, kind, talosctl); or k3s as a real cluster
+   on the VM.
 8. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,
    Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no
    hooks), and the MCPJungle gateway (its servers: Configure → Agents).

@@ -2,15 +2,30 @@
 # registry logins are in 10-system.toml, installed with the system).
 # `legacy` steps run the bundled bash installer until the item is ported.
 
+# The everyday Kubernetes CLIs. With zsh, oh-my-zsh's kubectl plugin
+# brings its aliases (kgp, kdp, kl, kaf, kgs, kgd, …) once kubectl is on
+# PATH, and the kubectx and helm plugins their completions.
 [[item]]
 id = "k8s"
 tab = "k8s"
-label = "Kubernetes CLIs (kubectl, helm, k9s, kubectx, stern, kustomize, helmfile, krew, …)"
-source = "mise use -g kubectl kubectx kubens helm k9s kubelogin stern kustomize kubecolor kubie kubeconform helmfile · helm-diff · krew + neat, tree, view-secret"
+label = "Kubernetes: kubectl (+ zsh aliases kgp, kdp, kl, …), kubectx/kubens, helm, k9s, stern, k3d"
+source = "mise use -g kubectl kubectx kubens helm@3 k9s stern k3d · aliases: oh-my-zsh's kubectl plugin (zsh) · k3d runs clusters in Docker"
 
 [[item.step]]
 type = "mise"
-tools = ["kubectl@latest", "kubectx@latest", "kubens@latest", "helm@3", "k9s@latest", "kubelogin@latest", "stern@latest", "kustomize@latest", "kubecolor@latest", "kubie@latest", "kubeconform@latest", "helmfile@latest"]
+tools = ["kubectl@latest", "kubectx@latest", "kubens@latest", "helm@3", "k9s@latest", "stern@latest", "k3d@latest"]
+
+# Everything else, for platform work: one item.
+[[item]]
+id = "k8stools"
+tab = "k8s"
+label = "Kubernetes extras (kustomize, helmfile, kubeconform, kubelogin, krew, Argo CD, Flux, Tilt, Skaffold, kind, talosctl, …)"
+needs = ["k8s"]
+source = "mise use -g kustomize helmfile kubeconform kubelogin kubie kubecolor argocd flux2 tilt skaffold ctlptl kind talosctl · helm-diff · krew + neat, tree, view-secret"
+
+[[item.step]]
+type = "mise"
+tools = ["kustomize@latest", "helmfile@latest", "kubeconform@latest", "kubelogin@latest", "kubie@latest", "kubecolor@latest", "argocd@latest", "flux2@latest", "tilt@latest", "skaffold@latest", "ctlptl@latest", "kind@latest", "talosctl@latest"]
 
 [[item.step]]
 type = "run"
@@ -43,26 +58,6 @@ as_user = true
 check = 'l=$(PATH="$HOME/.krew/bin:$PATH" kubectl krew list) && for p in neat tree view-secret; do printf "%s\n" "$l" | grep -qx "$p" || exit 1; done'
 
 [[item]]
-id = "gitops"
-tab = "k8s"
-label = "GitOps CLIs (Argo CD, Flux)"
-needs = ["k8s"]
-
-[[item.step]]
-type = "mise"
-tools = ["argocd@latest", "flux2@latest"]
-
-[[item]]
-id = "kind"
-tab = "k8s"
-label = "Local Kubernetes in Docker (kind, k3d)"
-needs = ["docker"]
-
-[[item.step]]
-type = "mise"
-tools = ["kind@latest", "k3d@latest"]
-
-[[item]]
 id = "k3s"
 tab = "k8s"
 scope = "system"
@@ -86,22 +81,3 @@ creates = "~/.kube/config"
 type = "note"
 text = "k3s: ~/.kube/config already exists, so it was kept; the k3s kubeconfig is /etc/rancher/k3s/k3s.yaml."
 when = "! cmp -s /etc/rancher/k3s/k3s.yaml {{home}}/.kube/config"
-
-[[item]]
-id = "devloop"
-tab = "k8s"
-label = "Inner loop (Tilt, Skaffold, ctlptl)"
-needs = ["k8s"]
-
-[[item.step]]
-type = "mise"
-tools = ["tilt@latest", "skaffold@latest", "ctlptl@latest"]
-
-[[item]]
-id = "talos"
-tab = "k8s"
-label = "talosctl (Talos Linux)"
-
-[[item.step]]
-type = "mise"
-tools = ["talosctl@latest"]

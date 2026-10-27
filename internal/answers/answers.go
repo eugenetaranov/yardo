@@ -172,7 +172,7 @@ var PickMap = map[string][]string{
 	// hardening always on.
 	"p10k": {"zsh"}, "zshcfg": {"zsh"}, "fzftab": {"zsh"}, "shellcfg": {"zsh"}, "cli": {"zsh"}, "docs": {"zsh"},
 	"tmuxcfg": {"tmux"}, "vimcfg": {"neovim"},
-	"k8sextra": {"k8s"}, "krew": {"k8s"}, "helmfile": {"k8s"},
+	"k8sextra": {"k8s"}, "krew": {"k8stools"}, "helmfile": {"k8stools"},
 	"runners": {"devcli"}, "task": {"devcli"}, "yq": {"devcli"}, "http": {"devcli"},
 	"pgcli": {"dbclients"}, "iaclint": {"terraform"}, "agekey": {"sops"},
 	"needrestart": {}, // with security updates, which every machine gets
@@ -183,7 +183,11 @@ var PickMap = map[string][]string{
 	"gitcfg":      {"gitid"},
 	"gitlab-cli":  {}, // comes with the GitLab item
 	"agentsafe":   {"agentcfg"},
-	"k3d":         {"kind"},
+	"k3d":         {"k8s"},
+	"kind":        {"k8s", "k8stools"},
+	"gitops":      {"k8stools"},
+	"devloop":     {"k8stools"},
+	"talos":       {"k8stools"},
 	"corpca":      {}, // no longer an item
 	"monitoring":  {}, // no longer an item
 	"sudopw":      {}, // no longer an item
