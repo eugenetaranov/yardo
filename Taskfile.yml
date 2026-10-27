@@ -27,6 +27,23 @@ tasks:
       - mkdir -p {{.BUILD_DIR}}
       - for a in amd64 arm64; do CGO_ENABLED=0 GOOS=linux GOARCH=$a go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY}}-linux-$a ./cmd/yardo; done
 
+  push:
+    desc: Build yardo and install it on a pmox VM over the release (VM=name)
+    requires:
+      vars: [VM]
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - |
+        case "$(pmox exec {{.VM}} -- uname -m)" in
+          x86_64) arch=amd64 ;;
+          aarch64) arch=arm64 ;;
+          *) echo "unsupported VM architecture" >&2; exit 1 ;;
+        esac
+        CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY}}-linux-$arch ./cmd/yardo
+        pmox cp {{.BUILD_DIR}}/{{.BINARY}}-linux-$arch {{.VM}}:/tmp/yardo
+        pmox exec {{.VM}} -- sudo install -m 0755 /tmp/yardo /usr/local/bin/yardo
+        pmox exec {{.VM}} -- 'rm -f /tmp/yardo; yardo version'
+
   test:
     desc: Run the tests
     cmds:
