@@ -73,6 +73,9 @@ type Item struct {
 	// machine gets: security updates, SSH hardening, …); the picker
 	// doesn't offer it.
 	Always bool `toml:"always"`
+	// Default ticks the item in the picker on the first run (nothing saved
+	// yet): the stack most machines get anyway, easy to untick.
+	Default bool `toml:"default"`
 	// Phase sets a hidden item's phase (a visible one takes its tab's).
 	Phase string `toml:"phase"`
 	Steps []Step `toml:"step"`
@@ -288,6 +291,9 @@ func (c *Catalog) validate() error {
 			if c.byID[n] == nil {
 				fail(it, "after %q, which is not an item", n)
 			}
+		}
+		if it.Default && (it.Always || it.Hidden()) {
+			fail(it, "default: only an item the picker offers can be preselected")
 		}
 		// Installing comes first: an install item can't wait on configuring.
 		if !it.configure {

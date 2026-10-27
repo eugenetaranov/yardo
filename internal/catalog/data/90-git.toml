@@ -6,6 +6,7 @@
 id = "gitid"
 tab = "git"
 label = "Git name and email"
+default = true
 needs = ["essentials"]
 source = "git config --global user.name/email"
 
@@ -17,6 +18,7 @@ values = { "user.name" = "{{git_name}}", "user.email" = "{{git_email}}", "init.d
 id = "gitcfg"
 tab = "git"
 label = "Git defaults (rebase pulls, auto upstream, delta diffs)"
+default = true
 needs = ["essentials"]
 source = "git config --global · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore"
 
@@ -85,6 +87,7 @@ type = "go:gitkey"
 id = "github"
 tab = "git"
 label = "GitHub: gh login + SSH key for git"
+default = true
 needs = ["essentials", "gitkey"]
 source = "gh auth login · git over SSH: forwarded agent, a key made here (gh ssh-key add) or one you send (yardo gitkey); or a token"
 

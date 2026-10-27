@@ -74,7 +74,14 @@ func (k *asker) ask(ctx context.Context) (*choices, error) {
 }
 
 func (k *asker) once(ctx context.Context) (*choices, error) {
-	fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). Nothing is preselected; run it again any time to add more.\n", k.a.User)
+	// The first run starts from the usual stack; after that, from nothing
+	// (what's saved is installed already).
+	first := len(k.a.Picks) == 0
+	if first {
+		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). The usual stack is ticked: untick what you don't want, or ctrl-x to untick all. Run it again any time to add more.\n", k.a.User)
+	} else {
+		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). What you picked before stays installed: tick what to add.\n", k.a.User)
+	}
 
 	// 1. Pick, on two screens: what to install (every install category,
 	// plus mise's registry), then what to configure (logins, keys,
@@ -83,6 +90,10 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 		ui.Dedupe(append(ui.CatalogEntries(k.cat, catalog.PhaseInstall), ui.LoadMise(miseRegistry(ctx, k.share))...)),
 		ui.Options{Next: "configure"})
 	conf := ui.CatalogEntries(k.cat, catalog.PhaseConfigure)
+	if first {
+		k.preselect(inst.Entries())
+		k.preselect(conf)
+	}
 	var installs, configures []string
 	for {
 		var out ui.Outcome
@@ -253,6 +264,15 @@ func (k *asker) configurable(conf []*ui.Entry, installs []string) []*ui.Entry {
 func planHas(items []*catalog.Item) func(string) bool {
 	picks := " " + strings.Join(plan.IDs(items), " ") + " "
 	return func(id string) bool { return strings.Contains(picks, " "+id+" ") }
+}
+
+// preselect ticks the catalog's default items.
+func (k *asker) preselect(entries []*ui.Entry) {
+	for _, e := range entries {
+		if it := k.cat.Item(e.ID); it != nil && it.Default {
+			e.On = true
+		}
+	}
 }
 
 // askUser asks which user to set up, offering to create a missing one.

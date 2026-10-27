@@ -87,6 +87,9 @@ func NewPicker(title string, tabs []Tab, entries []*Entry, o Options) *Picker {
 	return p
 }
 
+// Entries are the picker's rows, to tick some before it runs.
+func (p *Picker) Entries() []*Entry { return p.entries }
+
 // Selected returns the ticked ids, in entry order.
 func (p *Picker) Selected() []string {
 	var out []string
@@ -196,6 +199,10 @@ func (p *Picker) key(k tea.KeyMsg) tea.Cmd {
 		}
 	case tea.KeyCtrlC:
 		return tea.Quit
+	case tea.KeyCtrlX:
+		for _, e := range p.entries {
+			e.On = false
+		}
 	case tea.KeyEsc:
 		if p.query == "" {
 			p.back = p.opt.Back
@@ -439,6 +446,9 @@ func (p *Picker) View() string {
 		enter = "enter " + p.opt.Next + " →"
 	}
 	keys := "type to search · ←/→ category · ↑/↓ move · space toggle · " + enter + " · " + esc
+	if chosen > 0 {
+		keys += " · ctrl-x untick all"
+	}
 	switch view {
 	case searchTab:
 		switch {

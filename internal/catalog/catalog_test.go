@@ -292,3 +292,23 @@ func TestBlockStepNeedsSrcAndTo(t *testing.T) {
 		}
 	}
 }
+
+// The items ticked on a first run, kept explicit: changing the usual stack
+// is a decision.
+func TestDefaults(t *testing.T) {
+	var got []string
+	for _, it := range load(t, nil).Items {
+		if it.Default {
+			got = append(got, it.ID)
+		}
+	}
+	sort.Strings(got)
+	want := "agentcfg agentsafe claude ctools debug devcli docker gitcfg github gitid lazygit lint neovim openspec tmux zsh"
+	if strings.Join(got, " ") != want {
+		t.Errorf("defaults: %s\nwant %s", strings.Join(got, " "), want)
+	}
+	err := loadErr(t, fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\nalways = true\ndefault = true\n[[item.step]]\ntype = \"apt\"\npackages = [\"jq\"]\n")}})
+	if !strings.Contains(err, "only an item the picker offers") {
+		t.Errorf("an Always default: %s", err)
+	}
+}

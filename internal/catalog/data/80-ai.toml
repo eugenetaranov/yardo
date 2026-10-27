@@ -5,6 +5,7 @@
 id = "claude"
 tab = "ai"
 label = "Claude Code"
+default = true
 source = "apt claude-code (Anthropic repo)"
 
 [[item.step]]
@@ -110,6 +111,7 @@ when = "! lspci 2>/dev/null | grep -qiE 'nvidia|amd/ati'"
 id = "openspec"
 tab = "ai"
 label = "OpenSpec (spec-driven development CLI)"
+default = true
 needs = ["node"]
 
 [[item.step]]
@@ -133,6 +135,7 @@ check = "grep -q '\"repoVersion\": \"2.2.3\"' ~/.claude/ecc/install-state.json"
 id = "agentcfg"
 tab = "agents"
 label = "Describe this VM to agents (CLAUDE.md, AGENTS.md)"
+default = true
 source = "~/.claude/CLAUDE.md · ~/.codex/AGENTS.md · only if absent"
 
 [[item.step]]
@@ -153,6 +156,7 @@ if_absent = true
 id = "agentsafe"
 tab = "agents"
 label = "Safer unattended agents (no sudo, no force-push, no reading SSH keys or tokens; Codex sandbox)"
+default = true
 after = ["claude", "codex", "agentcfg"]
 source = "~/.claude/settings.json deny rules · ~/.codex/config.toml sandbox · a Pushing section in CLAUDE.md/AGENTS.md"
 

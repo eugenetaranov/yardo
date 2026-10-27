@@ -5,6 +5,7 @@
 id = "lazygit"
 tab = "dev"
 label = "lazygit (git TUI)"
+default = true
 
 [[item.step]]
 type = "mise"
@@ -14,6 +15,7 @@ tools = ["lazygit@latest"]
 id = "devcli"
 tab = "dev"
 label = "Dev CLIs (just, Task, watchexec, hyperfine, yq, xh, hurl)"
+default = true
 
 [[item.step]]
 type = "mise"
@@ -23,6 +25,7 @@ tools = ["just@latest", "task@latest", "watchexec@latest", "hyperfine@latest", "
 id = "lint"
 tab = "dev"
 label = "Linters + hooks (shellcheck, shfmt, actionlint, gitleaks, pre-commit)"
+default = true
 
 [[item.step]]
 type = "mise"

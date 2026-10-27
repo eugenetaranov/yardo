@@ -24,6 +24,7 @@ packages = ["git", "curl", "wget", "ca-certificates", "unzip", "zip", "build-ess
 id = "debug"
 tab = "system"
 label = "Admin and debug tools (htop, btop, ncdu, duf, iotop, lsof, strace, tcpdump, mtr, dig, nmap, lnav, …)"
+default = true
 source = "apt install htop bind9-dnsutils mtr-tiny traceroute tcpdump iperf3 ethtool nmap iftop lsof strace ltrace sysstat iotop-c ncdu duf pv lnav netcat-openbsd socat rsync btop"
 
 [[item.step]]
@@ -52,6 +53,7 @@ id = "docker"
 tab = "k8s"
 scope = "system"
 label = "Docker Engine + Compose"
+default = true
 source = "apt docker-ce (download.docker.com repo) · log rotation, 10.200/16 networks · docker group = root"
 
 [[item.step]]
@@ -105,6 +107,7 @@ id = "ctools"
 tab = "k8s"
 scope = "system"
 label = "Container tools (lazydocker, dive, hadolint, crane, cosign)"
+default = true
 needs = ["docker"]
 
 [[item.step]]

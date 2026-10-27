@@ -155,3 +155,20 @@ func TestWrap(t *testing.T) {
 		t.Errorf("wrap lost words: %q", got)
 	}
 }
+
+func TestPickerUntickAll(t *testing.T) {
+	p := newTestPicker(t)
+	for _, e := range p.Entries() {
+		e.On = true
+	}
+	if !strings.Contains(p.View(), "ctrl-x untick all") {
+		t.Error("the keys line should offer ctrl-x when something is ticked")
+	}
+	press(p, tea.KeyCtrlX)
+	if got := p.Selected(); len(got) != 0 {
+		t.Errorf("ctrl-x left %v ticked", got)
+	}
+	if strings.Contains(p.View(), "ctrl-x untick all") {
+		t.Error("ctrl-x offered with nothing ticked")
+	}
+}

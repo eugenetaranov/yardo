@@ -8,6 +8,7 @@
 id = "zsh"
 tab = "shell"
 label = "zsh, ready to use (asks: Powerlevel10k or Starship prompt)"
+default = true
 needs = ["zshbin", "zshcfg", "prompt", "zshrc", "fzftab", "shellcfg", "cli", "docs"]
 source = "oh-my-zsh + autosuggestions, syntax highlighting, history search, fzf-tab · ripgrep fd bat eza fzf zoxide delta direnv · z, fzf keys, aliases · man pages, tldr"
 
@@ -17,6 +18,7 @@ source = "oh-my-zsh + autosuggestions, syntax highlighting, history search, fzf-
 id = "neovim"
 tab = "shell"
 label = "Neovim, ready to use (fuzzy find, file browser, LSP, completion)"
+default = true
 # After the languages: their servers are installed with it.
 after = ["go", "python", "node", "java", "rust", "terraform", "docker", "k8s"]
 source = "mise neovim@latest node@lts · lazy.nvim · curated ~/.config/nvim/init.lua (.orig kept) · which-key, telescope, oil, gitsigns, sleuth, mini, mason + SchemaStore, blink.cmp"
@@ -76,6 +78,7 @@ id = "tmux"
 tab = "shell"
 source = "apt tmux · ~/.tmux.conf (.tmux.conf.orig kept)"
 label = "tmux (mouse, splits, 50k history)"
+default = true
 
 [[item.step]]
 type = "apt"
