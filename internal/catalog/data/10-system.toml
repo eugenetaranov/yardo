@@ -23,12 +23,12 @@ packages = ["git", "curl", "wget", "ca-certificates", "unzip", "zip", "build-ess
 [[item]]
 id = "debug"
 tab = "system"
-label = "Admin and debug tools (network, disk, process)"
-source = "apt install bind9-dnsutils mtr-tiny traceroute tcpdump iperf3 ethtool nmap iftop lsof strace ltrace sysstat iotop-c ncdu duf pv lnav netcat-openbsd socat rsync btop"
+label = "Admin and debug tools (htop, btop, ncdu, duf, iotop, lsof, strace, tcpdump, mtr, dig, nmap, lnav, …)"
+source = "apt install htop bind9-dnsutils mtr-tiny traceroute tcpdump iperf3 ethtool nmap iftop lsof strace ltrace sysstat iotop-c ncdu duf pv lnav netcat-openbsd socat rsync btop"
 
 [[item.step]]
 type = "apt"
-packages = ["bind9-dnsutils", "mtr-tiny", "traceroute", "tcpdump", "iperf3", "ethtool", "nmap", "iftop", "lsof", "strace", "ltrace", "sysstat", "iotop-c", "ncdu", "duf", "pv", "lnav", "netcat-openbsd", "socat", "rsync", "btop"]
+packages = ["htop", "bind9-dnsutils", "mtr-tiny", "traceroute", "tcpdump", "iperf3", "ethtool", "nmap", "iftop", "lsof", "strace", "ltrace", "sysstat", "iotop-c", "ncdu", "duf", "pv", "lnav", "netcat-openbsd", "socat", "rsync", "btop"]
 
 # sysstat ships disabled: without this, sar has no data.
 [[item.step]]

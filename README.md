@@ -92,7 +92,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 ### [1/2] Install
 
 1. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
-   iperf3, nmap, strace, btop, …), Tailscale (log in under Configure), NFS/SMB
+   iperf3, nmap, strace, htop, btop, ncdu, …), Tailscale (log in under Configure), NFS/SMB
    clients, node_exporter + glances.
 2. **Shell and CLI:** one zsh item that brings everything: zsh as the login
    shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
