@@ -42,22 +42,6 @@ type Tab struct {
 	Phase string `toml:"phase"`
 }
 
-// Stack groups: the tabs of the first run's "where are you headed?"
-// screen.
-const (
-	GroupDev    = "dev"
-	GroupDevOps = "devops"
-)
-
-// Stack is what someone works with (Java, Terraform, …): ticking it on
-// the first run ticks its items in the picker.
-type Stack struct {
-	ID    string   `toml:"id"`
-	Group string   `toml:"group"`
-	Label string   `toml:"label"`
-	Items []string `toml:"items"`
-}
-
 // PhaseOf is the tab's phase, install when unset.
 func (t Tab) PhaseOf() string {
 	if t.Phase == "" {
@@ -149,8 +133,7 @@ func (it *Item) UsesMise() bool {
 
 // Catalog is the loaded, validated catalog.
 type Catalog struct {
-	Tabs   []Tab
-	Stacks []Stack
+	Tabs  []Tab
 	Items []*Item // file order: tabs.toml's tabs, then items as the files list them
 	byID  map[string]*Item
 	files fs.FS
@@ -185,19 +168,8 @@ func (c *Catalog) TabItems(tab string) []*Item {
 }
 
 type fileDoc struct {
-	Tabs   []Tab   `toml:"tab"`
-	Stacks []Stack `toml:"stack"`
-	Items  []*Item `toml:"item"`
-}
-
-// Stack returns the stack with id, or nil.
-func (c *Catalog) Stack(id string) *Stack {
-	for i := range c.Stacks {
-		if c.Stacks[i].ID == id {
-			return &c.Stacks[i]
-		}
-	}
-	return nil
+	Tabs  []Tab   `toml:"tab"`
+	Items []*Item `toml:"item"`
 }
 
 // Load reads the embedded catalog, then every *.toml in local (nil to skip),
@@ -254,16 +226,6 @@ func (c *Catalog) addFile(name string, b []byte, local bool) error {
 		return fmt.Errorf("%s: local catalog files can't add tabs", name)
 	}
 	c.Tabs = append(c.Tabs, doc.Tabs...)
-	for _, st := range doc.Stacks {
-		if old := c.Stack(st.ID); old != nil {
-			if !local {
-				return fmt.Errorf("%s: duplicate stack %q", name, st.ID)
-			}
-			*old = st // a local stack replaces the embedded one, in place
-			continue
-		}
-		c.Stacks = append(c.Stacks, st)
-	}
 	for _, it := range doc.Items {
 		it.From = name
 		if old, ok := c.byID[it.ID]; ok {
@@ -344,21 +306,6 @@ func (c *Catalog) validate() error {
 		for i, s := range it.Steps {
 			if err := s.validate(c.files); err != nil {
 				fail(it, "step %d (%s): %v", i+1, s.Type, err)
-			}
-		}
-	}
-	for _, st := range c.Stacks {
-		switch {
-		case st.ID == "" || st.Label == "":
-			errs = append(errs, fmt.Errorf("stack %q: needs an id and a label", st.ID))
-		case st.Group != GroupDev && st.Group != GroupDevOps:
-			errs = append(errs, fmt.Errorf("stack %q: group %q: want dev or devops", st.ID, st.Group))
-		case len(st.Items) == 0:
-			errs = append(errs, fmt.Errorf("stack %q: no items", st.ID))
-		}
-		for _, id := range st.Items {
-			if it := c.byID[id]; it == nil || it.Hidden() || it.Always {
-				errs = append(errs, fmt.Errorf("stack %q: %q is not an item the picker offers", st.ID, id))
 			}
 		}
 	}
