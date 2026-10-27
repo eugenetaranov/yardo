@@ -5,10 +5,15 @@
 [[item]]
 id = "gitid"
 tab = "git"
-label = "Git: name, email and defaults (rebase pulls, auto upstream, delta diffs, aliases)"
+label = "Git: name, email and defaults (rebase pulls, auto upstream, delta diffs, aliases), lazygit"
 default = true
 needs = ["essentials"]
-source = "git config --global user.name/email and defaults · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore"
+source = "git config --global user.name/email and defaults · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore · mise use -g lazygit"
+
+# lazygit, the git TUI.
+[[item.step]]
+type = "mise"
+tools = ["lazygit@latest"]
 
 [[item.step]]
 type = "git_config"

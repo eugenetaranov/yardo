@@ -51,7 +51,7 @@ func TestSearch(t *testing.T) {
 		n    int
 		want string
 	}{
-		{"k9s", 1, "k8s"}, {"starship", 1, "zsh"}, {"lzgt", 5, "lazygit"}, {"act", 3, "github"},
+		{"k9s", 1, "k8s"}, {"starship", 1, "zsh"}, {"lzgt", 5, "gitid"}, {"act", 3, "github"},
 	}
 	for _, c := range cases {
 		if !has(ids(Search(items, c.q), c.n), c.want) {

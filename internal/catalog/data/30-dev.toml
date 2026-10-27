@@ -2,16 +2,6 @@
 # `legacy` steps run the bundled bash installer until the item is ported.
 
 [[item]]
-id = "lazygit"
-tab = "dev"
-label = "lazygit (git TUI)"
-default = true
-
-[[item.step]]
-type = "mise"
-tools = ["lazygit@latest"]
-
-[[item]]
 id = "devcli"
 tab = "dev"
 label = "Dev CLIs and linters (just, Task, watchexec, yq, xh, hurl, shellcheck, shfmt, actionlint, gitleaks, pre-commit, …)"

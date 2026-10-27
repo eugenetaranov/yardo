@@ -60,11 +60,11 @@ func TestApplyAccumulates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &answers.Answers{Picks: []string{"lazygit"}, Git: answers.Git{Name: "Old"}}
+	a := &answers.Answers{Picks: []string{"dbclients"}, Git: answers.Git{Name: "Old"}}
 	if _, w := p.Apply(a, cat(t)); len(w) != 0 {
 		t.Errorf("warnings: %v", w)
 	}
-	if a.Picks[0] != "lazygit" || len(a.Picks) != 9 || a.Git.Name != "Ada Lovelace" || a.TZ != "Europe/Istanbul" || len(a.MCPServers) != 2 {
+	if a.Picks[0] != "dbclients" || len(a.Picks) != 9 || a.Git.Name != "Ada Lovelace" || a.TZ != "Europe/Istanbul" || len(a.MCPServers) != 2 {
 		t.Errorf("answers = %+v", a)
 	}
 }
@@ -72,7 +72,7 @@ func TestApplyAccumulates(t *testing.T) {
 // Exported on one machine, applied on a fresh one: the same answers.
 func TestRoundTrip(t *testing.T) {
 	yes := true
-	src := &answers.Answers{Picks: []string{"lazygit", "zsh"}, MiseExtra: []string{"starship"}, Git: answers.Git{Name: "Ada", Email: "ada@example.com"},
+	src := &answers.Answers{Picks: []string{"dbclients", "zsh"}, MiseExtra: []string{"starship"}, Git: answers.Git{Name: "Ada", Email: "ada@example.com"},
 		TZ: "UTC", MCPServers: []string{"github"}, MCPListen: "127.0.0.1", WireAgents: &yes}
 	b := Export(src, nil)
 	p, err := Parse("exported", b)
@@ -129,7 +129,7 @@ func apply(t *testing.T, a *answers.Answers, src string) []string {
 // layers' picks stay.
 func TestNamedLayerReplaces(t *testing.T) {
 	a := &answers.Answers{}
-	apply(t, a, `picks = ["lazygit", "go"]`) // unnamed: like picks made by hand
+	apply(t, a, `picks = ["dbclients", "go"]`) // unnamed: like picks made by hand
 	apply(t, a, `name = "team"
 picks = ["docker", "k8s", "go", "terraform"]`)
 	apply(t, a, `name = "infra"
@@ -140,7 +140,7 @@ picks = ["neovim"]`)
 	if want := []string{"k8s"}; !reflect.DeepEqual(dropped, want) {
 		t.Errorf("dropped = %v, want %v", dropped, want)
 	}
-	if want := []string{"lazygit", "go", "docker", "terraform", "neovim"}; !reflect.DeepEqual(a.Picks, want) {
+	if want := []string{"dbclients", "go", "docker", "terraform", "neovim"}; !reflect.DeepEqual(a.Picks, want) {
 		t.Errorf("picks = %v, want %v", a.Picks, want)
 	}
 	if want := []string{"neovim"}; !reflect.DeepEqual(a.Layers["team"], want) {

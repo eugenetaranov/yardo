@@ -79,7 +79,7 @@ func TestBashHandles(t *testing.T) {
 func TestExportAndProfile(t *testing.T) {
 	me, _ := user.Current()
 	src := t.TempDir()
-	if err := answers.Write(src, &answers.Answers{User: me.Username, Picks: []string{"lazygit", "terraform"}, TZ: "UTC"}); err != nil {
+	if err := answers.Write(src, &answers.Answers{User: me.Username, Picks: []string{"dbclients", "terraform"}, TZ: "UTC"}); err != nil {
 		t.Fatal(err)
 	}
 	f := t.TempDir() + "/team.toml"
@@ -107,7 +107,7 @@ func TestExportAndProfile(t *testing.T) {
 	if err := cli([]string{"--state", dst, "--profile", f, "--profile", me2, "--yes", "--dry-run"}, &out, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Terraform") || !strings.Contains(out.String(), "lazygit") {
+	if !strings.Contains(out.String(), "Terraform") || !strings.Contains(out.String(), "DB clients") {
 		t.Errorf("dry run of the profile:\n%s", out.String())
 	}
 	if _, err := os.Stat(dst + "/answers.json"); err == nil {
@@ -123,7 +123,7 @@ func TestExportAndProfile(t *testing.T) {
 func TestProfileLayersAndUser(t *testing.T) {
 	me, _ := user.Current()
 	state := t.TempDir()
-	a := &answers.Answers{User: me.Username, Picks: []string{"lazygit", "neovim", "terraform"}, Layers: map[string][]string{"team": {"neovim", "terraform"}}}
+	a := &answers.Answers{User: me.Username, Picks: []string{"dbclients", "neovim", "terraform"}, Layers: map[string][]string{"team": {"neovim", "terraform"}}}
 	if err := answers.Write(state, a); err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func TestGitKeySubcommand(t *testing.T) {
 	me, _ := user.Current()
 	t.Setenv("SUDO_USER", me.Username)
 	state := t.TempDir()
-	if err := answers.Write(state, &answers.Answers{User: me.Username, Picks: []string{"zsh", "lazygit"}}); err != nil {
+	if err := answers.Write(state, &answers.Answers{User: me.Username, Picks: []string{"zsh", "dbclients"}}); err != nil {
 		t.Fatal(err)
 	}
 	keyf := filepath.Join(t.TempDir(), "key")
@@ -315,7 +315,7 @@ func TestPrintKeys(t *testing.T) {
 func TestNewShellHint(t *testing.T) {
 	for changed, want := range map[string]string{
 		"":                  "",
-		"lazygit tmux":      "",
+		"dbclients tmux":    "",
 		"mise neovim":       "exec bash -l",
 		"shellcfg":          "exec bash -l",
 		"zshbin mise zshrc": "exec zsh -l",

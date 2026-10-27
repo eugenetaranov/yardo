@@ -37,7 +37,7 @@ func TestNeedsBeforeAndCatalogOrder(t *testing.T) {
 
 // Every plan gets the baseline; an empty one stays empty.
 func TestAlwaysItems(t *testing.T) {
-	got := resolve(t, "lazygit")
+	got := resolve(t, "dbclients")
 	for _, id := range []string{"essentials", "autoupdates", "sshharden", "fail2ban", "devlimits", "zram", "journald", "tzlocale"} {
 		if !contains(got, id) {
 			t.Errorf("%s missing: %v", id, got)
@@ -49,7 +49,7 @@ func TestAlwaysItems(t *testing.T) {
 }
 
 func TestMiseFirst(t *testing.T) {
-	got := resolve(t, "terraform", "lazygit")
+	got := resolve(t, "terraform", "dbclients")
 	if got[0] != "mise" || !contains(got, "terraform") {
 		t.Errorf("plan = %v, want mise first", got)
 	}

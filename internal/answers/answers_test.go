@@ -22,7 +22,7 @@ func TestReadMissingIsEmpty(t *testing.T) {
 func TestWriteReadRoundTrip(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "state")
 	yes := true
-	in := &Answers{User: "ada", Picks: []string{"lazygit", "zsh"}, MiseExtra: []string{"starship"}, MCPListen: "127.0.0.1",
+	in := &Answers{User: "ada", Picks: []string{"dbclients", "zsh"}, MiseExtra: []string{"starship"}, MCPListen: "127.0.0.1",
 		MCPServers: []string{"github"}, WireAgents: &yes, Git: Git{"Ada L", "ada@example.com"}, TZ: "UTC",
 		GitHub: GitHost{Mode: "agent"}, NPM: NPM{"@acme", "https://npm.pkg.github.com"}, Registries: []string{"ghcr.io"}}
 	if err := Write(state, in); err != nil {
@@ -132,7 +132,7 @@ func TestSharedWithPickerPy(t *testing.T) {
 		t.Skip("picker.py gone")
 	}
 	state := t.TempDir()
-	if err := Write(state, &Answers{User: "ada", Picks: []string{"lazygit"}, GitHub: GitHost{Mode: "token"}, NPM: NPM{Scope: "@acme"}}); err != nil {
+	if err := Write(state, &Answers{User: "ada", Picks: []string{"dbclients"}, GitHub: GitHost{Mode: "token"}, NPM: NPM{Scope: "@acme"}}); err != nil {
 		t.Fatal(err)
 	}
 	out, err := exec.Command("python3", picker, "answers", "read", state).Output()
@@ -144,7 +144,7 @@ func TestSharedWithPickerPy(t *testing.T) {
 	for i := 0; i+1 < len(parts); i += 2 {
 		vals[parts[i]] = parts[i+1]
 	}
-	if vals["A_USER"] != "ada" || vals["A_PICKS"] != "lazygit" || vals["A_GH_MODE"] != "token" || vals["A_NPM_SCOPE"] != "@acme" {
+	if vals["A_USER"] != "ada" || vals["A_PICKS"] != "dbclients" || vals["A_GH_MODE"] != "token" || vals["A_NPM_SCOPE"] != "@acme" {
 		t.Errorf("picker.py read %v", vals)
 	}
 

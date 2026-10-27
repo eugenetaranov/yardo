@@ -181,7 +181,8 @@ var PickMap = map[string][]string{
 	"ctools":      {"docker"},
 	"lint":        {"devcli"},
 	"gitcfg":      {"gitid"},
-	"gitlab-cli":  {}, // comes with the GitLab item
+	"lazygit":     {"gitid"}, // comes with the Git item
+	"gitlab-cli":  {},        // comes with the GitLab item
 	"agentsafe":   {"agentcfg"},
 	"k3d":         {"k8s"},
 	"kind":        {"k8s", "k8stools"},

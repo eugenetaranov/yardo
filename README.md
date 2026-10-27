@@ -51,8 +51,8 @@ account is created) and opens the picker, on two screens: first **what to
 install**, then **how to configure it**. On each, categories are tabs across
 the top (←/→ or 1–9 to switch) above a checklist; space ticks an item.
 The first run starts with the usual stack ticked: zsh, Neovim, tmux,
-lazygit, the linters, the dev CLIs, the admin and debug tools, Docker and
-its tools, Claude Code with OpenSpec, the MCPJungle gateway, git (name and email, defaults,
+the linters, the dev CLIs, the admin and debug tools, Docker and
+its tools, Claude Code with OpenSpec, the MCPJungle gateway, git (name and email, defaults, lazygit,
 GitHub) and the two agent items. Untick what you don't want, or ctrl-x to
 untick everything. Later runs start with what you picked before: tick
 more to add it; Install re-applies the rest, which is quick (it's done
@@ -108,7 +108,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    govulncheck, golangci-lint; Python 3.13 + uv + ruff; Node + pnpm +
    TypeScript; Bun; Deno; Java 25 + Maven + Gradle + Kotlin; Rust +
    rust-analyzer + cargo-binstall; Ruby; PHP + Composer; C/C++; Zig; .NET.
-2. **Dev → Dev tools:** lazygit, dev CLIs and linters as one item (just, Task,
+2. **Dev → Dev tools:** dev CLIs and linters as one item (just, Task,
    watchexec, hyperfine, yq, xh, hurl; shellcheck, shfmt, actionlint,
    gitleaks, pre-commit), database clients (psql, pgcli, usql, mariadb,
    sqlite3, redis-cli), perf/valgrind/bpftrace.
@@ -161,7 +161,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 
 ### [2/2] Configure
 
-1. **Git & SSH:** git name, email and defaults as one item (rebase on pull, push
+1. **Git & SSH:** git name, email and defaults as one item, with lazygit (rebase on pull, push
    sets upstream, delta diffs, aliases, a global ignore file), one item per
    git host (GitHub with the gh login and act to run Actions locally,
    GitLab with glab, for gitlab.com or your own host, Bitbucket), each asking how this machine reaches it over
@@ -194,7 +194,7 @@ In a profile, a split item's old id means both halves: `tailscale`,
 install item (`tailscale-install`, `sops-install`, `mcpjungle-install`),
 which a profile can also list alone. Merged items' old ids still work in
 saved choices: `ctools` is `docker`, `lint` is `devcli`, `gitcfg` is
-`gitid`, `agentsafe` is `agentcfg` and `k3d` is `kind`.
+`gitid`, `lazygit` is `gitid`, `agentsafe` is `agentcfg` and `k3d` is `kind`.
 
 Downloads are pinned: vendor apt keys are checked against their
 fingerprints and release binaries against their sha256 before they're
