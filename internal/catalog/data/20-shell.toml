@@ -17,16 +17,19 @@ source = "oh-my-zsh + autosuggestions, syntax highlighting, history search, fzf-
 id = "neovim"
 tab = "shell"
 label = "Neovim, ready to use (fuzzy find, file browser, LSP, completion)"
-source = "mise neovim@latest · lazy.nvim · curated ~/.config/nvim/init.lua (.orig kept) · which-key, telescope, oil, gitsigns, sleuth, mini, mason + SchemaStore, blink.cmp"
+# After the languages: their servers are installed with it.
+after = ["go", "python", "node", "java", "rust", "terraform", "docker", "k8s"]
+source = "mise neovim@latest node@lts · lazy.nvim · curated ~/.config/nvim/init.lua (.orig kept) · which-key, telescope, oil, gitsigns, sleuth, mini, mason + SchemaStore, blink.cmp"
 
 [[item.step]]
 type = "mise"
-tools = ["neovim@latest"]
+tools = ["neovim@latest", "node@lts"]
 
-# git clones the plugins; ripgrep backs the text search.
+# git clones the plugins; ripgrep backs the text search; Mason unpacks
+# servers with unzip; bash-language-server lints with shellcheck.
 [[item.step]]
 type = "apt"
-packages = ["git", "ripgrep"]
+packages = ["git", "ripgrep", "unzip", "curl", "shellcheck"]
 
 [[item.step]]
 type = "file"
@@ -57,6 +60,16 @@ cmd = "nvim --headless '+Lazy! sync' +qa </dev/null || true"
 as_user = true
 creates = "~/.local/share/nvim/lazy/lazy.nvim"
 unverified = "lazy.nvim and the plugins install from their git repos (lazy.nvim from its stable branch); they have no release files to pin"
+
+# The language servers for JSON, YAML, shell and the installed languages
+# (the list is in init.lua). Checked again on every run: a language
+# added later gets its server.
+[[item.step]]
+type = "run"
+cmd = "nvim --headless +YardoServers +qa </dev/null && nvim --headless '+YardoServers check' </dev/null"
+as_user = true
+check = "test -d ~/.local/share/nvim/lazy/mason.nvim && nvim --headless '+YardoServers check' </dev/null"
+unverified = "Mason installs the language servers from npm and their GitHub releases, latest versions"
 
 [[item]]
 id = "tmux"

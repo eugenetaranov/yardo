@@ -5,10 +5,12 @@
 --   <space>b  open buffers       <space>e  browse files (edit it like text)
 --   <space>h  search the help    <space>?  every key map
 --   <space>y  copy to your computer's clipboard (works over SSH)
---   <space>m  install language servers: pyright, ruff, gopls, jdtls,
---             yamlls, terraformls, bashls, ... (used from the next start)
---   With one: K docs · gd definition · grr references · grn rename ·
---             gra fix · <space>d problems. Go is formatted on save.
+--   Language servers are ready for JSON, YAML, shell and the languages
+--   yardo installed (Go, Python, TypeScript, Java, Rust, Terraform,
+--   Dockerfiles, Helm): errors are underlined as you type.
+--   K docs · gd definition · grr references · grn rename · gra fix ·
+--   <space>d problems. Go is formatted on save.
+--   <space>m  Mason, for more servers (used from the next start)
 --   gcc       comment a line     <Esc><Esc>  leave a :terminal
 --   Completion: <C-n>/<C-p> to move, <C-y> to accept.
 --   ( [ { " ' ` close themselves (no thanks: vim.g.minipairs_disable = true
@@ -94,6 +96,47 @@ vim.api.nvim_create_autocmd("BufWritePre", {
     vim.lsp.buf.format({ bufnr = ev.buf, async = false })
   end,
 })
+
+-- --- Language servers --------------------------------------------------------
+
+-- What yardo sets up: { server, its Mason package, the command that says
+-- its language is installed (none: always) }.
+local servers = {
+  { "jsonls", "json-lsp" },
+  { "yamlls", "yaml-language-server" },
+  { "bashls", "bash-language-server" },
+  { "pyright", "pyright", "uv" },
+  { "ts_ls", "typescript-language-server", "tsc" },
+  { "jdtls", "jdtls", "java" },
+  { "terraformls", "terraform-ls", "terraform" },
+  { "dockerls", "dockerfile-language-server", "docker" },
+  { "helm_ls", "helm-ls", "helm" },
+}
+-- Servers that come with their language's yardo item: used as they are.
+local own = { gopls = "gopls", ruff = "ruff", rust_analyzer = "rust-analyzer" }
+
+-- The Mason packages wanted here and not installed yet.
+local function missing()
+  local out = {}
+  for _, s in ipairs(servers) do
+    local dir = vim.fn.stdpath("data") .. "/mason/packages/" .. s[2]
+    if (not s[3] or vim.fn.executable(s[3]) == 1) and not vim.uv.fs_stat(dir) then
+      table.insert(out, s[2])
+    end
+  end
+  return out
+end
+
+-- yardo runs `nvim --headless +YardoServers +qa` (installs what's missing,
+-- blocking) and `+"YardoServers check"` (exits 1 when something is).
+vim.api.nvim_create_user_command("YardoServers", function(c)
+  local m = missing()
+  if c.args == "check" then
+    vim.cmd(#m == 0 and "qall!" or "cquit! 1")
+  elseif #m > 0 then
+    vim.cmd("MasonInstall " .. table.concat(m, " "))
+  end
+end, { nargs = "?" })
 
 -- --- Plugins (lazy.nvim) -----------------------------------------------------
 
@@ -194,8 +237,7 @@ require("lazy").setup({
     end,
   },
 
-  -- Language servers: <space>m (:Mason) installs one, and it starts from
-  -- the next start, for files of its language. YAML and JSON know the
+  -- Language servers (see the top of the file). YAML and JSON know the
   -- schemas of Kubernetes, GitHub Actions, Compose and many more.
   {
     "mason-org/mason-lspconfig.nvim",
@@ -212,7 +254,17 @@ require("lazy").setup({
       vim.lsp.config("jsonls", {
         settings = { json = { schemas = schemas.json.schemas(), validate = { enable = true } } },
       })
-      require("mason-lspconfig").setup()
+      -- Mason's servers start by themselves; a language added later gets
+      -- its server installed in the background on the next start.
+      local want = {}
+      for _, s in ipairs(servers) do
+        if not s[3] or vim.fn.executable(s[3]) == 1 then table.insert(want, s[1]) end
+      end
+      local headless = #vim.api.nvim_list_uis() == 0 -- yardo installs then
+      require("mason-lspconfig").setup({ ensure_installed = headless and {} or want })
+      for name, bin in pairs(own) do
+        if vim.fn.executable(bin) == 1 then vim.lsp.enable(name) end
+      end
     end,
   },
 
