@@ -12,7 +12,7 @@
 --   <space>d problems. Go is formatted on save.
 --   <space>m  Mason, for more servers (used from the next start)
 --   gcc       comment a line     <Esc><Esc>  leave a :terminal
---   Completion: <C-n>/<C-p> to move, <C-y> to accept.
+--   Completion: up/down to pick, <CR> to accept (only once you've picked).
 --   ( [ { " ' ` close themselves (no thanks: vim.g.minipairs_disable = true
 --   in local.lua).
 --
@@ -269,13 +269,16 @@ require("lazy").setup({
   },
 
   -- Completion as you type, from the language server, the buffer and
-  -- paths: <C-n>/<C-p> move, <C-y> accepts, <C-space> shows the docs.
+  -- paths: up/down (or <C-n>/<C-p>) pick, <CR> accepts what you picked,
+  -- <C-space> shows the docs. Nothing is picked until you move, so <CR>
+  -- at the end of a line is still a new line.
   {
     "saghen/blink.cmp",
     version = "1.*",
     event = "InsertEnter",
     opts = {
-      keymap = { preset = "default" },
+      keymap = { preset = "enter" },
+      completion = { list = { selection = { preselect = false } } },
       fuzzy = { implementation = "lua" },
     },
   },
