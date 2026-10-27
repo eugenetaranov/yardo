@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -41,9 +40,7 @@ type Answers struct {
 	WireAgents *bool  `json:"wire_agents"`
 	Git        Git    `json:"git"`
 	TZ         string `json:"tz"`
-	// Proxy is the corporate proxy (no credentials) and the hosts that
-	// bypass it; CA where an internal CA bundle comes from.
-	Proxy      Proxy    `json:"proxy,omitzero"`
+	// CA is where an internal CA bundle comes from.
 	CA         CA       `json:"ca,omitzero"`
 	GitHub     GitHost  `json:"github"`
 	GitLab     GitHost  `json:"gitlab,omitzero"`
@@ -72,12 +69,6 @@ type Answers struct {
 type Git struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
-}
-
-// Proxy is an HTTP(S) proxy for apt, Docker, mise and shells.
-type Proxy struct {
-	URL     string `json:"url"`
-	NoProxy string `json:"no_proxy"`
 }
 
 // CA is an internal CA bundle: a path on the VM, or an https URL with
@@ -396,32 +387,6 @@ func (a *Answers) inLayer(id, except string) bool {
 		}
 	}
 	return false
-}
-
-// CheckProxy checks a proxy URL: http(s)://host[:port], without
-// credentials (answers never hold secrets).
-func CheckProxy(u string) error {
-	p, err := url.Parse(u)
-	switch {
-	case err != nil:
-		return err
-	case p.Scheme != "http" && p.Scheme != "https", p.Host == "":
-		return errors.New("want http://host:port or https://host:port")
-	case p.User != nil:
-		return errors.New("no credentials in the proxy URL: yardo never saves secrets (use a proxy that authenticates the VM another way)")
-	case strings.ContainsAny(u, " \t\n\"'\\$`"):
-		return errors.New("unexpected characters")
-	}
-	return nil
-}
-
-// CheckNoProxy checks a no-proxy list: comma-separated hosts, domains,
-// IPs and CIDRs.
-func CheckNoProxy(s string) error {
-	if strings.ContainsAny(s, " \t\n\"'\\$`;") {
-		return errors.New("want comma-separated hosts, like localhost,127.0.0.1,.internal")
-	}
-	return nil
 }
 
 var sha256Re = regexp.MustCompile(`^[0-9a-f]{64}$`)

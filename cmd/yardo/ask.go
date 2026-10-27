@@ -145,11 +145,6 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			return nil, err
 		}
 	}
-	if has("proxy") {
-		if err := k.askProxy(); err != nil {
-			return nil, err
-		}
-	}
 	if has("corpca") {
 		if err := k.askCA(); err != nil {
 			return nil, err
@@ -393,48 +388,6 @@ func (k *asker) askTZ() error {
 		fmt.Fprintf(k.out, "Unknown timezone %q.\n", tz)
 		cur = tz
 	}
-}
-
-// askProxy asks for the proxy and the hosts that bypass it.
-func (k *asker) askProxy() error {
-	cur := k.a.Proxy
-	if cur.URL == "" {
-		cur.URL = os.Getenv("https_proxy")
-		if cur.URL == "" {
-			cur.URL = os.Getenv("HTTPS_PROXY")
-		}
-	}
-	if cur.NoProxy == "" {
-		cur.NoProxy = "localhost,127.0.0.1,::1"
-	}
-	for {
-		u, err := ui.Input("Proxy URL (e.g. http://proxy.example.com:3128)", "No credentials in it: yardo never saves secrets.", cur.URL)
-		if err != nil {
-			return err
-		}
-		if err := answers.CheckProxy(u); err != nil {
-			fmt.Fprintf(k.out, "%s: %v\n", u, err)
-			cur.URL = u
-			continue
-		}
-		cur.URL = u
-		break
-	}
-	for {
-		n, err := ui.Input("Hosts that bypass the proxy, comma-separated", "", cur.NoProxy)
-		if err != nil {
-			return err
-		}
-		if err := answers.CheckNoProxy(n); err != nil {
-			fmt.Fprintln(k.out, err)
-			cur.NoProxy = n
-			continue
-		}
-		cur.NoProxy = n
-		break
-	}
-	k.a.Proxy = cur
-	return nil
 }
 
 // askCA asks where the internal CA bundle comes from.
@@ -878,7 +831,7 @@ func (k *asker) review(c *choices, options ...string) string {
 }
 
 // beforeApt reports whether the item is applied before anything installs
-// (the proxy, the CA bundle), wherever its phase puts it.
+// (the CA bundle), wherever its phase puts it.
 func beforeApt(it *catalog.Item) bool {
 	for _, s := range it.Steps {
 		if st, err := steps.New(it.ID, s); err == nil {

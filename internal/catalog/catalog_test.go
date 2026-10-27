@@ -208,7 +208,7 @@ func TestScope(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	want := "autoupdates corpca ctools debug devlimits docker essentials etckeeper fail2ban journald k3s monitoring netfs ollama podman proxy sshharden tailscale tailscale-install tzlocale zram"
+	want := "autoupdates corpca ctools debug devlimits docker essentials etckeeper fail2ban journald k3s monitoring netfs ollama podman sshharden tailscale tailscale-install tzlocale zram"
 	if strings.Join(got, " ") != want {
 		t.Errorf("system items: %s\nwant %s", strings.Join(got, " "), want)
 	}

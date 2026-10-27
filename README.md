@@ -65,8 +65,8 @@ terraform`.
 
 The run follows the same order: everything is installed first (the extra
 mise tools at the end of that), then configured, with your dotfiles last.
-The proxy and CA bundle are the exception: they're applied before anything
-is downloaded.
+The CA bundle is the exception: it's applied before anything is
+downloaded.
 
 yardo is opinionated: what every machine should have isn't offered, it's
 always applied (see "Always" below), and related tools come as one item.
@@ -145,12 +145,10 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 
 1. **System settings:** "sudo asks for your password", weekly tool updates
    (a systemd timer running `mise up` and `krew upgrade` as you). Behind a
-   corporate network: a proxy (apt, Docker, mise and shells use it; no
-   credentials in the URL) and an internal CA bundle (a PEM file on the VM,
-   or an https URL with its sha256), trusted system-wide and by Node,
-   Python and the AWS CLI. Both are applied before anything is installed,
-   and can be set in a profile's `[system]` (`proxy`, `no_proxy`,
-   `ca_bundle`, `ca_sha256`).
+   corporate network: an internal CA bundle (a PEM file on the VM, or an
+   https URL with its sha256), trusted system-wide and by Node, Python and
+   the AWS CLI. It's applied before anything is installed, and can be set
+   in a profile's `[system]` (`ca_bundle`, `ca_sha256`).
 2. **Git & SSH:** git identity, git defaults (rebase on pull, push
    sets upstream, delta diffs, aliases, a global ignore file), one item per
    git host (GitHub with the gh login, GitLab with gitlab.com or your own

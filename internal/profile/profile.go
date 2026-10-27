@@ -48,9 +48,7 @@ type System struct {
 	TZ string `toml:"tz"`
 	// DevPorts was for the ufw item, which is gone: ignored with a warning.
 	DevPorts []string `toml:"dev_ports,omitempty"`
-	// Proxy and NoProxy (proxy item); CABundle and CASHA256 (corpca).
-	Proxy    string `toml:"proxy,omitempty"`
-	NoProxy  string `toml:"no_proxy,omitempty"`
+	// CABundle and CASHA256 (corpca).
 	CABundle string `toml:"ca_bundle,omitempty"`
 	CASHA256 string `toml:"ca_sha256,omitempty"`
 }
@@ -94,14 +92,6 @@ func Parse(name string, b []byte) (*Profile, error) {
 		return nil, fmt.Errorf("%s: mcp.listen %q: want 127.0.0.1, tailscale or 0.0.0.0", name, p.MCP.Listen)
 	}
 	if p.System != nil {
-		if p.System.Proxy != "" {
-			if err := answers.CheckProxy(p.System.Proxy); err != nil {
-				return nil, fmt.Errorf("%s: system.proxy: %w", name, err)
-			}
-		}
-		if err := answers.CheckNoProxy(p.System.NoProxy); err != nil {
-			return nil, fmt.Errorf("%s: system.no_proxy: %w", name, err)
-		}
 		if err := answers.CheckCA(answers.CA{Source: p.System.CABundle, SHA256: p.System.CASHA256}); err != nil {
 			return nil, fmt.Errorf("%s: system.ca_bundle: %w", name, err)
 		}
@@ -198,9 +188,6 @@ func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnin
 		if len(p.System.DevPorts) > 0 {
 			warnings = append(warnings, "profile: system.dev_ports is ignored: yardo no longer sets up a firewall")
 		}
-		if p.System.Proxy != "" {
-			a.Proxy = answers.Proxy{URL: p.System.Proxy, NoProxy: p.System.NoProxy}
-		}
 		if p.System.CABundle != "" {
 			a.CA = answers.CA{Source: p.System.CABundle, SHA256: p.System.CASHA256}
 		}
@@ -228,8 +215,8 @@ func Export(a *answers.Answers, lock *answers.Lock) []byte {
 	if a.Git.Name != "" || a.Git.Email != "" {
 		p.Git = &Git{Name: a.Git.Name, Email: a.Git.Email}
 	}
-	if a.TZ != "" || a.Proxy.URL != "" || a.CA.Source != "" {
-		p.System = &System{TZ: a.TZ, Proxy: a.Proxy.URL, NoProxy: a.Proxy.NoProxy, CABundle: a.CA.Source, CASHA256: a.CA.SHA256}
+	if a.TZ != "" || a.CA.Source != "" {
+		p.System = &System{TZ: a.TZ, CABundle: a.CA.Source, CASHA256: a.CA.SHA256}
 	}
 	if a.Dotfiles != "" {
 		p.Dotfiles = &Dotfiles{Repo: a.Dotfiles}

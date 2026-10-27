@@ -36,7 +36,7 @@ func TestConfigurable(t *testing.T) {
 		return ids
 	}
 	got := shown()
-	for _, id := range []string{"gitid", "github", "agentkeys", "proxy", "dotfiles"} {
+	for _, id := range []string{"gitid", "github", "agentkeys", "dotfiles"} {
 		if !slices.Contains(got, id) {
 			t.Errorf("%s should always be offered: %v", id, got)
 		}

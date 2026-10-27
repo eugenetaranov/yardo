@@ -350,12 +350,6 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		}
 		changed = true
 	}
-	// The proxy (proxy item) for everything this run fetches: apt, mise,
-	// curl, as root and as the user.
-	for _, kv := range steps.ProxyEnv(a.Proxy) {
-		k, v, _ := strings.Cut(kv, "=")
-		_ = os.Setenv(k, v)
-	}
 	created, err := o.ensureUser(ctx, a.User, stdout)
 	if err != nil {
 		return err

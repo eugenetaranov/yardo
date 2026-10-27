@@ -20,47 +20,6 @@ import (
 	"github.com/eugenetaranov/yardo/internal/catalog"
 )
 
-func TestProxy(t *testing.T) {
-	x := &fakeExec{}
-	e := testEnv(t, x)
-	e.Answers = &answers.Answers{Proxy: answers.Proxy{URL: "http://proxy.acme:3128", NoProxy: "localhost,.acme"}}
-	put(t, e.Path("/etc/environment"), "PATH=\"/usr/local/sbin:/usr/bin\"\nhttp_proxy=\"http://old:1\"\n")
-	put(t, e.Path("~/.docker/config.json"), `{"auths": {"ghcr.io": {}}}`)
-	st := step(t, catalog.Step{Type: "go:proxy"})
-	if _, ok := st.(BeforeApt); !ok {
-		t.Fatal("proxy must run before the apt transaction")
-	}
-	if check(t, e, st) {
-		t.Fatal("Check = true before Apply")
-	}
-	apply(t, e, st)
-	if got := read(t, e.Path(aptProxy)); !strings.Contains(got, `Acquire::https::Proxy "http://proxy.acme:3128";`) {
-		t.Errorf("apt: %s", got)
-	}
-	env := read(t, e.Path("/etc/environment"))
-	for _, want := range []string{`PATH="/usr/local/sbin:/usr/bin"`, `http_proxy="http://proxy.acme:3128"`, `HTTPS_PROXY="http://proxy.acme:3128"`, `NO_PROXY="localhost,.acme"`} {
-		if !strings.Contains(env, want+"\n") {
-			t.Errorf("/etc/environment lacks %s:\n%s", want, env)
-		}
-	}
-	if strings.Contains(env, "old:1") {
-		t.Errorf("old proxy kept:\n%s", env)
-	}
-	if got := read(t, e.Path(dockerProxy)); !strings.Contains(got, `Environment="HTTPS_PROXY=http://proxy.acme:3128"`) {
-		t.Errorf("docker drop-in: %s", got)
-	}
-	client := read(t, e.Path("~/.docker/config.json"))
-	if !strings.Contains(client, `"ghcr.io"`) || !strings.Contains(client, `"httpsProxy": "http://proxy.acme:3128"`) || !strings.Contains(client, `"noProxy": "localhost,.acme"`) {
-		t.Errorf("docker client config:\n%s", client)
-	}
-	if !check(t, e, st) {
-		t.Error("Check = false after Apply")
-	}
-	if got := x.commands(); len(got) == 0 || got[0] != "systemctl daemon-reload" {
-		t.Errorf("ran %q", got)
-	}
-}
-
 func testCert(t *testing.T, cn string) []byte {
 	t.Helper()
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

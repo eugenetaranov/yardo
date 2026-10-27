@@ -26,7 +26,6 @@ A review by five developer personas (full-stack, AI-agent heavy, platform/SRE, t
 - **Re-runs keep your own lines:** `~/.zshrc.local`, `~/.config/yardo/local.sh` and `~/.tmux.local.conf` are sourced, and never written.
 - **Per-user state:** answers and the MCPJungle gateway are kept per user, so two users on one VM don't overwrite each other. The gateway runs as a separate `mcp` system user that owns the MCP env files.
 - **New items:**
-  - corporate proxy
   - internal CA bundle
   - dotfiles repo
   - unattended-agent settings (Claude, Codex)
@@ -46,7 +45,7 @@ A review by five developer personas (full-stack, AI-agent heavy, platform/SRE, t
 - `yardo-runner`: planning, ordering, failure handling, dry run, verify and the summary.
 - `yardo-profiles`: exporting, loading and applying profiles.
 - `yardo-cli`: the binary, its flags and its runtime dependencies.
-- `yardo-catalog-additions`: the new items: proxy, CA, dotfiles, agent safety, more agent wiring, gateway auth, kubelogin, ufw dev ports, the update timer.
+- `yardo-catalog-additions`: the new items: CA, dotfiles, agent safety, more agent wiring, gateway auth, kubelogin, ufw dev ports, the update timer.
 
 ### Modified Capabilities
 - `yardo-delivery`: pushes the binary for the VM's architecture, also ships team `catalog.d` and MCP specs, and adds `pmox yardo apply` and `pmox yardo verify` across VMs.

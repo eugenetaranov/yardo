@@ -1,18 +1,5 @@
 ## ADDED Requirements
 
-### Requirement: Corporate proxy
-A `proxy` item on the System tab SHALL ask for an HTTP(S) proxy URL and a no-proxy list. It SHALL write:
-- `/etc/apt/apt.conf.d/95yardo-proxy`
-- the proxy variables in `/etc/environment`
-- a Docker systemd drop-in, `docker.service.d/proxy.conf`
-- the Docker client `proxies` in the user's `~/.docker/config.json`
-
-yardo SHALL keep the proxy variables when it re-runs itself through sudo, and SHALL pass them to every step it runs as the user.
-
-#### Scenario: Behind a proxy
-- **WHEN** `proxy` is set to `http://proxy.acme:3128` and `cli` and `docker` are picked
-- **THEN** the apt, mise and Docker image pulls in that run go through the proxy, and a new login shell has `HTTPS_PROXY` set
-
 ### Requirement: Internal CA bundle
 A `corpca` item on the System tab SHALL take a PEM bundle, either a local path on the VM or an https URL with a SHA-256. It SHALL install the bundle into `/usr/local/share/ca-certificates/` and run `update-ca-certificates`. It SHALL also set `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE` and `AWS_CA_BUNDLE` in `shell.sh`, and restart Docker if it is installed.
 
