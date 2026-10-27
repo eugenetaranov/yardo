@@ -239,10 +239,21 @@ func (k *asker) fromProfile(ctx context.Context) (*choices, error) {
 	return c, k.askSecrets(c, has)
 }
 
+// uiTabs are the picker's tabs: a group's tabs become one tab, named
+// after the group, with them as its sections.
 func uiTabs(tabs []catalog.Tab) []ui.Tab {
-	out := make([]ui.Tab, len(tabs))
-	for i, t := range tabs {
-		out[i] = ui.Tab{ID: t.ID, Title: t.Title}
+	var out []ui.Tab
+	for _, t := range tabs {
+		if t.Group == "" {
+			out = append(out, ui.Tab{ID: t.ID, Title: t.Title})
+			continue
+		}
+		i := slices.IndexFunc(out, func(u ui.Tab) bool { return u.ID == "group:"+t.Group })
+		if i < 0 {
+			out = append(out, ui.Tab{ID: "group:" + t.Group, Title: t.Group})
+			i = len(out) - 1
+		}
+		out[i].Sections = append(out[i].Sections, ui.Tab{ID: t.ID, Title: t.Title})
 	}
 	return out
 }

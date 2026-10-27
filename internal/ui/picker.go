@@ -12,8 +12,24 @@ import (
 	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
-// Tab is one picker tab.
-type Tab struct{ ID, Title string }
+// Tab is one picker tab. A tab with Sections lists their entries (whose
+// Tab is a section's ID) in order, each section under its Title.
+type Tab struct {
+	ID, Title string
+	Sections  []Tab
+}
+
+// ids are the entry tabs a tab shows: its sections', or its own.
+func (t Tab) ids() []string {
+	if len(t.Sections) == 0 {
+		return []string{t.ID}
+	}
+	var out []string
+	for _, s := range t.Sections {
+		out = append(out, s.ID)
+	}
+	return out
+}
 
 const (
 	reviewTab = "__review__"
@@ -84,19 +100,23 @@ type Picker struct {
 // which only appear in search results).
 func NewPicker(title string, tabs []Tab, entries []*Entry, o Options) *Picker {
 	p := &Picker{title: title, entries: entries, opt: o, cursor: map[string]int{}, top: map[string]int{}, width: 100, height: 30}
+	// Tabs and sections with nothing in them are left out.
+	has := func(id string) bool { return slices.ContainsFunc(entries, func(e *Entry) bool { return e.Tab == id }) }
 	for _, t := range tabs {
-		for _, e := range entries {
-			if e.Tab == t.ID {
+		if len(t.Sections) > 0 {
+			t.Sections = slices.DeleteFunc(slices.Clone(t.Sections), func(s Tab) bool { return !has(s.ID) })
+			if len(t.Sections) > 0 {
 				p.tabs = append(p.tabs, t)
-				break
 			}
+		} else if has(t.ID) {
+			p.tabs = append(p.tabs, t)
 		}
 	}
 	if o.Extra && slices.ContainsFunc(entries, func(e *Entry) bool { return e.Tab == ExtraTab }) {
 		p.extraTab()
 	}
 	if o.Review {
-		p.tabs = append(p.tabs, Tab{reviewTab, "Review"})
+		p.tabs = append(p.tabs, Tab{ID: reviewTab, Title: "Review"})
 	}
 	return p
 }
@@ -111,7 +131,7 @@ func (p *Picker) extraTab() int {
 	if i > 0 && p.tabs[i-1].ID == reviewTab {
 		i--
 	}
-	p.tabs = slices.Insert(p.tabs, i, Tab{ExtraTab, "Extra tools"})
+	p.tabs = slices.Insert(p.tabs, i, Tab{ID: ExtraTab, Title: "Extra tools"})
 	return i
 }
 
@@ -179,12 +199,39 @@ func (p *Picker) items(view string) []*Entry {
 		return out
 	}
 	var out []*Entry
-	for _, e := range p.entries {
-		if e.Tab == view {
-			out = append(out, e)
+	for _, id := range p.tabOf(view).ids() {
+		for _, e := range p.entries {
+			if e.Tab == id {
+				out = append(out, e)
+			}
 		}
 	}
 	return out
+}
+
+// tabOf is the tab with id (or a bare one, for a view that isn't a tab).
+func (p *Picker) tabOf(id string) Tab {
+	for _, t := range p.tabs {
+		if t.ID == id {
+			return t
+		}
+	}
+	return Tab{ID: id}
+}
+
+// heading is the section heading above items[i] of view: its section's
+// title where a new section starts, else "".
+func (p *Picker) heading(view string, items []*Entry, i int) string {
+	t := p.tabOf(view)
+	if len(t.Sections) == 0 || (i > 0 && items[i-1].Tab == items[i].Tab) {
+		return ""
+	}
+	for _, s := range t.Sections {
+		if s.ID == items[i].Tab {
+			return s.Title
+		}
+	}
+	return ""
 }
 
 func (p *Picker) setQuery(q string) {
@@ -328,10 +375,16 @@ func wrap(s string, w int) []string {
 	return lines
 }
 
+// tabTitle is the title of the tab or section with id.
 func (p *Picker) tabTitle(id string) string {
 	for _, t := range p.tabs {
 		if t.ID == id {
 			return t.Title
+		}
+		for _, s := range t.Sections {
+			if s.ID == id {
+				return s.Title
+			}
 		}
 	}
 	return ""
@@ -395,9 +448,12 @@ func (p *Picker) View() string {
 	}
 	srcX := 7 + labelW
 	srcW := max(4, w-srcX-3)
+	// A section's heading is drawn as the first line of its first row,
+	// so the cursor never lands on it.
 	type row struct {
+		head     string
 		lab, src []string
-		h        int
+		body, h  int // lines: the label's, and with the heading (and its gap)
 	}
 	rows := make([]row, len(items))
 	for i, e := range items {
@@ -406,7 +462,13 @@ func (p *Picker) View() string {
 		if view == searchTab {
 			src = wrap(p.tabTitle(e.Tab), srcW)
 		}
-		rows[i] = row{lab, src, max(len(lab), len(src))}
+		head := p.heading(view, items, i)
+		body := max(len(lab), len(src))
+		h := body
+		if head != "" {
+			h += min(i, 1) + 1
+		}
+		rows[i] = row{head, lab, src, body, h}
 	}
 	top := p.top[view]
 	if cur < top {
@@ -446,7 +508,16 @@ func (p *Picker) View() string {
 	for i := top; i < len(items) && lines < listH; i++ {
 		e, r := items[i], rows[i]
 		sel := i == cur
-		for n := 0; n < r.h && lines < listH; n++ {
+		if r.head != "" {
+			// A gap above every heading but the list's first.
+			if i > top && lines < listH-1 {
+				b.WriteString("\n")
+				lines++
+			}
+			b.WriteString("   " + accentBd.Render(r.head) + "\n")
+			lines++
+		}
+		for n := 0; n < r.body && lines < listH; n++ {
 			mark, box := "  ", "    "
 			if n == 0 {
 				if sel {

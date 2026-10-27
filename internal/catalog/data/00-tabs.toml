@@ -1,38 +1,47 @@
 # The picker's tabs, in order: the install screen's, then the configure
 # screen's (phase = "configure"; Review comes last on its own). The plan
 # installs everything first, then configures.
+#
+# Tabs with the same group show as one picker tab, named after the group,
+# each under its own heading: the Dev and DevOps tabs. Items still name
+# the tab (the section) they're in.
 
 [[tab]]
-id = "system"
-title = "System"
+id = "lang"
+title = "Languages"
+group = "Dev"
+
+[[tab]]
+id = "dev"
+title = "Dev tools"
+group = "Dev"
+
+[[tab]]
+id = "k8s"
+title = "Containers & Kubernetes"
+group = "DevOps"
+
+[[tab]]
+id = "iac"
+title = "IaC"
+group = "DevOps"
+
+[[tab]]
+id = "cloud"
+title = "Cloud"
+group = "DevOps"
+
+[[tab]]
+id = "ai"
+title = "AI"
 
 [[tab]]
 id = "shell"
 title = "Shell & CLI"
 
 [[tab]]
-id = "dev"
-title = "Dev tools"
-
-[[tab]]
-id = "lang"
-title = "Languages"
-
-[[tab]]
-id = "cloud"
-title = "Cloud"
-
-[[tab]]
-id = "iac"
-title = "IaC"
-
-[[tab]]
-id = "k8s"
-title = "Containers & Kubernetes"
-
-[[tab]]
-id = "ai"
-title = "AI"
+id = "system"
+title = "System"
 
 [[tab]]
 id = "sysconf"

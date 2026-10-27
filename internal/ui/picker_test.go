@@ -9,7 +9,7 @@ import (
 
 func newTestPicker(t *testing.T) *Picker {
 	t.Helper()
-	tabs := []Tab{{"system", "System"}, {"shell", "Shell & CLI"}, {"empty", "Empty"}}
+	tabs := []Tab{{ID: "system", Title: "System"}, {ID: "shell", Title: "Shell & CLI"}, {ID: "empty", Title: "Empty"}}
 	entries := []*Entry{
 		{Tab: "system", ID: "docker", Label: "Docker Engine + Compose", Source: "apt docker-ce"},
 		{Tab: "shell", ID: "zsh", Label: "zsh (login shell)", Source: "apt zsh"},
@@ -93,7 +93,7 @@ func TestPickerEnterOnSearchGoesToReview(t *testing.T) {
 // screen is a step away, not a search result away); enter on the last tab
 // moves on.
 func TestPickerInstallScreen(t *testing.T) {
-	tabs := []Tab{{"system", "System"}, {"shell", "Shell & CLI"}}
+	tabs := []Tab{{ID: "system", Title: "System"}, {ID: "shell", Title: "Shell & CLI"}}
 	entries := []*Entry{{Tab: "system", ID: "docker", Label: "Docker"}, {Tab: "shell", ID: "zsh", Label: "zsh"}}
 	p := NewPicker("yardo [1/2] Install", tabs, entries, Options{Next: "configure"})
 	p.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -112,7 +112,7 @@ func TestPickerInstallScreen(t *testing.T) {
 // The configure screen: esc goes back to the install screen, ctrl-c quits.
 func TestPickerBack(t *testing.T) {
 	entries := []*Entry{{Tab: "git", ID: "gitid", Label: "Git name and email"}}
-	p := NewPicker("yardo [2/2] Configure", []Tab{{"git", "Git & SSH"}}, entries, Options{Review: true, Back: true, Note: "Installing: Docker"})
+	p := NewPicker("yardo [2/2] Configure", []Tab{{ID: "git", Title: "Git & SSH"}}, entries, Options{Review: true, Back: true, Note: "Installing: Docker"})
 	p.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	if !strings.Contains(p.View(), "esc back") {
 		t.Errorf("hint should say esc goes back:\n%s", p.View())
@@ -174,7 +174,7 @@ func TestPickerUntickAll(t *testing.T) {
 }
 
 func TestPickerExtraTool(t *testing.T) {
-	tabs := []Tab{{"shell", "Shell & CLI"}}
+	tabs := []Tab{{ID: "shell", Title: "Shell & CLI"}}
 	entries := []*Entry{
 		{Tab: "shell", ID: "tmux", Label: "tmux", Source: "apt install tmux"},
 		ExtraEntry("pulumi", true),
@@ -209,5 +209,39 @@ func TestPickerExtraTool(t *testing.T) {
 	press(p, "-", "x", tea.KeyCtrlA)
 	if n := len(p.items(ExtraTab)); n != 2 {
 		t.Errorf("-x added: %d rows", n)
+	}
+}
+
+func TestPickerSections(t *testing.T) {
+	tabs := []Tab{
+		{ID: "group:DevOps", Title: "DevOps", Sections: []Tab{{ID: "k8s", Title: "Kubernetes"}, {ID: "empty", Title: "Empty"}, {ID: "iac", Title: "IaC"}}},
+		{ID: "ai", Title: "AI"},
+	}
+	entries := []*Entry{
+		{Tab: "iac", ID: "terraform", Label: "Terraform"},
+		{Tab: "k8s", ID: "k8s", Label: "kubectl"},
+		{Tab: "ai", ID: "claude", Label: "Claude Code"},
+		{Tab: "iac", ID: "ansible", Label: "Ansible"},
+	}
+	p := NewPicker("yardo", tabs, entries, Options{})
+	p.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if len(p.tabs) != 2 || len(p.tabs[0].Sections) != 2 {
+		t.Fatalf("tabs = %+v (empty sections dropped)", p.tabs)
+	}
+	// Section order, then catalog order; headings aren't rows.
+	if got := strings.Join(ids(p.items(p.view()), 9), " "); got != "k8s terraform ansible" {
+		t.Errorf("items = %s", got)
+	}
+	v := p.View()
+	if !strings.Contains(v, "Kubernetes") || !strings.Contains(v, "IaC") || strings.Contains(v, "Empty") {
+		t.Errorf("headings:\n%s", v)
+	}
+	press(p, tea.KeyDown, tea.KeySpace)
+	if got := strings.Join(p.Selected(), " "); got != "terraform" {
+		t.Errorf("selected = %q", got)
+	}
+	press(p, "t", "e", "r", "r")
+	if !strings.Contains(p.View(), "IaC") {
+		t.Error("a search result shows its section")
 	}
 }

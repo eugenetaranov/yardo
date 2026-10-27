@@ -61,8 +61,11 @@ stops re-applying it; it stays installed. Each row is one line; the line under t
 how the item under the cursor is installed or applied, e.g. `mise use -g
 terraform`.
 
-- **[1/2] Install:** System, Shell & CLI, Dev tools, Languages, Cloud, IaC,
-  Containers & Kubernetes, AI. Enter on the last tab goes on to Configure.
+- **[1/2] Install:** one tab per area: **Dev** (languages, dev tools),
+  **DevOps** (containers and Kubernetes, IaC, cloud), **AI**, then
+  **Shell & CLI** and **System**, which the usual stack mostly covers.
+  The Dev and DevOps tabs list their parts under headings. Enter on the
+  last tab goes on to Configure.
 - **[2/2] Configure:** System settings, Git & SSH, Agents, Logins & keys, then
   Review, which lists what you ticked on this screen under a line naming what
   you're installing. Esc goes back to Install, with your ticks kept. This
@@ -101,10 +104,31 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 
 ### [1/2] Install
 
-1. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
-   iperf3, nmap, strace, htop, btop, ncdu, …), Tailscale (log in under
-   Configure), NFS/SMB clients.
-2. **Shell and CLI:** one zsh item that brings everything: zsh as the login
+1. **Dev → Languages** (mise, except PHP and C/C++ from apt): Go + gopls, delve,
+   govulncheck, golangci-lint; Python 3.13 + uv + ruff; Node + pnpm +
+   TypeScript; Bun; Deno; Java 25 + Maven + Gradle + Kotlin; Rust +
+   rust-analyzer + cargo-binstall; Ruby; PHP + Composer; C/C++; Zig; .NET.
+2. **Dev → Dev tools:** lazygit, dev CLIs and linters as one item (just, Task,
+   watchexec, hyperfine, yq, xh, hurl; shellcheck, shfmt, actionlint,
+   gitleaks, pre-commit), database clients (psql, pgcli, usql, mariadb,
+   sqlite3, redis-cli), perf/valgrind/bpftrace.
+3. **DevOps → Containers & Kubernetes:** Docker (with log rotation and
+   10.200.0.0/16 networks) and its tools (lazydocker, dive, hadolint, crane,
+   cosign), Podman + skopeo + buildah; Kubernetes as one item (kubectl,
+   with oh-my-zsh's aliases such as `kgp`, `kdp`, `kl` under zsh;
+   kubectx/kubens, Helm 3, k9s, stern, k3d for local clusters in Docker);
+   Kubernetes extras as another (kustomize, helmfile + helm-diff,
+   kubeconform, kubelogin, kubie, kubecolor, krew with plugins, Argo CD,
+   Flux, Tilt, Skaffold, ctlptl, kind, talosctl); or k3s as a real cluster
+   on the VM.
+4. **DevOps → IaC** (mise): Terraform with terragrunt, tflint and terraform-docs,
+   OpenTofu, trivy + checkov, Packer, Ansible, tack, sops + age, Vault.
+5. **DevOps → Cloud** (mise): AWS, Google Cloud, Azure, DigitalOcean, Hetzner,
+   cloudflared, restic + rclone.
+6. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,
+   Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no
+   hooks), and the MCPJungle gateway (its servers: Configure → Agents).
+7. **Shell and CLI:** one zsh item that brings everything: zsh as the login
    shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
    search and completions, fzf-tab (Tab opens an fzf list with directory
    previews), the modern CLI tools (ripgrep, fd, bat, eza, zoxide, fzf,
@@ -131,30 +155,9 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    Neovim and tmux files replace yours, keeping the old ones as `.orig`; keep your
    own lines in the local files instead (see [Your own
    settings](#your-own-settings)).
-3. **Dev tools:** lazygit, dev CLIs and linters as one item (just, Task,
-   watchexec, hyperfine, yq, xh, hurl; shellcheck, shfmt, actionlint,
-   gitleaks, pre-commit), database clients (psql, pgcli, usql, mariadb,
-   sqlite3, redis-cli), perf/valgrind/bpftrace.
-4. **Languages** (mise, except PHP and C/C++ from apt): Go + gopls, delve,
-   govulncheck, golangci-lint; Python 3.13 + uv + ruff; Node + pnpm +
-   TypeScript; Bun; Deno; Java 25 + Maven + Gradle + Kotlin; Rust +
-   rust-analyzer + cargo-binstall; Ruby; PHP + Composer; C/C++; Zig; .NET.
-5. **Cloud** (mise): AWS, Google Cloud, Azure, DigitalOcean, Hetzner,
-   cloudflared, restic + rclone.
-6. **IaC** (mise): Terraform with terragrunt, tflint and terraform-docs,
-   OpenTofu, trivy + checkov, Packer, Ansible, tack, sops + age, Vault.
-7. **Containers & Kubernetes:** Docker (with log rotation and
-   10.200.0.0/16 networks) and its tools (lazydocker, dive, hadolint, crane,
-   cosign), Podman + skopeo + buildah; Kubernetes as one item (kubectl,
-   with oh-my-zsh's aliases such as `kgp`, `kdp`, `kl` under zsh;
-   kubectx/kubens, Helm 3, k9s, stern, k3d for local clusters in Docker);
-   Kubernetes extras as another (kustomize, helmfile + helm-diff,
-   kubeconform, kubelogin, kubie, kubecolor, krew with plugins, Argo CD,
-   Flux, Tilt, Skaffold, ctlptl, kind, talosctl); or k3s as a real cluster
-   on the VM.
-8. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,
-   Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no
-   hooks), and the MCPJungle gateway (its servers: Configure → Agents).
+8. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
+   iperf3, nmap, strace, htop, btop, ncdu, …), Tailscale (log in under
+   Configure), NFS/SMB clients.
 
 ### [2/2] Configure
 

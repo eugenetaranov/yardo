@@ -30,7 +30,7 @@ func loadErr(t *testing.T, local fstest.MapFS) string {
 func TestEmbeddedCatalogLoads(t *testing.T) {
 	c := load(t, nil)
 	inst, conf := c.PhaseTabs(PhaseInstall), c.PhaseTabs(PhaseConfigure)
-	if len(c.Tabs) != 12 || len(inst) != 8 || len(conf) != 4 || inst[0].ID != "system" || conf[0].ID != "sysconf" {
+	if len(c.Tabs) != 12 || len(inst) != 8 || len(conf) != 4 || inst[0].ID != "lang" || inst[0].Group != "Dev" || conf[0].ID != "sysconf" {
 		t.Errorf("tabs = %+v", c.Tabs)
 	}
 	// Install tabs first, then configure: the picker's two screens.

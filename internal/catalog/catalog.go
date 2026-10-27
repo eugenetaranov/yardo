@@ -40,6 +40,9 @@ type Tab struct {
 	Title string `toml:"title"`
 	// Phase is install (the default) or configure.
 	Phase string `toml:"phase"`
+	// Group: tabs of one group show as one picker tab, named Group, each
+	// as a section under its own heading.
+	Group string `toml:"group"`
 }
 
 // PhaseOf is the tab's phase, install when unset.
