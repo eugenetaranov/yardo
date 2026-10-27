@@ -451,6 +451,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	}
 	fmt.Fprintf(stdout, "How each tool was installed and how to update it: %s/yardo.txt\nLog: %s\n", env.Home, o.log)
 	printKeys(stdout, o.state, env.Home)
+	if h := newShellHint(res.Changed); h != "" {
+		fmt.Fprintln(stdout, h)
+	}
 	if !res.OK() {
 		for _, id := range res.Failed {
 			fmt.Fprintf(stderr, "✗ %s: %s\n", id, res.Errors[id])
@@ -909,3 +912,16 @@ func envOr(k, def string) string {
 }
 
 func isTerminal(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
+
+// newShellHint is what to run so the shell yardo was started from sees
+// this run's changes: mise's shims on PATH (the mise item, run once) or
+// shell setup only a new shell reads. Empty when nothing needs it.
+func newShellHint(changed []string) string {
+	switch {
+	case slices.Contains(changed, "zshbin"):
+		return "Your login shell is now zsh: log in again, or run: exec zsh -l"
+	case slices.Contains(changed, "mise"), slices.Contains(changed, "shellcfg"):
+		return "New tools are on PATH in new shells: log in again, or run: exec bash -l"
+	}
+	return ""
+}

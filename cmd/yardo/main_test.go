@@ -311,3 +311,17 @@ func TestPrintKeys(t *testing.T) {
 		t.Errorf("no keys: %q", out.String())
 	}
 }
+
+func TestNewShellHint(t *testing.T) {
+	for changed, want := range map[string]string{
+		"":                  "",
+		"lazygit tmux":      "",
+		"mise neovim":       "exec bash -l",
+		"shellcfg":          "exec bash -l",
+		"zshbin mise zshrc": "exec zsh -l",
+	} {
+		if got := newShellHint(strings.Fields(changed)); !strings.Contains(got, want) || (want == "") != (got == "") {
+			t.Errorf("%q: %q, want %q", changed, got, want)
+		}
+	}
+}
