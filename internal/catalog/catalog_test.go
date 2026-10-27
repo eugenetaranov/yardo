@@ -118,6 +118,8 @@ func TestValidation(t *testing.T) {
 		"unknown tab":   {fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"x\"\ntab = \"nope\"\nlabel = \"X\"\n[[item.step]]\ntype = \"legacy\"\n")}}, `unknown tab "nope"`},
 		"no steps":      {fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\n")}}, "no steps"},
 		"local tab":     {fstest.MapFS{"x.toml": {Data: []byte("[[tab]]\nid = \"t\"\ntitle = \"T\"\n")}}, "can't add tabs"},
+		"stack group":   {fstest.MapFS{"x.toml": {Data: []byte("[[stack]]\nid = \"s\"\ngroup = \"ops\"\nlabel = \"S\"\nitems = [\"go\"]\n")}}, "want dev or devops"},
+		"stack item":    {fstest.MapFS{"x.toml": {Data: []byte("[[stack]]\nid = \"s\"\ngroup = \"dev\"\nlabel = \"S\"\nitems = [\"mise\"]\n")}}, "not an item the picker offers"},
 		"needs a cycle": {fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"a\"\ntab = \"dev\"\nlabel = \"A\"\nneeds = [\"b\"]\n[[item.step]]\ntype = \"legacy\"\n[[item]]\nid = \"b\"\ntab = \"dev\"\nlabel = \"B\"\nneeds = [\"a\"]\n[[item.step]]\ntype = \"legacy\"\n")}}, "needs/after cycle"},
 	}
 	for name, tc := range cases {
@@ -310,5 +312,20 @@ func TestDefaults(t *testing.T) {
 	err := loadErr(t, fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\nalways = true\ndefault = true\n[[item.step]]\ntype = \"apt\"\npackages = [\"jq\"]\n")}})
 	if !strings.Contains(err, "only an item the picker offers") {
 		t.Errorf("an Always default: %s", err)
+	}
+}
+
+func TestStacks(t *testing.T) {
+	c := load(t, fstest.MapFS{"team.toml": {Data: []byte("[[stack]]\nid = \"java\"\ngroup = \"dev\"\nlabel = \"Java + Kubernetes\"\nitems = [\"java\", \"k8s\"]\n")}})
+	groups := map[string]bool{}
+	for _, st := range c.Stacks {
+		groups[st.Group] = true
+	}
+	if !groups[GroupDev] || !groups[GroupDevOps] {
+		t.Errorf("want stacks on both tabs: %v", groups)
+	}
+	// A local stack replaces the embedded one of its id, in place.
+	if st := c.Stack("java"); st == nil || st.Label != "Java + Kubernetes" || c.Stacks[0].ID != "java" {
+		t.Errorf("java stack = %+v", st)
 	}
 }

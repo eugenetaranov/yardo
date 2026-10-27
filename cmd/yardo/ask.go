@@ -80,7 +80,7 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 	first := len(k.a.Picks) == 0
 	saved := k.a.Picks
 	if first {
-		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). The usual stack is ticked: untick what you don't want, or ctrl-x to untick all. Run it again any time to add more.\n", k.a.User)
+		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). Say what you work with, then the usual stack and that are ticked: untick what you don't want, or ctrl-x to untick all. Run it again any time to add more.\n", k.a.User)
 	} else {
 		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). What you picked before is ticked: tick more to add it; untick one and yardo stops re-applying it (it stays installed).\n", k.a.User)
 	}
@@ -97,8 +97,14 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 		entries, ui.Options{Next: "configure", Extra: true})
 	conf := ui.CatalogEntries(k.cat, catalog.PhaseConfigure)
 	if first {
-		k.preselect(inst.Entries())
-		k.preselect(conf)
+		stacked, err := k.askStacks()
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range slices.Concat(inst.Entries(), conf) {
+			it := k.cat.Item(e.ID)
+			e.On = it != nil && it.Default || slices.Contains(stacked, e.ID)
+		}
 	} else {
 		for _, e := range slices.Concat(inst.Entries(), conf) {
 			e.On = slices.Contains(saved, e.ID)
@@ -299,13 +305,34 @@ func planHas(items []*catalog.Item) func(string) bool {
 	return func(id string) bool { return strings.Contains(picks, " "+id+" ") }
 }
 
-// preselect ticks the catalog's default items.
-func (k *asker) preselect(entries []*ui.Entry) {
-	for _, e := range entries {
-		if it := k.cat.Item(e.ID); it != nil && it.Default {
-			e.On = true
+// askStacks asks, on the first run, what the user works with, on a Dev
+// and a DevOps tab (both for a mix), and returns the items the stacks
+// tick in the picker, on top of the defaults.
+func (k *asker) askStacks() ([]string, error) {
+	var entries []*ui.Entry
+	for _, st := range k.cat.Stacks {
+		var labels []string
+		for _, id := range st.Items {
+			labels = append(labels, k.cat.Item(id).Label)
 		}
+		entries = append(entries, &ui.Entry{Tab: st.Group, ID: st.ID, Label: st.Label, Source: strings.Join(labels, " · ")})
 	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	tabs := []ui.Tab{{ID: catalog.GroupDev, Title: "Dev"}, {ID: catalog.GroupDevOps, Title: "DevOps"}}
+	picked, out, err := ui.NewPicker("yardo — what do you work with? (tick on both tabs for a mix)", tabs, entries, ui.Options{Next: "install"}).Run()
+	if err != nil {
+		return nil, err
+	}
+	if out != ui.Done {
+		return nil, ui.ErrQuit
+	}
+	var items []string
+	for _, id := range picked {
+		items = append(items, k.cat.Stack(id).Items...)
+	}
+	return items, nil
 }
 
 // askUser asks which user to set up, offering to create a missing one.

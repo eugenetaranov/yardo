@@ -53,7 +53,13 @@ the top (←/→ or 1–9 to switch) above a checklist; space ticks an item.
 The first run starts with the usual stack ticked: zsh, Neovim, tmux,
 lazygit, the linters, the dev CLIs, the admin and debug tools, Docker and
 its tools, Claude Code with OpenSpec, the MCPJungle gateway, git (name and email, defaults,
-GitHub) and the two agent items. Untick what you don't want, or ctrl-x to
+GitHub) and the two agent items. Before it, the first run asks what you
+work with, on two tabs: **Dev** (Java/Kotlin, Python, Go, Node/TypeScript,
+Rust, .NET, databases) and **DevOps** (Terraform, Ansible + tack,
+Kubernetes and its extras, AWS, Google Cloud, Azure, Vault). Tick on both
+for a mix: a Java dev who also deploys with Terraform and Kubernetes, or a
+DevOps engineer who writes Python. What you tick there is ticked in the
+picker too, on top of the usual stack. Untick what you don't want, or ctrl-x to
 untick everything. Later runs start with what you picked before: tick
 more to add it; Install re-applies the rest, which is quick (it's done
 already), and asks only about what's new. Untick something and yardo
@@ -317,7 +323,8 @@ public key and where to add it.
 
 **Your team's own items and MCP servers.** yardo reads extra items from
 `/etc/yardo/catalog.d/*.toml` (the catalog's format; see
-`internal/catalog/data`) and extra MCP server specs from
+`internal/catalog/data`; a `[[stack]]` there adds a choice to the
+first run's Dev or DevOps tab, or replaces yardo's of the same id) and extra MCP server specs from
 `/usr/local/share/mcp-catalog/*.spec`; specs named in that directory's
 `.team-files` win over yardo's own of the same name. A download in an item
 must be pinned (`sha256`) or say why it can't be (`unverified = "…"`), or

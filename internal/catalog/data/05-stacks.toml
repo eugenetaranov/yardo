@@ -1,0 +1,95 @@
+# Where you're headed: on the first run, before the picker, yardo asks
+# what you work with, on two tabs, Dev and DevOps; tick on both for a mix
+# (a Java dev with Terraform and Kubernetes, a DevOps engineer with
+# Python). Each stack ticks its items on top of the defaults; the picker
+# then opens with them ticked, all still editable.
+
+[[stack]]
+id = "java"
+group = "dev"
+label = "Java / Kotlin"
+items = ["java"]
+
+[[stack]]
+id = "python"
+group = "dev"
+label = "Python"
+items = ["python"]
+
+[[stack]]
+id = "go"
+group = "dev"
+label = "Go"
+items = ["go"]
+
+[[stack]]
+id = "node"
+group = "dev"
+label = "Node / TypeScript"
+items = ["node"]
+
+[[stack]]
+id = "rust"
+group = "dev"
+label = "Rust"
+items = ["rust"]
+
+[[stack]]
+id = "dotnet"
+group = "dev"
+label = ".NET"
+items = ["dotnet"]
+
+[[stack]]
+id = "db"
+group = "dev"
+label = "Databases (psql, pgcli, redis-cli, …)"
+items = ["dbclients"]
+
+[[stack]]
+id = "terraform"
+group = "devops"
+label = "Terraform (+ scanners, sops)"
+items = ["terraform", "iacscan", "sops-install"]
+
+[[stack]]
+id = "ansible"
+group = "devops"
+label = "Ansible + tack"
+items = ["ansible", "tack"]
+
+[[stack]]
+id = "k8s"
+group = "devops"
+label = "Kubernetes (kubectl, helm, k9s)"
+items = ["k8s"]
+
+[[stack]]
+id = "gitops"
+group = "devops"
+label = "Kubernetes extras (Argo CD, Flux, kustomize, …)"
+items = ["k8stools"]
+
+[[stack]]
+id = "aws"
+group = "devops"
+label = "AWS"
+items = ["aws"]
+
+[[stack]]
+id = "gcp"
+group = "devops"
+label = "Google Cloud"
+items = ["gcloud"]
+
+[[stack]]
+id = "azure"
+group = "devops"
+label = "Azure"
+items = ["azure"]
+
+[[stack]]
+id = "vault"
+group = "devops"
+label = "Vault"
+items = ["vault"]
