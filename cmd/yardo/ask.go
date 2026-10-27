@@ -196,8 +196,10 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			return nil, err
 		}
 	}
-	if isNew("mcpjungle") {
-		if err := k.askMCP(ctx, c, has); err != nil {
+	// The server list shows on every run (the saved ones ticked); only
+	// new servers are asked about.
+	if has("mcpjungle") {
+		if err := k.askMCP(ctx, c, has, isNew("mcpjungle")); err != nil {
 			return nil, err
 		}
 	}
@@ -533,7 +535,7 @@ func (k *asker) askMCPListen() error {
 
 // askMCP asks for the MCP servers, their keys, and whether to add the
 // gateway to the agents.
-func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool) error {
+func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool, fresh bool) error {
 	dirs := mcp.Dirs(k.share)
 	var entries []*ui.Entry
 	specs := map[string]*mcp.Spec{}
@@ -543,7 +545,7 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool) e
 			continue
 		}
 		specs[n] = s
-		entries = append(entries, &ui.Entry{Tab: "mcp", ID: n, Label: n, Source: s.Description + " · " + s.Image + s.URL})
+		entries = append(entries, &ui.Entry{Tab: "mcp", ID: n, Label: n, Source: s.Description + " · " + s.Image + s.URL, On: slices.Contains(k.a.MCPServers, n)})
 	}
 	servers, out, err := ui.NewPicker("MCPJungle — which MCP servers?", []ui.Tab{{ID: "mcp", Title: "MCP servers"}}, entries, ui.Options{}).Run()
 	if err != nil {
@@ -553,11 +555,13 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool) e
 		return ui.ErrQuit
 	}
 	c.mcpServers = servers
-	// Servers set up before stay enabled (drop one by editing ~/.mcp/servers).
-	k.a.MCPServers = answers.Merge(k.a.MCPServers, servers)
+	// An unticked server stops being kept up; it stays enabled (drop one
+	// by editing ~/.mcp/servers).
+	prev := k.a.MCPServers
+	k.a.MCPServers = servers
 
 	agents := []string{"claude", "codex", "gemini", "opencode", "goose"}
-	if slices.ContainsFunc(agents, func(a string) bool { return has(a) || k.installed(a) }) {
+	if (fresh || k.a.WireAgents == nil) && slices.ContainsFunc(agents, func(a string) bool { return has(a) || k.installed(a) }) {
 		def := k.a.WireAgents == nil || *k.a.WireAgents
 		yes, err := ui.Confirm("Add the MCPJungle gateway to "+k.a.User+"'s coding agents?",
 			"Claude Code, Codex, Gemini CLI, OpenCode and Goose (those installed) can then use every MCP server registered in MCPJungle.", def)
@@ -570,7 +574,7 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool) e
 	home := homeOf(k.a.User)
 	for _, n := range servers {
 		s := specs[n]
-		if s == nil || len(s.Keys)+len(s.Optional) == 0 {
+		if s == nil || len(s.Keys)+len(s.Optional) == 0 || slices.Contains(prev, n) {
 			continue
 		}
 		envf := filepath.Join(home, ".mcp", n, "env")

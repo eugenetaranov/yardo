@@ -220,6 +220,7 @@ if_exists = true
 id = "mcpjungle-install"
 tab = "ai"
 label = "MCPJungle MCP gateway (Docker; servers: Configure → Agents)"
+default = true
 needs = ["docker"]
 source = "release binary · systemd mcpjungle@<user> as mcp-<user>"
 
@@ -264,6 +265,7 @@ type = "go:mcp_wait"
 id = "mcpjungle"
 tab = "agents"
 label = "MCP servers on MCPJungle, added to your agents"
+default = true
 needs = ["mcpjungle-install"]
 source = "~/.mcp/<server>/env (0600) · mcp-sync · Claude Code, Codex, Gemini CLI, OpenCode, Goose"
 

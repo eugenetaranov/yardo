@@ -52,7 +52,7 @@ install**, then **how to configure it**. On each, categories are tabs across
 the top (←/→ or 1–9 to switch) above a checklist; space ticks an item.
 The first run starts with the usual stack ticked: zsh, Neovim, tmux,
 lazygit, the linters, the dev CLIs, the admin and debug tools, Docker and
-its tools, Claude Code with OpenSpec, git (name and email, defaults,
+its tools, Claude Code with OpenSpec, the MCPJungle gateway, git (name and email, defaults,
 GitHub) and the two agent items. Untick what you don't want, or ctrl-x to
 untick everything. Later runs start with what you picked before: tick
 more to add it; Install re-applies the rest, which is quick (it's done
