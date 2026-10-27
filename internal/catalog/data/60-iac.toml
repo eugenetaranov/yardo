@@ -47,6 +47,15 @@ type = "mise"
 tools = ["uv@latest", "pipx:ansible"]
 
 [[item]]
+id = "tack"
+tab = "iac"
+label = "tack (Ansible-like config management, one binary)"
+
+[[item.step]]
+type = "mise"
+tools = ["github:tackhq/tack@latest"]
+
+[[item]]
 id = "sops-install"
 tab = "iac"
 label = "sops + age (your age key: Configure → Logins & keys)"

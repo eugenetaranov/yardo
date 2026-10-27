@@ -138,7 +138,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 5. **Cloud** (mise): AWS, Google Cloud, Azure, DigitalOcean, Hetzner,
    cloudflared, restic + rclone.
 6. **IaC** (mise): Terraform with terragrunt, tflint and terraform-docs,
-   OpenTofu, trivy + checkov, Packer, Ansible, sops + age, Vault.
+   OpenTofu, trivy + checkov, Packer, Ansible, tack, sops + age, Vault.
 7. **Containers & Kubernetes:** Docker (with log rotation and
    10.200.0.0/16 networks) and its tools (lazydocker, dive, hadolint, crane,
    cosign), Podman + skopeo + buildah; Kubernetes as one item (kubectl,

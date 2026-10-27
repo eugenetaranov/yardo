@@ -126,6 +126,7 @@ CATALOG_ROWS=(
   "iacscan|iac|IaC and image scanners (trivy, checkov)|mise|trivy@latest uv@latest pipx:checkov||"
   "packer|iac|Packer|mise|packer@latest||"
   "ansible|iac|Ansible|mise|uv@latest pipx:ansible||"
+  "tack|iac|tack (Ansible-like config management, one binary)|mise|github:tackhq/tack@latest||"
   "sops|iac|sops + age (secrets in git)|mise|sops@latest age@latest||"
   "vault|iac|Vault CLI|mise|vault@latest||"
   "agekey|iac|age key for sops (generate or paste)|fn||sops|~/.config/sops/age/keys.txt (0600) · SOPS_AGE_KEY_FILE"
