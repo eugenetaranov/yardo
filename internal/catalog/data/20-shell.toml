@@ -11,47 +11,52 @@ label = "zsh, ready to use (asks: Powerlevel10k or Starship prompt)"
 needs = ["zshbin", "zshcfg", "prompt", "zshrc", "fzftab", "shellcfg", "cli", "docs"]
 source = "oh-my-zsh + autosuggestions, syntax highlighting, history search, fzf-tab · ripgrep fd bat eza fzf zoxide delta direnv · z, fzf keys, aliases · man pages, tldr"
 
-[[item]]
-id = "editors"
-tab = "shell"
-source = "apt vim · vim-plug · curated ~/.vimrc (.vimrc.orig kept)"
-label = "Vim (curated .vimrc + plugins)"
-
-[[item.step]]
-type = "apt"
-packages = ["vim"]
-
-[[item.step]]
-type = "apt"
-packages = ["curl", "git"]
-
-[[item.step]]
-type = "run"
-cmd = "curl -fsSL --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim -o ~/.vim/autoload/plug.vim"
-as_user = true
-creates = "~/.vim/autoload/plug.vim"
-unverified = "vim-plug installs from its master branch; it has no release files to pin"
-
-[[item.step]]
-type = "file"
-src = "vimrc"
-to = "~/.vimrc"
-keep_orig = true
-
-[[item.step]]
-type = "run"
-cmd = "vim -es -u ~/.vimrc +PlugInstall +qall </dev/null || true"
-as_user = true
-creates = "~/.vim/plugged"
-
+# The one editor: Neovim with a curated config, comfortable without
+# knowing its plugins (which-key lists the keys).
 [[item]]
 id = "neovim"
 tab = "shell"
-label = "Neovim (latest)"
+label = "Neovim, ready to use (fuzzy find, file browser, LSP, completion)"
+source = "mise neovim@latest · lazy.nvim · curated ~/.config/nvim/init.lua (.orig kept) · which-key, telescope, oil, gitsigns, sleuth, mini, mason + SchemaStore, blink.cmp"
 
 [[item.step]]
 type = "mise"
 tools = ["neovim@latest"]
+
+# git clones the plugins; ripgrep backs the text search.
+[[item.step]]
+type = "apt"
+packages = ["git", "ripgrep"]
+
+[[item.step]]
+type = "file"
+src = "nvim-init.lua"
+to = "~/.config/nvim/init.lua"
+keep_orig = true
+
+# EDITOR, and `sudo nvim FILE` through sudoedit (sudo's PATH has no mise).
+[[item.step]]
+type = "file"
+src = "nvim.sh"
+to = "~/.config/yardo/nvim.sh"
+
+[[item.step]]
+type = "line"
+to = "~/.bashrc"
+line = '[ -r ~/.config/yardo/nvim.sh ] && . ~/.config/yardo/nvim.sh'
+
+[[item.step]]
+type = "line"
+to = "~/.zshrc"
+line = '[ -r ~/.config/yardo/nvim.sh ] && . ~/.config/yardo/nvim.sh'
+if_exists = true
+
+[[item.step]]
+type = "run"
+cmd = "nvim --headless '+Lazy! sync' +qa </dev/null || true"
+as_user = true
+creates = "~/.local/share/nvim/lazy/lazy.nvim"
+unverified = "lazy.nvim and the plugins install from their git repos (lazy.nvim from its stable branch); they have no release files to pin"
 
 [[item]]
 id = "tmux"

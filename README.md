@@ -112,10 +112,13 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    completes in the next shell. Tools without an oh-my-zsh plugin (k9s,
    stern, just, task, uv, terragrunt, vault, packer, …) get Tab completion
    from their own scripts, cached in `~/.cache/yardo/zsh-completions` and
-   refreshed only when the tool is upgraded. Also: Vim (with a curated
-   `.vimrc` and plugins), Neovim (latest, from mise), tmux (with
-   `~/.tmux.conf`: mouse, splits, 50k history), zellij, mosh. The zsh, vim
-   and tmux files replace yours, keeping the old ones as `.orig`; keep your
+   refreshed only when the tool is upgraded. Also: Neovim (latest, from
+   mise) with a curated `~/.config/nvim/init.lua` and plugins (fuzzy
+   finding, a file browser, git signs, language servers through `:Mason`,
+   completion; press space and wait to see the keys; `sudo nvim FILE`
+   edits through sudoedit, with your config), tmux (with
+   `~/.tmux.conf`: mouse, splits, 50k history), zellij, mosh. The zsh,
+   Neovim and tmux files replace yours, keeping the old ones as `.orig`; keep your
    own lines in the local files instead (see [Your own
    settings](#your-own-settings)).
 3. **Dev tools:** lazygit, dev CLIs (just, Task, watchexec, hyperfine, yq,
@@ -186,7 +189,7 @@ list `gitlab-cli` for that.
 Downloads are pinned: vendor apt keys are checked against their
 fingerprints and release binaries against their sha256 before they're
 installed. The few vendor installers that change in place (Tailscale,
-Ollama, k3s, krew, omp, vim-plug) can't be pinned; `~/yardo.txt`
+Ollama, k3s, krew, omp, Neovim's plugins) can't be pinned; `~/yardo.txt`
 lists the installed ones under "Installed without a pinned checksum", with
 why. A `catalog.d` item that downloads must do the same (`sha256`, or
 `unverified = "why"`), or yardo refuses to load it.
@@ -199,7 +202,7 @@ grouped by how it was installed, with how to update or remove it.
 
 ### Your own settings
 
-yardo rewrites `.zshrc`, `.vimrc`, `.tmux.conf` and
+yardo rewrites `.zshrc`, `~/.config/nvim/init.lua`, `.tmux.conf` and
 `~/.config/yardo/shell.sh` on a re-run, so lines you add to them are
 lost (your first version of each is kept once, as `.orig`). Put your own
 settings in these files instead. yardo never creates or changes
@@ -210,7 +213,7 @@ them, and the files it writes source them last, so yours win:
 | `~/.zshrc.local` | zsh (end of `.zshrc`) |
 | `~/.config/yardo/local.sh` | zsh and bash (end of `shell.sh`) |
 | `~/.tmux.local.conf` | tmux (end of `.tmux.conf`) |
-| `~/.vimrc.local` | vim (end of `.vimrc`) |
+| `~/.config/nvim/local.lua` | Neovim (end of `init.lua`) |
 
 For example, `echo 'export KUBECONFIG=~/.kube/work' >> ~/.config/yardo/local.sh`
 survives `sudo yardo --yes`.

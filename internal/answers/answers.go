@@ -173,14 +173,14 @@ var PickMap = map[string][]string{
 	"shell":      {"zsh"}, // split into three in v0.38, one again in v0.2
 	"typescript": {"node"},
 	"kotlin":     {"java"},
-	"editors":    {"editors", "neovim"}, // Neovim moved to its own (mise) item
-	"chrony":     {},                    // no longer an item: clock sync is the launcher's job
-	"glab":       {"gitlab"},            // the GitLab item: glab and the SSH key
-	"sshkey":     {},                    // the GitHub, GitLab and Bitbucket items make the key
+	"editors":    {"neovim"}, // Vim gave way to Neovim, the one editor
+	"chrony":     {},         // no longer an item: clock sync is the launcher's job
+	"glab":       {"gitlab"}, // the GitLab item: glab and the SSH key
+	"sshkey":     {},         // the GitHub, GitLab and Bitbucket items make the key
 	// v0.2: one zsh item with its parts, tools folded into their bundles,
 	// hardening always on.
 	"p10k": {"zsh"}, "zshcfg": {"zsh"}, "fzftab": {"zsh"}, "shellcfg": {"zsh"}, "cli": {"zsh"}, "docs": {"zsh"},
-	"tmuxcfg": {"tmux"}, "vimcfg": {"editors"},
+	"tmuxcfg": {"tmux"}, "vimcfg": {"neovim"},
 	"k8sextra": {"k8s"}, "krew": {"k8s"}, "helmfile": {"k8s"},
 	"runners": {"devcli"}, "task": {"devcli"}, "yq": {"devcli"}, "http": {"devcli"},
 	"pgcli": {"dbclients"}, "iaclint": {"terraform"}, "agekey": {"sops"},
@@ -190,9 +190,10 @@ var PickMap = map[string][]string{
 
 // pickNotes explain a migration to the user.
 var pickNotes = map[string]string{
-	"chrony": "chrony is no longer an item (clock sync is set up when the machine is launched); this machine keeps the chrony it has.",
-	"sshkey": "The SSH key item is gone: ~/.ssh/id_ed25519 stays, and the GitHub, GitLab and Bitbucket items make it when they use it.",
-	"ufw":    "The firewall (ufw) is no longer an item: yardo leaves this machine's ufw as it is (turn it off with 'sudo ufw disable').",
+	"chrony":  "chrony is no longer an item (clock sync is set up when the machine is launched); this machine keeps the chrony it has.",
+	"sshkey":  "The SSH key item is gone: ~/.ssh/id_ed25519 stays, and the GitHub, GitLab and Bitbucket items make it when they use it.",
+	"ufw":     "The firewall (ufw) is no longer an item: yardo leaves this machine's ufw as it is (turn it off with 'sudo ufw disable').",
+	"editors": "Vim is no longer an item: Neovim, set up the same way, replaces it. Vim and ~/.vimrc stay as they are.",
 }
 
 // MigratePicks applies PickMap, keeping order and dropping duplicates. It

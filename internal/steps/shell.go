@@ -33,6 +33,7 @@ func Prompt(e *Env) string {
 var Dropins = []struct{ File, Line string }{
 	{"~/.config/yardo/shell.sh", "[ -r ~/.config/yardo/shell.sh ] && . ~/.config/yardo/shell.sh"},
 	{"~/.config/yardo/agent-env.sh", "[ -r ~/.config/yardo/agent-env.sh ] && . ~/.config/yardo/agent-env.sh"},
+	{"~/.config/yardo/nvim.sh", "[ -r ~/.config/yardo/nvim.sh ] && . ~/.config/yardo/nvim.sh"},
 }
 
 func init() {
