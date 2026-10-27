@@ -72,12 +72,6 @@ tasks:
       - cp {{.TACK_ROLES}}/roles/ai-tools/files/mcp-catalog/*.spec {{.DST}}/mcp-catalog/
       - git -C {{.TACK_ROLES}} log -1 --format='tack-roles %H %cs' > {{.DST}}/SOURCE
 
-  assets:mise-registry:
-    desc: Refresh the snapshot of mise's registry from the local mise
-    cmds:
-      - mise registry -J --hide-aliased | python3 internal/assets/picker.py --registry-tsv > internal/assets/mise-registry.tsv
-      - wc -l internal/assets/mise-registry.tsv
-
   clean:
     desc: Remove build output
     cmds:

@@ -1,110 +1,24 @@
 // Package ui is yardo's terminal UI: the tabbed picker with
-// type-to-search across every tab and mise's registry, and the prompts.
+// type-to-search across every tab, and the prompts.
 package ui
 
 import (
-	"encoding/json"
-	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode"
-
-	"golang.org/x/text/width"
 )
-
-// MiseTab is the pseudo-tab of mise registry tools (search results only).
-const MiseTab = "__mise__"
 
 // MaxResults caps the search results.
 const MaxResults = 200
 
-// Entry is one row the picker can show: a catalog item or a mise tool.
+// Entry is one row the picker can show: a catalog item (or an MCP server).
 type Entry struct {
 	Tab, ID, Label, Source string
 	On                     bool
-	// Names and Text are set for mise tools: the name and aliases, and
-	// the full description.
-	Names []string
-	Text  string
 }
 
-var (
-	shortcode = regexp.MustCompile(`:[a-z0-9_+-]+:`)
-	sentence  = regexp.MustCompile(`^(.+?[.!?])(\s|$)`)
-	wordRe    = regexp.MustCompile(`[\w.+-]+`)
-)
-
-// Narrow drops double-width characters (emoji, CJK) and :emoji: shortcodes,
-// which break the column layout.
-func Narrow(s string) string {
-	s = shortcode.ReplaceAllString(s, "")
-	var b strings.Builder
-	for _, r := range s {
-		k := width.LookupRune(r).Kind()
-		if k == width.EastAsianWide || k == width.EastAsianFullwidth || unicode.Is(unicode.Mn, r) {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return strings.Join(strings.Fields(b.String()), " ")
-}
-
-func firstSentence(s string) string {
-	if m := sentence.FindStringSubmatch(s); m != nil {
-		s = m[1]
-	}
-	return strings.TrimRight(s, ".")
-}
-
-// LoadMise parses the registry TSV (name, comma-separated aliases,
-// description per line).
-func LoadMise(tsv string) []*Entry {
-	var out []*Entry
-	for _, line := range strings.Split(tsv, "\n") {
-		p := strings.Split(line, "\t")
-		if len(p) < 3 || p[0] == "" {
-			continue
-		}
-		names := []string{p[0]}
-		for _, a := range strings.Split(p[1], ",") {
-			if a != "" {
-				names = append(names, a)
-			}
-		}
-		label := p[0]
-		if sum := Narrow(firstSentence(p[2])); sum != "" {
-			label = p[0] + " — " + sum
-		}
-		out = append(out, &Entry{Tab: MiseTab, ID: "mise:" + p[0], Label: label, Source: "mise use -g " + p[0], Names: names, Text: p[2]})
-	}
-	return out
-}
-
-// RegistryTSV converts `mise registry -J` output to the LoadMise TSV.
-func RegistryTSV(js []byte) string {
-	var tools []struct {
-		Short       string   `json:"short"`
-		Aliases     []string `json:"aliases"`
-		Description string   `json:"description"`
-	}
-	if json.Unmarshal(js, &tools) != nil {
-		return ""
-	}
-	clean := func(s string) string { return strings.Join(strings.Fields(s), " ") }
-	var b strings.Builder
-	for _, t := range tools {
-		if clean(t.Short) == "" {
-			continue
-		}
-		al := make([]string, len(t.Aliases))
-		for i, a := range t.Aliases {
-			al[i] = clean(a)
-		}
-		fmt.Fprintf(&b, "%s\t%s\t%s\n", clean(t.Short), strings.Join(al, ","), clean(t.Description))
-	}
-	return b.String()
-}
+var wordRe = regexp.MustCompile(`[\w.+-]+`)
 
 // toolName: "pipx:aider-chat[x]@latest" → "aider-chat".
 func toolName(spec string) string {
@@ -135,31 +49,6 @@ func MiseTools(source string) map[string]bool {
 		}
 		for _, t := range w {
 			out[toolName(t)] = true
-		}
-	}
-	return out
-}
-
-// Dedupe drops mise registry rows for tools a catalog item already installs.
-func Dedupe(entries []*Entry) []*Entry {
-	covered := map[string]bool{}
-	for _, e := range entries {
-		if e.Tab != MiseTab {
-			for t := range MiseTools(e.Source) {
-				covered[t] = true
-			}
-		}
-	}
-	var out []*Entry
-	for _, e := range entries {
-		dup := false
-		if e.Tab == MiseTab {
-			for _, n := range e.Names {
-				dup = dup || covered[strings.ToLower(n)]
-			}
-		}
-		if !dup {
-			out = append(out, e)
 		}
 	}
 	return out
@@ -205,16 +94,6 @@ func fuzzy(q, s string, subsequence bool) (int, bool) {
 }
 
 func namesOf(e *Entry) (primary, secondary []string) {
-	if e.Names != nil {
-		for i, n := range e.Names {
-			if i == 0 {
-				primary = append(primary, strings.ToLower(n))
-			} else {
-				secondary = append(secondary, strings.ToLower(n))
-			}
-		}
-		return
-	}
 	secondary = wordRe.FindAllString(strings.ToLower(e.Label), -1)
 	var tools []string
 	for t := range MiseTools(e.Source) {
@@ -257,27 +136,11 @@ func Score(e *Entry, q string) (int, bool) {
 			take(s-150, true)
 		}
 	}
-	if e.Tab == MiseTab {
-		for _, n := range append(append([]string{}, primary...), secondary...) {
-			take(fuzzy(q, n, true))
-		}
-	} else {
-		take(fuzzy(q, strings.ToLower(e.Label), true))
-	}
-	text := e.Source
-	if e.Text != "" {
-		text = e.Text
-	}
-	if s, m := fuzzy(q, strings.ToLower(text), false); m {
+	take(fuzzy(q, strings.ToLower(e.Label), true))
+	if s, m := fuzzy(q, strings.ToLower(e.Source), false); m {
 		take(s-50, true)
 	}
-	if !ok {
-		return 0, false
-	}
-	if e.Tab != MiseTab {
-		best += 200
-	}
-	return best, true
+	return best, ok
 }
 
 // strict reports whether q is a substring of e's names, label, source or
@@ -290,11 +153,7 @@ func strict(e *Entry, q string) bool {
 			return true
 		}
 	}
-	text := e.Source
-	if e.Text != "" {
-		text = e.Text
-	}
-	return strings.Contains(strings.ToLower(e.Label), q) || strings.Contains(strings.ToLower(text), q)
+	return strings.Contains(strings.ToLower(e.Label), q) || strings.Contains(strings.ToLower(e.Source), q)
 }
 
 // Search returns the entries matching q, best first. Subsequence-only
@@ -322,9 +181,6 @@ func Search(entries []*Entry, q string) []*Entry {
 		a, b := hits[i], hits[j]
 		if a.s != b.s {
 			return a.s > b.s
-		}
-		if (a.e.Tab == MiseTab) != (b.e.Tab == MiseTab) {
-			return b.e.Tab == MiseTab
 		}
 		if len(a.e.Label) != len(b.e.Label) {
 			return len(a.e.Label) < len(b.e.Label)

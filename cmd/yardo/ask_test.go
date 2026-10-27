@@ -55,9 +55,3 @@ func TestConfigurable(t *testing.T) {
 		t.Errorf("saved tailscale, sops on PATH: %v", got)
 	}
 }
-
-func TestMiseIDs(t *testing.T) {
-	if got := miseIDs([]string{"jq", "yq@4"}); !slices.Equal(got, []string{"mise:jq", "mise:yq@4"}) {
-		t.Errorf("miseIDs = %v", got)
-	}
-}

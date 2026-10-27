@@ -77,11 +77,10 @@ yardo is opinionated: what every machine should have isn't offered, it's
 always applied (see "Always" below), and related tools come as one item.
 
 Just start typing to fuzzy-search every tab of the screen at once: `ssh`
-lists what mentions SSH wherever it lives, each with its category. On the
-Install screen the search also covers the ~940 tools in mise's registry,
-with their descriptions (`find` turns up `fd`). A tool you tick there is
-installed with `mise use -g <tool>` (to pin a version or use a
-`backend:tool`, list it under `mise_extra` in a profile). Esc clears the
+lists what mentions SSH wherever it lives, each with its category. For a
+tool the catalog doesn't have, run `mise use -g <tool>` yourself, or list
+it under `mise_extra` in a profile (a version or a `backend:tool` works
+too): yardo installs those and keeps them on re-runs. Esc clears the
 search; Esc on an empty search quits (on Configure: goes back).
 
 **Always**, on every machine, with nothing to pick. Installing: essentials

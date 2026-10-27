@@ -281,9 +281,6 @@ func wrap(s string, w int) []string {
 }
 
 func (p *Picker) tabTitle(id string) string {
-	if id == MiseTab {
-		return "mise"
-	}
 	for _, t := range p.tabs {
 		if t.ID == id {
 			return t.Title
@@ -356,12 +353,7 @@ func (p *Picker) View() string {
 	}
 	rows := make([]row, len(items))
 	for i, e := range items {
-		var lab []string
-		if e.Tab == MiseTab {
-			lab = []string{runewidth.Truncate(e.Label, labelW-2, "…")}
-		} else {
-			lab = wrap(e.Label, labelW-2)
-		}
+		lab := wrap(e.Label, labelW-2)
 		var src []string
 		if view == searchTab {
 			src = wrap(p.tabTitle(e.Tab), srcW)

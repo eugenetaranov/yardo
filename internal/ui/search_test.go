@@ -6,19 +6,17 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/eugenetaranov/yardo/internal/assets"
 	"github.com/eugenetaranov/yardo/internal/catalog"
 )
 
-// everything is the catalog (both screens) and mise's registry.
+// everything is the catalog, both screens.
 func everything(t *testing.T) []*Entry {
 	t.Helper()
 	c, err := catalog.Load(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	all := append(CatalogEntries(c, catalog.PhaseInstall), CatalogEntries(c, catalog.PhaseConfigure)...)
-	return Dedupe(append(all, LoadMise(string(assets.MiseRegistry()))...))
+	return append(CatalogEntries(c, catalog.PhaseInstall), CatalogEntries(c, catalog.PhaseConfigure)...)
 }
 
 func ids(es []*Entry, n int) []string {
@@ -41,7 +39,6 @@ func has(l []string, s string) bool {
 	return false
 }
 
-// The cases of picker_test.py, so the Go ranking matches the bash picker's.
 func TestSearch(t *testing.T) {
 	items := everything(t)
 	top := ids(Search(items, "zsh"), 5)
@@ -49,24 +46,12 @@ func TestSearch(t *testing.T) {
 	if top[0] != "zsh" || slices.ContainsFunc(top, func(id string) bool { return id == "zshcfg" || id == "p10k" }) {
 		t.Errorf("zsh top 5 = %v", top)
 	}
-	res := Search(items, "zsh")
-	firstMise := -1
-	for i, e := range res {
-		if e.Tab == MiseTab {
-			firstMise = i
-			break
-		}
-	}
-	if firstMise < 0 || !has(ids(res, firstMise), "zsh") {
-		t.Errorf("catalog items should come before mise tools: %v", ids(res, 10))
-	}
 	cases := []struct {
 		q    string
 		n    int
 		want string
 	}{
-		{"k9s", 1, "k8s"}, {"find", 40, "mise:fd"}, {"starship", 1, "zsh"}, {"starship", 3, "mise:starship"},
-		{"strshp", 3, "mise:starship"}, {"lzgt", 5, "lazygit"},
+		{"k9s", 1, "k8s"}, {"starship", 1, "zsh"}, {"lzgt", 5, "lazygit"}, {"act", 3, "github"},
 	}
 	for _, c := range cases {
 		if !has(ids(Search(items, c.q), c.n), c.want) {
@@ -95,30 +80,6 @@ func TestSearch(t *testing.T) {
 	}
 }
 
-func TestNarrow(t *testing.T) {
-	if got := Narrow(":cherry_blossom: A fuzzy finder 🚀 for おはよう you"); got != "A fuzzy finder for you" {
-		t.Errorf("Narrow = %q", got)
-	}
-	if got := Narrow("Kubernetes — ⎈ helm…"); got != "Kubernetes — ⎈ helm…" {
-		t.Errorf("Narrow = %q", got)
-	}
-}
-
-func TestDedupe(t *testing.T) {
-	names := map[string]bool{}
-	for _, e := range everything(t) {
-		names[e.ID] = true
-	}
-	for _, covered := range []string{"terraform", "k9s", "kubectl", "glances", "helmfile", "aider-chat", "neovim"} {
-		if names["mise:"+covered] {
-			t.Errorf("mise:%s should be hidden (a catalog item installs it)", covered)
-		}
-	}
-	if !names["mise:starship"] {
-		t.Error("mise:starship missing")
-	}
-}
-
 func TestMiseTools(t *testing.T) {
 	cases := map[string][]string{
 		"mise use -g uv pipx:aider-chat[uvx_args=--python=3.12] aqua:block/goose": {"aider-chat", "goose", "uv"},
@@ -134,12 +95,5 @@ func TestMiseTools(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("MiseTools(%q) = %v, want %v", src, got, want)
 		}
-	}
-}
-
-func TestLoadMise(t *testing.T) {
-	got := LoadMise("op\t1password\tPassword manager. Second\tsentence.\n\tskipped\tx\nbare\t\t\n")
-	if len(got) != 2 || got[0].ID != "mise:op" || got[0].Label != "op — Password manager" || !reflect.DeepEqual(got[0].Names, []string{"op", "1password"}) || got[1].Label != "bare" {
-		t.Errorf("LoadMise = %+v %+v", got[0], got)
 	}
 }

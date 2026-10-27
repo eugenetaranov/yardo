@@ -14,7 +14,7 @@ func newTestPicker(t *testing.T) *Picker {
 		{Tab: "system", ID: "docker", Label: "Docker Engine + Compose", Source: "apt docker-ce"},
 		{Tab: "shell", ID: "zsh", Label: "zsh (login shell)", Source: "apt zsh"},
 		{Tab: "shell", ID: "tmux", Label: "tmux", Source: "apt install tmux"},
-		{Tab: MiseTab, ID: "mise:starship", Label: "starship — prompt", Source: "mise use -g starship", Names: []string{"starship"}},
+		{Tab: "shell", ID: "starship", Label: "starship — prompt", Source: "mise use -g starship"},
 	}
 	p := NewPicker("yardo", tabs, entries, Options{Review: true})
 	p.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -58,7 +58,7 @@ func TestPickerTabsAndToggle(t *testing.T) {
 func TestPickerSearch(t *testing.T) {
 	p := newTestPicker(t)
 	press(p, "s", "t", "a", "r")
-	if p.view() != searchTab || len(p.results) == 0 || p.results[0].ID != "mise:starship" {
+	if p.view() != searchTab || len(p.results) == 0 || p.results[0].ID != "starship" {
 		t.Fatalf("search results = %v", ids(p.results, 5))
 	}
 	press(p, "2") // a digit is part of the query while searching

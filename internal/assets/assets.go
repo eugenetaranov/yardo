@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed conf mcp-catalog mcp-sync mise-registry.tsv yardo.sh picker.py
+//go:embed conf mcp-catalog mcp-sync yardo.sh picker.py
 var files embed.FS
 
 // ShareDir is where Extract puts the files on the machine.
@@ -36,13 +36,6 @@ func Conf() fs.FS {
 		panic(err) // embedded; cannot fail
 	}
 	return s
-}
-
-// MiseRegistry is the snapshot of mise's registry (name, aliases,
-// description per line), for the picker's search.
-func MiseRegistry() []byte {
-	b, _ := files.ReadFile("mise-registry.tsv")
-	return b
 }
 
 // stamp names the version the files in a share dir came from.

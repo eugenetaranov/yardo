@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/eugenetaranov/yardo/internal/answers"
-	"github.com/eugenetaranov/yardo/internal/assets"
 	"github.com/eugenetaranov/yardo/internal/catalog"
 	"github.com/eugenetaranov/yardo/internal/creds"
 	"github.com/eugenetaranov/yardo/internal/mcp"
@@ -79,7 +78,7 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 	// The first run starts from the usual stack; after that, from what was
 	// picked before (re-applied: quick, it's done already).
 	first := len(k.a.Picks) == 0
-	saved := slices.Concat(k.a.Picks, miseIDs(k.a.MiseExtra))
+	saved := k.a.Picks
 	if first {
 		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). The usual stack is ticked: untick what you don't want, or ctrl-x to untick all. Run it again any time to add more.\n", k.a.User)
 	} else {
@@ -90,7 +89,7 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 	// plus mise's registry), then what to configure (logins, keys,
 	// settings) for it. Esc on the second goes back to the first.
 	inst := ui.NewPicker("yardo [1/2] Install", uiTabs(k.cat.PhaseTabs(catalog.PhaseInstall)),
-		ui.Dedupe(append(ui.CatalogEntries(k.cat, catalog.PhaseInstall), ui.LoadMise(miseRegistry(ctx, k.share))...)),
+		ui.CatalogEntries(k.cat, catalog.PhaseInstall),
 		ui.Options{Next: "configure"})
 	conf := ui.CatalogEntries(k.cat, catalog.PhaseConfigure)
 	if first {
@@ -129,15 +128,10 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			return nil, ui.ErrQuit
 		}
 	}
-	c := &choices{secrets: creds.New()}
+	// Extra mise tools come from a profile (mise_extra) and stay: the
+	// picker doesn't offer mise's registry (mise use -g <tool> does).
 	ticked := slices.Concat(installs, configures)
-	for _, id := range ticked {
-		if t, ok := strings.CutPrefix(id, "mise:"); ok {
-			c.miseExtra = append(c.miseExtra, t)
-		} else {
-			c.picks = append(c.picks, id)
-		}
-	}
+	c := &choices{secrets: creds.New(), picks: ticked, miseExtra: slices.Clone(k.a.MiseExtra)}
 	// Only what the screens showed can have been unticked.
 	for _, e := range slices.Concat(inst.Entries(), shown) {
 		if slices.Contains(saved, e.ID) && !slices.Contains(ticked, e.ID) {
@@ -204,15 +198,6 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 		}
 	}
 	return c, k.askSecrets(c, isNew)
-}
-
-// miseIDs are the picker ids of extra mise tools.
-func miseIDs(tools []string) []string {
-	out := make([]string, len(tools))
-	for i, t := range tools {
-		out[i] = "mise:" + t
-	}
-	return out
 }
 
 // fromProfile plans the profiles' picks (already in the answers) and asks
@@ -369,17 +354,6 @@ func (k *asker) askSecrets(c *choices, has func(string) bool) error {
 		}
 	}
 	return nil
-}
-
-// miseRegistry is the live registry when mise is installed, else yardo's
-// snapshot in the share directory.
-func miseRegistry(ctx context.Context, share string) string {
-	if out, err := exec.CommandContext(ctx, "mise", "registry", "-J", "--hide-aliased").Output(); err == nil {
-		if tsv := ui.RegistryTSV(out); tsv != "" {
-			return tsv
-		}
-	}
-	return string(assets.MiseRegistry())
 }
 
 func (k *asker) gitConfig(key string) string {
