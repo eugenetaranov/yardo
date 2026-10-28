@@ -225,25 +225,11 @@ func writeStatusJSON(w io.Writer, users []userStatus, now time.Time) error {
 	return enc.Encode(statusReport{Schema: statusSchema, Host: host, CheckedAt: now.UTC().Format(time.RFC3339), Users: users})
 }
 
-// screen is what the menu and the board show: every item, ticked when
-// picked, with its health; the access settings; This VM's actions; how to
-// connect from a laptop.
-type screen struct {
-	info     ui.HomeInfo
-	sub      string
-	first    bool
-	updates  bool
-	tabs     []ui.Tab
-	items    []*ui.BoardItem
-	settings []*ui.BoardSetting
-	actions  []ui.BoardAction
-	connect  []string
-}
-
-// screenData checks the user's items (not on a first run: nothing's there
-// yet) and gathers what the screens show. With updates, it also checks for
-// newer versions (slow).
-func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, first, updates bool) (*screen, error) {
+// board checks the user's items (not on a first run: nothing's there
+// yet) and shows the board: every item, ticked when picked, with its
+// health; This VM's access settings and actions. With updates, it also
+// checks for newer versions (slow).
+func (o *options) board(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, first, updates bool) (ui.BoardResult, error) {
 	status := map[string]itemStatus{}
 	now := time.Now()
 	if !first {
@@ -253,11 +239,11 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		}
 		items, err := plan.Resolve(cat, a.Picks, len(a.MiseExtra) > 0)
 		if err != nil {
-			return nil, err
+			return ui.BoardResult{}, err
 		}
 		env, err := o.env(a, nil, nil)
 		if err != nil {
-			return nil, err
+			return ui.BoardResult{}, err
 		}
 		us := userStatusOf(ctx, env, a.User, items, a.MiseExtra, loadApplied(o.state, a.User), updates)
 		_ = saveStatus(ctx, env, o.state, us, now)
@@ -336,42 +322,12 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		{ID: "refresh", Label: "Check again", Note: "checked " + now.Format("15:04")},
 	}
 	var buf strings.Builder
-	addrs := addresses()
-	printConnect(&buf, a, addrs)
+	printConnect(&buf, a, addresses())
 	host, _ := os.Hostname()
-	sub := osName()
-	if len(addrs) > 0 {
-		sub += "  ·  " + addrs[0].ip
-	}
-	return &screen{info: ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04")}, sub: sub, first: first, updates: updates,
-		tabs: tabs, items: items, settings: settings, actions: actions, connect: strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")}, nil
+	b := ui.NewBoard(ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04")}, first, tabs, items, settings, actions,
+		strings.Split(strings.TrimRight(buf.String(), "\n"), "\n"))
+	return b.Run()
 }
-
-// osName is the OS's name and version (/etc/os-release).
-func osName() string {
-	b, err := os.ReadFile("/etc/os-release")
-	if err != nil {
-		return "Linux"
-	}
-	for _, l := range strings.Split(string(b), "\n") {
-		if v, ok := strings.CutPrefix(l, "PRETTY_NAME="); ok {
-			return strings.Trim(v, `"`)
-		}
-	}
-	return "Linux"
-}
-
-// forget drops what the board queued and didn't apply.
-func (d *screen) forget() {
-	for _, i := range d.items {
-		i.Pending = ""
-	}
-	for _, s := range d.settings {
-		s.Pending = ""
-	}
-}
-
-
 
 // fillIn opens the file holding the first of an item's empty values
 // (inputs, "file: KEY") in an editor: as the user for their own files, as
