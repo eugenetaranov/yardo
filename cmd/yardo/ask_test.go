@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"slices"
 	"testing"
@@ -10,48 +11,29 @@ import (
 	"github.com/eugenetaranov/yardo/internal/ui"
 )
 
-// The configure screen offers what the install picks (now, before, or
-// already on PATH) can use: registry logins only with Docker.
-func TestConfigurable(t *testing.T) {
+// What the board queued becomes the run's choices: picks added and
+// removed (removed ones dropped), extra mise tools, access settings.
+func TestFromBoard(t *testing.T) {
 	cat, err := catalog.Load(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	onPath := map[string]bool{}
-	k := &asker{cat: cat, a: &answers.Answers{}, out: io.Discard, installed: func(tool string) bool { return onPath[tool] }}
-	shown := func(installs ...string) []string {
-		conf := ui.CatalogEntries(cat, catalog.PhaseConfigure)
-		for _, e := range conf {
-			e.On = true
-		}
-		var ids []string
-		for _, e := range k.configurable(conf, installs) {
-			ids = append(ids, e.ID)
-		}
-		for _, e := range conf {
-			if e.On != slices.Contains(ids, e.ID) {
-				t.Errorf("%s: ticked %v, shown %v", e.ID, e.On, slices.Contains(ids, e.ID))
-			}
-		}
-		return ids
+	a := &answers.Answers{User: "ada", Picks: []string{"zsh", "tmux"}, MiseExtra: []string{"starship"}, TZ: "UTC"}
+	k := &asker{cat: cat, a: a, out: io.Discard, installed: func(string) bool { return false }}
+	c, err := k.fromBoard(context.Background(), ui.BoardResult{Kind: ui.BoardApply,
+		Adds:     []string{"terraform", "mise:pulumi"},
+		Removes:  []string{"tmux", "mise:starship"},
+		Settings: map[string]string{"mcp": "vpn", "ports": "all", "api": "lan"}}, false)
+	if err != nil {
+		t.Fatal(err)
 	}
-	got := shown()
-	for _, id := range []string{"gitid", "github", "agentkeys", "dotfiles"} {
-		if !slices.Contains(got, id) {
-			t.Errorf("%s should always be offered: %v", id, got)
-		}
+	if !slices.Equal(c.picks, []string{"zsh", "terraform"}) || !slices.Equal(c.dropped, []string{"tmux"}) || !slices.Equal(c.miseExtra, []string{"pulumi"}) {
+		t.Errorf("picks %v dropped %v extra %v", c.picks, c.dropped, c.miseExtra)
 	}
-	for _, id := range []string{"tailscale", "sops", "mcpjungle"} {
-		if slices.Contains(got, id) {
-			t.Errorf("%s offered without its install: %v", id, got)
-		}
+	if a.MCPListen != "vpn" || !k.listenSet || a.DockerPorts != "" || a.DockerAPI != "lan" {
+		t.Errorf("settings: mcp %q ports %q api %q", a.MCPListen, a.DockerPorts, a.DockerAPI)
 	}
-	if got := shown("mcpjungle-install"); !slices.Contains(got, "mcpjungle") {
-		t.Errorf("picked the MCPJungle gateway: %v", got)
-	}
-	k.a.Picks = []string{"tailscale-install"} // an earlier run
-	onPath["sops"] = true                      // installed by hand
-	if got := shown(); !slices.Contains(got, "tailscale") || !slices.Contains(got, "sops") || slices.Contains(got, "mcpjungle") {
-		t.Errorf("saved tailscale, sops on PATH: %v", got)
+	if len(c.items) == 0 || !slices.ContainsFunc(c.items, func(it *catalog.Item) bool { return it.ID == "terraform" }) {
+		t.Errorf("items = %v", c.items)
 	}
 }

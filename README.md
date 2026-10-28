@@ -47,32 +47,35 @@ apply|verify|gitkey`).
 ## Using it
 
 `sudo yardo` sets up the user who ran it (`--user ada` for another; a missing
-account is created) and opens the picker, on two screens: first **what to
-install**, then **how to configure it**. On each, categories are tabs across
-the top (←/→ or 1–9 to switch) above a checklist; space ticks an item.
-The first run starts with the usual stack ticked: zsh, Neovim, tmux,
-zellij, the linters, the dev CLIs, the database clients, the admin and
-debug tools, Docker and
-its tools, Claude Code with OpenSpec, the MCPJungle gateway, git (name and email, defaults, lazygit,
-GitHub) and the two agent items. Untick what you don't want, or ctrl-x to
-untick everything. Later runs start with what you picked before: tick
-more to add it; Install re-applies the rest, which is quick (it's done
-already), and asks only about what's new. Untick something and yardo
-stops re-applying it; it stays installed. Each row is one line; the line under the list shows
-how the item under the cursor is installed or applied, e.g. `mise use -g
-terraform`.
+account is created) on one screen: tabs by area (**Dev**, **DevOps**,
+**AI**, **Shell & CLI**, **System**, then **This VM**) above a checklist,
+where a ticked box means installed and a mark beside it how it is: `✓`
+ready, `✗` stopped or not installed, `~` half set up or changed by hand,
+`?` needs a value, `↑` a newer version is out.
 
-- **[1/2] Install:** one tab per area: **Dev** (languages, dev tools),
-  **DevOps** (containers and Kubernetes, IaC, cloud), **AI**, then
-  **Shell & CLI** and **System**, which the usual stack mostly covers.
-  The Dev and DevOps tabs list their parts under headings. Enter on the
-  last tab goes on to Configure.
-- **[2/2] Configure:** System settings, Git & SSH, Agents, Logins & keys, then
-  Review, which lists what you ticked on this screen under a line naming what
-  you're installing. Esc goes back to Install, with your ticks kept. This
-  screen offers only what fits what's installed: the Tailscale login once
-  Tailscale is picked (now, on an earlier run, or already on the machine),
-  the age key with sops, and so on.
+- **space** queues adding (`[+]`) or removing (`[-]`) an item; removing one
+  stops yardo looking after it, and it stays installed.
+- **enter** acts on the row: fix what's broken (apply it again, now), fill
+  in a missing value (in your editor), change a setting, or show an
+  item's details.
+- **a** applies the queue: it asks what the new items need (git name,
+  prompt, MCP servers, keys), then installs. **Review**, the last tab,
+  lists the queue.
+- **/** searches every tab; for a tool the catalog doesn't have, ctrl-a
+  adds it as an extra mise tool.
+- **Needs you** comes first while something does: what's broken, what
+  needs a value, what has updates. **This VM** holds git, agents, logins
+  and system settings, who can reach the MCP gateway, containers'
+  published ports and the Docker API, how to connect from a laptop, and
+  checking for updates or checking again.
+
+The first run comes with the usual stack queued: zsh, Neovim, tmux,
+zellij, the linters, the dev CLIs, the database clients, the admin and
+debug tools, Docker and its tools, Claude Code with OpenSpec, the
+MCPJungle gateway, git (name and email, defaults, lazygit, GitHub) and
+the two agent items. Space takes off what you don't want; a installs.
+Later runs open on the same screen with what's installed ticked and
+checked, and ask only about what's new.
 
 The run follows the same order: everything is installed first (the extra
 mise tools at the end of that), then configured, with your dotfiles last.
@@ -103,7 +106,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 (inotify, open files), zram swap, a journal size cap, timezone (asked once)
 + locale. Keeping the clock in sync is left to the machine's launcher.
 
-### [1/2] Install
+### The tabs: what to install
 
 1. **Dev → Languages** (mise): Go + gopls, delve, govulncheck,
    golangci-lint; Python 3.13 + uv + ruff; Node + pnpm + TypeScript;
@@ -173,7 +176,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    The OpenVPN and WireGuard clients are for the other way round:
    connecting this machine to a VPN elsewhere.
 
-### [2/2] Configure
+### This VM: configuring it
 
 1. **Git & SSH:** git name, email and defaults as one item, with lazygit (rebase on pull, push
    sets upstream, delta diffs, aliases, a global ignore file), one item per
@@ -353,8 +356,8 @@ public key and where to add it.
 must be pinned (`sha256`) or say why it can't be (`unverified = "…"`), or
 yardo refuses to load it.
 
-**Reaching this machine from a laptop.** `sudo yardo connect` (or `x` on
-the home screen) prints it all, with this machine's addresses (VPNs
+**Reaching this machine from a laptop.** `sudo yardo connect` (or This
+VM → Connect from a laptop, on the screen) prints it all, with this machine's addresses (VPNs
 first): Docker over SSH, which opens no port and needs no certificate
 (`docker context create vm --docker "host=ssh://you@vm"`; bind mounts are
 this machine's paths, `-p` ports open here); and the MCP gateway's URL,
@@ -385,22 +388,11 @@ which key), then `ok`. `--json` prints it for scripts (`"schema": 1`, every
 user set up), and each run keeps the latest in
 `/var/lib/yardo/status/<user>.json`. `--updates` also asks apt and mise
 what's newer (slow: it refreshes apt's lists) and lists it per item; it
-never upgrades (`mise up`, `sudo apt upgrade` do; on the home screen, `u`).
+never upgrades (`mise up`, `sudo apt upgrade` do; on the screen: This VM →
+Check for updates).
 Each run leaves a copy for you in
 `~/.cache/yardo/status.json`: `yardo status` without sudo shows that one,
-and how old it is. Once something is set up, `sudo yardo` opens on a
-dashboard laid out like k9s: the machine and the keys on top, then a
-table (NAME, GROUP, STATE, NOTE) with three views, `1` installed, `2`
-needing attention (where it opens, when anything does) and `3` available
-to add; `/` filters, enter shows an item's details (on an available one,
-it opens the picker on its tab). `f` re-applies what's down, partial,
-missing or drifted (an item yardo applied before that isn't right any
-more), with your saved answers and nothing upgraded; `e`, on an item with
-values to fill in, opens its file in your editor (an MCP server's through
-`mcp-sync edit`, then registers it); `a` opens the picker to add or
-change things; `c` changes who can reach the MCP gateway, containers'
-published ports and the Docker API, then re-applies them; `x` shows how
-to connect from a laptop; `u` checks for updates. `sudo yardo --verify` is the same
+and how old it is. `sudo yardo` shows the same marks on its screen. `sudo yardo --verify` is the same
 check, failing when something is down, partial or missing.
 
 **Profiles.** `sudo yardo export > team.toml` writes the choices on

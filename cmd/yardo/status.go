@@ -225,70 +225,119 @@ func writeStatusJSON(w io.Writer, users []userStatus, now time.Time) error {
 	return enc.Encode(statusReport{Schema: statusSchema, Host: host, CheckedAt: now.UTC().Format(time.RFC3339), Users: users})
 }
 
-// home checks the user's items and shows the home screen.
-// With updates, it also checks for newer versions (slow).
-func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, stdout io.Writer, updates bool) (*ui.Home, ui.HomeAction, error) {
-	fmt.Fprintf(stdout, "Checking what's set up for %s…\n", a.User)
-	if updates {
-		fmt.Fprintln(stdout, "And for newer versions (apt and mise): this takes a while…")
-	}
-	items, err := plan.Resolve(cat, a.Picks, len(a.MiseExtra) > 0)
-	if err != nil {
-		return nil, ui.HomeQuit, err
-	}
-	env, err := o.env(a, nil, nil)
-	if err != nil {
-		return nil, ui.HomeQuit, err
-	}
+// board checks the user's items (not on a first run: nothing's there
+// yet) and shows the board: every item, ticked when picked, with its
+// health; This VM's access settings and actions. With updates, it also
+// checks for newer versions (slow).
+func (o *options) board(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, first, updates bool) (ui.BoardResult, error) {
+	status := map[string]itemStatus{}
 	now := time.Now()
-	us := userStatusOf(ctx, env, a.User, items, a.MiseExtra, loadApplied(o.state, a.User), updates)
-	_ = saveStatus(ctx, env, o.state, us, now)
-	// Each item's group (Dev, DevOps, … its tab's group or tab; every
-	// configure tab is Configure), and the picker tab that has it.
-	group, ptab := map[string]string{}, map[string]string{}
-	for _, t := range cat.Tabs {
-		g, pt := t.Title, t.ID
-		switch {
-		case t.PhaseOf() == catalog.PhaseConfigure:
-			g = "Configure"
-		case t.Group != "":
-			g, pt = t.Group, "group:"+t.Group
+	if !first {
+		fmt.Printf("Checking what's set up for %s…\n", a.User)
+		if updates {
+			fmt.Println("And for newer versions (apt and mise): this takes a while…")
 		}
-		group[t.ID], ptab[t.ID] = g, pt
-	}
-	group["extra"] = "Extra mise tools"
-	var hi []*ui.HomeItem
-	for _, it := range us.Items {
-		src := ""
-		if c := cat.Item(it.ID); c != nil {
-			src = c.Describe()
+		items, err := plan.Resolve(cat, a.Picks, len(a.MiseExtra) > 0)
+		if err != nil {
+			return ui.BoardResult{}, err
 		}
-		hi = append(hi, &ui.HomeItem{ID: it.ID, Label: it.Label, Group: group[it.Tab], Tab: ptab[it.Tab], State: it.State,
-			Detail: it.Detail, Inputs: it.Inputs, Updates: it.Updates, Source: src})
+		env, err := o.env(a, nil, nil)
+		if err != nil {
+			return ui.BoardResult{}, err
+		}
+		us := userStatusOf(ctx, env, a.User, items, a.MiseExtra, loadApplied(o.state, a.User), updates)
+		_ = saveStatus(ctx, env, o.state, us, now)
+		for _, it := range us.Items {
+			status[it.ID] = it
+		}
 	}
-	// What can be added: not picked, offered in the picker.
-	var avail []*ui.HomeItem
+	// The install tabs, then This VM: the configure tabs, who can reach
+	// what, and the machine's actions.
+	tabs := uiTabs(cat.PhaseTabs(catalog.PhaseInstall))
+	vm := ui.Tab{ID: "__vm__", Title: "This VM"}
+	for _, t := range cat.PhaseTabs(catalog.PhaseConfigure) {
+		vm.Sections = append(vm.Sections, ui.Tab{ID: t.ID, Title: t.Title})
+	}
+	vm.Sections = append(vm.Sections, ui.Tab{ID: "__access__", Title: "Who can reach it"}, ui.Tab{ID: "__machine__", Title: "This machine"})
+	tabs = append(tabs, vm)
+
+	picked := func(id string) bool { return slices.Contains(a.Picks, id) }
+	var items []*ui.BoardItem
 	for _, it := range cat.Items {
-		if it.Hidden() || it.Always || slices.Contains(a.Picks, it.ID) {
+		// Access settings are This VM's rows, not items.
+		if it.Hidden() || it.Always || it.ID == "docker-ports" || it.ID == "docker-api" {
 			continue
 		}
-		avail = append(avail, &ui.HomeItem{ID: it.ID, Label: it.Label, Group: group[it.Tab], Tab: ptab[it.Tab], State: "available", Source: it.Describe()})
+		bi := &ui.BoardItem{ID: it.ID, Label: it.Label, Tab: it.Tab, Picked: picked(it.ID), Source: it.Describe()}
+		if first && it.Default {
+			bi.Pending = "add"
+		}
+		if st, ok := status[it.ID]; ok && bi.Picked {
+			bi.State, bi.Detail, bi.Inputs, bi.Updates = st.State, st.Detail, st.Inputs, st.Updates
+		}
+		items = append(items, bi)
 	}
+	for _, t := range a.MiseExtra {
+		bi := &ui.BoardItem{ID: "mise:" + t, Label: t + " (extra mise tool)", Tab: ui.ExtraTab, Picked: true, Source: "mise use -g " + t}
+		if st, ok := status["mise:"+steps.MiseName(t)]; ok {
+			bi.State, bi.Detail, bi.Updates = st.State, st.Detail, st.Updates
+		}
+		items = append(items, bi)
+	}
+	// Who can reach what: for what's picked (or, on a first run, queued).
+	has := func(id string) bool {
+		return picked(id) || (first && cat.Item(id) != nil && cat.Item(id).Default)
+	}
+	var settings []*ui.BoardSetting
+	if has("mcpjungle-install") {
+		v := a.MCPListen
+		switch v {
+		case "tailscale":
+			v = "vpn"
+		case "vpn", "public", "0.0.0.0":
+		default:
+			v = "127.0.0.1"
+		}
+		settings = append(settings, &ui.BoardSetting{Key: "mcp", Label: "MCP gateway", Value: v, Choices: [][2]string{
+			{"127.0.0.1", "this machine only"}, {"vpn", "this machine and your VPNs (with a token)"},
+			{"public", "the internet, at a domain name (HTTPS, with a token)"}, {"0.0.0.0", "everywhere, plain HTTP (with a token)"}}})
+	}
+	if has("docker") {
+		ports := a.DockerPorts
+		if ports == "" {
+			ports = "all"
+		}
+		settings = append(settings, &ui.BoardSetting{Key: "ports", Label: "Container ports", Value: ports, Choices: [][2]string{
+			{"all", "everywhere (Docker's way)"}, {"vpn", "this machine and your VPNs"}, {"local", "this machine only"}}})
+		api := a.DockerAPI
+		if api == "" {
+			api = "off"
+		}
+		settings = append(settings, &ui.BoardSetting{Key: "api", Label: "Docker API", Value: api, Choices: [][2]string{
+			{"off", "off: Docker over SSH only"}, {"lan", "over TLS, from the local network and your VPNs"}, {"vpn", "over TLS, from your VPNs only"}}})
+	}
+	actions := []ui.BoardAction{
+		{ID: "connect", Label: "Connect from a laptop", Note: "Docker over SSH, the MCP gateway"},
+		{ID: "updates", Label: "Check for updates", Note: "apt and mise; takes a while"},
+		{ID: "refresh", Label: "Check again", Note: "checked " + now.Format("15:04")},
+	}
+	var buf strings.Builder
+	printConnect(&buf, a, addresses())
 	host, _ := os.Hostname()
-	h := ui.NewHome(ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04")}, hi, avail)
-	act, err := h.Run()
-	return h, act, err
+	b := ui.NewBoard(ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04")}, first, tabs, items, settings, actions,
+		strings.Split(strings.TrimRight(buf.String(), "\n"), "\n"))
+	return b.Run()
 }
 
-// fillIn opens the file holding it's first empty value in an editor: as the
-// user for their own files, as the gateway's user (mcp-sync edit) for an
-// MCP server's. It returns the items to re-apply after (an MCP server's
-// registers then), or nil.
-func (o *options) fillIn(ctx context.Context, a *answers.Answers, it *ui.HomeItem) ([]string, error) {
-	if it == nil || len(it.Inputs) == 0 {
+// fillIn opens the file holding the first of an item's empty values
+// (inputs, "file: KEY") in an editor: as the user for their own files, as
+// the gateway's user (mcp-sync edit) for an MCP server's. It returns the
+// items to re-apply after (an MCP server's registers then), or nil.
+func (o *options) fillIn(ctx context.Context, a *answers.Answers, inputs []string) ([]string, error) {
+	if len(inputs) == 0 {
 		return nil, nil
 	}
-	path, _, _ := strings.Cut(it.Inputs[0], ": ")
+	path, _, _ := strings.Cut(inputs[0], ": ")
 	home := homeOf(a.User)
 	editor := `exec "$(command -v sensible-editor || echo vi)" "$@"`
 	var c *exec.Cmd

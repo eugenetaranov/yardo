@@ -44,124 +44,64 @@ type asker struct {
 	dropped []string
 	// port is the MCPJungle port the user would get.
 	port func() int
-	// startTab is the picker tab to open on (from the home screen).
-	startTab string
+	// listenSet: the board set the gateway's access (don't ask it again).
+	listenSet bool
 }
 
-// ask runs every prompt, then the review; it loops on "Start over".
+// ask is a run with profiles: their picks, reviewed, and what they can't
+// hold asked. (Without profiles, the board picks: see fromBoard.)
 func (k *asker) ask(ctx context.Context) (*choices, error) {
-	if k.profile {
-		c, err := k.fromProfile(ctx)
-		if err != nil || c == nil {
-			return c, err
-		}
-		if k.review(c, "Install", "Quit") != "Install" {
-			return nil, ui.ErrQuit
-		}
-		return c, nil
+	c, err := k.fromProfile(ctx)
+	if err != nil || c == nil {
+		return c, err
 	}
-	for {
-		c, err := k.once(ctx)
-		if err != nil || c == nil {
-			return c, err
-		}
-		switch k.review(c, "Install", "Start over", "Quit") {
-		case "Install":
-			return c, nil
-		case "Start over":
-			continue
-		default:
-			return nil, ui.ErrQuit
-		}
+	if k.review(c, "Install", "Quit") != "Install" {
+		return nil, ui.ErrQuit
 	}
+	return c, nil
 }
 
-func (k *asker) once(ctx context.Context) (*choices, error) {
-	// The first run starts from the usual stack; after that, from what was
-	// picked before (re-applied: quick, it's done already).
-	first := len(k.a.Picks) == 0
-	saved := k.a.Picks
-	if first {
-		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). The usual stack is ticked: untick what you don't want, or ctrl-x to untick all. Run it again any time to add more.\n", k.a.User)
-	} else {
-		fmt.Fprintf(k.out, "yardo — setting up %s (another user: --user <name>). What you picked before is ticked: tick more to add it; untick one and yardo stops re-applying it (it stays installed).\n", k.a.User)
+// fromBoard turns what the board queued into this run's choices (picks
+// added and removed, extra mise tools, access settings), then asks what
+// the new items need.
+func (k *asker) fromBoard(ctx context.Context, res ui.BoardResult, first bool) (*choices, error) {
+	saved := slices.Clone(k.a.Picks)
+	picks := slices.DeleteFunc(slices.Clone(saved), func(id string) bool { return slices.Contains(res.Removes, id) })
+	extras := slices.DeleteFunc(slices.Clone(k.a.MiseExtra), func(t string) bool { return slices.Contains(res.Removes, "mise:"+t) })
+	var dropped []string
+	for _, id := range res.Removes {
+		if !strings.HasPrefix(id, "mise:") {
+			dropped = append(dropped, id)
+		}
 	}
+	for _, id := range res.Adds {
+		if t, ok := strings.CutPrefix(id, "mise:"); ok {
+			extras = append(extras, t)
+		} else {
+			picks = append(picks, id)
+		}
+	}
+	for key, v := range res.Settings {
+		switch key {
+		case "mcp":
+			k.a.MCPListen = v
+			k.listenSet = true
+		case "ports":
+			k.a.DockerPorts = strings.TrimPrefix(v, "all")
+		case "api":
+			k.a.DockerAPI = strings.TrimPrefix(v, "off")
+		}
+	}
+	c := &choices{secrets: creds.New(), picks: picks, miseExtra: extras, dropped: dropped}
+	return c, k.questions(ctx, c, first, saved)
+}
 
-	// 1. Pick, on two screens: what to install (every install category,
-	// plus extra mise tools the catalog lacks, added from a search), then
-	// what to configure (logins, keys, settings) for it. Esc on the second
-	// goes back to the first.
-	entries := ui.CatalogEntries(k.cat, catalog.PhaseInstall)
-	for _, t := range k.a.MiseExtra {
-		entries = append(entries, ui.ExtraEntry(t, true))
-	}
-	inst := ui.NewPicker("yardo [1/2] Install", uiTabs(k.cat.PhaseTabs(catalog.PhaseInstall)),
-		entries, ui.Options{Next: "configure", Extra: true})
-	inst.Focus(k.startTab)
-	conf := ui.CatalogEntries(k.cat, catalog.PhaseConfigure)
-	if first {
-		k.preselect(inst.Entries())
-		k.preselect(conf)
-	} else {
-		for _, e := range slices.Concat(inst.Entries(), conf) {
-			e.On = slices.Contains(saved, e.ID)
-		}
-	}
-	var installs, configures, extras []string
-	var shown []*ui.Entry
-	for {
-		var out ui.Outcome
-		var err error
-		if installs, out, err = inst.Run(); err != nil {
-			return nil, err
-		}
-		if out != ui.Done {
-			return nil, ui.ErrQuit
-		}
-		note := "Installing: nothing"
-		if len(installs) > 0 {
-			note = "Installing: " + strings.Join(k.shortLabels(installs), " · ")
-		}
-		extras = nil
-		installs = slices.DeleteFunc(installs, func(id string) bool {
-			t, ok := strings.CutPrefix(id, "mise:")
-			if ok {
-				extras = append(extras, t)
-			}
-			return ok
-		})
-		shown = k.configurable(conf, installs)
-		cfg := ui.NewPicker("yardo [2/2] Configure", uiTabs(k.cat.PhaseTabs(catalog.PhaseConfigure)), shown,
-			ui.Options{Review: true, Back: true, Note: note + " (esc to change)"})
-		if configures, out, err = cfg.Run(); err != nil {
-			return nil, err
-		}
-		if out == ui.Done {
-			break
-		}
-		if out == ui.Quit {
-			return nil, ui.ErrQuit
-		}
-	}
-	// Extra mise tools: those ticked (from a profile's mise_extra, an
-	// earlier run, or a search); one unticked stops being re-applied.
-	ticked := slices.Concat(installs, configures)
-	c := &choices{secrets: creds.New(), picks: ticked, miseExtra: extras}
-	// Only what the screens showed can have been unticked.
-	for _, e := range slices.Concat(inst.Entries(), shown) {
-		if slices.Contains(saved, e.ID) && !slices.Contains(ticked, e.ID) {
-			c.dropped = append(c.dropped, e.ID)
-		}
-	}
-
-	// 2. Type: every text prompt in one place.
+// questions asks every text prompt in one place, for c's picks: what's
+// new since saved (all of it on a first run), plus what every plan needs.
+func (k *asker) questions(ctx context.Context, c *choices, first bool, saved []string) error {
 	var err error
 	if c.items, err = plan.Resolve(k.cat, c.picks, len(c.miseExtra) > 0); err != nil {
-		return nil, err
-	}
-	if len(c.items) == 0 {
-		fmt.Fprintln(k.out, "Nothing picked.")
-		return nil, nil
+		return err
 	}
 	// Questions are for what's new: picks re-applied keep their answers.
 	has := planHas(c.items)
@@ -175,54 +115,59 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 		}
 		newItems, err := plan.Resolve(k.cat, added, false)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		isNew = planHas(newItems)
 	}
 	if isNew("gitid") {
 		if err := k.askGit(); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if isNew("zsh") {
 		if err := k.askPrompt(); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	// Every plan has tzlocale: asked once.
 	if has("tzlocale") && k.a.TZ == "" {
 		if err := k.askTZ(); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	if isNew("mcpjungle-install") {
+	if isNew("mcpjungle-install") && !k.listenSet {
 		if err := k.askMCPListen(); err != nil {
-			return nil, err
+			return err
+		}
+	}
+	if has("mcpjungle-install") && k.a.MCPListen == "public" && !steps.ValidDomain(k.a.MCPDomain) {
+		if err := k.askMCPDomain(); err != nil {
+			return err
 		}
 	}
 	if isNew("docker-ports") || (has("docker-ports") && k.a.DockerPorts == "") {
 		if err := k.askDockerPorts(); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if isNew("docker-api") || (has("docker-api") && k.a.DockerAPI == "") {
 		if err := k.askDockerAPI(); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	// The server list shows on every run (the saved ones ticked); only
 	// new servers are asked about.
 	if has("mcpjungle") {
 		if err := k.askMCP(ctx, c, has, isNew("mcpjungle")); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if isNew("dotfiles") {
 		if err := k.askDotfiles(); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return c, k.askSecrets(c, isNew)
+	return k.askSecrets(c, isNew)
 }
 
 // fromProfile plans the profiles' picks (already in the answers) and asks
@@ -271,65 +216,10 @@ func uiTabs(tabs []catalog.Tab) []ui.Tab {
 	return out
 }
 
-// shortLabels are the items' labels without their parenthesized details
-// (mise tools by name).
-func (k *asker) shortLabels(ids []string) []string {
-	var out []string
-	for _, id := range ids {
-		if it := k.cat.Item(id); it != nil {
-			short, _, _ := strings.Cut(it.Label, " (")
-			out = append(out, short)
-		} else {
-			out = append(out, strings.TrimPrefix(id, "mise:"))
-		}
-	}
-	return out
-}
-
-// configurable are the configure entries that make sense with what's
-// installed: those whose install items are picked now, were picked on an
-// earlier run, or whose tool is already on PATH (registry logins only
-// with Docker, the npm registry only with Node). Entries left out are
-// unticked, so going back and dropping Docker drops its logins too.
-func (k *asker) configurable(conf []*ui.Entry, installs []string) []*ui.Entry {
-	avail := map[string]bool{}
-	if items, err := plan.Resolve(k.cat, answers.Merge(k.a.Picks, installs), false); err == nil {
-		for _, it := range items {
-			avail[it.ID] = true
-		}
-	}
-	ok := func(id string) bool {
-		it := k.cat.Item(id)
-		if it == nil || it.Hidden() || it.Always || it.Configure() || avail[id] {
-			return true
-		}
-		return k.installed != nil && k.installed(strings.TrimSuffix(id, "-install"))
-	}
-	var out []*ui.Entry
-	for _, e := range conf {
-		it := k.cat.Item(e.ID)
-		if it == nil || !slices.ContainsFunc(it.Needs, func(n string) bool { return !ok(n) }) {
-			out = append(out, e)
-		} else {
-			e.On = false
-		}
-	}
-	return out
-}
-
 // planHas reports whether an id is in the plan.
 func planHas(items []*catalog.Item) func(string) bool {
 	picks := " " + strings.Join(plan.IDs(items), " ") + " "
 	return func(id string) bool { return strings.Contains(picks, " "+id+" ") }
-}
-
-// preselect ticks the catalog's default items.
-func (k *asker) preselect(entries []*ui.Entry) {
-	for _, e := range entries {
-		if it := k.cat.Item(e.ID); it != nil && it.Default {
-			e.On = true
-		}
-	}
 }
 
 // askUser asks which user to set up, offering to create a missing one.
@@ -502,53 +392,25 @@ func (k *asker) askMCPListen() error {
 		return err
 	}
 	k.a.MCPListen = map[string]string{one: "127.0.0.1", vpn: "vpn", pub: "public", all: "0.0.0.0"}[l]
-	for k.a.MCPListen == "public" {
-		d, err := ui.Input("The gateway's domain name (e.g. mcp.example.com)", "Its DNS must point at this machine, with TCP 80 and 443 open, for the certificate.", k.a.MCPDomain)
+	if k.a.MCPListen == "public" {
+		return k.askMCPDomain()
+	}
+	return nil
+}
+
+// askMCPDomain asks the gateway's domain name, for "public".
+func (k *asker) askMCPDomain() error {
+	for {
+		d, err := ui.Input("The MCP gateway's domain name (e.g. mcp.example.com)", "Its DNS must point at this machine, with TCP 80 and 443 open, for the certificate.", k.a.MCPDomain)
 		if err != nil {
 			return err
 		}
 		if d = strings.ToLower(strings.TrimSpace(d)); steps.ValidDomain(d) {
 			k.a.MCPDomain = d
-			break
+			return nil
 		}
 		fmt.Fprintf(k.out, "Not a domain name: %q\n", d)
 	}
-	return nil
-}
-
-// askAccess asks who can reach what's installed of the MCP gateway, the
-// Docker API and containers' published ports, with every choice (off and
-// everywhere too), and returns the items to re-apply.
-func (k *asker) askAccess() ([]string, error) {
-	var fix []string
-	if slices.Contains(k.a.Picks, "mcpjungle-install") {
-		if err := k.askMCPListen(); err != nil {
-			return nil, err
-		}
-		fix = append(fix, "mcpjungle-install", "mcpjungle")
-	}
-	if slices.Contains(k.a.Picks, "docker") {
-		all := "everywhere (Docker's way)"
-		vpn := "this machine and your VPNs (Tailscale, NetBird, WireGuard, OpenVPN)"
-		local := "this machine only"
-		sel := map[string]string{"": all, "vpn": vpn, "local": local}[k.a.DockerPorts]
-		ch, err := ui.Choose("Containers' published ports (docker run -p) can be reached from", []string{all, vpn, local}, sel)
-		if err != nil {
-			return nil, err
-		}
-		k.a.DockerPorts = map[string]string{all: "", vpn: "vpn", local: "local"}[ch]
-		off := "nowhere: Docker over SSH only (the default)"
-		lan := "the local network and your VPNs"
-		vpnOnly := "your VPNs only"
-		sel = map[string]string{"": off, "lan": lan, "vpn": vpnOnly}[k.a.DockerAPI]
-		ch, err = ui.Choose("The Docker API over TLS (port 2376, client certificates) can be reached from", []string{off, lan, vpnOnly}, sel)
-		if err != nil {
-			return nil, err
-		}
-		k.a.DockerAPI = map[string]string{off: "", lan: "lan", vpnOnly: "vpn"}[ch]
-		fix = append(fix, "docker")
-	}
-	return fix, nil
 }
 
 // askDockerAPI asks who can reach the Docker API over TLS.

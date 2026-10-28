@@ -104,7 +104,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address) {
 		fmt.Fprintf(w, "    claude mcp add --transport http %s %s --header \"Authorization: Bearer <token>\"\n", ctxName, url)
 		fmt.Fprintf(w, "    Codex, in ~/.codex/config.toml:\n      [mcp_servers.%s]\n      url = %q\n      http_headers = { \"Authorization\" = \"Bearer <token>\" }\n", ctxName, url)
 	default:
-		fmt.Fprintln(w, "  this machine only: in 'sudo yardo', c (access) on the home screen opens it to your VPNs or")
+		fmt.Fprintln(w, "  this machine only: in 'sudo yardo', This VM → MCP gateway opens it to your VPNs or")
 		fmt.Fprintln(w, "  the internet. Or, with nothing to change, through SSH:")
 		fmt.Fprintf(w, "    ssh -N -L %d:127.0.0.1:%d %s@%s\n", port, port, a.User, addr)
 		fmt.Fprintf(w, "    claude mcp add --transport http %s http://127.0.0.1:%d/mcp\n", ctxName, port)

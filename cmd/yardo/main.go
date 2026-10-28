@@ -342,61 +342,51 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	var items []*catalog.Item
 	extra := a.MiseExtra
 	sec := creds.New()
-	// fix: the items the home screen re-applies (f, or after e); startTab
-	// the picker tab it opens on (a).
+	// fix: the items the board re-applies now (a fix, or after filling in
+	// a value); board: what it queued, when that's applied.
 	var fix []string
-	startTab := ""
-	if interactive && len(profs) == 0 && len(a.Picks) > 0 {
-		// Set up already: the home screen first; the picker from there.
+	var board *ui.BoardResult
+	first := len(a.Picks) == 0
+	if interactive && len(profs) == 0 {
 		updates := false
-	home:
+	loop:
 		for {
-			h, act, err := o.home(ctx, cat, a, stdout, updates)
+			res, err := o.board(ctx, cat, a, first, updates)
 			if err != nil {
 				return err
 			}
 			updates = false
-			switch act {
-			case ui.HomeUpdates:
-				updates = true
-			case ui.HomeQuit:
+			switch res.Kind {
+			case ui.BoardQuit:
 				return nil
-			case ui.HomeChange:
-				startTab = h.StartTab()
-				break home
-			case ui.HomeFix:
-				fix = h.Fix()
-				break home
-			case ui.HomeEdit:
-				if fix, err = o.fillIn(ctx, a, h.Selected()); err != nil {
+			case ui.BoardUpdates:
+				updates = true
+			case ui.BoardFix:
+				fix = []string{res.ID}
+				break loop
+			case ui.BoardEdit:
+				if fix, err = o.fillIn(ctx, a, res.Inputs); err != nil {
 					return err
 				}
 				if fix != nil {
-					break home
+					break loop
 				}
-			case ui.HomeAccess:
-				k := &asker{cat: cat, a: a, out: stdout}
-				if fix, err = k.askAccess(); errors.Is(err, ui.ErrQuit) {
-					fix = nil
-					continue
-				} else if err != nil {
-					return err
-				}
-				if fix != nil {
-					changed = true // the settings go to system.json and the user's file
-					break home
-				}
-			case ui.HomeConnect:
-				printConnect(stdout, a, addresses())
-				fmt.Fprint(stdout, "\nPress Enter to go back.")
-				_, _ = fmt.Fscanln(os.Stdin)
+			case ui.BoardApply:
+				board = &res
+				break loop
 			}
 		}
 	}
 	if interactive && fix == nil {
-		k := &asker{cat: cat, a: a, share: o.share(), out: stdout, startTab: startTab, installed: func(t string) bool { return userHas(a.User, t) },
+		k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) },
 			profile: len(profs) > 0, dropped: dropped, port: func() int { p, _ := st.Port(user); return p }}
-		c, err := k.ask(ctx)
+		var c *choices
+		var err error
+		if board != nil {
+			c, err = k.fromBoard(ctx, *board, first)
+		} else {
+			c, err = k.ask(ctx)
+		}
 		if errors.Is(err, ui.ErrQuit) {
 			fmt.Fprintln(stdout, "Cancelled.")
 			return nil
@@ -431,7 +421,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			items = slices.DeleteFunc(items, func(it *catalog.Item) bool { return it.ID != o.only })
 		}
 		if fix != nil {
-			// What the home screen re-applies, and the helpers (mise) it
+			// What the board re-applies, and the helpers (mise) it
 			// needs; extra mise tools only when one of them is listed.
 			items = slices.DeleteFunc(items, func(it *catalog.Item) bool { return !it.Hidden() && !slices.Contains(fix, it.ID) })
 			if !slices.ContainsFunc(fix, func(id string) bool { return strings.HasPrefix(id, "mise:") }) {
