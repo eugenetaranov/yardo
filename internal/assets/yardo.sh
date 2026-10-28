@@ -145,7 +145,7 @@ CATALOG_ROWS=(
 # Hidden helpers pulled in by "needs".
 HIDDEN_ROWS=(
   "mise|-|mise|fn|||apt mise (mise.jdx.dev repo)"
-  "gitkey|-|SSH for the git hosts|fn|||~/.ssh/yardo_git_key or ~/.ssh/id_ed25519 · ~/.ssh/config · host keys"
+  "gitkey|-|SSH for the git hosts|fn|||~/.ssh/yardo_git_key or ~/.ssh/github, gitlab, bitbucket · ~/.ssh/config · host keys"
 )
 # Credentials the items above ask for, once (empty = later):
 #   item | KEY | kind | prompt | where to get it | only when this is picked or installed | default
@@ -554,7 +554,7 @@ ask_tz() {
 
 ask_github() {
   local agent="Forwarded SSH agent (no key on this VM; connect with ssh -A)" \
-        key="A key on this VM (~/.ssh/id_ed25519, uploaded to GitHub)" \
+        key="A key on this VM (~/.ssh/github, uploaded to GitHub)" \
         sent="A key you send from your machine (ssh <this machine> 'sudo yardo gitkey' < <key file>)" \
         token="A fine-grained token (git over HTTPS; no key)" def c
   def=${A_GH_MODE:-}
@@ -565,7 +565,7 @@ ask_github() {
   header "GitHub"
   c=$(gum choose --header "How should this VM reach GitHub?" --selected "${!def}" "$agent" "$key" "$sent" "$token" || true)
   case "$c" in "$agent") A_GH_MODE=agent ;; "$sent") A_GH_MODE=sent ;; "$token") A_GH_MODE=token ;; *) A_GH_MODE=key ;; esac
-  if [ "$A_GH_MODE" = key ] && [ ! -f "$(user_home)/.ssh/id_ed25519" ]; then
+  if [ "$A_GH_MODE" = key ] && [ ! -f "$(gh_key)" ]; then
     if gum confirm "Protect the new key with a passphrase? (ssh-keygen asks after the installs)" --default=false; then
       GH_PASSPHRASE=yes
     fi
@@ -1379,21 +1379,33 @@ install_gitcfg() {
 # The Go yardo's gitkey step sets up SSH for the git hosts.
 install_gitkey() { :; }
 
-install_sshkey() {
+# gh_key — GitHub's key in "key" mode: ~/.ssh/github, or ~/.ssh/id_ed25519
+# when only that one is there (an earlier yardo's, already on GitHub). The
+# Go gitkey step points github.com at it in ~/.ssh/config (as OwnKey).
+gh_key() {
   local home; home=$(user_home)
-  [ -f "$home/.ssh/id_ed25519" ] && return 0
+  if [ ! -f "$home/.ssh/github" ] && [ -f "$home/.ssh/id_ed25519" ]; then
+    echo "$home/.ssh/id_ed25519"
+  else
+    echo "$home/.ssh/github"
+  fi
+}
+
+install_sshkey() {
+  local key; key=$(gh_key)
+  [ -f "$key" ] && return 0
   as_user sh -c 'mkdir -p ~/.ssh && chmod 700 ~/.ssh'
-  as_user ssh-keygen -q -t ed25519 -N "" -C "$A_USER@$(hostname)" -f "$home/.ssh/id_ed25519"
+  as_user ssh-keygen -q -t ed25519 -N "" -C "$A_USER@$(hostname) (github)" -f "$key"
 }
 
 # GitHub login is interactive (device code in the browser), so it runs after
 # the spinner steps, in the foreground. A_GH_MODE says how the VM reaches
 # GitHub: agent (the SSH agent forwarded with `ssh -A`; no key on
-# this VM), key (~/.ssh/id_ed25519, uploaded), sent (~/.ssh/yardo_git_key,
+# this VM), key (~/.ssh/github, uploaded; see gh_key), sent (~/.ssh/yardo_git_key,
 # sent with yardo gitkey; the Go gitkey step sets it up) or token (a pasted
 # fine-grained token; git over HTTPS). Unset (answers from before modes) is key.
 github_login() {
-  local home pub title mode scopes; home=$(user_home); pub="$home/.ssh/id_ed25519.pub"; title="$(hostname) ($A_USER)"
+  local home pub title mode scopes; home=$(user_home); pub="$(gh_key).pub"; title="$(hostname) ($A_USER)"
   mode=${A_GH_MODE:-key}
   echo
   header "GitHub"
@@ -1404,7 +1416,7 @@ github_login() {
     [ -f "$pub" ] || install_sshkey
     if [ "${GH_PASSPHRASE:-}" = yes ] && [ "$INTERACTIVE" = 1 ] && as_user ssh-keygen -y -P "" -f "${pub%.pub}" >/dev/null 2>&1; then
       faint "Choose a passphrase for ${pub%.pub} (ssh-keygen asks twice):"
-      as_user ssh-keygen -p -q -P "" -f "${pub%.pub}" || warn "Passphrase not set; run 'ssh-keygen -p -f ~/.ssh/id_ed25519' later."
+      as_user ssh-keygen -p -q -P "" -f "${pub%.pub}" || warn "Passphrase not set; run 'ssh-keygen -p -f ${pub%.pub}' later."
     fi
   fi
 
@@ -1512,7 +1524,7 @@ github_identity() {
 }
 
 # install_gitsign — sign commits and tags with SSH: the forwarded agent's
-# key (agent mode) or ~/.ssh/id_ed25519, uploaded as a signing key. Runs in
+# key (agent mode) or GitHub's (gh_key), uploaded as a signing key. Runs in
 # the foreground after the GitHub login (the scope may need the browser).
 install_gitsign() {
   local home mode key signingkey email allowed title; home=$(user_home); mode=${A_GH_MODE:-key}
@@ -1527,7 +1539,7 @@ install_gitsign() {
     fi
     signingkey="key::$key"
   else
-    local pub=id_ed25519.pub
+    local pub; pub=$(basename "$(gh_key)").pub
     [ "$mode" = sent ] && pub=yardo_git_key.pub
     key=$(cat "$home/.ssh/$pub" 2>/dev/null || true)
     [ -n "$key" ] || { note "Commit signing: no ~/.ssh/$pub yet; run 'sudo yardo --yes' after the GitHub step."; return 0; }
@@ -1803,9 +1815,9 @@ write_manage_notes() {
         agent) echo "  git over SSH uses your laptop's SSH agent: connect with 'ssh -A' (ForwardAgent yes)." ;;
         token) echo "  git uses HTTPS with your token through gh; when it expires: gh auth login --with-token" ;;
         *)     if python3 "$SHARE/picker.py" created list "$STATE" | grep -q '^gh_key.*auth$'; then
-                 echo "  ~/.ssh/id_ed25519 is on your GitHub account (https://github.com/settings/keys)."
+                 echo "  ~/.ssh/$(basename "$(gh_key)") is on your GitHub account (https://github.com/settings/keys)."
                else
-                 echo "  ~/.ssh/id_ed25519 is not on GitHub yet: log gh in, then run 'sudo yardo --yes'."
+                 echo "  ~/.ssh/$(basename "$(gh_key)") is not on GitHub yet: log gh in, then run 'sudo yardo --yes'."
                fi
                echo "  For an organization with SAML SSO, authorize the key at https://github.com/settings/keys (Configure SSO)." ;;
       esac

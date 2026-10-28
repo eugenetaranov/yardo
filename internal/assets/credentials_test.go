@@ -217,7 +217,7 @@ install_sshkey() { :; }
 header() { :; }; faint() { :; }; ok() { :; }; warn() { :; }
 CONF=./conf INTERACTIVE=0 A_USER=ada PLAN=github
 for A_GH_MODE in key agent token; do github_login; done`
-	credShell(t, home, body, "github_login")
+	credShell(t, home, body, "gh_key", "github_login")
 	if ran := readFile(t, filepath.Join(home, "ran")); strings.Contains(ran, "auth login") || strings.Contains(ran, "refresh") {
 		t.Errorf("--yes started an interactive gh step:\n%s", ran)
 	}

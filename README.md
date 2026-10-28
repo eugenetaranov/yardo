@@ -321,9 +321,12 @@ leaves a note naming the command to run instead.
   `ssh -A`): no key on the machine. git over SSH uses your laptop's
   agent, and gh logs in with the browser code, without permission to add
   keys to your account.
-- **A key on this VM**: `~/.ssh/id_ed25519` (optionally with a passphrase)
-  uploaded to your account. For an organization with SAML SSO, authorize it
-  at github.com/settings/keys → Configure SSO.
+- **A key on this VM**: `~/.ssh/github` (optionally with a passphrase)
+  uploaded to your account, and `~/.ssh/config` points github.com at it.
+  GitLab's and Bitbucket's are `~/.ssh/gitlab` and `~/.ssh/bitbucket`. A
+  machine already using `~/.ssh/id_ed25519` (an earlier yardo's) keeps it.
+  For an organization with SAML SSO, authorize it at
+  github.com/settings/keys → Configure SSO.
 - **A fine-grained token**: pasted once, used by gh and by git over HTTPS;
   nothing is uploaded.
 

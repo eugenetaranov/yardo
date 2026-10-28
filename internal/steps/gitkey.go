@@ -22,15 +22,19 @@ func init() { RegisterGo("gitkey", func(catalog.Step) Step { return gitKeyStep{}
 // one's mode says. "sent": ~/.ssh/yardo_git_key (sent by yardo gitkey on
 // stdin, kept, or generated) and a block in ~/.ssh/config that makes every
 // connection to the host use it, so it works for any repo it is allowed on
-// (one repo for a deploy key, all of them for an account key). "key"
-// (GitLab, Bitbucket): ~/.ssh/id_ed25519, made when missing (GitHub's
-// login makes and uploads its own). Every host but github.com, whose
-// published host keys go in known_hosts, is trusted on first use.
+// (one repo for a deploy key, all of them for an account key). "key": a
+// key named for the host (~/.ssh/github, ~/.ssh/gitlab, ~/.ssh/bitbucket),
+// made when missing (GitHub's by its login, which uploads it), and a block
+// pointing the host at it; a machine already using ~/.ssh/id_ed25519 keeps
+// it. Every host but github.com, whose published host keys go in
+// known_hosts, is trusted on first use.
 type gitKeyStep struct{}
 
 const (
 	// GitKeyPath is where the sent key goes.
 	GitKeyPath = "~/.ssh/yardo_git_key"
+	// ownKey is the key "key" mode used before keys were named for their
+	// host: kept where it's there.
 	ownKey     = "~/.ssh/id_ed25519"
 	sshConfig  = "~/.ssh/config"
 	knownHosts = "~/.ssh/known_hosts"
@@ -43,6 +47,39 @@ type gitHost struct {
 	host, mode string
 	// keys is where to add a key made here.
 	keys string
+	// name names "key" mode's key (~/.ssh/<name>); key is its path, once
+	// resolved (see ownKeys).
+	name, key string
+}
+
+// OwnKey is the key "key" mode uses for the host item id (github, gitlab,
+// bitbucket): ~/.ssh/<id>, or ~/.ssh/id_ed25519 when only that one is
+// there (an earlier yardo's, already on the accounts). exists reports
+// whether a key file is there.
+func OwnKey(id string, exists func(string) bool) string {
+	p := "~/.ssh/" + id
+	if !exists(p) && exists(ownKey) {
+		return ownKey
+	}
+	return p
+}
+
+// ownKeys resolves the "key" mode hosts' keys.
+func ownKeys(ctx context.Context, e *Env, hosts []gitHost) error {
+	var rerr error
+	exists := func(p string) bool {
+		b, err := sshRead(ctx, e, p)
+		if err != nil {
+			rerr = err
+		}
+		return b != nil
+	}
+	for i, g := range hosts {
+		if g.mode == "key" {
+			hosts[i].key = OwnKey(g.name, exists)
+		}
+	}
+	return rerr
 }
 
 const gitHubKeys = "a deploy key (repo → Settings → Deploy keys; one repo) or on your account (https://github.com/settings/keys; all your repos)"
@@ -61,7 +98,7 @@ func gitHosts(e *Env) []gitHost {
 			mode = "key"
 		}
 		if slices.Contains(a.Picks, id) && mode != "token" {
-			out = append(out, gitHost{host, mode, keys})
+			out = append(out, gitHost{host: host, mode: mode, keys: keys, name: id})
 		}
 	}
 	add("github", "github.com", a.GitHub, gitHubKeys)
@@ -69,12 +106,12 @@ func gitHosts(e *Env) []gitHost {
 	add("bitbucket", "bitbucket.org", a.Bitbucket, "an access key (repository settings → Access keys) or on your account (https://bitbucket.org/account/settings/ssh-keys/)")
 	for _, h := range a.GitKeyHosts {
 		if !slices.ContainsFunc(out, func(g gitHost) bool { return g.host == h }) {
-			out = append(out, gitHost{h, "sent", "a deploy key or on your account there"})
+			out = append(out, gitHost{host: h, mode: "sent", keys: "a deploy key or on your account there"})
 		}
 	}
 	// A key sent before any host was set up is for GitHub.
 	if sentKey(e) != nil && !slices.ContainsFunc(out, func(g gitHost) bool { return g.mode == "sent" }) {
-		out = append(out, gitHost{"github.com", "sent", gitHubKeys})
+		out = append(out, gitHost{host: "github.com", mode: "sent", keys: gitHubKeys})
 	}
 	return out
 }
@@ -108,8 +145,8 @@ func (gitKeyStep) Plan(e *Env) []Action {
 		}
 		out = append(out, Action{"file", key + " for " + names(sent)})
 	}
-	if own := withMode(hosts, "key"); len(own) > 0 {
-		out = append(out, Action{"file", "keep " + ownKey + " (or generate one) for " + names(own)})
+	for _, g := range withMode(hosts, "key") {
+		out = append(out, Action{"file", "keep ~/.ssh/" + g.name + " (or generate one) for " + g.host})
 	}
 	if len(hosts) > 0 {
 		out = append(out, Action{"file", sshConfig + ": " + names(hosts)})
@@ -118,17 +155,24 @@ func (gitKeyStep) Plan(e *Env) []Action {
 }
 
 // configBlock is the ~/.ssh/config block for the hosts ("" when none
-// needs one: github.com reached with its own key or an agent).
+// needs one: github.com reached with ~/.ssh/id_ed25519 or an agent).
 func configBlock(hosts []gitHost) string {
 	var b strings.Builder
 	for _, g := range hosts {
 		host, port, _ := strings.Cut(g.host, ":")
-		if g.mode != "sent" && host == "github.com" && port == "" {
+		key := ""
+		switch {
+		case g.mode == "sent":
+			key = GitKeyPath
+		case g.mode == "key" && g.key != ownKey:
+			key = g.key // ssh looks for id_ed25519 by itself, not this one
+		}
+		if key == "" && host == "github.com" && port == "" {
 			continue
 		}
 		fmt.Fprintf(&b, "Host %s\n  User git\n", host)
-		if g.mode == "sent" {
-			fmt.Fprintf(&b, "  IdentityFile %s\n  IdentitiesOnly yes\n", GitKeyPath)
+		if key != "" {
+			fmt.Fprintf(&b, "  IdentityFile %s\n  IdentitiesOnly yes\n", key)
 		}
 		if port != "" {
 			fmt.Fprintf(&b, "  Port %s\n", port)
@@ -189,6 +233,9 @@ func sshWrite(ctx context.Context, e *Env, p string, b []byte) error {
 
 func (s gitKeyStep) Check(ctx context.Context, e *Env) (bool, error) {
 	hosts := gitHosts(e)
+	if err := ownKeys(ctx, e, hosts); err != nil {
+		return false, err
+	}
 	if len(withMode(hosts, "sent")) > 0 {
 		key, err := sshRead(ctx, e, GitKeyPath)
 		if err != nil || key == nil {
@@ -198,8 +245,8 @@ func (s gitKeyStep) Check(ctx context.Context, e *Env) (bool, error) {
 			return false, nil
 		}
 	}
-	if len(withMode(hosts, "key")) > 0 {
-		if key, err := sshRead(ctx, e, ownKey); err != nil || key == nil {
+	for _, g := range withMode(hosts, "key") {
+		if key, err := sshRead(ctx, e, g.key); err != nil || key == nil {
 			return false, err
 		}
 	}
@@ -238,6 +285,9 @@ func generate(ctx context.Context, e *Env, path, comment string, hosts []gitHost
 
 func (s gitKeyStep) Apply(ctx context.Context, e *Env) error {
 	hosts := gitHosts(e)
+	if err := ownKeys(ctx, e, hosts); err != nil {
+		return err
+	}
 	if sent := withMode(hosts, "sent"); len(sent) > 0 {
 		key, err := sshRead(ctx, e, GitKeyPath)
 		if err != nil {
@@ -260,13 +310,13 @@ func (s gitKeyStep) Apply(ctx context.Context, e *Env) error {
 			}
 		}
 	}
-	if own := withMode(hosts, "key"); len(own) > 0 {
-		key, err := sshRead(ctx, e, ownKey)
+	for _, g := range withMode(hosts, "key") {
+		key, err := sshRead(ctx, e, g.key)
 		if err != nil {
 			return err
 		}
 		if key == nil {
-			if err := generate(ctx, e, ownKey, e.User+"@"+hostname(), own); err != nil {
+			if err := generate(ctx, e, g.key, e.User+"@"+hostname()+" ("+g.name+")", []gitHost{g}); err != nil {
 				return err
 			}
 		}

@@ -72,9 +72,9 @@ func TestGitKeyGenerated(t *testing.T) {
 	}
 }
 
-// Each host as its item's mode says: GitHub's own key and agent need no
-// config block, GitLab and Bitbucket are trusted on first use, and their
-// "key" mode makes ~/.ssh/id_ed25519.
+// Each host as its item's mode says: an agent needs no IdentityFile,
+// GitLab and Bitbucket are trusted on first use, and "key" mode makes a
+// key named for the host, which the config points the host at.
 func TestGitKeyModes(t *testing.T) {
 	x := &fakeExec{}
 	e := shellEnv(t)
@@ -86,31 +86,59 @@ func TestGitKeyModes(t *testing.T) {
 	put(t, e.Path("~/.ssh/config"), gitBegin+"\nHost github.com\n  IdentityFile ~/.ssh/yardo_git_key\n"+gitEnd+"\n\nHost *\n  ServerAliveInterval 30\n")
 	st := step(t, catalog.Step{Type: "go:gitkey"})
 	apply(t, e, st)
-	if got := x.commands(); len(got) != 1 || !strings.Contains(got[0], "id_ed25519") {
+	if got := x.commands(); len(got) != 1 || !strings.Contains(got[0], "/.ssh/bitbucket") || !strings.Contains(got[0], "(bitbucket)") {
 		t.Errorf("ran %q", got)
 	}
-	if len(keys) != 1 || keys[0].Host != "bitbucket.org" || keys[0].Path != "~/.ssh/id_ed25519.pub" {
+	if len(keys) != 1 || keys[0].Host != "bitbucket.org" || keys[0].Path != "~/.ssh/bitbucket.pub" {
 		t.Errorf("keys = %+v", keys)
 	}
 	cfg := read(t, e.Path("~/.ssh/config"))
 	want := gitBegin + "\nHost gitlab.acme.io\n  User git\n  StrictHostKeyChecking accept-new\n" +
-		"Host bitbucket.org\n  User git\n  StrictHostKeyChecking accept-new\n" + gitEnd + "\n\nHost *\n  ServerAliveInterval 30\n"
+		"Host bitbucket.org\n  User git\n  IdentityFile ~/.ssh/bitbucket\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new\n" + gitEnd + "\n\nHost *\n  ServerAliveInterval 30\n"
 	if cfg != want {
 		t.Errorf("config:\n%s\nwant:\n%s", cfg, want)
 	}
 	if !strings.Contains(read(t, e.Path("~/.ssh/known_hosts")), "github.com ssh-ed25519 ") {
 		t.Error("no GitHub host keys")
 	}
-	// GitHub alone over its own key: the old block goes, nothing else.
+	// GitHub alone over its own key: ~/.ssh/github (its login makes it).
 	e.Answers = &answers.Answers{Picks: []string{"github"}}
 	apply(t, e, st)
-	if cfg := read(t, e.Path("~/.ssh/config")); cfg != "Host *\n  ServerAliveInterval 30\n" {
+	if cfg := read(t, e.Path("~/.ssh/config")); cfg != gitBegin+"\nHost github.com\n  User git\n  IdentityFile ~/.ssh/github\n  IdentitiesOnly yes\n"+gitEnd+"\n\nHost *\n  ServerAliveInterval 30\n" {
 		t.Errorf("config = %q", cfg)
 	}
+	put(t, e.Path("~/.ssh/github"), testKey)
 	if !check(t, e, st) {
 		t.Error("Check = false after Apply")
 	}
 	if a := st.Plan(e); len(a) != 1 {
 		t.Errorf("plan = %v", a)
+	}
+}
+
+// A machine whose "key" mode made ~/.ssh/id_ed25519 (an earlier yardo)
+// keeps it: it's on the accounts already, and ssh finds it by itself.
+func TestGitKeyKeepsIDEd25519(t *testing.T) {
+	x := &fakeExec{}
+	e := shellEnv(t)
+	e.Exec = x
+	e.Answers = &answers.Answers{Picks: []string{"github", "bitbucket"}, Bitbucket: answers.GitHost{Mode: "key"}}
+	put(t, e.Path("~/.ssh/id_ed25519"), testKey)
+	st := step(t, catalog.Step{Type: "go:gitkey"})
+	apply(t, e, st)
+	if got := x.commands(); len(got) != 0 {
+		t.Errorf("made a key: %q", got)
+	}
+	cfg := read(t, e.Path("~/.ssh/config"))
+	if strings.Contains(cfg, "IdentityFile") || strings.Contains(cfg, "Host github.com") {
+		t.Errorf("config:\n%s", cfg)
+	}
+	if !check(t, e, st) {
+		t.Error("Check = false after Apply")
+	}
+	// A key named for the host wins over it.
+	put(t, e.Path("~/.ssh/github"), testKey)
+	if OwnKey("github", func(p string) bool { return p == "~/.ssh/github" || p == ownKey }) != "~/.ssh/github" {
+		t.Error("~/.ssh/github should win over id_ed25519")
 	}
 }

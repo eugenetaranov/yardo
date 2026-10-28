@@ -83,7 +83,7 @@ type Git struct {
 }
 
 // GitHost holds how the VM reaches a git host: agent (the SSH agent
-// forwarded with ssh -A), key (~/.ssh/id_ed25519, made here), sent
+// forwarded with ssh -A), key (~/.ssh/<host item>, made here), sent
 // (~/.ssh/yardo_git_key, sent with yardo gitkey) or, GitHub only, token
 // (HTTPS). "" is key.
 type GitHost struct {

@@ -69,14 +69,15 @@ to = "~/.config/git/ignore"
 # your machine with `ssh <host> 'sudo yardo gitkey' < <key>` (a deploy key,
 # or your account's; one is made here when none was sent), which
 # ~/.ssh/config points every connection to those hosts at, so it works for
-# any repo it may reach; ~/.ssh/id_ed25519 made here (GitLab, Bitbucket;
-# GitHub's is made and uploaded by its login); host keys.
+# any repo it may reach; a key made here named for its host (~/.ssh/gitlab,
+# ~/.ssh/bitbucket; GitHub's ~/.ssh/github is made and uploaded by its
+# login), which ~/.ssh/config points the host at; host keys.
 [[item]]
 id = "gitkey"
 tab = "-"
 phase = "configure"
 label = "SSH for the git hosts"
-source = "~/.ssh/yardo_git_key or ~/.ssh/id_ed25519 · ~/.ssh/config · host keys"
+source = "~/.ssh/yardo_git_key or ~/.ssh/github, gitlab, bitbucket · ~/.ssh/config · host keys"
 
 [[item.step]]
 type = "go:gitkey"

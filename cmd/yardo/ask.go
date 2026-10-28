@@ -597,7 +597,7 @@ func (k *asker) sentHint(host string) {
 // askGitHost asks how to reach a git host without a CLI login (Bitbucket).
 func (k *asker) askGitHost(name, host string, m *answers.GitHost) error {
 	mode, err := chooseWay("How should this VM reach "+name+"?", m.Mode, []string{"agent", "key", "sent"}, map[string]string{
-		"agent": wayAgent, "key": "A key made here (~/.ssh/id_ed25519; the closing notes say where to add it on " + name + ")", "sent": waySent})
+		"agent": wayAgent, "key": "A key made here (~/.ssh/" + strings.ToLower(name) + "; the closing notes say where to add it on " + name + ")", "sent": waySent})
 	if err != nil {
 		return err
 	}
@@ -633,7 +633,7 @@ func (k *asker) askGitLab() error {
 
 func (k *asker) askGitHub(c *choices) error {
 	mode, err := chooseWay("How should this VM reach GitHub?", k.a.GitHub.Mode, []string{"agent", "key", "sent", "token"}, map[string]string{
-		"agent": wayAgent, "key": "A key made here (~/.ssh/id_ed25519, uploaded to GitHub)", "sent": waySent,
+		"agent": wayAgent, "key": "A key made here (~/.ssh/github, uploaded to GitHub)", "sent": waySent,
 		"token": "A fine-grained token (git over HTTPS; no key)"})
 	if err != nil {
 		return err
@@ -644,7 +644,11 @@ func (k *asker) askGitHub(c *choices) error {
 	}
 	home := homeOf(k.a.User)
 	if k.a.GitHub.Mode == "key" {
-		if _, err := os.Stat(filepath.Join(home, ".ssh", "id_ed25519")); err != nil {
+		key := steps.OwnKey("github", func(p string) bool {
+			_, err := os.Stat(filepath.Join(home, strings.TrimPrefix(p, "~/")))
+			return err == nil
+		})
+		if _, err := os.Stat(filepath.Join(home, strings.TrimPrefix(key, "~/"))); err != nil {
 			yes, err := ui.Confirm("Protect the new key with a passphrase?", "ssh-keygen asks for it after the installs.", false)
 			if err != nil {
 				return err
