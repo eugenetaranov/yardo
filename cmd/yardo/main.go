@@ -342,8 +342,10 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	var items []*catalog.Item
 	extra := a.MiseExtra
 	sec := creds.New()
-	// fix: the items the home screen re-applies (f, or after e).
+	// fix: the items the home screen re-applies (f, or after e); startTab
+	// the picker tab it opens on (a).
 	var fix []string
+	startTab := ""
 	if interactive && len(profs) == 0 && len(a.Picks) > 0 {
 		// Set up already: the home screen first; the picker from there.
 		updates := false
@@ -360,6 +362,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			case ui.HomeQuit:
 				return nil
 			case ui.HomeChange:
+				startTab = h.StartTab()
 				break home
 			case ui.HomeFix:
 				fix = h.Fix()
@@ -379,7 +382,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		}
 	}
 	if interactive && fix == nil {
-		k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) },
+		k := &asker{cat: cat, a: a, share: o.share(), out: stdout, startTab: startTab, installed: func(t string) bool { return userHas(a.User, t) },
 			profile: len(profs) > 0, dropped: dropped, port: func() int { p, _ := st.Port(user); return p }}
 		c, err := k.ask(ctx)
 		if errors.Is(err, ui.ErrQuit) {

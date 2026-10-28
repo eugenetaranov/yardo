@@ -12,14 +12,26 @@ import (
 // HomeItem is one picked item on the home screen, with its status.
 type HomeItem struct {
 	ID, Label string
-	// Group is where it's listed when it's fine (a picker tab or group).
-	Group string
+	// Group is where it's listed when it's fine (a picker tab or group);
+	// Tab the picker tab that has it (to open the picker on).
+	Group, Tab string
 	// State is ok, down, partial, missing, secret or unchecked.
 	State, Detail string
 	// Inputs are the values left empty; Updates newer versions of its
 	// tools (when checked); Source how it's installed.
 	Inputs, Updates []string
 	Source          string
+	// count is how many items a "more" row stands for.
+	count int
+}
+
+// MoreItem is a group's row for what it has to add: n items, named.
+func MoreItem(group, tab string, n int, names []string) *HomeItem {
+	label := fmt.Sprintf("%d more to add", n)
+	if len(names) > 0 {
+		label += ": " + strings.Join(names, ", ")
+	}
+	return &HomeItem{ID: "more:" + group, Label: label, Group: group, Tab: tab, State: "more", count: n}
 }
 
 // HomeAction is what the home screen was left with.
@@ -61,12 +73,14 @@ func glyph(state string) (string, string) {
 		return red.Render("○"), "missing"
 	case "secret":
 		return accentBd.Render("✱"), "to fill in"
+	case "more":
+		return accentBd.Render("+"), "to add"
 	}
 	return muted.Render("·"), "not checked"
 }
 
 // problem reports whether an item belongs under "Needs attention".
-func problem(state string) bool { return state != "ok" && state != "unchecked" }
+func problem(state string) bool { return state != "ok" && state != "unchecked" && state != "more" }
 
 type homeRow struct {
 	head string    // a heading row, or
@@ -91,9 +105,13 @@ type Home struct {
 }
 
 // NewHome builds the home screen: title and sub on the first line, items
-// in groups (in the order of groups), avail items not installed yet.
-func NewHome(title, sub string, items []*HomeItem, groups []string, avail int) *Home {
-	h := &Home{title: title, sub: sub, counts: map[string]int{}, avail: avail, width: 100, height: 30}
+// in groups (in the order of groups), and per group a row for what it has
+// to add (more: its labels, and the picker tab that has them).
+func NewHome(title, sub string, items []*HomeItem, groups []string, more map[string]*HomeItem) *Home {
+	h := &Home{title: title, sub: sub, counts: map[string]int{}, width: 100, height: 30}
+	for _, m := range more {
+		h.avail += m.count
+	}
 	var attention []*HomeItem
 	byGroup := map[string][]*HomeItem{}
 	for _, it := range items {
@@ -111,12 +129,15 @@ func NewHome(title, sub string, items []*HomeItem, groups []string, avail int) *
 		}
 	}
 	for _, g := range groups {
-		if len(byGroup[g]) == 0 {
+		if len(byGroup[g]) == 0 && more[g] == nil {
 			continue
 		}
 		h.rows = append(h.rows, homeRow{head: g})
 		for _, it := range byGroup[g] {
 			h.rows = append(h.rows, homeRow{item: it})
+		}
+		if m := more[g]; m != nil {
+			h.rows = append(h.rows, homeRow{item: m})
 		}
 	}
 	h.cursor = h.next(-1, 1)
@@ -161,6 +182,10 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "end":
 			h.cursor = h.next(len(h.rows), -1)
 		case "enter":
+			if it := h.Selected(); it != nil && it.State == "more" {
+				h.action = HomeChange
+				return h, tea.Quit
+			}
 			h.details = !h.details
 		case "a", "i", "c":
 			h.action = HomeChange
@@ -218,6 +243,9 @@ func (h *Home) Selected() *HomeItem {
 
 // detail is what the details panel shows for it.
 func detail(it *HomeItem) []string {
+	if it.State == "more" {
+		return []string{"enter: the picker, on " + it.Group + ": tick what to add, then install"}
+	}
 	_, say := glyph(it.State)
 	var out []string
 	switch {
@@ -265,6 +293,7 @@ func (h *Home) View() string {
 		sum = append(sum, muted.Render(fmt.Sprintf("+ %d more to add", h.avail)))
 	}
 	b.WriteString(" " + strings.Join(sum, "   ") + "\n")
+	b.WriteString(" " + h.actions(w) + "\n")
 	b.WriteString(muted.Render(strings.Repeat("─", max(1, w-1))) + "\n")
 
 	var det []string
@@ -278,7 +307,7 @@ func (h *Home) View() string {
 			det = []string{runewidth.Truncate(detail(it)[0], max(4, w-6), "…")}
 		}
 	}
-	listH := max(1, h.height-5-len(det))
+	listH := max(1, h.height-6-len(det))
 	if h.cursor < h.top {
 		h.top = h.cursor
 	}
@@ -334,15 +363,7 @@ func (h *Home) View() string {
 	for _, l := range det {
 		b.WriteString("   " + muted.Render(l) + "\n")
 	}
-	keys := "↑/↓ move · enter details"
-	if it := h.Selected(); it != nil && it.State == "secret" {
-		keys += " · e fill in"
-	}
-	if n := len(h.Fix()); n > 0 {
-		keys += fmt.Sprintf(" · f fix %d", n)
-	}
-	keys += " · a add or change · x connect from a laptop · r check again · u updates · q quit"
-	b.WriteString(" " + muted.Render(runewidth.Truncate(keys, max(4, w-2), "…")))
+	b.WriteString(" " + muted.Render("↑/↓ move · enter: details, or on \"+ … more to add\": open the picker there"))
 	return b.String()
 }
 
@@ -354,4 +375,36 @@ func (h *Home) Run() (HomeAction, error) {
 	}
 	h.out = true
 	return h.action, nil
+}
+
+// actions is the bar of what can be done, keys highlighted.
+func (h *Home) actions(w int) string {
+	key := func(k, what string) string { return tabOn.Render(" "+k+" ") + " " + what }
+	var a []string
+	if n := len(h.Fix()); n > 0 {
+		a = append(a, key("f", fmt.Sprintf("fix %d", n)))
+	}
+	if it := h.Selected(); it != nil && it.State == "secret" {
+		a = append(a, key("e", "fill in"))
+	}
+	a = append(a, key("a", "add or change"), key("x", "connect from a laptop"), key("u", "updates"), key("r", "check again"), key("q", "quit"))
+	out := ""
+	for _, s := range a {
+		if lipgloss.Width(out)+lipgloss.Width(s)+3 > w {
+			break
+		}
+		if out != "" {
+			out += "   "
+		}
+		out += s
+	}
+	return out
+}
+
+// StartTab is the picker tab to open on: the selected row's.
+func (h *Home) StartTab() string {
+	if it := h.Selected(); it != nil {
+		return it.Tab
+	}
+	return ""
 }

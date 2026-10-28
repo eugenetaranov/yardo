@@ -44,6 +44,8 @@ type asker struct {
 	dropped []string
 	// port is the MCPJungle port the user would get.
 	port func() int
+	// startTab is the picker tab to open on (from the home screen).
+	startTab string
 }
 
 // ask runs every prompt, then the review; it loops on "Start over".
@@ -95,6 +97,7 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 	}
 	inst := ui.NewPicker("yardo [1/2] Install", uiTabs(k.cat.PhaseTabs(catalog.PhaseInstall)),
 		entries, ui.Options{Next: "configure", Extra: true})
+	inst.Focus(k.startTab)
 	conf := ui.CatalogEntries(k.cat, catalog.PhaseConfigure)
 	if first {
 		k.preselect(inst.Entries())

@@ -151,6 +151,17 @@ func (p *Picker) addExtra() {
 	p.cursor[ExtraTab] = len(p.items(ExtraTab)) - 1
 }
 
+// Focus opens the picker on the tab with id (a tab, or a group's
+// "group:<name>"); nothing when it has none.
+func (p *Picker) Focus(id string) {
+	for i, t := range p.tabs {
+		if t.ID == id || slices.ContainsFunc(t.Sections, func(s Tab) bool { return s.ID == id }) {
+			p.tab = i
+			return
+		}
+	}
+}
+
 // Entries are the picker's rows, to tick some before it runs.
 func (p *Picker) Entries() []*Entry { return p.entries }
 

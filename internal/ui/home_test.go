@@ -15,7 +15,11 @@ func testHome() *Home {
 		{ID: "agentkeys", Label: "Agent API keys", Group: "Configure", State: "secret", Inputs: []string{"~/.config/yardo/agent.env: OPENAI_API_KEY"}},
 		{ID: "k8s", Label: "Kubernetes", Group: "DevOps", State: "partial", Detail: "mise k9s"},
 	}
-	h := NewHome("yardo · vm · ada", "checked 10:00", items, []string{"Dev", "DevOps", "AI", "Configure"}, 12)
+	more := map[string]*HomeItem{
+		"DevOps": MoreItem("DevOps", "group:DevOps", 10, []string{"OpenTofu", "Ansible"}),
+		"System": MoreItem("System", "system", 2, []string{"Tailscale", "OpenVPN server"}),
+	}
+	h := NewHome("yardo · vm · ada", "checked 10:00", items, []string{"Dev", "DevOps", "AI", "System", "Configure"}, more)
 	h.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	return h
 }
@@ -51,7 +55,7 @@ func TestHomeKeys(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		h.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	if it := h.rows[h.cursor].item; it == nil || it.ID != "docker" {
+	if it := h.rows[h.cursor].item; it == nil || it.ID != "more:System" {
 		t.Errorf("down past the end: cursor on %+v", h.rows[h.cursor])
 	}
 	h = testHome()
@@ -69,7 +73,7 @@ func TestHomeFixAndEdit(t *testing.T) {
 	if got := strings.Join(h.Fix(), " "); got != "mcpjungle-install k8s" {
 		t.Errorf("fix = %q", got)
 	}
-	if v := h.View(); !strings.Contains(v, "f fix 2") {
+	if v := h.View(); !strings.Contains(v, " f  fix 2") {
 		t.Errorf("footer lacks f fix 2:\n%s", v)
 	}
 	h.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}) // on the gateway: nothing to fill in
@@ -77,7 +81,7 @@ func TestHomeFixAndEdit(t *testing.T) {
 		t.Errorf("e on a down item: action %v", h.action)
 	}
 	h.Update(tea.KeyMsg{Type: tea.KeyDown}) // Agent API keys
-	if !strings.Contains(h.View(), "e fill in") {
+	if !strings.Contains(h.View(), " e  fill in") {
 		t.Error("footer lacks e fill in on a secret item")
 	}
 	h.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
@@ -88,5 +92,40 @@ func TestHomeFixAndEdit(t *testing.T) {
 	h.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
 	if h.action != HomeFix {
 		t.Errorf("f: action %v", h.action)
+	}
+}
+
+// Every group shows what it has to add, a System group with nothing
+// installed too; enter on that row opens the picker on its tab.
+func TestHomeMore(t *testing.T) {
+	h := testHome()
+	v := h.View()
+	for _, want := range []string{"10 more to add: OpenTofu, Ansible", "System", "2 more to add: Tailscale, OpenVPN server", " a  add or change", " f  fix 2"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("view lacks %q:\n%s", want, v)
+		}
+	}
+	for h.Selected().ID != "more:System" {
+		h.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	h.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if h.action != HomeChange || h.StartTab() != "system" {
+		t.Errorf("enter on more: action %v, tab %q", h.action, h.StartTab())
+	}
+	if strings.Contains(strings.Join(h.Fix(), " "), "more") {
+		t.Error("f would fix a more row")
+	}
+}
+
+func TestPickerFocus(t *testing.T) {
+	p := NewPicker("yardo", []Tab{{ID: "group:Dev", Title: "Dev", Sections: []Tab{{ID: "lang", Title: "Languages"}}}, {ID: "system", Title: "System"}},
+		[]*Entry{{Tab: "lang", ID: "go", Label: "Go"}, {Tab: "system", ID: "tailscale-install", Label: "Tailscale"}}, Options{})
+	p.Focus("system")
+	if p.view() != "system" {
+		t.Errorf("focus system: on %s", p.view())
+	}
+	p.Focus("lang")
+	if p.view() != "group:Dev" {
+		t.Errorf("focus a section: on %s", p.view())
 	}
 }
