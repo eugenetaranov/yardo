@@ -121,7 +121,6 @@ CATALOG_ROWS=(
   "terraform|iac|Terraform|mise|terraform@latest||"
   "opentofu|iac|OpenTofu|mise|opentofu@latest||"
   "iaclint|iac|Terraform helpers (terragrunt, tflint, terraform-docs)|mise|terragrunt@latest tflint@latest terraform-docs@latest||"
-  "iacscan|iac|IaC and image scanners (trivy, checkov)|mise|trivy@latest uv@latest pipx:checkov||"
   "packer|iac|Packer|mise|packer@latest||"
   "ansible|iac|Ansible|mise|uv@latest pipx:ansible||"
   "tack|iac|tack (Ansible-like config management, one binary)|mise|github:tackhq/tack@latest||"

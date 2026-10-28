@@ -4,11 +4,11 @@
 [[item]]
 id = "terraform"
 tab = "iac"
-label = "Terraform + terragrunt, tflint, terraform-docs"
+label = "Terraform + terragrunt, tflint, terraform-docs, checkov"
 
 [[item.step]]
 type = "mise"
-tools = ["terraform@latest", "terragrunt@latest", "tflint@latest", "terraform-docs@latest"]
+tools = ["terraform@latest", "terragrunt@latest", "tflint@latest", "terraform-docs@latest", "uv@latest", "pipx:checkov"]
 
 [[item]]
 id = "opentofu"
@@ -18,15 +18,6 @@ label = "OpenTofu"
 [[item.step]]
 type = "mise"
 tools = ["opentofu@latest"]
-
-[[item]]
-id = "iacscan"
-tab = "iac"
-label = "IaC and image scanners (trivy, checkov)"
-
-[[item.step]]
-type = "mise"
-tools = ["trivy@latest", "uv@latest", "pipx:checkov"]
 
 [[item]]
 id = "packer"

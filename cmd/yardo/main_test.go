@@ -144,7 +144,7 @@ func TestProfileLayersAndUser(t *testing.T) {
 	if strings.Count(got, "Dropped by the profile") != 1 {
 		t.Errorf("want one drop list (for %s):\n%s", me.Username, got)
 	}
-	for _, want := range []string{"Dropped by the profile (still installed, no longer re-applied):\n  - Terraform + terragrunt, tflint, terraform-docs (terraform)\n", "Would create user yardonewuser", "For user: yardonewuser\n"} {
+	for _, want := range []string{"Dropped by the profile (still installed, no longer re-applied):\n  - Terraform + terragrunt, tflint, terraform-docs, checkov (terraform)\n", "Would create user yardonewuser", "For user: yardonewuser\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}

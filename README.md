@@ -121,8 +121,9 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    kubeconform, kubelogin, kubie, kubecolor, krew with plugins, Argo CD,
    Flux, Tilt, Skaffold, ctlptl, kind, talosctl); or k3s as a real cluster
    on the VM.
-4. **DevOps → IaC** (mise): Terraform with terragrunt, tflint and terraform-docs,
-   OpenTofu, trivy + checkov, Packer, Ansible, tack, sops + age, Vault.
+4. **DevOps → IaC** (mise): Terraform with terragrunt, tflint,
+   terraform-docs and checkov, OpenTofu, Packer, Ansible, tack, sops + age,
+   Vault.
 5. **DevOps → Cloud** (mise): AWS, Google Cloud, Azure, DigitalOcean, Hetzner,
    cloudflared, restic + rclone.
 6. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,

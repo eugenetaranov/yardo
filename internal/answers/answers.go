@@ -191,6 +191,7 @@ var PickMap = map[string][]string{
 	"talos":       {"k8stools"},
 	"corpca":      {}, // no longer an item
 	"registries":  {}, // no longer an item
+	"iacscan":     {}, // checkov comes with Terraform; trivy is gone
 	"npmrc":       {}, // no longer an item
 	"monitoring":  {}, // no longer an item
 	"sudopw":      {}, // no longer an item
@@ -210,6 +211,7 @@ var pickNotes = map[string]string{
 	"monitoring": "node_exporter + glances is no longer an item: what it installed stays (remove with 'sudo apt remove prometheus-node-exporter').",
 	"editors":    "Vim is no longer an item: Neovim, set up the same way, replaces it. Vim and ~/.vimrc stay as they are.",
 	"registries": "Container registry logins are no longer an item: logins already made stay (sudo yardo forget still logs out of them); log in with 'docker login <registry>'.",
+	"iacscan":    "The IaC scanners item is gone: checkov comes with the Terraform item, and trivy is no longer installed (the ones installed stay).",
 	"npmrc":      "The private npm registry is no longer an item: yardo's block in ~/.npmrc stays (sudo yardo forget still removes it); edit ~/.npmrc yourself.",
 }
 

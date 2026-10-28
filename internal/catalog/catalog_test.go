@@ -47,7 +47,7 @@ func TestEmbeddedCatalogLoads(t *testing.T) {
 	if c.Item("zsh") == nil || c.Item("mise") == nil || !c.Item("mise").Hidden() {
 		t.Error("zsh and the hidden mise item should load")
 	}
-	if got := c.Item("terraform").Describe(); got != "mise use -g terraform terragrunt tflint terraform-docs" {
+	if got := c.Item("terraform").Describe(); got != "mise use -g terraform terragrunt tflint terraform-docs uv pipx:checkov" {
 		t.Errorf("terraform source = %q", got)
 	}
 }
