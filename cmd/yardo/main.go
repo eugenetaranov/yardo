@@ -112,7 +112,7 @@ type options struct {
 	yes, dryRun, verify, showVersion, list bool
 	// status: `yardo status` (verify, reported per item; --json for
 	// scripts), collected in statuses.
-	status, json             bool
+	status, json, updates    bool
 	statuses                 []userStatus
 	state, log, legacy, user string
 	profiles                 list
@@ -184,6 +184,7 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			sfs := flag.NewFlagSet("yardo status", flag.ContinueOnError)
 			sfs.SetOutput(stderr)
 			sfs.BoolVar(&o.json, "json", false, "print JSON (schema 1) for scripts")
+			sfs.BoolVar(&o.updates, "updates", false, "also check for newer versions (apt and mise; slow)")
 			if err := sfs.Parse(fs.Args()[1:]); err != nil {
 				return err
 			}
@@ -345,13 +346,17 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	var fix []string
 	if interactive && len(profs) == 0 && len(a.Picks) > 0 {
 		// Set up already: the home screen first; the picker from there.
+		updates := false
 	home:
 		for {
-			h, act, err := o.home(ctx, cat, a, stdout)
+			h, act, err := o.home(ctx, cat, a, stdout, updates)
 			if err != nil {
 				return err
 			}
+			updates = false
 			switch act {
+			case ui.HomeUpdates:
+				updates = true
 			case ui.HomeQuit:
 				return nil
 			case ui.HomeChange:
@@ -446,7 +451,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			return run.DryRun(stdout, env, items, extra)
 		}
 		if o.status {
-			us := userStatusOf(ctx, env, a.User, items, extra, loadApplied(o.state, a.User))
+			us := userStatusOf(ctx, env, a.User, items, extra, loadApplied(o.state, a.User), o.updates)
 			if err := saveStatus(ctx, env, o.state, us, time.Now()); err != nil {
 				fmt.Fprintf(stderr, "yardo: saving the status: %v\n", err)
 			}

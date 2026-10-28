@@ -16,9 +16,10 @@ type HomeItem struct {
 	Group string
 	// State is ok, down, partial, missing, secret or unchecked.
 	State, Detail string
-	// Inputs are the values left empty; Source how it's installed.
-	Inputs []string
-	Source string
+	// Inputs are the values left empty; Updates newer versions of its
+	// tools (when checked); Source how it's installed.
+	Inputs, Updates []string
+	Source          string
 }
 
 // HomeAction is what the home screen was left with.
@@ -36,6 +37,8 @@ const (
 	HomeFix
 	// HomeEdit opens the selected item's values to fill in (Selected).
 	HomeEdit
+	// HomeUpdates checks again, for newer versions too.
+	HomeUpdates
 )
 
 var (
@@ -165,6 +168,9 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			h.action = HomeRefresh
 			return h, tea.Quit
+		case "u":
+			h.action = HomeUpdates
+			return h, tea.Quit
 		case "x":
 			h.action = HomeConnect
 			return h, tea.Quit
@@ -222,6 +228,9 @@ func detail(it *HomeItem) []string {
 	default:
 		out = append(out, say)
 	}
+	if len(it.Updates) > 0 {
+		out = append(out, "Newer: "+strings.Join(it.Updates, ", ")+" (mise up, or sudo apt upgrade)")
+	}
 	if it.Source != "" {
 		out = append(out, "How: "+it.Source)
 	}
@@ -242,6 +251,15 @@ func (h *Home) View() string {
 			g, say := glyph(s)
 			sum = append(sum, fmt.Sprintf("%s %d %s", g, n, say))
 		}
+	}
+	nup := 0
+	for _, r := range h.rows {
+		if r.item != nil && len(r.item.Updates) > 0 {
+			nup++
+		}
+	}
+	if nup > 0 {
+		sum = append(sum, yellow.Render("▲")+fmt.Sprintf(" %d with updates", nup))
 	}
 	if h.avail > 0 {
 		sum = append(sum, muted.Render(fmt.Sprintf("+ %d more to add", h.avail)))
@@ -297,6 +315,9 @@ func (h *Home) View() string {
 		}
 		pad := max(1, labelW+2-runewidth.StringWidth(runewidth.Truncate(it.Label, labelW, "…")))
 		note := ""
+		if len(it.Updates) > 0 && !problem(it.State) {
+			note = yellow.Render("▲ ") + muted.Render(runewidth.Truncate(strings.Join(it.Updates, ", "), max(4, w-labelW-12), "…"))
+		}
 		if problem(it.State) {
 			n := it.Detail
 			if it.State == "secret" {
@@ -320,7 +341,7 @@ func (h *Home) View() string {
 	if n := len(h.Fix()); n > 0 {
 		keys += fmt.Sprintf(" · f fix %d", n)
 	}
-	keys += " · a add or change · x connect from a laptop · r check again · q quit"
+	keys += " · a add or change · x connect from a laptop · r check again · u updates · q quit"
 	b.WriteString(" " + muted.Render(runewidth.Truncate(keys, max(4, w-2), "…")))
 	return b.String()
 }

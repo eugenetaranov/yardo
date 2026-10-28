@@ -424,3 +424,26 @@ func TestBlockStep(t *testing.T) {
 		t.Errorf("after an update = %q", got)
 	}
 }
+
+// Outdated reads mise's and apt's newer versions; ItemUpdates matches them
+// to an item's tools and packages.
+func TestOutdated(t *testing.T) {
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		switch {
+		case c.Name == "mise":
+			return []byte(`{"terraform": {"requested": "latest", "current": "1.9.0", "latest": "1.10.1"}, "tflint": {"current": "0.5", "latest": "0.5"}}`), nil
+		case c.Name == "apt" && c.Args[0] == "list":
+			return []byte("Listing...\ntmux/noble-updates 3.4-2 amd64 [upgradable from: 3.4-1]\n"), nil
+		}
+		return nil, nil
+	}}
+	e := testEnv(t, x)
+	mise, apt := Outdated(context.Background(), e)
+	if mise["terraform"] != "1.9.0 → 1.10.1" || mise["tflint"] != "" || apt["tmux"] != "3.4-1 → 3.4-2" {
+		t.Fatalf("mise %v apt %v", mise, apt)
+	}
+	got := ItemUpdates(e, []catalog.Step{{Type: "mise", Tools: []string{"terraform@latest", "tflint@latest"}}, {Type: "apt", Packages: []string{"tmux", "git"}}}, mise, apt)
+	if strings.Join(got, "; ") != "terraform 1.9.0 → 1.10.1; tmux 3.4-1 → 3.4-2" {
+		t.Errorf("updates = %v", got)
+	}
+}

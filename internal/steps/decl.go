@@ -912,3 +912,55 @@ func (b blockStep) Apply(_ context.Context, e *Env) error {
 	uid, gid, _ := e.owner(b.s)
 	return e.chown(p, uid, gid)
 }
+
+// Outdated is what has a newer version: the user's mise tools and the apt
+// packages (name → "current → newer"). It refreshes apt's lists first, so
+// it's slow, and only for a status run that asks for it.
+func Outdated(ctx context.Context, e *Env) (mise, apt map[string]string) {
+	mise, apt = map[string]string{}, map[string]string{}
+	if out, err := e.Exec.Run(ctx, Cmd{Name: "mise", Args: []string{"outdated", "--json"}, AsUser: true}); err == nil {
+		var m map[string]struct{ Current, Latest string }
+		if json.Unmarshal(out, &m) == nil {
+			for name, v := range m {
+				if v.Latest != "" && v.Latest != v.Current {
+					mise[name] = v.Current + " → " + v.Latest
+				}
+			}
+		}
+	}
+	_, _ = e.Exec.Run(ctx, Cmd{Name: "apt-get", Args: []string{"update", "-q"}, Env: AptEnv})
+	out, _ := e.Exec.Run(ctx, Cmd{Name: "apt", Args: []string{"list", "--upgradable"}, Env: AptEnv})
+	// pkg/suite 1.2-3 amd64 [upgradable from: 1.2-2]
+	for _, l := range strings.Split(string(out), "\n") {
+		f := strings.Fields(l)
+		if len(f) < 6 || !strings.Contains(l, "[upgradable from:") {
+			continue
+		}
+		name, _, _ := strings.Cut(f[0], "/")
+		apt[name] = strings.TrimSuffix(f[len(f)-1], "]") + " → " + f[1]
+	}
+	return mise, apt
+}
+
+// ItemUpdates are the newer versions of an item's mise tools and apt
+// packages, from Outdated ("terraform 1.9.0 → 1.10.1", …).
+func ItemUpdates(e *Env, s []catalog.Step, mise, apt map[string]string) []string {
+	var out []string
+	for _, st := range s {
+		switch st.Type {
+		case "mise":
+			for _, t := range st.Tools {
+				if v := mise[MiseName(t)]; v != "" {
+					out = append(out, MiseName(t)+" "+v)
+				}
+			}
+		case "apt":
+			for _, p := range (aptStep{st}).Packages(e) {
+				if v := apt[p]; v != "" {
+					out = append(out, p+" "+v)
+				}
+			}
+		}
+	}
+	return out
+}

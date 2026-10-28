@@ -433,7 +433,7 @@ func TestAppliedDrift(t *testing.T) {
 		{ID: "tmuxcfg", Tab: "shell", Label: "tmux config", Steps: []catalog.Step{{Type: "line", To: "~/.tmux.conf", Line: "set -g mouse on"}}},
 		{ID: "vimcfg", Tab: "shell", Label: "vim config", Steps: []catalog.Step{{Type: "line", To: "~/.vimrc", Line: "set nu"}}},
 	}
-	us := userStatusOf(context.Background(), env, "ada", items, nil, m)
+	us := userStatusOf(context.Background(), env, "ada", items, nil, m, false)
 	got := map[string]string{}
 	for _, it := range us.Items {
 		got[it.ID] = it.State

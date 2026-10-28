@@ -371,7 +371,10 @@ its service isn't running), `partial` (some of its steps done),
 values to fill in (a credential left empty: which file,
 which key), then `ok`. `--json` prints it for scripts (`"schema": 1`, every
 user set up), and each run keeps the latest in
-`/var/lib/yardo/status/<user>.json`, and a copy for you in
+`/var/lib/yardo/status/<user>.json`. `--updates` also asks apt and mise
+what's newer (slow: it refreshes apt's lists) and lists it per item; it
+never upgrades (`mise up`, `sudo apt upgrade` do; on the home screen, `u`).
+Each run leaves a copy for you in
 `~/.cache/yardo/status.json`: `yardo status` without sudo shows that one,
 and how old it is. Once something is set up, `sudo yardo` opens on the
 same view, a home screen (problems first, then what's installed by tab;

@@ -51,6 +51,9 @@ type itemStatus struct {
 	Total  int    `json:"total"`
 	// Inputs are the values left empty ("file: KEY").
 	Inputs []string `json:"inputs,omitempty"`
+	// Updates are newer versions of its tools ("terraform 1.9.0 → 1.10.1"),
+	// when asked for (--updates).
+	Updates []string `json:"updates,omitempty"`
 }
 
 // stateOrder sorts problems first: what to fix, then what to fill in.
@@ -59,8 +62,13 @@ var stateOrder = map[string]int{"down": 0, "drifted": 1, "partial": 2, "missing"
 // userStatusOf checks user's items (and extra mise tools) without changing
 // anything. An item that yardo applied before (applied) and that is now
 // missing or partial has drifted.
-func userStatusOf(ctx context.Context, env *steps.Env, user string, items []*catalog.Item, extra []string, applied map[string]string) userStatus {
+// With updates, it also asks mise and apt what's outdated (slow).
+func userStatusOf(ctx context.Context, env *steps.Env, user string, items []*catalog.Item, extra []string, applied map[string]string, updates bool) userStatus {
 	us := userStatus{User: user, Counts: map[string]int{}}
+	var mise, apt map[string]string
+	if updates {
+		mise, apt = steps.Outdated(ctx, env)
+	}
 	for _, s := range run.Verify(ctx, env, items) {
 		if s.Item.Hidden() {
 			continue
@@ -74,18 +82,25 @@ func userStatusOf(ctx context.Context, env *steps.Env, user string, items []*cat
 			state = "drifted"
 		}
 		us.Items = append(us.Items, itemStatus{ID: s.Item.ID, Label: s.Item.Label, Tab: s.Item.Tab, Scope: scope,
-			State: state, Detail: s.Detail, Done: s.Done, Total: s.Total, Inputs: s.Inputs})
+			State: state, Detail: s.Detail, Done: s.Done, Total: s.Total, Inputs: s.Inputs,
+			Updates: steps.ItemUpdates(env, s.Item.Steps, mise, apt)})
 	}
 	for _, t := range extra {
 		st := itemStatus{ID: "mise:" + steps.MiseName(t), Label: t + " (extra mise tool)", Tab: "extra", Scope: "user", State: "ok", Total: 1, Done: 1}
 		if ok, _ := steps.MiseHas(ctx, env, []string{t}); !ok {
 			st.State, st.Done, st.Detail = "missing", 0, "mise use -g "+t
 		}
+		if v := mise[steps.MiseName(t)]; v != "" {
+			st.Updates = []string{steps.MiseName(t) + " " + v}
+		}
 		us.Items = append(us.Items, st)
 	}
 	sort.SliceStable(us.Items, func(i, j int) bool { return stateOrder[us.Items[i].State] < stateOrder[us.Items[j].State] })
 	for _, it := range us.Items {
 		us.Counts[it.State]++
+		if len(it.Updates) > 0 {
+			us.Counts["updates"]++
+		}
 	}
 	return us
 }
@@ -102,9 +117,16 @@ func printStatus(w io.Writer, us userStatus) {
 			sum = append(sum, fmt.Sprintf("%d %s", n, s.say))
 		}
 	}
+	if n := us.Counts["updates"]; n > 0 {
+		sum = append(sum, fmt.Sprintf("%d with updates", n))
+	}
 	fmt.Fprintf(w, "%s: %s\n", us.User, strings.Join(sum, " · "))
+	var upd []string
 	for _, it := range us.Items {
 		line := fmt.Sprintf("  %-9s %s", it.State, it.Label)
+		if len(it.Updates) > 0 {
+			upd = append(upd, fmt.Sprintf("  update    %s: %s", it.Label, strings.Join(it.Updates, ", ")))
+		}
 		switch {
 		case it.State == "partial":
 			line += fmt.Sprintf(" (%d of %d steps): %s", it.Done, it.Total, it.Detail)
@@ -114,6 +136,9 @@ func printStatus(w io.Writer, us userStatus) {
 			line += ": " + it.Detail
 		}
 		fmt.Fprintln(w, line)
+	}
+	for _, l := range upd {
+		fmt.Fprintln(w, l)
 	}
 }
 
@@ -201,8 +226,12 @@ func writeStatusJSON(w io.Writer, users []userStatus, now time.Time) error {
 }
 
 // home checks the user's items and shows the home screen.
-func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, stdout io.Writer) (*ui.Home, ui.HomeAction, error) {
+// With updates, it also checks for newer versions (slow).
+func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, stdout io.Writer, updates bool) (*ui.Home, ui.HomeAction, error) {
 	fmt.Fprintf(stdout, "Checking what's set up for %s…\n", a.User)
+	if updates {
+		fmt.Fprintln(stdout, "And for newer versions (apt and mise): this takes a while…")
+	}
 	items, err := plan.Resolve(cat, a.Picks, len(a.MiseExtra) > 0)
 	if err != nil {
 		return nil, ui.HomeQuit, err
@@ -212,7 +241,7 @@ func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Ans
 		return nil, ui.HomeQuit, err
 	}
 	now := time.Now()
-	us := userStatusOf(ctx, env, a.User, items, a.MiseExtra, loadApplied(o.state, a.User))
+	us := userStatusOf(ctx, env, a.User, items, a.MiseExtra, loadApplied(o.state, a.User), updates)
 	_ = saveStatus(ctx, env, o.state, us, now)
 	// Where a fine item is listed: its tab's group (Dev, DevOps) or tab,
 	// and every configure tab under Configure.
@@ -242,7 +271,7 @@ func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Ans
 		if c := cat.Item(it.ID); c != nil {
 			src = c.Describe()
 		}
-		hi = append(hi, &ui.HomeItem{ID: it.ID, Label: it.Label, Group: group[it.Tab], State: it.State, Detail: it.Detail, Inputs: it.Inputs, Source: src})
+		hi = append(hi, &ui.HomeItem{ID: it.ID, Label: it.Label, Group: group[it.Tab], State: it.State, Detail: it.Detail, Inputs: it.Inputs, Updates: it.Updates, Source: src})
 	}
 	avail := 0
 	for _, it := range cat.Items {
