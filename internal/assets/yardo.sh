@@ -689,8 +689,11 @@ ask_instances() {
       label=$(gum input --header "Name this $spec" \
         --placeholder "prod, staging or logs: it becomes $spec-<name>, which prefixes its tools") || return 0
       entry=$spec:$label
+      label=${label#"$spec"-}
       if ! valid_label "$label"; then
         echo "Name it with lowercase letters, digits and '-' (e.g. prod)."
+      elif [ "$label" = "$spec" ]; then
+        echo "That's $spec itself: tick $spec in the list instead."
       elif spec_file "$spec-$label" >/dev/null; then
         echo "$spec-$label is a server of its own; name it otherwise."
       elif case " $A_MCP_SERVERS $RUN_MCP_SERVERS " in *" $entry "*) true ;; *) false ;; esac; then

@@ -242,18 +242,24 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    into them; `mcp-sync client <name>` makes one for a laptop's agent,
    sent as `Authorization: Bearer <token>`. On this machine only, there
    are no tokens: anything on the VM can use the gateway.
-   **A new server's settings** open in your editor once the run has made
-   its `~/.mcp/<name>/env`: its keys, with the options commented out
-   (uncomment the ones you want) and how to get each value; yardo then
-   registers it. Later: `mcp-sync edit <name>`, then `mcp-sync`.
+   **Adding a server** (**MCP servers** on the menu): tick it, and yardo
+   asks its name, the server's own (`jira`) unless you give it another
+   (`work` makes it `jira-work`). Once the run has made its
+   `~/.mcp/<name>/env`, that opens in your editor: its keys, the options
+   commented out (uncomment the ones you want) and how to get each value;
+   yardo then registers it. Later: `mcp-sync edit <name>`, then `mcp-sync`.
    **More than one of a server** (two Grafanas, a second OpenSearch
-   cluster, an AWS account each): after the server list, "Add another
-   instance of a server?" asks which server and a name for it, say `prod`;
-   its settings open in the editor like any new server's. It's `grafana-prod` from then on: its own
-   `~/.mcp/grafana-prod/env`, its tools `grafana-prod__…`, "(grafana-prod)"
-   first in its description, and a row of its own in the list (untick it
-   to drop it; its env stays). A profile lists it as `"grafana:prod"` in
-   `[mcp] servers`.
+   cluster, an AWS account each): tick "+ another instance of a server"
+   at the end of the list; yardo asks which server and its name. It's
+   `grafana-prod` from then on: its own `~/.mcp/grafana-prod/env`, its
+   tools `grafana-prod__…`, "(grafana-prod)" first in its description, and
+   a row of its own in the list (untick it to drop it; its env stays). A
+   profile lists it as `"grafana:prod"` in `[mcp] servers`.
+   **Renaming or deleting one:** tick "✎ rename or delete a server" (or
+   `mcp-sync rename <name> <new>`, `mcp-sync remove <name>`): it comes off
+   the gateway, and its settings move with it, or go. A server in `~/.mcp`
+   yardo didn't make (by hand, or dropped) shows in the list too, ticked
+   while the gateway has it.
 3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later) and your age key for sops (generate or paste).

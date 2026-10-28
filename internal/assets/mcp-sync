@@ -4,6 +4,8 @@
 #   mcp-sync [name ...]    enable these servers (saved to ~/.mcp/servers), then sync
 #   mcp-sync               sync the saved list plus every ~/.mcp/<name>/spec
 #   mcp-sync edit <name>   edit a server's credentials (~/.mcp/<name>/env)
+#   mcp-sync rename <name> <new>  rename a server (deregistered; run mcp-sync to register it)
+#   mcp-sync remove <name> deregister a server and delete its ~/.mcp/<name> (its settings)
 #   mcp-sync client <name> make a token for another MCP client (a laptop's agent), allowed
 #                          every server; only when the gateway listens beyond this machine
 #
@@ -101,6 +103,34 @@ if [ "${1:-}" = client ]; then
   }
   mj --registry "$REGISTRY" create mcp-client "$2" --allow "*"
   echo "Send it as the header 'Authorization: Bearer <token>' to $REGISTRY/mcp (from another machine, use this machine's address)."
+  exit 0
+fi
+
+# forget NAME — take NAME off the gateway (when it was registered) and off
+# ~/.mcp/servers.
+forget() {
+  if [ -f "$MCP_DIR/$1/.registered.json" ]; then
+    mj --registry "$REGISTRY" deregister "$1" >/dev/null 2>&1 || true
+    rm -f "$MCP_DIR/$1/.registered.json"
+  fi
+  [ -f "$MCP_DIR/servers" ] && { grep -vx -- "$1" "$MCP_DIR/servers" > "$MCP_DIR/servers.new" || true; mv -f "$MCP_DIR/servers.new" "$MCP_DIR/servers"; }
+  return 0
+}
+
+if [ "${1:-}" = rename ]; then
+  { valid_name "${2:-}" && valid_name "${3:-}"; } || { echo "usage: mcp-sync rename <server> <new name>" >&2; exit 2; }
+  [ -e "$MCP_DIR/$3" ] && { echo "mcp-sync: there's a $3 already" >&2; exit 1; }
+  forget "$2"
+  [ -d "$MCP_DIR/$2" ] && mv -- "$MCP_DIR/$2" "$MCP_DIR/$3"
+  echo "$2 is $3 now; run mcp-sync to register it."
+  exit 0
+fi
+
+if [ "${1:-}" = remove ]; then
+  valid_name "${2:-}" || { echo "usage: mcp-sync remove <server>" >&2; exit 2; }
+  forget "$2"
+  rm -rf -- "${MCP_DIR:?}/$2"
+  echo "$2: removed, with its settings."
   exit 0
 fi
 

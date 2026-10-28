@@ -140,3 +140,51 @@ func TestMCPSyncInstanceDescription(t *testing.T) {
 		t.Errorf("registered:\n%s", b)
 	}
 }
+
+// rename takes the server off the gateway and moves its directory (its
+// settings go along); remove takes it off and deletes them.
+func TestMCPSyncRenameRemove(t *testing.T) {
+	root := t.TempDir()
+	mcp := filepath.Join(root, "mcp")
+	for _, d := range []string{"jira-jira", "grafana-old"} {
+		if err := os.MkdirAll(filepath.Join(mcp, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		putFile(t, filepath.Join(mcp, d, "env"), []byte("KEY=v\n"), 0o600)
+		putFile(t, filepath.Join(mcp, d, ".registered.json"), []byte("{}"), 0o600)
+	}
+	putFile(t, filepath.Join(mcp, "servers"), []byte("github\njira-jira\ngrafana-old\n"), 0o600)
+	log := filepath.Join(root, "mj.log")
+	bin := fakeBin(t, map[string]string{"mcpjungle": `echo "$*" >> ` + log})
+	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+
+	if out, err := mcpSync(t, env, "rename", "jira-jira", "jira"); err != nil {
+		t.Fatalf("rename: %v\n%s", err, out)
+	}
+	if got := readFile(t, filepath.Join(mcp, "jira", "env")); got != "KEY=v\n" {
+		t.Errorf("renamed env = %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(mcp, "jira", ".registered.json")); err == nil {
+		t.Error("the renamed server still looks registered")
+	}
+	if out, err := mcpSync(t, env, "rename", "grafana-old", "jira"); err == nil {
+		t.Errorf("rename onto an existing server: %s", out)
+	}
+	if out, err := mcpSync(t, env, "remove", "grafana-old"); err != nil {
+		t.Fatalf("remove: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(mcp, "grafana-old")); err == nil {
+		t.Error("the removed server's directory is still there")
+	}
+	if got := readFile(t, filepath.Join(mcp, "servers")); got != "github\n" {
+		t.Errorf("servers = %q", got)
+	}
+	if got := readFile(t, log); !strings.Contains(got, "deregister jira-jira") || !strings.Contains(got, "deregister grafana-old") {
+		t.Errorf("mcpjungle ran %q", got)
+	}
+	for _, bad := range [][]string{{"remove", "../x"}, {"rename", "jira", "a/b"}, {"remove", ""}} {
+		if _, err := mcpSync(t, env, bad...); err == nil {
+			t.Errorf("mcp-sync %v: want an error", bad)
+		}
+	}
+}

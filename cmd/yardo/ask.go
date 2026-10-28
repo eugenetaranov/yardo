@@ -50,6 +50,10 @@ type asker struct {
 	// mcpEdit are the servers picked new: their env files open in the
 	// editor once the run has made them.
 	mcpEdit []string
+	// findMCP and mcpSync are seams: the servers in ~/.mcp, and mcp-sync
+	// (rename, remove) run as its owner.
+	findMCP func(specs map[string]*mcp.Spec) []foundServer
+	mcpSync func(args ...string) error
 }
 
 // ask is a run with profiles: their picks, reviewed, and what they can't
@@ -474,13 +478,44 @@ func (k *asker) askDockerPorts() error {
 	return nil
 }
 
-// addInstance is the server list's row for another instance of a server.
-const addInstance = "+instance"
+// askName asks a new server's name, its spec's by default: jira, or
+// another name (work) for another one, jira-work (jira:work). taken are
+// the names in use.
+func (k *asker) askName(spec string, taken []string, specs map[string]*mcp.Spec) (string, error) {
+	def := spec
+	if slices.Contains(taken, spec) {
+		def = ""
+	}
+	for {
+		v, err := ui.Input("Name this "+spec+" server",
+			"Enter keeps "+spec+". Another name, such as work, makes it "+spec+"-work: a name of its own, which prefixes its tools.", def)
+		if err != nil {
+			return "", err
+		}
+		v = strings.TrimSpace(v)
+		entry := spec
+		switch {
+		case v == "":
+			fmt.Fprintln(k.out, "Give it a name.")
+			continue
+		case v != spec:
+			if entry, err = instanceEntry(spec, strings.TrimPrefix(v, spec+"-"), specs); err != nil {
+				fmt.Fprintln(k.out, err)
+				continue
+			}
+		}
+		if _, name, _ := mcp.Instance(entry); slices.Contains(taken, name) {
+			fmt.Fprintf(k.out, "There's a %s already; name it otherwise.\n", name)
+			continue
+		}
+		return entry, nil
+	}
+}
 
 // askInstances adds other instances of a server (a second Grafana,
 // another AWS account), each named: its own settings, keys and tools
 // (grafana-prod__<tool>). It returns servers with them added.
-func (k *asker) askInstances(servers []string, specs map[string]*mcp.Spec) ([]string, error) {
+func (k *asker) askInstances(servers, taken []string, specs map[string]*mcp.Spec) ([]string, error) {
 	names := make([]string, 0, len(specs))
 	for n := range specs {
 		names = append(names, n)
@@ -497,28 +532,11 @@ func (k *asker) askInstances(servers []string, specs map[string]*mcp.Spec) ([]st
 		if err != nil {
 			return servers, err
 		}
-		for {
-			label, err := ui.Input("Name this "+spec, "Lowercase letters, digits and '-', such as prod, staging or logs: it becomes "+spec+"-<name>, which prefixes its tools.", "")
-			if err != nil {
-				return servers, err
-			}
-			label = strings.TrimSpace(label)
-			entry := spec + ":" + label
-			_, name, err := mcp.Instance(entry)
-			switch {
-			case err != nil:
-				fmt.Fprintln(k.out, err)
-				continue
-			case specs[name] != nil:
-				fmt.Fprintf(k.out, "%s is a server of its own; name it otherwise.\n", name)
-				continue
-			case slices.Contains(servers, entry):
-				fmt.Fprintf(k.out, "There's a %s already.\n", name)
-				continue
-			}
-			servers = append(servers, entry)
-			break
+		entry, err := k.askName(spec, append(taken, mcpNames(servers)...), specs)
+		if err != nil {
+			return servers, err
 		}
+		servers = append(servers, entry)
 		more, err := ui.Confirm("Add one more instance?", "", false)
 		if err != nil || !more {
 			return servers, err
@@ -526,19 +544,24 @@ func (k *asker) askInstances(servers []string, specs map[string]*mcp.Spec) ([]st
 	}
 }
 
-// askMCP asks for the MCP servers, their keys, and whether to add the
-// gateway to the agents.
+// askMCP asks for the MCP servers (a new one's name; its settings open in
+// the editor after the run), and whether to add the gateway to the agents.
+// The list has the servers set up before, the ones found in ~/.mcp, and
+// rows to add another instance of one, or rename or delete one.
 func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool, fresh bool) error {
 	dirs := mcp.Dirs(k.share)
 	var entries []*ui.Entry
 	specs := map[string]*mcp.Spec{}
+	row := map[string]*ui.Entry{}
 	for _, n := range mcp.Names(dirs) {
 		s, err := mcp.Load(ctx, dirs, n)
 		if err != nil {
 			continue
 		}
 		specs[n] = s
-		entries = append(entries, &ui.Entry{Tab: "mcp", ID: n, Label: n, Source: s.Description + " · " + s.Image + s.URL, On: slices.Contains(k.a.MCPServers, n)})
+		e := &ui.Entry{Tab: "mcp", ID: n, Label: n, Source: s.Description + " · " + s.Image + s.URL, On: slices.Contains(k.a.MCPServers, n)}
+		entries = append(entries, e)
+		row[n] = e
 	}
 	// The other instances set up before (grafana:prod), each its own row.
 	for _, entry := range k.a.MCPServers {
@@ -546,27 +569,76 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool, f
 		if err != nil || name == spec || specs[spec] == nil {
 			continue
 		}
-		entries = append(entries, &ui.Entry{Tab: "mcp", ID: entry, Label: name, Source: "another " + spec + " · " + specs[spec].Description, On: true})
+		e := &ui.Entry{Tab: "mcp", ID: entry, Label: name, Source: "another " + spec + " · " + specs[spec].Description, On: true}
+		entries = append(entries, e)
+		row[entry] = e
 	}
-	entries = append(entries, &ui.Entry{Tab: "mcp", ID: addInstance, Label: "+ another instance of a server",
-		Source: "a second Grafana, another OpenSearch cluster or AWS account: a name of its own, its own settings"})
-	servers, out, err := ui.NewPicker("MCPJungle — which MCP servers?", []ui.Tab{{ID: "mcp", Title: "MCP servers"}}, entries, ui.Options{}).Run()
+	// Servers in ~/.mcp yardo doesn't list (made or renamed by hand, or
+	// dropped): ticked while the gateway has them, so none goes unseen.
+	find := k.findMCP
+	if find == nil {
+		find = func(specs map[string]*mcp.Spec) []foundServer { return findMCP(ctx, k.a.User, specs) }
+	}
+	var found []string
+	for _, f := range find(specs) {
+		if slices.Contains(k.a.MCPServers, f.entry) {
+			continue
+		}
+		found = append(found, f.entry)
+		if e := row[f.entry]; e != nil {
+			e.On = e.On || f.registered
+			e.Source = "in ~/.mcp · " + e.Source
+			continue
+		}
+		spec, name, _ := mcp.Instance(f.entry)
+		src := "in ~/.mcp, its own spec"
+		if s := specs[spec]; s != nil && name != spec {
+			src = "in ~/.mcp · another " + spec + " · " + s.Description
+		}
+		entries = append(entries, &ui.Entry{Tab: "mcp", ID: f.entry, Label: name, Source: src, On: f.registered})
+	}
+	entries = append(entries,
+		&ui.Entry{Tab: "mcp", ID: addInstance, Label: "+ another instance of a server",
+			Source: "a second Grafana, another OpenSearch cluster or AWS account: a name of its own, its own settings"},
+		&ui.Entry{Tab: "mcp", ID: manageRow, Label: "✎ rename or delete a server",
+			Source: "its settings move with it, or go"})
+	picked, out, err := ui.NewPicker("MCPJungle — which MCP servers?", []ui.Tab{{ID: "mcp", Title: "MCP servers"}}, entries, ui.Options{}).Run()
 	if err != nil {
 		return err
 	}
 	if out != ui.Done {
 		return ui.ErrQuit
 	}
-	if i := slices.Index(servers, addInstance); i >= 0 {
-		servers = slices.Delete(servers, i, i+1)
-		if servers, err = k.askInstances(servers, specs); err != nil {
+	prev := k.a.MCPServers
+	// A server ticked new is named (its spec's name by default).
+	var servers []string
+	for _, entry := range picked {
+		if entry == addInstance || entry == manageRow {
+			continue
+		}
+		spec, _, err := mcp.Instance(entry)
+		if err == nil && entry == spec && specs[spec] != nil && !slices.Contains(prev, entry) && !slices.Contains(found, entry) {
+			taken := mcpNames(slices.Concat(servers, found, picked))
+			taken = slices.DeleteFunc(taken, func(n string) bool { return n == entry })
+			if entry, err = k.askName(spec, taken, specs); err != nil {
+				return err
+			}
+		}
+		servers = append(servers, entry)
+	}
+	if slices.Contains(picked, addInstance) {
+		if servers, err = k.askInstances(servers, mcpNames(found), specs); err != nil {
+			return err
+		}
+	}
+	var renamed []string
+	if slices.Contains(picked, manageRow) {
+		others := slices.Concat(found, slices.DeleteFunc(slices.Clone(prev), func(e string) bool { return slices.Contains(servers, e) }))
+		if servers, renamed, err = k.askManage(ctx, servers, others, specs); err != nil {
 			return err
 		}
 	}
 	c.mcpServers = servers
-	// An unticked server stops being kept up; it stays enabled (drop one
-	// by editing ~/.mcp/servers).
-	prev := k.a.MCPServers
 	k.a.MCPServers = servers
 
 	agents := []string{"claude", "codex", "gemini", "opencode", "goose"}
@@ -581,10 +653,11 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool, f
 	}
 
 	// A new server's settings are its env file, opened in the editor
-	// after the run makes it (from the spec's skeleton): see editMCP.
+	// after the run makes it (from the spec's skeleton): see editMCP. Ones
+	// found in ~/.mcp, or renamed, have theirs.
 	for _, entry := range servers {
 		spec, n, err := mcp.Instance(entry)
-		if err != nil || slices.Contains(prev, entry) {
+		if err != nil || slices.Contains(prev, entry) || slices.Contains(found, entry) || slices.Contains(renamed, n) {
 			continue
 		}
 		if s := specs[spec]; s != nil && len(s.Keys)+len(s.Optional) > 0 {
