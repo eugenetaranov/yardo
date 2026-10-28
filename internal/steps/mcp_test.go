@@ -480,3 +480,70 @@ func TestMCPWireToken(t *testing.T) {
 		t.Errorf("a token stayed:\n%s", got)
 	}
 }
+
+// On the internet: Caddy's site for the user's domain, to the gateway on
+// loopback; fail2ban's jail; the gateway itself on loopback, with tokens.
+func TestMCPPublic(t *testing.T) {
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		if c.Name == "dpkg-query" {
+			return []byte("install ok installed"), nil
+		}
+		return nil, nil
+	}}
+	e := mcpEnv(t, x)
+	e.Answers.MCPListen, e.Answers.MCPDomain, e.Answers.MCPPort = "public", "mcp.example.com", 8081
+	if bindHost(e) != "127.0.0.1" || !Enterprise(e) {
+		t.Errorf("public: bind %s, enterprise %v", bindHost(e), Enterprise(e))
+	}
+	// Caddy's repository is there already (no key to fetch in a test).
+	repo := aptRepoStep{catalog.Step{Type: "apt_repo", Name: "caddy", Source: caddyRepoBody}}
+	put(t, e.Path(repo.keyPath()), "key")
+	put(t, e.Path(repo.listPath()), repo.source(e))
+	put(t, e.Path(caddyfile), ":80 {\n\tfile_server\n}")
+	if err := os.MkdirAll(e.Path("/etc/fail2ban"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st := step(t, catalog.Step{Type: "go:mcp_public"})
+	apply(t, e, st)
+	if got := read(t, e.Path(caddyfile)); !strings.HasPrefix(got, ":80 {\n\tfile_server\n}\n") || !strings.Contains(got, "\nimport /etc/caddy/yardo/*.caddy\n") {
+		t.Errorf("Caddyfile:\n%s", got)
+	}
+	site := read(t, e.Path("/etc/caddy/yardo/mcp-ada.caddy"))
+	if !strings.Contains(site, "mcp.example.com {\n\treverse_proxy 127.0.0.1:8081\n") || !strings.Contains(site, "/var/log/caddy/yardo-mcp-ada.log") {
+		t.Errorf("site:\n%s", site)
+	}
+	if got := read(t, e.Path(f2bJail)); !strings.Contains(got, "logpath = /var/log/caddy/yardo-mcp-*.log") {
+		t.Errorf("jail:\n%s", got)
+	}
+	ran := strings.Join(x.commands(), "; ")
+	for _, want := range []string{"systemctl enable --now caddy", "systemctl reload caddy", "systemctl try-reload-or-restart fail2ban"} {
+		if !strings.Contains(ran, want) {
+			t.Errorf("didn't run %q: %s", want, ran)
+		}
+	}
+	if !check(t, e, st) {
+		t.Error("Check = false after Apply")
+	}
+	// A domain that isn't one never reaches Caddy's config.
+	e.Answers.MCPDomain = "x.com {\n}\nevil.com"
+	if err := st.Apply(context.Background(), e); err == nil {
+		t.Error("a bad domain was applied")
+	}
+	// No longer public: the site goes.
+	e.Answers.MCPListen, e.Answers.MCPDomain = "", ""
+	apply(t, e, st)
+	if _, err := os.Stat(e.Path("/etc/caddy/yardo/mcp-ada.caddy")); err == nil {
+		t.Error("the site is still there")
+	}
+	if !check(t, e, st) {
+		t.Error("not public: Check = false")
+	}
+}
+
+func TestValidDomain(t *testing.T) {
+	for d, want := range map[string]bool{"mcp.example.com": true, "a.b-c.io": true, "localhost": false, "x.com {": false, "-a.com": false, "a..com": false, "": false} {
+		if ValidDomain(d) != want {
+			t.Errorf("ValidDomain(%q) = %v", d, !want)
+		}
+	}
+}

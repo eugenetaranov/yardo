@@ -483,16 +483,28 @@ func (k *asker) askDotfiles() error {
 func (k *asker) askMCPListen() error {
 	one := "this machine only (no tokens)"
 	vpn := "this machine and your VPNs: Tailscale, NetBird, WireGuard, OpenVPN (clients need a token)"
-	all := "everywhere (clients need a token; plain HTTP: trusted networks only)"
-	sel := map[string]string{"vpn": vpn, "tailscale": vpn, "0.0.0.0": all}[k.a.MCPListen]
+	pub := "the internet, at a domain name: HTTPS by Caddy, fail2ban (clients need a token)"
+	all := "everywhere, plain HTTP (clients need a token; trusted networks only)"
+	sel := map[string]string{"vpn": vpn, "tailscale": vpn, "public": pub, "0.0.0.0": all}[k.a.MCPListen]
 	if sel == "" {
 		sel = one
 	}
-	l, err := ui.Choose("Who can reach the MCPJungle gateway?", []string{one, vpn, all}, sel)
+	l, err := ui.Choose("Who can reach the MCPJungle gateway?", []string{one, vpn, pub, all}, sel)
 	if err != nil {
 		return err
 	}
-	k.a.MCPListen = map[string]string{one: "127.0.0.1", vpn: "vpn", all: "0.0.0.0"}[l]
+	k.a.MCPListen = map[string]string{one: "127.0.0.1", vpn: "vpn", pub: "public", all: "0.0.0.0"}[l]
+	for k.a.MCPListen == "public" {
+		d, err := ui.Input("The gateway's domain name (e.g. mcp.example.com)", "Its DNS must point at this machine, with TCP 80 and 443 open, for the certificate.", k.a.MCPDomain)
+		if err != nil {
+			return err
+		}
+		if d = strings.ToLower(strings.TrimSpace(d)); steps.ValidDomain(d) {
+			k.a.MCPDomain = d
+			break
+		}
+		fmt.Fprintf(k.out, "Not a domain name: %q\n", d)
+	}
 	return nil
 }
 

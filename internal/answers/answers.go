@@ -30,11 +30,14 @@ const (
 // Answers is answers.json. The JSON shape is shared with the bash
 // installer (picker.py), so both can read what the other wrote.
 type Answers struct {
-	Version    int      `json:"version"`
-	User       string   `json:"user"`
-	Picks      []string `json:"picks"`
-	MiseExtra  []string `json:"mise_extra"`
-	MCPListen  string   `json:"mcp_listen"`
+	Version   int      `json:"version"`
+	User      string   `json:"user"`
+	Picks     []string `json:"picks"`
+	MiseExtra []string `json:"mise_extra"`
+	MCPListen string   `json:"mcp_listen"`
+	// MCPDomain is the gateway's domain name when MCPListen is "public"
+	// (HTTPS by Caddy).
+	MCPDomain  string   `json:"mcp_domain,omitempty"`
 	MCPServers []string `json:"mcp_servers"`
 	// WireAgents: nil means never asked.
 	WireAgents *bool  `json:"wire_agents"`

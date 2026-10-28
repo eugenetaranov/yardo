@@ -259,6 +259,10 @@ type = "go:mcp_auth"
 [[item.step]]
 type = "go:mcp_firewall"
 
+# On the internet: Caddy, HTTPS at the user's domain name, and fail2ban.
+[[item.step]]
+type = "go:mcp_public"
+
 # The servers, and the agents wired to the gateway. Keeps the old id, so an
 # old pick still means install + servers.
 [[item]]

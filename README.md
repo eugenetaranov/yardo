@@ -202,8 +202,12 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    reached from this machine only; from this machine and your VPNs
    (Tailscale, NetBird, WireGuard, OpenVPN: it listens everywhere, and
    yardo's firewall lets its port in on those interfaces only, so a VPN
-   that comes up later needs nothing redone); or from everywhere. Beyond
-   this machine it needs a token
+   that comes up later needs nothing redone); from the internet, at a
+   domain name (Caddy, from its own apt repository, serves it over HTTPS
+   with an automatic certificate and passes requests to the gateway on
+   loopback; fail2ban bans addresses that keep failing its token; point
+   the name's DNS here and open TCP 80 and 443); or from everywhere, plain
+   HTTP. Beyond this machine it needs a token
    (MCPJungle's enterprise mode): yardo makes the admin token (kept in
    `~/.mcp`, the gateway user's) and one for the agents on the VM, wired
    into them; `mcp-sync client <name>` makes one for a laptop's agent,

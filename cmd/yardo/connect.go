@@ -83,12 +83,15 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address) {
 	}
 	fmt.Fprintln(w, "\nMCP gateway:")
 	switch a.MCPListen {
-	case "vpn", "tailscale", "0.0.0.0":
+	case "vpn", "tailscale", "0.0.0.0", "public":
 		who := "this machine and the VPNs"
-		if a.MCPListen == "0.0.0.0" {
-			who = "everywhere (plain HTTP)"
-		}
 		url := fmt.Sprintf("http://%s:%d/mcp", addr, port)
+		switch a.MCPListen {
+		case "0.0.0.0":
+			who = "everywhere (plain HTTP)"
+		case "public":
+			who, url = "the internet, over HTTPS", "https://"+a.MCPDomain+"/mcp"
+		}
 		fmt.Fprintf(w, "  reachable from %s, with a token. Make your laptop's (once, here):\n", who)
 		fmt.Fprintln(w, "    mcp-sync client laptop")
 		fmt.Fprintln(w, "  then on the laptop:")

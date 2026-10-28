@@ -41,6 +41,7 @@ func init() {
 	RegisterGo("mcp_auth", func(catalog.Step) Step { return mcpAuthStep{} })
 	RegisterGo("mcp_firewall", func(catalog.Step) Step { return mcpFirewallStep{} })
 	RegisterGo("docker_ports", func(catalog.Step) Step { return dockerPortsStep{} })
+	RegisterGo("mcp_public", func(catalog.Step) Step { return mcpPublicStep{} })
 	RegisterGo("mcp_servers", func(catalog.Step) Step { return mcpServersStep{} })
 	RegisterGo("mcp_wire", func(catalog.Step) Step { return mcpWireStep{} })
 	RegisterGo("mcp_sync", func(catalog.Step) Step { return mcpSyncStep{} })
@@ -256,7 +257,8 @@ func (mcpUnitStep) Plan(e *Env) []Action {
 
 // listen is the gateway's access: "127.0.0.1" (this machine only), "vpn"
 // (this machine and the VPN interfaces: yardo's firewall keeps the rest
-// out) or "0.0.0.0" (everywhere). "tailscale", from before, is "vpn".
+// out), "public" (at a domain name, HTTPS by Caddy) or "0.0.0.0"
+// (everywhere, plain HTTP). "tailscale", from before, is "vpn".
 func listen(e *Env) string {
 	if e.Answers == nil {
 		return "127.0.0.1"
@@ -264,17 +266,18 @@ func listen(e *Env) string {
 	switch e.Answers.MCPListen {
 	case "vpn", "tailscale":
 		return "vpn"
-	case "0.0.0.0":
-		return "0.0.0.0"
+	case "public", "0.0.0.0":
+		return e.Answers.MCPListen
 	}
 	return "127.0.0.1"
 }
 
-// bindHost is the address the gateway binds: loopback, or every interface
-// (for "vpn", the firewall decides who gets in: an interface that comes up
-// later, or a VPN address that changes, needs nothing redone).
+// bindHost is the address the gateway binds: loopback (this machine only,
+// or behind Caddy), or every interface (for "vpn", the firewall decides who
+// gets in: an interface that comes up later, or a VPN address that
+// changes, needs nothing redone).
 func bindHost(e *Env) string {
-	if listen(e) == "127.0.0.1" {
+	if l := listen(e); l == "127.0.0.1" || l == "public" {
 		return "127.0.0.1"
 	}
 	return "0.0.0.0"
