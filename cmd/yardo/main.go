@@ -369,6 +369,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	// a value); board: what it queued, when that's applied.
 	var fix []string
 	var board *ui.BoardResult
+	// mcpEdit: the MCP servers picked new, to fill in once the run has
+	// made their env files.
+	var mcpEdit []string
 	first := len(a.Picks) == 0
 	ui.SetAccent(steps.AccentHex(a.Accent))
 	if interactive && len(profs) == 0 {
@@ -450,7 +453,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				} else if err != nil {
 					return err
 				}
-				fix, changed = []string{res.ID}, true
+				fix, changed, mcpEdit = []string{res.ID}, true, k.mcpEdit
 				break loop
 			case ui.BoardApply:
 				board = &res
@@ -475,6 +478,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		if err != nil || c == nil {
 			return err
 		}
+		mcpEdit = k.mcpEdit
 		a.Unpick(c.dropped)
 		if slices.Contains(c.dropped, "docker-ports") {
 			a.DockerPorts = "" // unticked: published ports reachable everywhere again
@@ -630,6 +634,11 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			// One item: the summary of everything stays as it is.
 		} else if err := writeSummary(env, items, extra); err != nil {
 			fmt.Fprintf(stderr, "yardo: %s/yardo.txt: %v\n", env.Home, err)
+		}
+	}
+	if len(mcpEdit) > 0 && !slices.Contains(res.Failed, "mcpjungle") {
+		if err := o.fillMCP(ctx, r, a.User, items, mcpEdit, stdout); err != nil {
+			fmt.Fprintf(stderr, "yardo: %v\n", err)
 		}
 	}
 	fmt.Fprintf(stdout, "How each tool was installed and how to update it: %s/yardo.txt\nLog: %s\n", env.Home, o.log)
@@ -1068,6 +1077,26 @@ func asRoot(args []string) error {
 		argv = append(argv, "--preserve-env="+strings.Join(keep, ","))
 	}
 	return syscall.Exec(sudo, append(append(argv, self), args...), os.Environ())
+}
+
+// fillMCP opens each new MCP server's env file (its spec's skeleton: the
+// settings, the optional ones commented out) in the editor, then applies
+// the MCP servers again, which registers those filled in.
+func (o *options) fillMCP(ctx context.Context, r *run.Runner, user string, items []*catalog.Item, names []string, stdout io.Writer) error {
+	for _, n := range names {
+		fmt.Fprintf(stdout, "\n%s: its settings open in the editor. Fill in the values, uncomment the options you want, save and quit. (Later: mcp-sync edit %s)\n", n, n)
+		if err := editMCP(ctx, user, n); err != nil {
+			return err
+		}
+	}
+	mcpItems := slices.DeleteFunc(slices.Clone(items), func(it *catalog.Item) bool { return it.ID != "mcpjungle" })
+	if len(mcpItems) == 0 {
+		return nil
+	}
+	if res := r.Run(ctx, mcpItems, nil); !res.OK() {
+		return fmt.Errorf("MCP servers: %s", res.Errors["mcpjungle"])
+	}
+	return nil
 }
 
 // ghLogin reports whether this run logs gh in: GitHub or commit signing

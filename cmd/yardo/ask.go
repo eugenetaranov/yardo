@@ -47,6 +47,9 @@ type asker struct {
 	port func() int
 	// listenSet: the board set the gateway's access (don't ask it again).
 	listenSet bool
+	// mcpEdit are the servers picked new: their env files open in the
+	// editor once the run has made them.
+	mcpEdit []string
 }
 
 // ask is a run with profiles: their picks, reviewed, and what they can't
@@ -570,57 +573,15 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool, f
 		k.a.WireAgents = &yes
 	}
 
-	home := homeOf(k.a.User)
+	// A new server's settings are its env file, opened in the editor
+	// after the run makes it (from the spec's skeleton): see editMCP.
 	for _, entry := range servers {
 		spec, n, err := mcp.Instance(entry)
-		if err != nil {
+		if err != nil || slices.Contains(prev, entry) {
 			continue
 		}
-		s := specs[spec]
-		if s == nil || len(s.Keys)+len(s.Optional) == 0 || slices.Contains(prev, entry) {
-			continue
-		}
-		envf := filepath.Join(home, ".mcp", n, "env")
-		envb := readAsOwner(k.a.User, envf)
-		keys := append([]string{}, s.Keys...)
-		if len(s.Optional) > 0 {
-			var opt []*ui.Entry
-			for _, o := range s.Optional {
-				opt = append(opt, &ui.Entry{Tab: "opt", ID: o, Label: o, Source: "optional · leave unticked to skip"})
-			}
-			chosen, out, err := ui.NewPicker(n+" — optional settings (enter to skip)", []ui.Tab{{ID: "opt", Title: "Optional settings"}}, opt, ui.Options{}).Run()
-			if err != nil {
-				return err
-			}
-			if out == ui.Done {
-				keys = append(keys, chosen...)
-			}
-		}
-		fmt.Fprintf(k.out, "\n%s — %s\nLeave a value empty to fill it in later: mcp-sync edit %s\n", n, s.Description, n)
-		for _, key := range keys {
-			if h := s.Help[key]; h != "" {
-				fmt.Fprintf(k.out, "\n%s\n", h)
-			}
-			cur := steps.EnvGet(envb, key)
-			if cur == "" {
-				cur = s.Defaults[key]
-			}
-			var v string
-			if mcp.IsSecret(key) {
-				ph := ""
-				if cur != "" {
-					ph = "(unchanged)"
-				}
-				if v, err = ui.Password(n+": "+key, ph); err != nil {
-					return err
-				}
-				if v == "" {
-					v = cur
-				}
-			} else if v, err = ui.Input(n+": "+key, "", cur); err != nil {
-				return err
-			}
-			c.secrets.MCP[n+" "+key] = v
+		if s := specs[spec]; s != nil && len(s.Keys)+len(s.Optional) > 0 {
+			k.mcpEdit = append(k.mcpEdit, n)
 		}
 	}
 	return nil
@@ -876,19 +837,4 @@ func homeOf(name string) string {
 		return u.HomeDir
 	}
 	return "/home/" + name
-}
-
-// readAsOwner reads a file under login's ~/.mcp as its owner: the
-// gateway's service user, or login before there is one. A symlink planted
-// there then can't show root's files.
-func readAsOwner(login, path string) []byte {
-	owner := "mcp-" + login
-	if _, err := user.Lookup(owner); err != nil {
-		owner = login
-	}
-	out, err := exec.Command("runuser", "-u", owner, "--", "cat", "--", path).Output()
-	if err != nil {
-		return nil
-	}
-	return out
 }

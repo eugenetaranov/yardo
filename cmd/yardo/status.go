@@ -406,29 +406,38 @@ func (o *options) fillIn(ctx context.Context, a *answers.Answers, inputs []strin
 	}
 	path, _, _ := strings.Cut(inputs[0], ": ")
 	home := homeOf(a.User)
-	editor := editorFor(ctx, a.User, home)
-	var c *exec.Cmd
-	var fix []string
 	if rest, ok := strings.CutPrefix(path, "~/.mcp/"); ok {
-		// The gateway's user runs no binary from the user's home (their
-		// mise's nvim): the system's vim then.
-		ed := editor[0]
-		if strings.HasPrefix(ed, home+"/") {
-			ed = systemEditor()
+		if err := editMCP(ctx, a.User, strings.SplitN(rest, "/", 2)[0]); err != nil {
+			return nil, err
 		}
-		name := strings.SplitN(rest, "/", 2)[0]
-		c = exec.CommandContext(ctx, "runuser", "-u", steps.MCPUser(&steps.Env{User: a.User}), "--",
-			"env", "MCP_DIR="+filepath.Join(home, ".mcp"), "EDITOR="+ed, "VISUAL="+ed, "/usr/local/bin/mcp-sync", "edit", name)
-		fix = []string{"mcpjungle"}
-	} else {
-		args := append([]string{"-u", a.User, "--", "sh", "-c", steps.UserShell, "_"}, editor...)
-		c = exec.CommandContext(ctx, "runuser", append(args, strings.Replace(path, "~", home, 1))...)
+		return []string{"mcpjungle"}, nil
 	}
+	args := append([]string{"-u", a.User, "--", "sh", "-c", steps.UserShell, "_"}, editorFor(ctx, a.User, home)...)
+	c := exec.CommandContext(ctx, "runuser", append(args, strings.Replace(path, "~", home, 1))...)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := c.Run(); err != nil {
 		return nil, fmt.Errorf("editing %s: %w", path, err)
 	}
-	return fix, nil
+	return nil, nil
+}
+
+// editMCP opens MCP server name's ~/.mcp/<name>/env in the editor, as the
+// gateway's user (mcp-sync edit), who owns it.
+func editMCP(ctx context.Context, user, name string) error {
+	home := homeOf(user)
+	// The gateway's user runs no binary from the user's home (their
+	// mise's nvim): the system's vim then.
+	ed := editorFor(ctx, user, home)[0]
+	if strings.HasPrefix(ed, home+"/") {
+		ed = systemEditor()
+	}
+	c := exec.CommandContext(ctx, "runuser", "-u", steps.MCPUser(&steps.Env{User: user}), "--",
+		"env", "MCP_DIR="+filepath.Join(home, ".mcp"), "EDITOR="+ed, "VISUAL="+ed, "/usr/local/bin/mcp-sync", "edit", name)
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("editing ~/.mcp/%s/env: %w", name, err)
+	}
+	return nil
 }
 
 // editorMark marks the line the user's shell prints its editor on.
