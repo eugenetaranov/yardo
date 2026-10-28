@@ -13,6 +13,7 @@ import (
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/catalog"
+	"github.com/eugenetaranov/yardo/internal/plan"
 	"github.com/eugenetaranov/yardo/internal/profile"
 	"github.com/eugenetaranov/yardo/internal/steps"
 )
@@ -501,6 +502,40 @@ func TestParseEditor(t *testing.T) {
 	} {
 		if got := strings.Join(parseEditor(out, "/home/ada"), " "); got != want {
 			t.Errorf("parseEditor(%q) = %q, want %q", out, got, want)
+		}
+	}
+}
+
+// The GitHub login gets the terminal when GitHub or commit signing is new
+// in the run, or being fixed; not when another item (OpenVPN) is added.
+func TestGHLogin(t *testing.T) {
+	cat, err := catalog.Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolve := func(picks ...string) []*catalog.Item {
+		items, err := plan.Resolve(cat, picks, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return items
+	}
+	had := planHas(resolve("github"))
+	none := func(string) bool { return false }
+	for name, c := range map[string]struct {
+		items  []*catalog.Item
+		before func(string) bool
+		fix    []string
+		want   bool
+	}{
+		"first run":          {resolve("github"), none, nil, true},
+		"another item added": {resolve("github", "openvpn-client"), had, nil, false},
+		"signing added":      {resolve("github", "gitsign"), had, nil, true},
+		"github fixed":       {resolve("github"), had, []string{"github"}, true},
+		"no github":          {resolve("openvpn-client"), none, nil, false},
+	} {
+		if got := ghLogin(c.items, c.before, c.fix); got != c.want {
+			t.Errorf("%s: ghLogin = %v, want %v", name, got, c.want)
 		}
 	}
 }

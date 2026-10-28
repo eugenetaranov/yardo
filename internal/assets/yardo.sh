@@ -1487,7 +1487,7 @@ github_login() {
       warn "GitHub did not accept the token; run 'gh auth login --with-token' later."; return 0; }
     record gh_login
   elif [ "$INTERACTIVE" = 0 ]; then
-    note "GitHub: not logged in — run 'gh auth login' (or 'sudo yardo' to be asked)."
+    note "GitHub: not logged in — run 'gh auth login'."
     return 0
   else
     # --skip-ssh-key is gh 2.47's (yardo adds the key itself); an older gh

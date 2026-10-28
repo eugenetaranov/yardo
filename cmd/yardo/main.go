@@ -344,6 +344,12 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	for _, n := range notes {
 		fmt.Fprintln(stderr, "yardo: "+n)
 	}
+	// What was set up before this run (the GitHub login is asked for
+	// only when it's new).
+	before := func(string) bool { return false }
+	if had, err := plan.Resolve(cat, a.Picks, false); err == nil {
+		before = planHas(had)
+	}
 	var dropped []string
 	for _, p := range profs {
 		d, warn := p.Apply(a, cat)
@@ -565,9 +571,10 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	if bash != nil {
 		stdin := sec.Encode()
 		env.Legacy = func(ctx context.Context, id string) error {
-			// The GitHub steps may open the browser login: in an
-			// interactive run they get the terminal.
-			if interactive && (id == "github" || id == "gitsign") {
+			// The GitHub steps may open the browser login: they get the
+			// terminal when one of them is new or being fixed, not on
+			// every apply (else gh waits for a login nobody asked for).
+			if interactive && (id == "github" || id == "gitsign") && ghLogin(items, before, fix) {
 				if l, ok := prog.(*run.Live); ok {
 					l.Pause()
 				}
@@ -1061,6 +1068,18 @@ func asRoot(args []string) error {
 		argv = append(argv, "--preserve-env="+strings.Join(keep, ","))
 	}
 	return syscall.Exec(sudo, append(append(argv, self), args...), os.Environ())
+}
+
+// ghLogin reports whether this run logs gh in: GitHub or commit signing
+// is new in the plan (not set up before), or being fixed.
+func ghLogin(items []*catalog.Item, before func(string) bool, fix []string) bool {
+	has := planHas(items)
+	for _, id := range []string{"github", "gitsign"} {
+		if (has(id) && !before(id)) || slices.Contains(fix, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // handoff replaces this process with the bash yardo.
