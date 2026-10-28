@@ -839,7 +839,13 @@ func (k *asker) review(c *choices, options ...string) string {
 		if host == "tailscale" {
 			host = "<tailscale address>"
 		}
-		fmt.Fprintf(k.out, "  MCPJungle: http://%s:%d/mcp · servers: %s\n", host, port, strings.Join(k.a.MCPServers, " "))
+		var names []string
+		for _, entry := range k.a.MCPServers {
+			if _, n, err := mcp.Instance(entry); err == nil {
+				names = append(names, n)
+			}
+		}
+		fmt.Fprintf(k.out, "  MCPJungle: http://%s:%d/mcp · servers: %s\n", host, port, strings.Join(names, " "))
 	}
 	if k.a.Git.Name+k.a.Git.Email != "" {
 		fmt.Fprintf(k.out, "  Git: %s <%s>\n", k.a.Git.Name, k.a.Git.Email)

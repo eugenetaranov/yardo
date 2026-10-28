@@ -328,7 +328,7 @@ spec_dirs() { echo "$CATALOG" "$SHARE/mcp-catalog" "$CONF/mcp-catalog"; }
 # its ~/.mcp directory and the gateway's server name.
 mcp_spec() { echo "${1%%:*}"; }
 mcp_name() { case $1 in *:*) echo "${1%%:*}-${1#*:}" ;; *) echo "$1" ;; esac; }
-mcp_names() { local n; for n in $A_MCP_SERVERS; do mcp_name "$n"; done; }
+mcp_names() { local n out=; for n in $A_MCP_SERVERS; do out+="${out:+ }$(mcp_name "$n")"; done; echo "$out"; }
 # spec_file NAME — the spec for NAME, if any.
 spec_file() {
   local d
@@ -654,6 +654,7 @@ ask_mcp() {
     done
   } > "$items"
   pick RUN_MCP_SERVERS "MCPJungle — which MCP servers?" "$items" --no-review
+  ask_instances
   # Servers set up before stay enabled (drop one by editing ~/.mcp/servers).
   A_MCP_SERVERS=$(merge "$A_MCP_SERVERS" "$RUN_MCP_SERVERS")
 
@@ -669,12 +670,46 @@ ask_mcp() {
   ask_mcp_keys
 }
 
+# valid_label LABEL — a name for another instance of a server: short,
+# lowercase letters, digits and inner dashes.
+valid_label() {
+  case "$1" in ''|-*|*-|*--*|*[!a-z0-9-]*) return 1 ;; esac
+  [ "${#1}" -le 24 ]
+}
+
+# ask_instances — other instances of a server (a second Grafana, another
+# AWS account), each named: grafana:prod, set up as grafana-prod.
+ask_instances() {
+  local spec label entry
+  faint "A second Grafana, another OpenSearch cluster or AWS account: each with a name of its own, its own settings and keys."
+  while gum confirm "Add another instance of a server?" --default=false; do
+    # shellcheck disable=SC2046
+    spec=$(gum choose --header "Another instance of which server?" $(spec_names)) || return 0
+    while :; do
+      label=$(gum input --header "Name this $spec" \
+        --placeholder "prod, staging or logs: it becomes $spec-<name>, which prefixes its tools") || return 0
+      entry=$spec:$label
+      if ! valid_label "$label"; then
+        echo "Name it with lowercase letters, digits and '-' (e.g. prod)."
+      elif spec_file "$spec-$label" >/dev/null; then
+        echo "$spec-$label is a server of its own; name it otherwise."
+      elif case " $A_MCP_SERVERS $RUN_MCP_SERVERS " in *" $entry "*) true ;; *) false ;; esac; then
+        echo "There's a $spec-$label already."
+      else
+        RUN_MCP_SERVERS="${RUN_MCP_SERVERS:+$RUN_MCP_SERVERS }$entry"
+        break
+      fi
+    done
+  done
+}
+
 ask_mcp_keys() {
-  local home n envf skel line key cur val opt
+  local home entry spec n envf skel line key cur val opt
   home=$(home_of "$A_USER")
-  for n in $RUN_MCP_SERVERS; do
+  for entry in $RUN_MCP_SERVERS; do
+    spec=$(mcp_spec "$entry") n=$(mcp_name "$entry")
     envf="$home/.mcp/$n/env"
-    skel=$(spec_skeleton "$n")
+    skel=$(spec_skeleton "$spec")
     # Active KEY= lines are asked for; commented ones are optional extras.
     local active=() optional=()
     while IFS= read -r line; do
@@ -686,7 +721,7 @@ ask_mcp_keys() {
     [ ${#active[@]} -eq 0 ] && [ ${#optional[@]} -eq 0 ] && continue
 
     echo
-    header "$n — $(spec_field "$n" DESCRIPTION)"
+    header "$n — $(spec_field "$spec" DESCRIPTION)"
     faint "Leave a value empty to fill it in later in $envf"
     if [ ${#optional[@]} -gt 0 ]; then
       # Not via <(…): a process substitution can't read the terminal.
@@ -723,7 +758,7 @@ summary() {
     done
     [ -n "$RUN_MISE_EXTRA" ] && printf '  ✓ %-40s mise use -g %s\n' "Extra mise tools" "$RUN_MISE_EXTRA"
     if picked mcpjungle; then
-      echo "MCPJungle: http://$A_MCP_LISTEN:$MCPJUNGLE_PORT/mcp · servers: ${A_MCP_SERVERS:-none}"
+      echo "MCPJungle: http://$A_MCP_LISTEN:$MCPJUNGLE_PORT/mcp · servers: $(n=$(mcp_names); echo "${n:-none}")"
     fi
     picked gitid && [ -n "$A_GIT_NAME$A_GIT_EMAIL" ] && echo "Git: $A_GIT_NAME <$A_GIT_EMAIL>"
     picked github && echo "GitHub: ${A_GH_MODE:-key}"
@@ -1313,12 +1348,25 @@ EOF
   done
   [ -n "$up" ] || note "mcpjungle is not answering on port $MCPJUNGLE_PORT after 60s; see: journalctl -u mcpjungle"
 
-  # Credentials from the prompts go into each server's env file (the same
-  # files mcp-sync creates and reads).
+  mcp_dirs "$mcp" "$grp"
+  [ "$A_WIRE_AGENTS" = yes ] && wire_agents
+  return 0
+}
+
+# mcp_dirs DIR GROUP — each picked server's directory in DIR, with the
+# credentials from the prompts in its env file (the same files mcp-sync
+# creates and reads). Another instance (grafana:prod, in grafana-prod)
+# gets a spec link to the catalog's, so mcp-sync knows what it is.
+mcp_dirs() {
+  local mcp=$1 grp=$2 n d key
   for n in $A_MCP_SERVERS; do
-    local d; d=$(mcp_name "$n")
+    d=$(mcp_name "$n")
     install -d -m 0700 -o "$A_USER" -g "$grp" "$mcp/$d"
     [ -f "$mcp/$d/env" ] || { spec_skeleton "$(mcp_spec "$n")" > "$mcp/$d/env"; record file "$mcp/$d/env"; }
+    if [ "$d" != "$n" ]; then
+      ln -sfn "$CATALOG/$(mcp_spec "$n").spec" "$mcp/$d/spec"
+      chown -h "$A_USER:$grp" "$mcp/$d/spec"
+    fi
   done
   for key in "${!MCP_KEYS[@]}"; do
     envset "${key#* }" "${MCP_KEYS[$key]}" "$mcp/${key%% *}/env"
@@ -1326,8 +1374,6 @@ EOF
   for n in $(mcp_names); do
     chown -h "$A_USER:$grp" "$mcp/$n/env"; chmod 600 "$mcp/$n/env"
   done
-  [ "$A_WIRE_AGENTS" = yes ] && wire_agents
-  return 0
 }
 
 # wire_agents — register the MCPJungle gateway with each installed agent,
@@ -1968,7 +2014,7 @@ dry_run() {
     esac
   done
   [ -n "$RUN_MISE_EXTRA" ] && say "mise: $RUN_MISE_EXTRA"
-  picked mcpjungle && say "mcpjungle: listen $A_MCP_LISTEN:$MCPJUNGLE_PORT · servers: $A_MCP_SERVERS · wire agents: ${A_WIRE_AGENTS:-no}"
+  picked mcpjungle && say "mcpjungle: listen $A_MCP_LISTEN:$MCPJUNGLE_PORT · servers: $(mcp_names) · wire agents: ${A_WIRE_AGENTS:-no}"
   return 0
 }
 
