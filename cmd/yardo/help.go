@@ -11,7 +11,8 @@ const usage = `yardo sets up this Linux machine (Ubuntu or Debian) for you and y
 coding agents: tick what you want, and it installs and configures it.
 
 Usage:
-  sudo yardo                   open the screen: pick, fix and change what's set up
+  sudo yardo                   a short menu: fix, fill in, add or remove tools,
+                               who can connect (the checklist on a first run)
   sudo yardo --yes             re-apply everything chosen so far, no questions
   yardo --dry-run              ask, then show what would happen; change nothing
   sudo yardo --profile FILE|URL [--yes]
@@ -33,6 +34,7 @@ Flags:
       --list         list the catalog's items (id, tab, label), for profiles
       --profile SRC  apply a profile: a file or an https URL (repeatable)
       --user NAME    the account to set up, created if missing
+      --ui board     open on the tabbed checklist instead of the short menu
       --state DIR    state directory (default /var/lib/yardo)
       --log FILE     log of every command and its output (default /var/log/yardo.log)
       --version      print the version
