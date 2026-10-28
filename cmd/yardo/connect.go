@@ -76,6 +76,12 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address) {
 	fmt.Fprintf(w, "  docker context use %s        # back: docker context use default\n", ctxName)
 	ports := map[string]string{"": "everywhere (Docker's way)", "vpn": "this machine and the VPNs", "local": "this machine only"}[a.DockerPorts]
 	fmt.Fprintf(w, "  -v paths are this machine's; -p ports open here, reachable from %s.\n", ports)
+	if a.DockerAPI != "" {
+		who := map[string]string{"vpn": "the VPNs", "lan": "the local network and the VPNs"}[a.DockerAPI]
+		fmt.Fprintf(w, "\nDocker, directly (TLS on port 2376, from %s; for tools that can't use SSH):\n", who)
+		fmt.Fprintln(w, "  sudo yardo-docker client laptop     # here, once: the laptop's certificate, and how to use it")
+		fmt.Fprintf(w, "  then: docker context create %s-tls --docker \"host=tcp://%s:2376,ca=…,cert=…,key=…\"\n", ctxName, addr)
+	}
 
 	port := a.MCPPort
 	if port == 0 {

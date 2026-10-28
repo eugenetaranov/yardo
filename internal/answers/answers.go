@@ -45,12 +45,16 @@ type Answers struct {
 	TZ         string `json:"tz"`
 	// DockerPorts is where containers' published ports can be reached
 	// from: "" (everywhere), "vpn" or "local". Machine-wide.
-	DockerPorts string   `json:"docker_ports,omitempty"`
-	GitHub      GitHost  `json:"github"`
-	GitLab      GitHost  `json:"gitlab,omitzero"`
-	Bitbucket   GitHost  `json:"bitbucket,omitzero"`
-	NPM         NPM      `json:"npm"`
-	Registries  []string `json:"registries"`
+	DockerPorts string `json:"docker_ports,omitempty"`
+	// DockerAPI is who can reach the Docker API over TLS (port 2376, client
+	// certificates): "" (nobody: over SSH only), "vpn" or "lan" (the local
+	// network and the VPNs). Machine-wide.
+	DockerAPI  string   `json:"docker_api,omitempty"`
+	GitHub     GitHost  `json:"github"`
+	GitLab     GitHost  `json:"gitlab,omitzero"`
+	Bitbucket  GitHost  `json:"bitbucket,omitzero"`
+	NPM        NPM      `json:"npm"`
+	Registries []string `json:"registries"`
 	// Prompt is the zsh prompt: "p10k" (also "") or "starship".
 	Prompt string `json:"prompt,omitempty"`
 	// Dotfiles is the user's dotfiles repo (cloned to ~/.dotfiles).

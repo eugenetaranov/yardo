@@ -42,6 +42,7 @@ func init() {
 	RegisterGo("mcp_firewall", func(catalog.Step) Step { return mcpFirewallStep{} })
 	RegisterGo("docker_ports", func(catalog.Step) Step { return dockerPortsStep{} })
 	RegisterGo("mcp_public", func(catalog.Step) Step { return mcpPublicStep{} })
+	RegisterGo("docker_api", func(catalog.Step) Step { return dockerAPIStep{} })
 	RegisterGo("mcp_servers", func(catalog.Step) Step { return mcpServersStep{} })
 	RegisterGo("mcp_wire", func(catalog.Step) Step { return mcpWireStep{} })
 	RegisterGo("mcp_sync", func(catalog.Step) Step { return mcpSyncStep{} })

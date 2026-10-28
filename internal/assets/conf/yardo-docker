@@ -1,0 +1,86 @@
+#!/bin/sh
+# yardo-docker — the Docker API over TLS that yardo sets up (yardo rewrites
+# this file). Port 2376, client certificates only.
+#
+#   yardo-docker client NAME   NAME's client certificate in /srv/docker/NAME (once); prints how to use it
+#   yardo-docker list          the client certificates
+#   yardo-docker revoke-all    a new CA: every client certificate stops working (Docker can't
+#                              revoke just one); then make new ones with client NAME
+#   yardo-docker setup         the CA (once) and the server's certificate, made again when this
+#                              machine's addresses change (yardo runs it)
+#   yardo-docker check         exit 1 if setup would change something
+set -eu
+umask 077
+
+D=/etc/docker/tls
+OUT=/srv/docker
+
+usage() { sed -n '5,13s/^# \{0,1\}//p' "$0" >&2; exit 2; }
+
+# sans: the names and addresses the server's certificate is for.
+sans() {
+  printf 'DNS:%s,DNS:localhost,IP:127.0.0.1' "$(hostname)"
+  for ip in $(hostname -I); do printf ',IP:%s' "$ip"; done
+}
+
+# sign NAME CN USAGE SANS: NAME's key and certificate in $D (or a client's
+# directory), signed by the CA.
+sign() {
+  dir=$1 cn=$2 usage=$3 san=$4
+  openssl ecparam -genkey -name prime256v1 -out "$dir/key.pem" 2>/dev/null
+  openssl req -new -key "$dir/key.pem" -subj "/CN=$cn" -out "$dir/req.csr"
+  ext=$(mktemp)
+  printf 'extendedKeyUsage = %s\n' "$usage" > "$ext"
+  [ -z "$san" ] || printf 'subjectAltName = %s\n' "$san" >> "$ext"
+  openssl x509 -req -days 3650 -sha256 -in "$dir/req.csr" -CA "$D/ca.pem" -CAkey "$D/ca-key.pem" \
+    -CAcreateserial -extfile "$ext" -out "$dir/cert.pem" 2>/dev/null
+  rm -f "$ext" "$dir/req.csr"
+}
+
+setup() {
+  install -d -m 0700 "$D"
+  if [ ! -f "$D/ca.pem" ]; then
+    openssl ecparam -genkey -name prime256v1 -out "$D/ca-key.pem" 2>/dev/null
+    openssl req -new -x509 -days 3650 -sha256 -key "$D/ca-key.pem" -subj "/CN=yardo Docker CA ($(hostname))" -out "$D/ca.pem"
+  fi
+  want=$(sans)
+  if [ ! -f "$D/server/cert.pem" ] || [ "$(cat "$D/server.sans" 2>/dev/null)" != "$want" ]; then
+    install -d -m 0700 "$D/server"
+    sign "$D/server" "$(hostname)" serverAuth "$want"
+    printf '%s\n' "$want" > "$D/server.sans"
+  fi
+}
+
+case "${1:-}" in
+  setup) setup ;;
+  check)
+    [ -f "$D/ca.pem" ] && [ -f "$D/server/cert.pem" ] && [ "$(cat "$D/server.sans" 2>/dev/null)" = "$(sans)" ]
+    ;;
+  client)
+    n=${2:-}
+    case "$n" in ''|.*|*[!A-Za-z0-9._-]*|server) echo "yardo-docker: bad client name '$n'" >&2; exit 2 ;; esac
+    [ -f "$D/ca.pem" ] || { echo "yardo-docker: the Docker API isn't set up (Configure → System settings in sudo yardo)" >&2; exit 1; }
+    if [ ! -f "$OUT/$n/cert.pem" ]; then
+      install -d -m 0700 "$OUT" "$OUT/$n"
+      sign "$OUT/$n" "$n" clientAuth ""
+      cp "$D/ca.pem" "$OUT/$n/ca.pem"
+    fi
+    ip=$(hostname -I | awk '{print $1}')
+    cat <<EOF
+$n's certificate: $OUT/$n (ca.pem, cert.pem, key.pem; root only). On the laptop:
+  mkdir -p ~/.docker/$(hostname) && ssh $(hostname) "sudo tar -C $OUT/$n -c ca.pem cert.pem key.pem" | tar -x -C ~/.docker/$(hostname)
+  docker context create $(hostname)-tls --docker "host=tcp://$ip:2376,ca=\$HOME/.docker/$(hostname)/ca.pem,cert=\$HOME/.docker/$(hostname)/cert.pem,key=\$HOME/.docker/$(hostname)/key.pem"
+The address must be one the server's certificate has: $(cat "$D/server.sans" 2>/dev/null)
+EOF
+    ;;
+  list)
+    [ -d "$OUT" ] && ls -1 "$OUT" || true
+    ;;
+  revoke-all)
+    rm -rf "$D" "$OUT"
+    setup
+    systemctl restart docker
+    echo "A new CA: every client certificate stopped working. Make new ones: yardo-docker client NAME"
+    ;;
+  *) usage ;;
+esac

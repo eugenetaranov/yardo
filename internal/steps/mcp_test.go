@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/catalog"
@@ -545,5 +546,57 @@ func TestValidDomain(t *testing.T) {
 		if ValidDomain(d) != want {
 			t.Errorf("ValidDomain(%q) = %v", d, !want)
 		}
+	}
+}
+
+// The Docker API over TLS: the helper, the firewall first (local network
+// and VPNs), the drop-in, a restart; off again: no drop-in, no table.
+func TestDockerAPI(t *testing.T) {
+	setup := false
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		if c.Name == dockerAPIHelper && c.Args[0] == "check" && !setup {
+			return nil, errors.New("not set up")
+		}
+		if c.Name == dockerAPIHelper && c.Args[0] == "setup" {
+			setup = true
+		}
+		return nil, nil
+	}}
+	e := mcpEnv(t, x)
+	e.Files = fstest.MapFS{"yardo-docker": {Data: []byte("#!/bin/sh\n")}}
+	st := step(t, catalog.Step{Type: "go:docker_api"})
+	if !check(t, e, st) {
+		t.Error("off: Check = false")
+	}
+	e.Answers.DockerAPI = "lan"
+	apply(t, e, st)
+	nft := read(t, e.Path("/etc/yardo/firewall/yardo_docker_api.nft"))
+	for _, want := range []string{"tcp dport 2376 ip saddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 } accept", `tcp dport 2376 iifname "lo" accept`, "tcp dport 2376 drop"} {
+		if !strings.Contains(nft, want) {
+			t.Errorf("table lacks %q:\n%s", want, nft)
+		}
+	}
+	if got := read(t, e.Path(dockerAPIDropin)); !strings.Contains(got, "--live-restore -H tcp://0.0.0.0:2376 --tlsverify") {
+		t.Errorf("drop-in:\n%s", got)
+	}
+	ran := strings.Join(x.commands(), "; ")
+	if !strings.Contains(ran, dockerAPIHelper+" setup") || !strings.HasSuffix(ran, "systemctl daemon-reload; systemctl restart docker") ||
+		strings.Index(ran, "nft -f /etc/yardo/firewall/yardo_docker_api.nft") > strings.Index(ran, "systemctl restart docker") {
+		t.Errorf("ran %s", ran)
+	}
+	if !check(t, e, st) {
+		t.Error("Check = false after Apply")
+	}
+	e.Answers.DockerAPI = "vpn"
+	if nft := dockerAPITable(e).text(); strings.Contains(string(nft), "saddr") {
+		t.Errorf("vpn lets the local network in:\n%s", nft)
+	}
+	e.Answers.DockerAPI = ""
+	apply(t, e, st)
+	if _, err := os.Stat(e.Path(dockerAPIDropin)); err == nil {
+		t.Error("off: the drop-in is still there")
+	}
+	if !check(t, e, st) {
+		t.Error("off again: Check = false")
 	}
 }

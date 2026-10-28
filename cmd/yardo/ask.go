@@ -205,6 +205,11 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			return nil, err
 		}
 	}
+	if isNew("docker-api") || (has("docker-api") && k.a.DockerAPI == "") {
+		if err := k.askDockerAPI(); err != nil {
+			return nil, err
+		}
+	}
 	// The server list shows on every run (the saved ones ticked); only
 	// new servers are asked about.
 	if has("mcpjungle") {
@@ -508,6 +513,22 @@ func (k *asker) askMCPListen() error {
 		}
 		fmt.Fprintf(k.out, "Not a domain name: %q\n", d)
 	}
+	return nil
+}
+
+// askDockerAPI asks who can reach the Docker API over TLS.
+func (k *asker) askDockerAPI() error {
+	lan := "the local network (10/8, 172.16/12, 192.168/16, Tailscale's 100.64/10) and your VPNs"
+	vpn := "your VPNs only (Tailscale, NetBird, WireGuard, OpenVPN)"
+	sel := lan
+	if k.a.DockerAPI == "vpn" {
+		sel = vpn
+	}
+	ch, err := ui.Choose("The Docker API over TLS (port 2376, client certificates) can be reached from", []string{lan, vpn}, sel)
+	if err != nil {
+		return err
+	}
+	k.a.DockerAPI = map[string]string{lan: "lan", vpn: "vpn"}[ch]
 	return nil
 }
 

@@ -36,6 +36,7 @@ type systemFile struct {
 	TZ      string   `json:"tz"`
 	// DockerPorts: see Answers.DockerPorts.
 	DockerPorts string              `json:"docker_ports,omitempty"`
+	DockerAPI   string              `json:"docker_api,omitempty"`
 	Layers      map[string][]string `json:"layers,omitempty"`
 	Hand        []string            `json:"hand,omitempty"`
 	// Users are the users set up, by name.
@@ -186,7 +187,7 @@ func (s *Store) Load(name string) (*Answers, []string, error) {
 	if err != nil {
 		return nil, notes, err
 	}
-	a := &Answers{Version: Version, User: name, TZ: sys.TZ, DockerPorts: sys.DockerPorts, Layers: map[string][]string{}}
+	a := &Answers{Version: Version, User: name, TZ: sys.TZ, DockerPorts: sys.DockerPorts, DockerAPI: sys.DockerAPI, Layers: map[string][]string{}}
 	a.Picks = slices.DeleteFunc(slices.Clone(sys.Picks), func(id string) bool { return !s.IsSystem(id) })
 	a.Hand = slices.DeleteFunc(slices.Clone(sys.Hand), func(id string) bool { return !s.IsSystem(id) })
 	for n, l := range sys.Layers {
@@ -261,7 +262,7 @@ func (s *Store) Save(a *Answers) error {
 	}
 	uf := &userFile{Version: Version, MiseExtra: a.MiseExtra, MCPListen: a.MCPListen, MCPDomain: a.MCPDomain, MCPServers: a.MCPServers,
 		WireAgents: a.WireAgents, Git: a.Git, GitHub: a.GitHub, GitLab: a.GitLab, Bitbucket: a.Bitbucket, NPM: a.NPM, Registries: a.Registries, Dotfiles: a.Dotfiles, GitKeyHosts: a.GitKeyHosts, Prompt: a.Prompt}
-	sys.Version, sys.TZ, sys.DockerPorts = Version, a.TZ, a.DockerPorts
+	sys.Version, sys.TZ, sys.DockerPorts, sys.DockerAPI = Version, a.TZ, a.DockerPorts, a.DockerAPI
 	sys.Picks, uf.Picks = split(a.Picks)
 	sys.Hand, uf.Hand = split(a.Hand)
 	if len(sys.Hand) == 0 {

@@ -91,6 +91,11 @@ unit = "docker"
 [[item.step]]
 type = "go:docker_ports"
 
+# The Docker API over TLS, when Configure → System settings says so (off
+# otherwise: over SSH only).
+[[item.step]]
+type = "go:docker_api"
+
 [[item.step]]
 type = "run"
 cmd = "usermod -aG docker {{user}}"
@@ -351,6 +356,20 @@ source = "nft table yardo_docker_ports: new connections to published ports only 
 
 [[item.step]]
 type = "go:docker_ports"
+
+# The Docker API over TLS on port 2376, client certificates only, from the
+# local network or the VPNs (never the internet). Docker over SSH needs
+# none of this. Unticked: off again.
+[[item]]
+id = "docker-api"
+tab = "sysconf"
+scope = "system"
+label = "Docker API over TLS (port 2376, client certificates; local network or VPNs)"
+needs = ["docker"]
+source = "dockerd -H tcp://0.0.0.0:2376 --tlsverify (drop-in, --live-restore) · CA in /etc/docker/tls · laptops: sudo yardo-docker client <name> · nft table yardo_docker_api"
+
+[[item.step]]
+type = "go:docker_api"
 
 [[item]]
 id = "zram"

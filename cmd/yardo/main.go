@@ -396,6 +396,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		if slices.Contains(c.dropped, "docker-ports") {
 			a.DockerPorts = "" // unticked: published ports reachable everywhere again
 		}
+		if slices.Contains(c.dropped, "docker-api") {
+			a.DockerAPI = "" // unticked: the Docker API over TLS is off again
+		}
 		a.Pick(c.picks)
 		a.MiseExtra = c.miseExtra
 		items, extra, sec = c.items, c.miseExtra, c.secrets

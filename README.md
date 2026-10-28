@@ -360,7 +360,15 @@ first): Docker over SSH, which opens no port and needs no certificate
 this machine's paths, `-p` ports open here); and the MCP gateway's URL,
 how to make a laptop's token (`mcp-sync client laptop`) and the
 `claude mcp add` and Codex lines that use it, or, when the gateway is for
-this machine only, an SSH tunnel to it. Containers' published ports are
+this machine only, an SSH tunnel to it. For tools that can't use SSH,
+Configure → System settings → "Docker API over TLS" opens port 2376,
+client certificates only, from the local network (10/8, 172.16/12,
+192.168/16, Tailscale's 100.64/10) and the VPNs, or the VPNs only; never
+the internet. yardo makes a CA (`/etc/docker/tls`) and Docker gets the
+port from a systemd drop-in, with `--live-restore`, so its restart leaves
+the containers running. `sudo yardo-docker client laptop` makes a
+laptop's certificate and says how to use it; Docker can't revoke one, so
+`sudo yardo-docker revoke-all` makes a new CA instead. Containers' published ports are
 reachable from everywhere, as Docker does it, unless Configure → System
 settings → "Container ports" keeps them to the VPNs or this machine.
 yardo's firewall rules are nftables tables of its own in
