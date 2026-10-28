@@ -406,22 +406,90 @@ func (o *options) fillIn(ctx context.Context, a *answers.Answers, inputs []strin
 	}
 	path, _, _ := strings.Cut(inputs[0], ": ")
 	home := homeOf(a.User)
-	editor := `exec "$(command -v sensible-editor || echo vi)" "$@"`
+	editor := editorFor(ctx, a.User, home)
 	var c *exec.Cmd
 	var fix []string
 	if rest, ok := strings.CutPrefix(path, "~/.mcp/"); ok {
+		// The gateway's user runs no binary from the user's home (their
+		// mise's nvim): the system's vim then.
+		ed := editor[0]
+		if strings.HasPrefix(ed, home+"/") {
+			ed = systemEditor()
+		}
 		name := strings.SplitN(rest, "/", 2)[0]
 		c = exec.CommandContext(ctx, "runuser", "-u", steps.MCPUser(&steps.Env{User: a.User}), "--",
-			"env", "MCP_DIR="+filepath.Join(home, ".mcp"), "EDITOR=sensible-editor", "/usr/local/bin/mcp-sync", "edit", name)
+			"env", "MCP_DIR="+filepath.Join(home, ".mcp"), "EDITOR="+ed, "VISUAL="+ed, "/usr/local/bin/mcp-sync", "edit", name)
 		fix = []string{"mcpjungle"}
 	} else {
-		c = exec.CommandContext(ctx, "runuser", "-u", a.User, "--", "sh", "-c", editor, "_", strings.Replace(path, "~", home, 1))
+		args := append([]string{"-u", a.User, "--", "sh", "-c", steps.UserShell, "_"}, editor...)
+		c = exec.CommandContext(ctx, "runuser", append(args, strings.Replace(path, "~", home, 1))...)
 	}
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := c.Run(); err != nil {
 		return nil, fmt.Errorf("editing %s: %w", path, err)
 	}
 	return fix, nil
+}
+
+// editorMark marks the line the user's shell prints its editor on.
+const editorMark = "__yardo_editor__"
+
+// editorFor is the user's editor, as a command and its arguments:
+// $VISUAL or $EDITOR when yardo has it (its re-run through sudo keeps
+// them), else what the user's own shell sets (yardo's shell config sets
+// nvim or vim), else vim, else vi.
+func editorFor(ctx context.Context, user, home string) []string {
+	ed := os.Getenv("VISUAL")
+	if ed == "" {
+		ed = os.Getenv("EDITOR")
+	}
+	if f := strings.Fields(ed); len(f) > 0 {
+		if p, err := exec.LookPath(f[0]); err == nil {
+			return append([]string{p}, f[1:]...)
+		}
+	}
+	// Their interactive shell, which reads their rc files: where EDITOR
+	// is set. It prints the editor's full path on a marked line (rc files
+	// may print other things).
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	q := `e=${VISUAL:-$EDITOR}; [ -n "$e" ] && printf '\n` + editorMark + `\t%s\t%s\n' "$(command -v -- "${e%% *}")" "$e"`
+	c := exec.CommandContext(ctx, "runuser", "-u", user, "--", "sh", "-c", `cd && exec "$SHELL" -ic "$1"`, "_", q)
+	c.Env = append(os.Environ(), "TERM=dumb")
+	out, _ := c.Output()
+	if cmd := parseEditor(string(out), home); cmd != nil {
+		return cmd
+	}
+	return []string{systemEditor()}
+}
+
+// parseEditor reads the editor off the shell's marked line: its full path,
+// then the editor as set (its arguments after the first word).
+func parseEditor(out, home string) []string {
+	for _, l := range strings.Split(out, "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(l), editorMark+"\t")
+		if !ok {
+			continue
+		}
+		path, set, _ := strings.Cut(rest, "\t")
+		if !strings.HasPrefix(path, "/") {
+			return nil // not found, or a shell function or alias
+		}
+		f := strings.Fields(set)
+		if len(f) == 0 {
+			return nil
+		}
+		return append([]string{path}, f[1:]...)
+	}
+	return nil
+}
+
+// systemEditor is vim when it's installed, else vi.
+func systemEditor() string {
+	if p, err := exec.LookPath("vim"); err == nil {
+		return p
+	}
+	return "vi"
 }
 
 // cachedStatus is `yardo status` without sudo: the copy the last check

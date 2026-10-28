@@ -1050,9 +1050,9 @@ func asRoot(args []string) error {
 		return err
 	}
 	argv := []string{"sudo"}
-	// Keep a forwarded agent, and a proxy the user's shell has.
+	// Keep a forwarded agent, the user's editor, and a proxy their shell has.
 	var keep []string
-	for _, k := range []string{"SSH_AUTH_SOCK", "http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} {
+	for _, k := range []string{"SSH_AUTH_SOCK", "VISUAL", "EDITOR", "http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} {
 		if os.Getenv(k) != "" {
 			keep = append(keep, k)
 		}

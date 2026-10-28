@@ -489,3 +489,18 @@ func TestOSRelease(t *testing.T) {
 		t.Error("no os-release should be unsupported")
 	}
 }
+
+// The editor off the user's shell's marked line, past whatever their rc
+// files print.
+func TestParseEditor(t *testing.T) {
+	for out, want := range map[string]string{
+		"p10k says hi\n\n" + editorMark + "\t/home/ada/.local/share/mise/shims/nvim\tnvim\n": "/home/ada/.local/share/mise/shims/nvim",
+		"\n" + editorMark + "\t/usr/bin/code\tcode --wait\n":                                 "/usr/bin/code --wait",
+		"\n" + editorMark + "\tmyfn\tmyfn\n":                                                 "",
+		"nothing set\n":                                                                      "",
+	} {
+		if got := strings.Join(parseEditor(out, "/home/ada"), " "); got != want {
+			t.Errorf("parseEditor(%q) = %q, want %q", out, got, want)
+		}
+	}
+}
