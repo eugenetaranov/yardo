@@ -616,9 +616,23 @@ func (b *Board) act(r *row) tea.Cmd {
 					return nil
 				}}
 		case secret(i):
-			cmd := b.done(BoardEdit, i.ID)
-			b.result.Inputs = i.Inputs
-			return cmd
+			// Filling in comes first; its answers (the MCP servers) can
+			// still be changed.
+			b.panel = &panel{title: i.Label + ": " + stateWord(i.State),
+				lines: []string{"Empty: " + strings.Join(i.Inputs, ", ")},
+				opts:  append([][2]string{{"Fill in " + plural(len(i.Inputs), "value", "values"), "edit"}}, append(changeOpts(i), [2]string{"Remove it (stays installed; yardo stops looking after it)", "remove"})...),
+				on: func(v string) tea.Cmd {
+					if v == "edit" {
+						cmd := b.done(BoardEdit, i.ID)
+						b.result.Inputs = i.Inputs
+						return cmd
+					}
+					if cmd := b.change(i, v); cmd != nil {
+						return cmd
+					}
+					i.Pending = "remove"
+					return nil
+				}}
 		default:
 			var lines []string
 			if newer(i) {

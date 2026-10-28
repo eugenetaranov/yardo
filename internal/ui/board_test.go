@@ -18,7 +18,7 @@ func testBoard(first bool) *Board {
 		{ID: "terraform", Label: "Terraform", Tab: "iac", Picked: !first, State: "ok", Updates: []string{"terraform 1.9.8 → 1.10.1"}},
 		{ID: "ansible", Label: "Ansible", Tab: "iac"},
 		{ID: "wg", Label: "WireGuard server", Tab: "system"},
-		{ID: "keys", Label: "Agent API keys", Tab: "logins", Picked: !first, State: "secret", Inputs: []string{"~/.config/yardo/agent.env: OPENAI_API_KEY"}},
+		{ID: "keys", Label: "Agent API keys", Tab: "logins", Picked: !first, State: "secret", Inputs: []string{"~/.config/yardo/agent.env: OPENAI_API_KEY"}, Changes: [][2]string{{"the keys", "keys"}}},
 	}
 	if first {
 		for _, i := range items {
@@ -83,9 +83,19 @@ func TestBoardNeedsYou(t *testing.T) {
 		t.Errorf("result %+v", b.result)
 	}
 	b = testBoard(false)
-	press2(b, "down", "enter") // Agent API keys
+	press2(b, "down", "enter") // Agent API keys: fill in first, or change
+	if b.panel == nil || !strings.Contains(b.View(), "Fill in 1 value") || !strings.Contains(b.View(), "Change the keys") {
+		t.Fatalf("no fill-in panel:\n%s", b.View())
+	}
+	press2(b, "enter")
 	if b.result.Kind != BoardEdit || b.result.ID != "keys" || len(b.result.Inputs) != 1 {
 		t.Errorf("fill in: result %+v", b.result)
+	}
+	// A value left empty doesn't hide the item's answers (the MCP servers).
+	b = testBoard(false)
+	press2(b, "down", "enter", "down", "enter")
+	if b.result.Kind != BoardChange || b.result.ID != "keys" || b.result.Change != "keys" {
+		t.Errorf("change: result %+v", b.result)
 	}
 }
 
