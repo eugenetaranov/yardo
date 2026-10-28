@@ -347,6 +347,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	var fix []string
 	var board *ui.BoardResult
 	first := len(a.Picks) == 0
+	ui.SetAccent(steps.AccentHex(a.Accent))
 	if interactive && len(profs) == 0 {
 		updates := false
 	loop:
@@ -403,6 +404,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		}
 		a.Pick(c.picks)
 		a.MiseExtra = c.miseExtra
+		ui.SetAccent(steps.AccentHex(a.Accent)) // a new one shows from now on
 		items, extra, sec = c.items, c.miseExtra, c.secrets
 		changed = true
 	} else {

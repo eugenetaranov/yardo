@@ -4,6 +4,10 @@
 # file, so put your own changes in your rc file after the source line.
 # Each hook runs only if its tool is installed.
 
+# This machine's accent colour (sudo yardo → This VM → Accent colour), for
+# your own prompt or scripts.
+export YARDO_ACCENT='{{ .accent }}'
+
 if [ -n "${ZSH_VERSION:-}" ]; then _yardo_sh=zsh; else _yardo_sh=bash; fi
 
 command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init "$_yardo_sh")"

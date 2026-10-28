@@ -258,7 +258,8 @@ func (o *options) board(ctx context.Context, cat *catalog.Catalog, a *answers.An
 	for _, t := range cat.PhaseTabs(catalog.PhaseConfigure) {
 		vm.Sections = append(vm.Sections, ui.Tab{ID: t.ID, Title: t.Title})
 	}
-	vm.Sections = append(vm.Sections, ui.Tab{ID: "__access__", Title: "Who can reach it"}, ui.Tab{ID: "__machine__", Title: "This machine"})
+	vm.Sections = append(vm.Sections, ui.Tab{ID: "__access__", Title: "Who can reach it"}, ui.Tab{ID: "__look__", Title: "Look"},
+		ui.Tab{ID: "__machine__", Title: "This machine"})
 	tabs = append(tabs, vm)
 
 	picked := func(id string) bool { return slices.Contains(a.Picks, id) }
@@ -316,6 +317,16 @@ func (o *options) board(ctx context.Context, cat *catalog.Catalog, a *answers.An
 		settings = append(settings, &ui.BoardSetting{Key: "api", Label: "Docker API", Value: api, Choices: [][2]string{
 			{"off", "off: Docker over SSH only"}, {"lan", "over TLS, from the local network and your VPNs"}, {"vpn", "over TLS, from your VPNs only"}}})
 	}
+	// The accent colour: yardo's, the prompt's, tmux's.
+	look := &ui.BoardSetting{Key: "accent", Label: "Accent colour", Section: "__look__", Value: a.Accent, Swatches: map[string]string{}}
+	if look.Value == "" {
+		look.Value = steps.Accents[0].Key
+	}
+	for _, c := range steps.Accents {
+		look.Choices = append(look.Choices, [2]string{c.Key, c.Name})
+		look.Swatches[c.Key] = c.Hex
+	}
+	settings = append(settings, look)
 	actions := []ui.BoardAction{
 		{ID: "connect", Label: "Connect from a laptop", Note: "Docker over SSH, the MCP gateway"},
 		{ID: "updates", Label: "Check for updates", Note: "apt and mise; takes a while"},

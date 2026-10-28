@@ -90,6 +90,8 @@ func (k *asker) fromBoard(ctx context.Context, res ui.BoardResult, first bool) (
 			k.a.DockerPorts = strings.TrimPrefix(v, "all")
 		case "api":
 			k.a.DockerAPI = strings.TrimPrefix(v, "off")
+		case "accent":
+			k.a.Accent = v
 		}
 	}
 	c := &choices{secrets: creds.New(), picks: picks, miseExtra: extras, dropped: dropped}

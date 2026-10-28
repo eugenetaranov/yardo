@@ -42,20 +42,51 @@ func init() {
 }
 
 // promptStep installs the chosen prompt: Powerlevel10k (its clone, and a
-// ready ~/.p10k.zsh, the lean preset in yardo's style, unless there is
-// one) or Starship (mise, and ~/.config/starship.toml unless there is one).
-// The other one is left alone; ~/.zshrc only loads the chosen one.
+// ready ~/.p10k.zsh, the lean preset in yardo's style) or Starship (mise,
+// and ~/.config/starship.toml), in the user's accent colour. A config of
+// the user's own is left alone (ownedStep). The other prompt is left
+// alone too; ~/.zshrc only loads the chosen one.
 type promptStep struct{}
 
 func (promptStep) parts(e *Env) []Step {
 	if Prompt(e) == "starship" {
-		return mustSteps("prompt",
-			catalog.Step{Type: "mise", Tools: []string{"starship@latest"}},
-			catalog.Step{Type: "file", Src: "starship.toml", To: "~/.config/starship.toml", IfAbsent: true})
+		return append(mustSteps("prompt", catalog.Step{Type: "mise", Tools: []string{"starship@latest"}}),
+			ownedStep{src: "starship.toml", to: "~/.config/starship.toml", marker: "# yardo's Starship prompt"})
 	}
-	return mustSteps("prompt",
-		catalog.Step{Type: "git_clone", Repo: "https://github.com/romkatv/powerlevel10k.git", To: p10kDir},
-		catalog.Step{Type: "file", Src: "p10k-yardo.zsh", To: "~/.p10k.zsh", IfAbsent: true})
+	return append(mustSteps("prompt", catalog.Step{Type: "git_clone", Repo: "https://github.com/romkatv/powerlevel10k.git", To: p10kDir}),
+		ownedStep{src: "p10k-yardo.zsh", to: "~/.p10k.zsh", marker: "# Powerlevel10k config written by yardo"})
+}
+
+// ownedStep writes a template where there's no file, or where the file
+// still starts with marker (yardo wrote it: the accent may have changed).
+// A file of the user's own (p10k configure's, or one they edited and took
+// the marker off) is left alone.
+type ownedStep struct{ src, to, marker string }
+
+func (o ownedStep) file() fileStep {
+	return fileStep{s: catalog.Step{Src: o.src, To: o.to}, template: true}
+}
+
+func (o ownedStep) Plan(e *Env) []Action { return o.file().Plan(e) }
+
+// theirs reports whether the file there is the user's own.
+func (o ownedStep) theirs(e *Env) bool {
+	cur, err := os.ReadFile(e.Path(o.to))
+	return err == nil && !bytes.HasPrefix(cur, []byte(o.marker))
+}
+
+func (o ownedStep) Check(ctx context.Context, e *Env) (bool, error) {
+	if o.theirs(e) {
+		return true, nil
+	}
+	return o.file().Check(ctx, e)
+}
+
+func (o ownedStep) Apply(ctx context.Context, e *Env) error {
+	if o.theirs(e) {
+		return nil
+	}
+	return o.file().Apply(ctx, e)
 }
 
 func (p promptStep) Plan(e *Env) []Action {

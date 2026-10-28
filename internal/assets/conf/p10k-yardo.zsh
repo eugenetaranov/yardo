@@ -1,7 +1,9 @@
 # Powerlevel10k config written by yardo ("Powerlevel10k zsh prompt"):
 # p10k's lean preset, then a one-line style with the OS icon, the time and
-# Nerd Font icons. Run `p10k configure` to make your own; it replaces this
-# file, and yardo never overwrites an existing ~/.p10k.zsh.
+# Nerd Font icons, in this machine's accent colour. yardo rewrites this
+# file while its first line is this one (when you change the accent); run
+# `p10k configure` to make your own, which replaces it, and yardo leaves
+# yours alone.
 
 source ~/.oh-my-zsh/custom/themes/powerlevel10k/config/p10k-lean.zsh
 
@@ -19,6 +21,11 @@ source ~/.oh-my-zsh/custom/themes/powerlevel10k/config/p10k-lean.zsh
   typeset -g POWERLEVEL9K_BATTERY_STAGES='\UF008E\UF007A\UF007B\UF007C\UF007D\UF007E\UF007F\UF0080\UF0081\UF0082\UF0079'
   typeset -g POWERLEVEL9K_TRANSIENT_PROMPT=always
   typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet
+  # The accent colour: the OS icon, the directory, the prompt character.
+  typeset -g POWERLEVEL9K_OS_ICON_FOREGROUND='{{ .accent }}'
+  typeset -g POWERLEVEL9K_DIR_FOREGROUND='{{ .accent }}'
+  typeset -g POWERLEVEL9K_DIR_ANCHOR_FOREGROUND='{{ .accent }}'
+  typeset -g POWERLEVEL9K_PROMPT_CHAR_OK_{VIINS,VICMD,VIVIS,VIOWR}_FOREGROUND='{{ .accent }}'
 }
 
 # The preset points `p10k configure` at itself; point it back here.

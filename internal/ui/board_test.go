@@ -172,3 +172,26 @@ func TestBoardConnect(t *testing.T) {
 		t.Error("esc didn't close the panel")
 	}
 }
+
+// A setting of another section (Look): listed there, its own panel title,
+// queued like the rest.
+func TestBoardLook(t *testing.T) {
+	b := testBoard(false)
+	secs := b.tabs[2].Sections // Look goes before This machine, as yardo puts it
+	b.tabs[2].Sections = append(secs[:len(secs)-1:len(secs)-1], Tab{ID: "__look__", Title: "Look"}, secs[len(secs)-1])
+	b.settings = append(b.settings, &BoardSetting{Key: "accent", Label: "Accent colour", Section: "__look__", Value: "coral",
+		Choices: [][2]string{{"coral", "Coral"}, {"lagoon", "Lagoon (aqua blue)"}}})
+	b.tab = len(b.visibleTabs()) - 2 // This VM
+	v := b.View()
+	if !strings.Contains(v, "Look") || !strings.Contains(v, "Accent colour") || strings.Index(v, "Accent colour") < strings.Index(v, "MCP gateway") {
+		t.Fatalf("This VM:\n%s", v)
+	}
+	press2(b, "down", "down", "enter")
+	if b.panel == nil || b.panel.title != "Accent colour" {
+		t.Fatalf("panel %+v", b.panel)
+	}
+	press2(b, "down", "enter", "a", "enter")
+	if b.result.Kind != BoardApply || b.result.Settings["accent"] != "lagoon" {
+		t.Errorf("result %+v", b.result)
+	}
+}

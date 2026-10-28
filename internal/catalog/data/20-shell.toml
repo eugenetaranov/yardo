@@ -85,7 +85,7 @@ type = "apt"
 packages = ["tmux"]
 
 [[item.step]]
-type = "file"
+type = "template"
 src = "tmux.conf"
 to = "~/.tmux.conf"
 keep_orig = true
@@ -205,7 +205,7 @@ label = "Shell niceties for zsh and bash: z, fzf keys, direnv, eza/bat aliases"
 source = "~/.config/yardo/shell.sh, sourced from .zshrc and .bashrc"
 
 [[item.step]]
-type = "file"
+type = "template"
 src = "shell.sh"
 to = "~/.config/yardo/shell.sh"
 

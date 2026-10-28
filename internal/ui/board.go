@@ -8,6 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+
+	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
 // The board is yardo's one screen: the picker's tabs and checklist, where
@@ -24,8 +26,19 @@ var (
 	red    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	yellow = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	keyOn  = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
-	rowOn  = lipgloss.NewStyle().Foreground(lipgloss.Color("#1A1A1A")).Background(lipgloss.Color("6")).Bold(true)
+	rowOn  = lipgloss.NewStyle().Foreground(lipgloss.Color("#1A1A1A")).Background(tui.Accent).Bold(true)
 )
+
+// SetAccent colours yardo's screens (and its prompts) with hex: the
+// user's accent colour.
+func SetAccent(hex string) {
+	c := lipgloss.Color(hex)
+	tui.Accent = c
+	accent = lipgloss.NewStyle().Foreground(c)
+	accentBd = accent.Bold(true)
+	tabOn = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1A1A1A")).Background(c)
+	rowOn = lipgloss.NewStyle().Foreground(lipgloss.Color("#1A1A1A")).Background(c).Bold(true)
+}
 
 // Fixable reports whether fixing (applying it again) is what a state
 // needs.
@@ -51,13 +64,18 @@ type BoardItem struct {
 	Source          string
 }
 
-// BoardSetting is one of the machine's access settings (This VM).
+// BoardSetting is one of This VM's settings: who can reach a service, or
+// how things look.
 type BoardSetting struct {
 	Key, Label string
+	// Section is This VM's section it's listed in ("": who can reach it).
+	Section string
 	// Choices are value and label pairs, in order.
 	Choices [][2]string
 	// Value is the saved choice; Pending the one queued ("" for none).
 	Value, Pending string
+	// Swatches are a colour per choice, shown beside it (the accent).
+	Swatches map[string]string
 }
 
 func (s *BoardSetting) label(v string) string {
@@ -127,9 +145,11 @@ type Board struct {
 type panel struct {
 	title string
 	lines []string
-	// opts are the choices (label, value); sel the selected one.
-	opts [][2]string
-	sel  int
+	// opts are the choices (label, value); sel the selected one; swatches
+	// a colour per value, shown beside its choice.
+	opts     [][2]string
+	sel      int
+	swatches map[string]string
 	// on is what a choice does.
 	on func(value string) tea.Cmd
 }
@@ -294,11 +314,13 @@ func (b *Board) rows() []row {
 	heads := len(t.Sections) > 0
 	for _, s := range sectionsOf(t) {
 		var rs []row
-		switch s.ID {
-		case accessSection:
-			for _, st := range b.settings {
+		for _, st := range b.settings {
+			if st.Section == s.ID || (st.Section == "" && s.ID == accessSection) {
 				rs = append(rs, row{setting: st})
 			}
+		}
+		switch s.ID {
+		case accessSection:
 		case machineSection:
 			for i := range b.actions {
 				rs = append(rs, row{action: &b.actions[i]})
@@ -535,7 +557,10 @@ func (b *Board) act(r *row) tea.Cmd {
 		if s.Pending != "" {
 			cur = s.Pending
 		}
-		p := &panel{title: "Who can reach the " + s.Label}
+		p := &panel{title: s.Label, swatches: s.Swatches}
+		if s.Section == "" || s.Section == accessSection {
+			p.title = "Who can reach the " + s.Label
+		}
 		for n, c := range s.Choices {
 			mark := "( ) "
 			if c[0] == s.Value {
@@ -835,9 +860,13 @@ func (b *Board) View() string {
 			}
 		}
 		for n, o := range p.opts {
-			line := "  " + o[0]
+			sw := ""
+			if hex, ok := p.swatches[o[1]]; ok {
+				sw = lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Render("███") + " "
+			}
+			line := "  " + sw + o[0]
 			if n == p.sel {
-				line = rowOn.Render(padTo("› "+o[0], w-8))
+				line = "› " + sw + rowOn.Render(padTo(o[0], w-14))
 			}
 			pl = append(pl, " "+accentBd.Render("│")+" "+line)
 		}

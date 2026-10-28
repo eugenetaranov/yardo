@@ -382,7 +382,7 @@ func (f fileStep) content(e *Env) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	vars := map[string]string{"user": e.User, "home": e.Home}
+	vars := map[string]string{"user": e.User, "home": e.Home, "accent": accentOf(e)}
 	for k, v := range f.s.Vars {
 		vars[k] = v
 	}

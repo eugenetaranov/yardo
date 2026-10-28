@@ -1,5 +1,7 @@
-# yardo's Starship prompt: one line, the essentials. Yours to change
-# (yardo writes this file only when there is none). Presets and options:
+# yardo's Starship prompt: one line, the essentials, in this machine's
+# accent colour. yardo rewrites this file while its first line is this
+# one (when you change the accent); change that line and the file is yours
+# to edit, and yardo leaves it alone. Presets and options:
 # https://starship.rs/config/
 add_newline = false
 command_timeout = 1000
@@ -11,11 +13,16 @@ show_always = false
 
 [hostname]
 ssh_only = true
+style = "bold {{ .accent }}"
 format = "[$hostname]($style) "
 
 [directory]
 truncation_length = 3
 truncate_to_repo = true
+style = "bold {{ .accent }}"
+
+[character]
+success_symbol = "[❯](bold {{ .accent }})"
 
 [cmd_duration]
 min_time = 3_000

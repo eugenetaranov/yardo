@@ -37,7 +37,10 @@ type Answers struct {
 	MCPListen string   `json:"mcp_listen"`
 	// MCPDomain is the gateway's domain name when MCPListen is "public"
 	// (HTTPS by Caddy).
-	MCPDomain  string   `json:"mcp_domain,omitempty"`
+	MCPDomain string `json:"mcp_domain,omitempty"`
+	// Accent is the user's accent colour (steps.Accents), in yardo and
+	// their shell: "" is coral.
+	Accent     string   `json:"accent,omitempty"`
 	MCPServers []string `json:"mcp_servers"`
 	// WireAgents: nil means never asked.
 	WireAgents *bool  `json:"wire_agents"`

@@ -66,8 +66,17 @@ ready, `✗` stopped or not installed, `~` half set up or changed by hand,
 - **Needs you** comes first while something does: what's broken, what
   needs a value, what has updates. **This VM** holds git, agents, logins
   and system settings, who can reach the MCP gateway, containers'
-  published ports and the Docker API, how to connect from a laptop, and
-  checking for updates or checking again.
+  published ports and the Docker API, the accent colour, how to connect
+  from a laptop, and checking for updates or checking again.
+
+**Accent colour.** This VM → Look → Accent colour: Coral (the default),
+Lagoon (aqua blue), Pistachio, Lavender, Amber or Rose. yardo's screen
+takes it, and so does your shell, so each machine's terminals can be
+told apart at a glance: the prompt (Powerlevel10k's OS icon, directory
+and prompt character, or Starship's), tmux's status bar and active pane
+border, and `$YARDO_ACCENT` for your own scripts. yardo only rewrites a
+prompt config it wrote (its first line says so); after `p10k configure`,
+or once you take that line off your `starship.toml`, the file is yours.
 
 The first run comes with the usual stack queued: zsh, Neovim, tmux,
 zellij, the linters, the dev CLIs, the database clients, the admin and

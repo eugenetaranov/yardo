@@ -23,14 +23,14 @@ func TestFromBoard(t *testing.T) {
 	c, err := k.fromBoard(context.Background(), ui.BoardResult{Kind: ui.BoardApply,
 		Adds:     []string{"terraform", "mise:pulumi"},
 		Removes:  []string{"tmux", "mise:starship"},
-		Settings: map[string]string{"mcp": "vpn", "ports": "all", "api": "lan"}}, false)
+		Settings: map[string]string{"mcp": "vpn", "ports": "all", "api": "lan", "accent": "pistachio"}}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(c.picks, []string{"zsh", "terraform"}) || !slices.Equal(c.dropped, []string{"tmux"}) || !slices.Equal(c.miseExtra, []string{"pulumi"}) {
 		t.Errorf("picks %v dropped %v extra %v", c.picks, c.dropped, c.miseExtra)
 	}
-	if a.MCPListen != "vpn" || !k.listenSet || a.DockerPorts != "" || a.DockerAPI != "lan" {
+	if a.MCPListen != "vpn" || !k.listenSet || a.DockerPorts != "" || a.DockerAPI != "lan" || a.Accent != "pistachio" {
 		t.Errorf("settings: mcp %q ports %q api %q", a.MCPListen, a.DockerPorts, a.DockerAPI)
 	}
 	if len(c.items) == 0 || !slices.ContainsFunc(c.items, func(it *catalog.Item) bool { return it.ID == "terraform" }) {
