@@ -352,7 +352,12 @@ its service isn't running), `partial` (some of its steps done),
 `missing`, then values to fill in (a credential left empty: which file,
 which key), then `ok`. `--json` prints it for scripts (`"schema": 1`, every
 user set up), and each run keeps the latest in
-`/var/lib/yardo/status/<user>.json`. `sudo yardo --verify` is the same
+`/var/lib/yardo/status/<user>.json`, and a copy for you in
+`~/.cache/yardo/status.json`: `yardo status` without sudo shows that one,
+and how old it is. Once something is set up, `sudo yardo` opens on the
+same view, a home screen (problems first, then what's installed by tab;
+enter shows an item's details), and `a` goes on to the picker to add or
+change things. `sudo yardo --verify` is the same
 check, failing when something is down, partial or missing.
 
 **Profiles.** `sudo yardo export > team.toml` writes the choices on

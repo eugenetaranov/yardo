@@ -89,6 +89,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "yardo: %v\n", err)
 		os.Exit(1)
 	}
+	// yardo status without sudo: the last check's copy in ~/.cache/yardo.
+	if os.Geteuid() != 0 && len(os.Args) > 1 && os.Args[1] == "status" {
+		if err := cachedStatus(os.Args[2:], os.Stdout, time.Now()); err != nil {
+			fmt.Fprintf(os.Stderr, "yardo: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if os.Geteuid() != 0 && needsRoot(os.Args[1:]) {
 		err := asRoot(os.Args[1:])
 		fmt.Fprintf(os.Stderr, "yardo: %v\n", err)
@@ -331,6 +339,21 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	var items []*catalog.Item
 	extra := a.MiseExtra
 	sec := creds.New()
+	if interactive && len(profs) == 0 && len(a.Picks) > 0 {
+		// Set up already: the home screen first; the picker from there.
+		for {
+			act, err := o.home(ctx, cat, a, stdout)
+			if err != nil {
+				return err
+			}
+			if act == ui.HomeQuit {
+				return nil
+			}
+			if act == ui.HomeChange {
+				break
+			}
+		}
+	}
 	if interactive {
 		k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) },
 			profile: len(profs) > 0, dropped: dropped, port: func() int { p, _ := st.Port(user); return p }}
@@ -394,7 +417,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		}
 		if o.status {
 			us := userStatusOf(ctx, env, a.User, items, extra)
-			if err := saveStatus(o.state, us, time.Now()); err != nil {
+			if err := saveStatus(ctx, env, o.state, us, time.Now()); err != nil {
 				fmt.Fprintf(stderr, "yardo: saving the status: %v\n", err)
 			}
 			o.statuses = append(o.statuses, us)

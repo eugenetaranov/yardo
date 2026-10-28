@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/profile"
@@ -363,5 +364,34 @@ func TestStatusJSON(t *testing.T) {
 	}
 	if !strings.HasPrefix(out.String(), me.Username+": ") || !strings.Contains(out.String(), "DB clients") {
 		t.Errorf("status:\n%s", out.String())
+	}
+}
+
+// yardo status without sudo prints the copy the last check left in
+// ~/.cache/yardo, and how old it is.
+func TestCachedStatus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	if err := cachedStatus(nil, &bytes.Buffer{}, now); err == nil || !strings.Contains(err.Error(), "sudo yardo status") {
+		t.Errorf("no copy yet: err = %v", err)
+	}
+	b := `{"schema": 1, "checked_at": "2026-10-28T10:00:00Z", "user": "ada", "counts": {"ok": 1, "down": 1},
+	  "items": [{"id": "mcpjungle-install", "label": "MCPJungle gateway", "state": "down", "detail": "mcpjungle@ada isn't running"},
+	            {"id": "go", "label": "Go", "state": "ok"}]}`
+	if err := os.MkdirAll(filepath.Join(home, ".cache", "yardo"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, userStatusCache), []byte(b), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := cachedStatus(nil, &out, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ada: 1 ok · 1 down", "down      MCPJungle gateway: mcpjungle@ada isn't running", "Checked 2h ago;"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("lacks %q:\n%s", want, out.String())
+		}
 	}
 }
