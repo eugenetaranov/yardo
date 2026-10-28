@@ -57,7 +57,8 @@ account is created). Once something is set up, it opens on a short menu:
 how the machine is, in three lines, then what you can do, in plain
 words, changing with the machine: **Fix 2 problems** (one card each:
 fix it, or see how it's set up), **Fill in 1 secret** (opens its file in
-your editor), **Add or remove tools**, **Who can connect** (the MCP
+your editor), **Add or remove tools**, **MCP servers** (the gateway's
+list: add one, or another instance of one), **Who can connect** (the MCP
 gateway, containers' published ports and the Docker API, each a row of
 choices with a sentence saying what it means), **Connect from a laptop**
 and **Check for updates**. Esc always goes back. **Add or remove
@@ -158,7 +159,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    cloudflared, restic + rclone.
 6. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,
    Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no
-   hooks), and the MCPJungle gateway (its servers: This VM → Agents).
+   hooks), and the MCPJungle gateway (its servers: MCP servers, on the menu).
 7. **Shell and CLI:** one zsh item that brings everything: zsh as the login
    shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
    search and completions, fzf-tab (Tab opens an fzf list with directory

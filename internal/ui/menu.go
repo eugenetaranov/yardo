@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,6 +30,9 @@ const (
 	MenuApply
 	// MenuUpdates checks for newer versions (slow).
 	MenuUpdates
+	// MenuChange asks Result.ID's answer Result.Change again (the MCP
+	// servers), then applies it.
+	MenuChange
 )
 
 // MenuResult is what the menu was left with.
@@ -37,6 +41,7 @@ type MenuResult struct {
 	ID       string
 	Inputs   []string
 	Settings map[string]string
+	Change   string
 }
 
 // menuRow is one of the home's actions.
@@ -108,6 +113,13 @@ func (m *Menu) rows() []menuRow {
 		out = append(out, menuRow{"secrets", "Fill in " + plural(len(ss), "secret", "secrets"), strings.Join(keys, ", ")})
 	}
 	out = append(out, menuRow{"tools", "Add or remove tools", "VPNs, languages, AI tools, databases and more"})
+	if slices.ContainsFunc(m.items, func(i *BoardItem) bool { return i.ID == "mcpjungle" && i.Picked }) {
+		note := "none yet: add GitHub, Jira, Grafana and more"
+		if len(m.info.MCP) > 0 {
+			note = strings.Join(m.info.MCP, ", ")
+		}
+		out = append(out, menuRow{"mcp", "MCP servers", note})
+	}
 	if len(m.settings) > 0 {
 		var now []string
 		for _, s := range m.settings {
@@ -195,6 +207,8 @@ func (m *Menu) key(k string) tea.Cmd {
 				return m.quit(MenuResult{Kind: MenuTools})
 			case "check":
 				return m.quit(MenuResult{Kind: MenuUpdates})
+			case "mcp":
+				return m.quit(MenuResult{Kind: MenuChange, ID: "mcpjungle", Change: "mcp"})
 			default:
 				m.open(id)
 			}

@@ -474,9 +474,12 @@ func (k *asker) askDockerPorts() error {
 	return nil
 }
 
-// askInstances offers to add other instances of a server (a second
-// Grafana, another AWS account), each named: its own settings, keys and
-// tools (grafana-prod__<tool>). It returns servers with them added.
+// addInstance is the server list's row for another instance of a server.
+const addInstance = "+instance"
+
+// askInstances adds other instances of a server (a second Grafana,
+// another AWS account), each named: its own settings, keys and tools
+// (grafana-prod__<tool>). It returns servers with them added.
 func (k *asker) askInstances(servers []string, specs map[string]*mcp.Spec) ([]string, error) {
 	names := make([]string, 0, len(specs))
 	for n := range specs {
@@ -484,11 +487,6 @@ func (k *asker) askInstances(servers []string, specs map[string]*mcp.Spec) ([]st
 	}
 	sort.Strings(names)
 	for {
-		more, err := ui.Confirm("Add another instance of a server?",
-			"A second Grafana, another OpenSearch cluster or AWS account: each with a name of its own, its own settings and keys.", false)
-		if err != nil || !more {
-			return servers, err
-		}
 		def := names[0]
 		if len(servers) > 0 {
 			if spec, _, err := mcp.Instance(servers[len(servers)-1]); err == nil {
@@ -521,6 +519,10 @@ func (k *asker) askInstances(servers []string, specs map[string]*mcp.Spec) ([]st
 			servers = append(servers, entry)
 			break
 		}
+		more, err := ui.Confirm("Add one more instance?", "", false)
+		if err != nil || !more {
+			return servers, err
+		}
 	}
 }
 
@@ -546,6 +548,8 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool, f
 		}
 		entries = append(entries, &ui.Entry{Tab: "mcp", ID: entry, Label: name, Source: "another " + spec + " · " + specs[spec].Description, On: true})
 	}
+	entries = append(entries, &ui.Entry{Tab: "mcp", ID: addInstance, Label: "+ another instance of a server",
+		Source: "a second Grafana, another OpenSearch cluster or AWS account: a name of its own, its own settings"})
 	servers, out, err := ui.NewPicker("MCPJungle — which MCP servers?", []ui.Tab{{ID: "mcp", Title: "MCP servers"}}, entries, ui.Options{}).Run()
 	if err != nil {
 		return err
@@ -553,8 +557,11 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool, f
 	if out != ui.Done {
 		return ui.ErrQuit
 	}
-	if servers, err = k.askInstances(servers, specs); err != nil {
-		return err
+	if i := slices.Index(servers, addInstance); i >= 0 {
+		servers = slices.Delete(servers, i, i+1)
+		if servers, err = k.askInstances(servers, specs); err != nil {
+			return err
+		}
 	}
 	c.mcpServers = servers
 	// An unticked server stops being kept up; it stays enabled (drop one
@@ -800,13 +807,7 @@ func (k *asker) review(c *choices, options ...string) string {
 		if host == "tailscale" {
 			host = "<tailscale address>"
 		}
-		var names []string
-		for _, entry := range k.a.MCPServers {
-			if _, n, err := mcp.Instance(entry); err == nil {
-				names = append(names, n)
-			}
-		}
-		fmt.Fprintf(k.out, "  MCPJungle: http://%s:%d/mcp · servers: %s\n", host, port, strings.Join(names, " "))
+		fmt.Fprintf(k.out, "  MCPJungle: http://%s:%d/mcp · servers: %s\n", host, port, strings.Join(mcpNames(k.a.MCPServers), " "))
 	}
 	if k.a.Git.Name+k.a.Git.Email != "" {
 		fmt.Fprintf(k.out, "  Git: %s <%s>\n", k.a.Git.Name, k.a.Git.Email)
@@ -837,4 +838,15 @@ func homeOf(name string) string {
 		return u.HomeDir
 	}
 	return "/home/" + name
+}
+
+// mcpNames are the picked servers' names (grafana:prod is grafana-prod).
+func mcpNames(entries []string) []string {
+	var out []string
+	for _, entry := range entries {
+		if _, n, err := mcp.Instance(entry); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
 }

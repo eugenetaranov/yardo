@@ -130,3 +130,27 @@ func TestMenuConnect(t *testing.T) {
 		t.Errorf("back on %s, row %d", m.screen, m.sel)
 	}
 }
+
+// With the gateway set up, the home has an MCP servers row (its servers
+// as the note), which asks for them again.
+func TestMenuMCPServers(t *testing.T) {
+	m := testMenu(true)
+	if strings.Contains(m.View(), "MCP servers") {
+		t.Errorf("an MCP servers row without the gateway:\n%s", m.View())
+	}
+	m = testMenu(true)
+	m.items = append(m.items, &BoardItem{ID: "mcpjungle", Label: "MCP servers on MCPJungle", Tab: "agents", Picked: true, State: "ok"})
+	m.info.MCP = []string{"jira", "grafana-prod"}
+	if v := m.View(); !strings.Contains(v, "MCP servers") || !strings.Contains(v, "jira, grafana-prod") {
+		t.Fatalf("no MCP servers row:\n%s", v)
+	}
+	for n, r := range m.rows() {
+		if r.id == "mcp" {
+			m.sel = n
+		}
+	}
+	mk(m, "enter")
+	if m.result.Kind != MenuChange || m.result.ID != "mcpjungle" || m.result.Change != "mcp" {
+		t.Errorf("result %+v", m.result)
+	}
+}

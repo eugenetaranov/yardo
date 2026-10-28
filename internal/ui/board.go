@@ -20,7 +20,11 @@ import (
 // holds the machine's settings and actions; "Review" lists the queue.
 
 // HomeInfo is what the board's header says.
-type HomeInfo struct{ Host, User, Checked string }
+type HomeInfo struct {
+	Host, User, Checked string
+	// MCP are the gateway's servers (the menu's MCP servers row).
+	MCP []string
+}
 
 var (
 	red    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))

@@ -366,7 +366,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	if len(addrs) > 0 {
 		sub += "  ·  " + addrs[0].ip
 	}
-	return &screen{info: ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04")}, sub: sub, first: first, updates: updates,
+	return &screen{info: ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04"), MCP: mcpNames(a.MCPServers)}, sub: sub, first: first, updates: updates,
 		tabs: tabs, items: items, settings: settings, actions: actions, connect: strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")}, nil
 }
 

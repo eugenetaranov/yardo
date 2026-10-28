@@ -415,6 +415,17 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				case ui.MenuApply:
 					board = &ui.BoardResult{Kind: ui.BoardApply, Settings: res.Settings}
 					break loop
+				case ui.MenuChange:
+					k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) }}
+					before := *a
+					if sec, err = k.change(ctx, res.Change); errors.Is(err, ui.ErrQuit) {
+						*a, sec = before, creds.New()
+						continue // back to the menu, nothing changed
+					} else if err != nil {
+						return err
+					}
+					fix, changed, mcpEdit = []string{res.ID}, true, k.mcpEdit
+					break loop
 				}
 				continue
 			}
