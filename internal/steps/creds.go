@@ -61,6 +61,27 @@ func (c credStep) skeleton() []byte {
 	return []byte(b.String())
 }
 
+// Missing: the keys still empty, but for those whose tool has its own
+// login, or isn't installed.
+func (c credStep) Missing(ctx context.Context, e *Env) []string {
+	b, _ := os.ReadFile(e.Path(c.s.To))
+	var out []string
+	for _, k := range c.s.Keys {
+		if k.LoggedIn != "" {
+			if _, err := os.Stat(e.Path(k.LoggedIn)); err == nil {
+				continue
+			}
+		}
+		if k.When != "" && !has(ctx, e, k.When) {
+			continue
+		}
+		if EnvGet(b, k.Name) == "" {
+			out = append(out, c.s.To+": "+k.Name)
+		}
+	}
+	return out
+}
+
 func (c credStep) Check(_ context.Context, e *Env) (bool, error) {
 	p := e.Path(c.s.To)
 	cur, err := os.ReadFile(p)

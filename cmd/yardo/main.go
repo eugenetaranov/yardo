@@ -102,6 +102,10 @@ func main() {
 
 type options struct {
 	yes, dryRun, verify, showVersion, list bool
+	// status: `yardo status` (verify, reported per item; --json for
+	// scripts), collected in statuses.
+	status, json bool
+	statuses     []userStatus
 	state, log, legacy, user               string
 	profiles                               list
 	// lock is the profiles' [lock] tables, merged.
@@ -166,6 +170,14 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			if err := o.gitKeyArgs(fs.Args()[1:], stderr); err != nil {
 				return err
 			}
+		case "status":
+			sfs := flag.NewFlagSet("yardo status", flag.ContinueOnError)
+			sfs.SetOutput(stderr)
+			sfs.BoolVar(&o.json, "json", false, "print JSON (schema 1) for scripts")
+			if err := sfs.Parse(fs.Args()[1:]); err != nil {
+				return err
+			}
+			o.status, o.verify = true, true
 		default:
 			return fmt.Errorf("unknown argument %q", fs.Arg(0))
 		}
@@ -201,8 +213,15 @@ func cli(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	var failed []string
+	if o.status {
+		defer func() {
+			if o.json {
+				_ = writeStatusJSON(stdout, o.statuses, time.Now())
+			}
+		}()
+	}
 	for _, u := range users {
-		if len(users) > 1 {
+		if len(users) > 1 && !o.json {
 			fmt.Fprintf(stdout, "\n== %s\n", u)
 		}
 		err := o.runUser(ctx, cat, st, u, profs, interactive, stdout, stderr)
@@ -373,6 +392,17 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		if o.dryRun {
 			return run.DryRun(stdout, env, items, extra)
 		}
+		if o.status {
+			us := userStatusOf(ctx, env, a.User, items, extra)
+			if err := saveStatus(o.state, us, time.Now()); err != nil {
+				fmt.Fprintf(stderr, "yardo: saving the status: %v\n", err)
+			}
+			o.statuses = append(o.statuses, us)
+			if !o.json {
+				printStatus(stdout, us)
+			}
+			return nil
+		}
 		return verify(ctx, stdout, env, items)
 	}
 	logf, err := os.OpenFile(o.log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
@@ -536,14 +566,16 @@ func verify(ctx context.Context, w io.Writer, env *steps.Env, items []*catalog.I
 		if s.Item.Hidden() {
 			continue
 		}
-		switch s.State {
-		case "ok":
+		switch {
+		case s.State == "ok":
 			fmt.Fprintf(w, "ok         %s\n", s.Item.Label)
-		case "unchecked":
+		case s.State == "unchecked":
 			fmt.Fprintf(w, "unchecked  %s (not ported yet)\n", s.Item.Label)
-		default:
+		case s.State == "secret":
+			fmt.Fprintf(w, "secret     %s: fill in %s\n", s.Item.Label, strings.Join(s.Inputs, ", "))
+		case s.Problem():
 			missing++
-			fmt.Fprintf(w, "missing    %s: %s\n", s.Item.Label, s.Detail)
+			fmt.Fprintf(w, "%-10s %s: %s\n", s.State, s.Item.Label, s.Detail)
 		}
 	}
 	if missing > 0 {

@@ -54,6 +54,25 @@ func (a aptStep) Packages(e *Env) []string {
 
 // MissingPackages returns the packages that aren't installed.
 func MissingPackages(ctx context.Context, e *Env, pkgs []string) ([]string, error) {
+	if c := e.checks; c != nil {
+		if c.debs == nil {
+			// Every package's status at once, instead of one dpkg-query each.
+			c.debs = map[string]bool{}
+			out, _ := e.Exec.Run(ctx, Cmd{Name: "dpkg-query", Args: []string{"-W", "-f=${Package}\t${Status}\n"}})
+			for _, l := range strings.Split(string(out), "\n") {
+				if name, status, ok := strings.Cut(l, "\t"); ok && strings.Contains(status, "install ok installed") {
+					c.debs[name] = true
+				}
+			}
+		}
+		var missing []string
+		for _, p := range pkgs {
+			if !c.debs[strings.SplitN(p, ":", 2)[0]] {
+				missing = append(missing, p)
+			}
+		}
+		return missing, nil
+	}
 	var missing []string
 	for _, p := range pkgs {
 		out, err := e.Exec.Run(ctx, Cmd{Name: "dpkg-query", Args: []string{"-W", "-f=${Status}", p}})
@@ -202,6 +221,17 @@ type miseVersion struct {
 
 // miseList is `mise ls --global --json`: tool → its versions.
 func miseList(ctx context.Context, e *Env) (map[string][]miseVersion, bool) {
+	if c := e.checks; c != nil {
+		if !c.miseSet {
+			c.mise, c.miseOK = miseListNow(ctx, e)
+			c.miseSet = true
+		}
+		return c.mise, c.miseOK
+	}
+	return miseListNow(ctx, e)
+}
+
+func miseListNow(ctx context.Context, e *Env) (map[string][]miseVersion, bool) {
 	out, err := e.Exec.Run(ctx, Cmd{Name: "mise", Args: []string{"ls", "--global", "--json"}, AsUser: true})
 	if err != nil {
 		return nil, false
@@ -617,6 +647,17 @@ func (u systemctlStep) Check(ctx context.Context, e *Env) (bool, error) {
 	_, err1 := e.Exec.Run(ctx, Cmd{Name: "systemctl", Args: []string{"is-enabled", "--quiet", u.s.Unit}})
 	_, err2 := e.Exec.Run(ctx, Cmd{Name: "systemctl", Args: []string{"is-active", "--quiet", u.s.Unit}})
 	return err1 == nil && err2 == nil, nil
+}
+
+// Down: the unit is enabled but not running.
+func (u systemctlStep) Down(ctx context.Context, e *Env) (bool, string) {
+	return unitDown(ctx, e, u.s.Unit), u.s.Unit
+}
+
+func unitDown(ctx context.Context, e *Env, unit string) bool {
+	_, en := e.Exec.Run(ctx, Cmd{Name: "systemctl", Args: []string{"is-enabled", "--quiet", unit}})
+	_, act := e.Exec.Run(ctx, Cmd{Name: "systemctl", Args: []string{"is-active", "--quiet", unit}})
+	return en == nil && act != nil
 }
 
 func (u systemctlStep) Apply(ctx context.Context, e *Env) error {

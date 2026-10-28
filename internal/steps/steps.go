@@ -86,6 +86,9 @@ type Env struct {
 
 	// tsAddr caches the Tailscale address (listenHost).
 	tsAddr string
+	// checks caches what the Checks read, while it isn't nil (a status
+	// run, which changes nothing between them): see CacheChecks.
+	checks *checkCache
 	// Note shows text after the run (a step that has to leave something
 	// for the user to do).
 	Note func(text string)
@@ -195,6 +198,35 @@ type BeforeApt interface{ BeforeApt() bool }
 // and is idempotent itself (registering MCP servers): it doesn't count as
 // a change, and a failure is a note, not a failed item.
 type Always interface{ Always() bool }
+
+// Inputs is a step that can be waiting for values the user left empty
+// (keys to fill in): Missing lists them, as "file: KEY".
+type Inputs interface {
+	Missing(ctx context.Context, e *Env) []string
+}
+
+// Service is a step that runs a service: Down reports whether it is set up
+// (enabled) but not running, and its name.
+type Service interface {
+	Down(ctx context.Context, e *Env) (bool, string)
+}
+
+// checkCache is what Checks read once per status run: the user's mise
+// tools, and the installed packages.
+type checkCache struct {
+	mise    map[string][]miseVersion
+	miseOK  bool
+	miseSet bool
+	debs    map[string]bool
+}
+
+// CacheChecks makes the Checks share what they read (mise's tools, dpkg's
+// packages) until the returned func is called. Only for runs that change
+// nothing between Checks (status, verify).
+func (e *Env) CacheChecks() (done func()) {
+	e.checks = &checkCache{}
+	return func() { e.checks = nil }
+}
 
 // checkAll reports whether every step but the followers has nothing to
 // do: a Go step made of other steps.

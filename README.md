@@ -7,7 +7,7 @@ and languages, cloud, IaC and Kubernetes CLIs, Docker, coding agents (Claude
 Code, Codex, Gemini, OpenCode, Goose, …) wired to an MCP gateway, system
 hardening, SSH and git keys, your dotfiles. It remembers what you picked and
 re-applies it idempotently. Teams share TOML profiles and roll them across
-many machines; `yardo verify` reports drift.
+many machines; `yardo status` shows what's installed and what isn't right.
 
 yardo is a single static Go binary for Linux (amd64, arm64) with everything
 it needs embedded. It needs root (it configures the OS) and Ubuntu or Debian.
@@ -345,6 +345,15 @@ public key and where to add it.
 `.team-files` win over yardo's own of the same name. A download in an item
 must be pinned (`sha256`) or say why it can't be (`unverified = "…"`), or
 yardo refuses to load it.
+
+**Status.** `sudo yardo status` checks every item you picked, changing
+nothing, and lists the ones that aren't right first: `down` (set up, but
+its service isn't running), `partial` (some of its steps done),
+`missing`, then values to fill in (a credential left empty: which file,
+which key), then `ok`. `--json` prints it for scripts (`"schema": 1`, every
+user set up), and each run keeps the latest in
+`/var/lib/yardo/status/<user>.json`. `sudo yardo --verify` is the same
+check, failing when something is down, partial or missing.
 
 **Profiles.** `sudo yardo export > team.toml` writes the choices on
 a VM as a profile: a TOML file of picks and plain settings (git identity,

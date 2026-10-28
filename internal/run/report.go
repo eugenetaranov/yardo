@@ -49,23 +49,40 @@ func DryRun(w io.Writer, e *steps.Env, items []*catalog.Item, extraMise []string
 // Status is one item's verify result.
 type Status struct {
 	Item *catalog.Item
-	// State is "ok", "missing" or "unchecked" (an item still run by the
-	// bash installer, which has no check).
-	State  string
-	Detail string // the first step not done
+	// State is "ok"; "missing" (none of its steps done); "partial" (some
+	// done); "down" (set up, but a service of it isn't running); "secret"
+	// (set up, but values left empty: Inputs); or "unchecked" (an item still
+	// run by the bash installer, which has no check).
+	State string
+	// Detail is the first step not done, or the service that's down.
+	Detail string
+	// Done of Total steps have nothing to do.
+	Done, Total int
+	// Inputs are the values left empty ("file: KEY").
+	Inputs []string
+}
+
+// Problem reports whether the state needs fixing (a secret to fill in or
+// an unchecked item doesn't).
+func (s Status) Problem() bool {
+	return s.State == "missing" || s.State == "partial" || s.State == "down"
 }
 
 // Verify checks each item's steps without changing anything.
 func Verify(ctx context.Context, e *steps.Env, items []*catalog.Item) []Status {
+	defer e.CacheChecks()()
 	var out []Status
 	for _, x := range build(items) {
 		st := Status{Item: x.item, State: "ok"}
 		if x.err != nil {
 			st.State, st.Detail = "missing", x.err.Error()
+			out = append(out, st)
+			continue
 		}
+		down, failed, legacy := "", 0, false
 		for _, s := range x.steps {
 			if _, ok := s.(steps.LegacyStep); ok {
-				st.State = "unchecked"
+				legacy = true
 				continue
 			}
 			if f, ok := s.(steps.Follower); ok && f.Follows() {
@@ -74,14 +91,48 @@ func Verify(ctx context.Context, e *steps.Env, items []*catalog.Item) []Status {
 			if a, ok := s.(steps.Always); ok && a.Always() {
 				continue
 			}
-			done, err := s.Check(ctx, e)
-			if err != nil || !done {
-				st.State = "missing"
+			st.Total++
+			if done, err := s.Check(ctx, e); err == nil && done {
+				st.Done++
+				continue
+			}
+			failed++
+			if sv, ok := s.(steps.Service); ok {
+				if d, name := sv.Down(ctx, e); d {
+					// Set up but not running: down, unless something else is missing.
+					if down == "" {
+						down = name + " isn't running"
+					}
+					st.Done++
+					continue
+				}
+			}
+			if st.Detail == "" {
 				if acts := s.Plan(e); len(acts) > 0 {
 					st.Detail = acts[0].String()
 				}
-				break
 			}
+		}
+		downOnly := down != "" && st.Done == st.Total
+		if downOnly {
+			st.Done-- // the service's step isn't done
+		}
+		for _, s := range x.steps {
+			if in, ok := s.(steps.Inputs); ok {
+				st.Inputs = append(st.Inputs, in.Missing(ctx, e)...)
+			}
+		}
+		switch {
+		case legacy && failed == 0:
+			st.State = "unchecked"
+		case downOnly:
+			st.State, st.Detail = "down", down
+		case failed > 0 && st.Done > 0:
+			st.State = "partial"
+		case failed > 0:
+			st.State = "missing"
+		case len(st.Inputs) > 0:
+			st.State, st.Detail = "secret", st.Inputs[0]
 		}
 		out = append(out, st)
 	}

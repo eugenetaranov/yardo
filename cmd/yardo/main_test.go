@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -323,5 +324,44 @@ func TestNewShellHint(t *testing.T) {
 		if got := newShellHint(strings.Fields(changed)); !strings.Contains(got, want) || (want == "") != (got == "") {
 			t.Errorf("%q: %q, want %q", changed, got, want)
 		}
+	}
+}
+
+// yardo status --json: one schema-1 report for scripts, and a snapshot per
+// user in the state directory.
+func TestStatusJSON(t *testing.T) {
+	state := t.TempDir()
+	me, _ := user.Current()
+	if err := answers.Write(state, &answers.Answers{User: me.Username, Picks: []string{"dbclients"}, MiseExtra: []string{"starship"}}); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if err := cli([]string{"--state", state, "status", "--json"}, &out, &errb); err != nil {
+		t.Fatalf("status: %v\n%s", err, errb.String())
+	}
+	var r statusReport
+	if err := json.Unmarshal(out.Bytes(), &r); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out.String())
+	}
+	if r.Schema != 1 || len(r.Users) != 1 || r.Users[0].User != me.Username {
+		t.Fatalf("report = %+v", r)
+	}
+	ids := map[string]string{}
+	for _, it := range r.Users[0].Items {
+		ids[it.ID] = it.State
+	}
+	if ids["dbclients"] == "" || ids["mise:starship"] == "" {
+		t.Errorf("items = %v", ids)
+	}
+	if _, err := os.Stat(filepath.Join(state, "status", me.Username+".json")); err != nil {
+		t.Errorf("no snapshot: %v", err)
+	}
+	// For people: a summary line, then the items.
+	out.Reset()
+	if err := cli([]string{"--state", state, "status"}, &out, &errb); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.String(), me.Username+": ") || !strings.Contains(out.String(), "DB clients") {
+		t.Errorf("status:\n%s", out.String())
 	}
 }

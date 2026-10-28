@@ -367,6 +367,11 @@ func (u mcpUnitStep) Check(ctx context.Context, e *Env) (bool, error) {
 	return systemctlStep{catalog.Step{Unit: mcpInstance(e)}}.Check(ctx, e)
 }
 
+// Down: the user's gateway is enabled but not running.
+func (mcpUnitStep) Down(ctx context.Context, e *Env) (bool, string) {
+	return unitDown(ctx, e, mcpInstance(e)), mcpInstance(e)
+}
+
 func (u mcpUnitStep) Apply(ctx context.Context, e *Env) error {
 	if err := resolveListen(ctx, e); err != nil {
 		return err
@@ -631,6 +636,25 @@ func (mcpServersStep) Check(ctx context.Context, e *Env) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// Missing: the required keys of the picked servers left empty (the server
+// isn't registered until they're filled in).
+func (mcpServersStep) Missing(ctx context.Context, e *Env) []string {
+	var out []string
+	for _, n := range servers(e) {
+		s, err := mcp.Load(ctx, mcp.Dirs(e.Share), n)
+		if err != nil {
+			continue
+		}
+		b, _ := mcpRead(ctx, e, n+"/env")
+		for _, k := range s.Required {
+			if EnvGet(b, k) == "" {
+				out = append(out, "~/.mcp/"+n+"/env: "+k)
+			}
+		}
+	}
+	return out
 }
 
 func (mcpServersStep) Apply(ctx context.Context, e *Env) error {

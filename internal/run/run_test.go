@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -15,6 +16,7 @@ import (
 
 type fakeExec struct {
 	ran       []string
+	inactive  map[string]bool // units enabled but not running
 	installed map[string]bool
 	badPkg    string
 	miseFail  bool
@@ -25,7 +27,21 @@ type fakeExec struct {
 func (f *fakeExec) Run(_ context.Context, c steps.Cmd) ([]byte, error) {
 	f.ran = append(f.ran, c.String())
 	switch c.Name {
+	case "systemctl":
+		if len(c.Args) == 3 && c.Args[0] == "is-active" && f.inactive[c.Args[2]] {
+			return nil, errors.New("inactive")
+		}
+		return nil, nil
 	case "dpkg-query":
+		if len(c.Args) == 2 { // every package's status (a cached check)
+			var b strings.Builder
+			for p, ok := range f.installed {
+				if ok {
+					b.WriteString(p + "\tinstall ok installed\n")
+				}
+			}
+			return []byte(b.String()), nil
+		}
 		if f.installed[c.Args[2]] {
 			return []byte("install ok installed"), nil
 		}
@@ -318,5 +334,45 @@ func TestExtraMiseToolsBeforeConfiguring(t *testing.T) {
 	r.Run(context.Background(), []*catalog.Item{aptItem("a", "jq"), last}, []string{"starship"})
 	if got, want := out.String(), "✓ a\n✓ mise: starship\n✓ dots\n"; !strings.HasSuffix(got, want) {
 		t.Errorf("progress:\n%s\nwant\n%s", got, want)
+	}
+}
+
+// Status says what's wrong: some steps done (partial), a service set up but
+// not running (down), values left empty (secret). Packages are read once.
+func TestVerifyStates(t *testing.T) {
+	x := &fakeExec{installed: map[string]bool{"tmux": true, "nginx": true}, inactive: map[string]bool{"nginx": true}}
+	r, _ := runner(t, x)
+	if err := os.MkdirAll(r.Env.Path("/home/ada/.config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(r.Env.Path("/home/ada/.config/k.env"), []byte("A_KEY=\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items := []*catalog.Item{
+		item("half", nil, catalog.Step{Type: "apt", Packages: []string{"tmux"}}, catalog.Step{Type: "file", Src: "a.conf", To: "~/.a.conf"}),
+		item("web", nil, catalog.Step{Type: "apt", Packages: []string{"nginx"}}, catalog.Step{Type: "systemctl", Unit: "nginx"}),
+		item("keys", nil, catalog.Step{Type: "cred", Format: "env", To: "~/.config/k.env", Keys: []catalog.CredKey{{Name: "A_KEY", Prompt: "A key"}}}),
+	}
+	got := map[string]Status{}
+	for _, s := range Verify(context.Background(), r.Env, items) {
+		got[s.Item.ID] = s
+	}
+	if s := got["half"]; s.State != "partial" || s.Done != 1 || s.Total != 2 || !strings.Contains(s.Detail, ".a.conf") {
+		t.Errorf("half = %+v", s)
+	}
+	if s := got["web"]; s.State != "down" || s.Detail != "nginx isn't running" || !s.Problem() {
+		t.Errorf("web = %+v", s)
+	}
+	if s := got["keys"]; s.State != "secret" || len(s.Inputs) != 1 || s.Inputs[0] != "~/.config/k.env: A_KEY" || s.Problem() {
+		t.Errorf("keys = %+v", s)
+	}
+	n := 0
+	for _, c := range x.ran {
+		if strings.HasPrefix(c, "dpkg-query") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("dpkg-query ran %d times, want once: %v", n, x.ran)
 	}
 }
