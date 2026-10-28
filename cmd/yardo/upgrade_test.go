@@ -167,4 +167,13 @@ func TestVersionCmd(t *testing.T) {
 	if err := versionCmd([]string{"down"}, &out, &out); err == nil {
 		t.Error("want an error for 'version down'")
 	}
+	// up, update and upgrade all upgrade.
+	fakeRelease(t, "1.3.0", false)
+	installed(t)
+	for _, cmd := range []string{"up", "update", "upgrade"} {
+		out.Reset()
+		if err := versionCmd([]string{cmd, "--check"}, &out, &out); err != nil || !strings.Contains(out.String(), "1.2.3 → 1.3.0 available") {
+			t.Errorf("version %s --check: %v %q", cmd, err, out.String())
+		}
+	}
 }

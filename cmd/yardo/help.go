@@ -84,8 +84,9 @@ for HOST in ~/.ssh/config.
 `,
 	"version": `Usage: yardo version [up [--check] [--yes] [--version vX.Y.Z]]
 
-Prints the version. "up" upgrades to the latest release, checked against
-its checksums.txt (as root; a Homebrew install upgrades through brew).
+Prints the version. "up" (or "update", "upgrade") upgrades to the latest
+release, checked against its checksums.txt (as root; a Homebrew install
+upgrades through brew).
 
   --check    only say whether a newer release is out
   --yes      upgrade without asking

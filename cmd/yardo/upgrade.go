@@ -26,7 +26,7 @@ import (
 	"github.com/eugenetaranov/yardo/internal/ui"
 )
 
-// yardo version [up|upgrade]: the version, or an upgrade to the latest
+// yardo version [up|update|upgrade]: the version, or an upgrade to the latest
 // release (a Homebrew install upgrades through brew).
 
 const (
@@ -50,13 +50,13 @@ var (
 	upgradeHTTP      = &http.Client{Timeout: 30 * time.Second}
 )
 
-// versionCmd runs `yardo version [up|upgrade] [--check] [--yes] [--version vX.Y.Z]`.
+// versionCmd runs `yardo version [up|update|upgrade] [--check] [--yes] [--version vX.Y.Z]`.
 func versionCmd(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		fmt.Fprintln(stdout, version)
 		return nil
 	}
-	if args[0] != "up" && args[0] != "upgrade" {
+	if !slices.Contains([]string{"up", "update", "upgrade"}, args[0]) {
 		return fmt.Errorf("version: unknown argument %q (want: yardo version up)", args[0])
 	}
 	fs := flag.NewFlagSet("yardo version up", flag.ContinueOnError)
