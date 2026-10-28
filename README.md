@@ -47,7 +47,15 @@ apply|verify|gitkey`).
 ## Using it
 
 `sudo yardo` sets up the user who ran it (`--user ada` for another; a missing
-account is created) on one screen: tabs by area (**Dev**, **DevOps**,
+account is created). Once something is set up, it opens on a short menu:
+how the machine is, in three lines, then what you can do, in plain
+words, changing with the machine: **Fix 2 problems** (one card each:
+fix it, or see how it's set up), **Fill in 1 secret** (opens its file in
+your editor), **Add or remove tools**, **Who can connect** (the MCP
+gateway, containers' published ports and the Docker API, each a row of
+choices with a sentence saying what it means), **Connect from a laptop**
+and **Check for updates**. Esc always goes back. **Add or remove
+tools**, and the first run, open the full screen: tabs by area (**Dev**, **DevOps**,
 **AI**, **Shell & CLI**, **System**, then **This VM**) above a checklist,
 where a ticked box means installed and a mark beside it how it is: `✓`
 ready, `✗` stopped or not installed, `~` half set up or changed by hand,
@@ -74,8 +82,9 @@ zellij, the linters, the dev CLIs, the database clients, the admin and
 debug tools, Docker and its tools, Claude Code with OpenSpec, the
 MCPJungle gateway, git (name and email, defaults, lazygit, GitHub) and
 the two agent items. Space takes off what you don't want; a installs.
-Later runs open on the same screen with what's installed ticked and
-checked, and ask only about what's new.
+Later runs show what's installed ticked and checked, and ask only about
+what's new. `sudo yardo --ui board` opens on this screen instead of the
+menu.
 
 The run follows the same order: everything is installed first (the extra
 mise tools at the end of that), then configured, with your dotfiles last.

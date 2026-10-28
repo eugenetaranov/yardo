@@ -112,7 +112,9 @@ type options struct {
 	yes, dryRun, verify, showVersion, list bool
 	// status: `yardo status` (verify, reported per item; --json for
 	// scripts), collected in statuses.
-	status, json, updates    bool
+	status, json, updates bool
+	// ui is the screen sudo yardo opens on: menu, or board.
+	ui                       string
 	statuses                 []userStatus
 	state, log, legacy, user string
 	profiles                 list
@@ -146,6 +148,7 @@ func cli(args []string, stdout, stderr io.Writer) error {
 	fs.StringVar(&o.log, "log", envOr("YARDO_LOG", defaultLog), "log file (every command and its output)")
 	fs.Var(&o.profiles, "profile", "apply a profile (file or https URL; repeatable, later ones win)")
 	fs.StringVar(&o.user, "user", "", "the account to set up, created if missing (wins over profiles)")
+	fs.StringVar(&o.ui, "ui", "menu", "the screen sudo yardo opens on: menu (a short menu of actions) or board (the tabbed checklist)")
 	o.legacy = envOr("YARDO_LEGACY", defaultLegacy)
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -348,19 +351,64 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	var board *ui.BoardResult
 	first := len(a.Picks) == 0
 	if interactive && len(profs) == 0 {
+		// The menu first (the board on a first run, or with --ui board);
+		// the board from the menu's "Add or remove tools".
+		menu := o.ui != "board" && !first
+		onBoard := !menu
 		updates := false
+		var d *screen
 	loop:
 		for {
-			res, err := o.board(ctx, cat, a, first, updates)
+			if d == nil {
+				if d, err = o.screenData(ctx, cat, a, first, updates); err != nil {
+					return err
+				}
+				updates = false
+			}
+			if !onBoard {
+				res, err := ui.NewMenu(d.info, d.sub, d.items, d.settings, d.connect, d.updates).Run()
+				if err != nil {
+					return err
+				}
+				switch res.Kind {
+				case ui.MenuQuit:
+					return nil
+				case ui.MenuTools:
+					onBoard = true
+				case ui.MenuUpdates:
+					d, updates = nil, true
+				case ui.MenuFix:
+					fix = []string{res.ID}
+					break loop
+				case ui.MenuEdit:
+					if fix, err = o.fillIn(ctx, a, res.Inputs); err != nil {
+						return err
+					}
+					if fix != nil {
+						break loop
+					}
+					d = nil
+				case ui.MenuApply:
+					board = &ui.BoardResult{Kind: ui.BoardApply, Settings: res.Settings}
+					break loop
+				}
+				continue
+			}
+			res, err := ui.NewBoard(d.info, first, d.tabs, d.items, d.settings, d.actions, d.connect).Run()
 			if err != nil {
 				return err
 			}
-			updates = false
 			switch res.Kind {
 			case ui.BoardQuit:
-				return nil
+				if !menu {
+					return nil
+				}
+				d.forget()
+				onBoard = false
+			case ui.BoardRefresh:
+				d = nil
 			case ui.BoardUpdates:
-				updates = true
+				d, updates = nil, true
 			case ui.BoardFix:
 				fix = []string{res.ID}
 				break loop
@@ -371,6 +419,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				if fix != nil {
 					break loop
 				}
+				d = nil
 			case ui.BoardApply:
 				board = &res
 				break loop
