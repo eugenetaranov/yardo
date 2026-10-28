@@ -142,6 +142,78 @@ type = "apt"
 packages = ["nfs-common", "cifs-utils", "autofs"]
 
 [[item]]
+id = "openvpn-client"
+tab = "system"
+label = "OpenVPN client"
+source = "apt openvpn · sudo openvpn --config <profile>.ovpn, or /etc/openvpn/client/<name>.conf + systemctl start openvpn-client@<name>"
+
+[[item.step]]
+type = "apt"
+packages = ["openvpn"]
+
+# The server: its own CA (easy-rsa), UDP 1194, clients on 10.8.0.0/24 with
+# all their traffic sent through this machine (NAT), a profile for the user.
+[[item]]
+id = "openvpn-server"
+tab = "system"
+label = "OpenVPN server (UDP 1194; a client profile in ~/openvpn)"
+source = "apt openvpn easy-rsa · /etc/openvpn/server · NAT 10.8.0.0/24 · ~/openvpn/client.ovpn · more: sudo yardo-vpn client <name>"
+
+[[item.step]]
+type = "apt"
+packages = ["openvpn", "easy-rsa", "iptables"]
+
+[[item.step]]
+type = "file"
+src = "yardo-vpn"
+to = "/usr/local/sbin/yardo-vpn"
+mode = "0755"
+
+[[item.step]]
+type = "run"
+cmd = "/usr/local/sbin/yardo-vpn setup"
+creates = "/etc/openvpn/server/tc.key"
+
+[[item.step]]
+type = "sysctl"
+src = "sysctl-openvpn.conf"
+to = "/etc/sysctl.d/62-yardo-openvpn.conf"
+
+[[item.step]]
+type = "file"
+src = "yardo-vpn-nat.service"
+to = "/etc/systemd/system/yardo-vpn-nat.service"
+
+[[item.step]]
+type = "file"
+src = "openvpn-server.conf"
+to = "/etc/openvpn/server/server.conf"
+
+[[item.step]]
+type = "systemctl"
+action = "daemon-reload"
+
+[[item.step]]
+type = "systemctl"
+unit = "yardo-vpn-nat"
+
+[[item.step]]
+type = "systemctl"
+unit = "openvpn-server@server"
+
+# A changed config (a newer yardo) takes effect.
+[[item.step]]
+type = "run"
+cmd = "systemctl restart yardo-vpn-nat openvpn-server@server"
+on_change = true
+
+[[item.step]]
+type = "run"
+cmd = "install -d -m 0700 -o {{user}} -g {{group}} {{home}}/openvpn && /usr/local/sbin/yardo-vpn client {{user}} > {{home}}/openvpn/client.ovpn.tmp && chown {{user}}:{{group}} {{home}}/openvpn/client.ovpn.tmp && chmod 0600 {{home}}/openvpn/client.ovpn.tmp && mv {{home}}/openvpn/client.ovpn.tmp {{home}}/openvpn/client.ovpn"
+creates = "~/openvpn/client.ovpn"
+text = "OpenVPN: your client profile is ~/openvpn/client.ovpn (copy it to your machine). Its \"remote\" is this machine's own address: change it if clients reach the machine another way (a public IP behind NAT, a DNS name), and open UDP 1194 in the cloud firewall. Another client: sudo yardo-vpn client <name> > <name>.ovpn"
+
+[[item]]
 id = "devlimits"
 tab = "sysconf"
 scope = "system"

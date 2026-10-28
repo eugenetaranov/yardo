@@ -160,7 +160,13 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    settings](#your-own-settings)).
 8. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
    iperf3, nmap, strace, htop, btop, ncdu, …), Tailscale (log in under
-   Configure), NFS/SMB clients.
+   Configure), NFS/SMB clients, the OpenVPN client, and an OpenVPN server:
+   its own CA (easy-rsa), UDP 1194, clients on 10.8.0.0/24 with all their
+   traffic sent through the machine (NAT, through Docker's DOCKER-USER
+   chain when Docker is there), and a profile for you in
+   `~/openvpn/client.ovpn` (change its `remote` if clients reach the
+   machine by another address, and open UDP 1194 in the cloud firewall).
+   `sudo yardo-vpn client <name> > <name>.ovpn` makes more.
 
 ### [2/2] Configure
 

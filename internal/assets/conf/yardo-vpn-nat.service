@@ -1,0 +1,15 @@
+# yardo: NAT and forwarding for the OpenVPN server's clients (10.8.0.0/24).
+[Unit]
+Description=NAT for yardo's OpenVPN server
+After=network-online.target docker.service
+Wants=network-online.target
+Before=openvpn-server@server.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/yardo-vpn nat up
+ExecStop=/usr/local/sbin/yardo-vpn nat down
+
+[Install]
+WantedBy=multi-user.target

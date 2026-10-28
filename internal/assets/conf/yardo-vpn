@@ -1,0 +1,80 @@
+#!/bin/sh
+# yardo-vpn — the OpenVPN server yardo sets up (yardo rewrites this file).
+#
+#   yardo-vpn setup          make the CA, the server's key and the tls-crypt key (once)
+#   yardo-vpn client NAME    print a client profile (.ovpn) for NAME, making its key once;
+#                            YARDO_VPN_HOST=<address> sets the address clients connect to
+#   yardo-vpn nat up|down    NAT and forwarding for the VPN subnet (yardo-vpn-nat.service)
+set -eu
+
+D=/etc/openvpn/server
+NET=10.8.0.0/24
+EASYRSA=/usr/share/easy-rsa/easyrsa
+export EASYRSA_PKI="$D/pki" EASYRSA_BATCH=1 EASYRSA_ALGO=ec EASYRSA_CURVE=prime256v1 \
+  EASYRSA_CA_EXPIRE=3650 EASYRSA_CERT_EXPIRE=3650
+umask 077
+
+usage() { sed -n '4,7s/^# \{0,1\}//p' "$0" >&2; exit 2; }
+
+case "${1:-}" in
+  setup)
+    [ -f "$D/pki/ca.crt" ] || { "$EASYRSA" init-pki; EASYRSA_REQ_CN=yardo-vpn-ca "$EASYRSA" build-ca nopass; }
+    [ -f "$D/pki/issued/server.crt" ] || "$EASYRSA" build-server-full server nopass
+    [ -f "$D/tc.key" ] || openvpn --genkey secret "$D/tc.key"
+    ;;
+  client)
+    n=${2:-}
+    case "$n" in ''|.*|*[!A-Za-z0-9._-]*|server) echo "yardo-vpn: bad client name '$n'" >&2; exit 2 ;; esac
+    [ -f "$D/pki/issued/$n.crt" ] || "$EASYRSA" build-client-full "$n" nopass >&2
+    host=${YARDO_VPN_HOST:-$(ip -4 route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')}
+    cat <<OVPN
+# OpenVPN profile for $n on $(hostname). If clients reach this machine by
+# another address (a public IP behind NAT, a DNS name), change "remote".
+client
+dev tun
+proto udp
+remote $host 1194
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+auth SHA256
+data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+verb 3
+<ca>
+$(cat "$D/pki/ca.crt")
+</ca>
+<cert>
+$(sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/p' "$D/pki/issued/$n.crt")
+</cert>
+<key>
+$(cat "$D/pki/private/$n.key")
+</key>
+<tls-crypt>
+$(cat "$D/tc.key")
+</tls-crypt>
+OVPN
+    ;;
+  nat)
+    out=$(ip -4 route show default | awk '{print $5; exit}')
+    # Docker sets FORWARD's policy to DROP; its DOCKER-USER chain is where
+    # rules of our own go.
+    chain=FORWARD
+    iptables -n -L DOCKER-USER >/dev/null 2>&1 && chain=DOCKER-USER
+    case "${2:-}" in up) op=-I ;; down) op=-D ;; *) usage ;; esac
+    # rule TABLE CHAIN ARGS…: added once on up, removed on down.
+    rule() {
+      t=$1 c=$2; shift 2
+      if iptables -t "$t" -C "$c" "$@" 2>/dev/null; then
+        [ "$op" = -I ] || iptables -t "$t" -D "$c" "$@"
+      elif [ "$op" = -I ]; then
+        iptables -t "$t" -I "$c" "$@"
+      fi
+    }
+    rule nat POSTROUTING -s "$NET" -o "$out" -j MASQUERADE
+    rule filter "$chain" -s "$NET" -j ACCEPT
+    rule filter "$chain" -d "$NET" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    ;;
+  *) usage ;;
+esac
