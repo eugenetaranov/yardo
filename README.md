@@ -10,7 +10,9 @@ re-applies it idempotently. Teams share TOML profiles and roll them across
 many machines; `yardo status` shows what's installed and what isn't right.
 
 yardo is a single static Go binary for Linux (amd64, arm64) with everything
-it needs embedded. It needs root (it configures the OS) and Ubuntu or Debian.
+it needs embedded. It needs root (it configures the OS) and Ubuntu (22.04 or
+later) or Debian (12 or later), or a derivative of one; on anything else
+`install.sh` and yardo stop before changing anything.
 
 ## Install
 
@@ -26,6 +28,10 @@ it against the release's `checksums.txt`; `--version v0.1.0` (or
 `YARDO_VERSION`) picks a release. Homebrew on Linux: `brew install
 eugenetaranov/tap/yardo`. From source: `go install
 github.com/eugenetaranov/yardo/cmd/yardo@latest`.
+
+`yardo --help` lists every command and flag (`yardo status --help` and so
+on for one command's). `--dry-run` shows what a run would do, changing
+nothing; every command and its output goes to `/var/log/yardo.log`.
 
 To upgrade later, run `yardo version up` (`--check` only says whether a newer
 release is out). It downloads the release, checks it against
@@ -56,8 +62,9 @@ ready, `✗` stopped or not installed, `~` half set up or changed by hand,
 - **space** queues adding (`[+]`) or removing (`[-]`) an item; removing one
   stops yardo looking after it, and it stays installed.
 - **enter** acts on the row: fix what's broken (apply it again, now), fill
-  in a missing value (in your editor), change a setting, or show an
-  item's details.
+  in a missing value (in your editor), change a setting or an answer (git
+  name and email, the prompt, the dotfiles repo, the MCP servers), or show
+  an item's details.
 - **a** applies the queue: it asks what the new items need (git name,
   prompt, MCP servers, keys), then installs. **Review**, the last tab,
   lists the queue.
@@ -142,7 +149,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    cloudflared, restic + rclone.
 6. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,
    Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no
-   hooks), and the MCPJungle gateway (its servers: Configure → Agents).
+   hooks), and the MCPJungle gateway (its servers: This VM → Agents).
 7. **Shell and CLI:** one zsh item that brings everything: zsh as the login
    shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
    search and completions, fzf-tab (Tab opens an fzf list with directory
@@ -244,10 +251,11 @@ lists the installed ones under "Installed without a pinned checksum", with
 why. A `catalog.d` item that downloads must do the same (`sha256`, or
 `unverified = "why"`), or yardo refuses to load it.
 
-After the two screens, it asks every typed question in one place: git name
-and email, timezone, how to reach GitHub, and the credentials of the items
-you picked. Then a review screen offers Install,
-Start over or Quit. `~/yardo.txt` lists everything installed so far,
+When you press a and confirm, it asks every typed question in one place:
+git name and email, timezone, how to reach GitHub, and the credentials of
+the items you added, then installs. To change an answer later (git name
+and email, the zsh prompt, the dotfiles repo, the MCP servers), press enter
+on the item and choose Change: yardo asks again and applies just that item. `~/yardo.txt` lists everything installed so far,
 grouped by how it was installed, with how to update or remove it.
 
 ### Your own settings
@@ -373,7 +381,7 @@ this machine's paths, `-p` ports open here); and the MCP gateway's URL,
 how to make a laptop's token (`mcp-sync client laptop`) and the
 `claude mcp add` and Codex lines that use it, or, when the gateway is for
 this machine only, an SSH tunnel to it. For tools that can't use SSH,
-Configure → System settings → "Docker API over TLS" opens port 2376,
+This VM → Who can reach it → "Docker API" opens port 2376,
 client certificates only, from the local network (10/8, 172.16/12,
 192.168/16, Tailscale's 100.64/10) and the VPNs, or the VPNs only; never
 the internet. yardo makes a CA (`/etc/docker/tls`) and Docker gets the
@@ -381,8 +389,8 @@ port from a systemd drop-in, with `--live-restore`, so its restart leaves
 the containers running. `sudo yardo-docker client laptop` makes a
 laptop's certificate and says how to use it; Docker can't revoke one, so
 `sudo yardo-docker revoke-all` makes a new CA instead. Containers' published ports are
-reachable from everywhere, as Docker does it, unless Configure → System
-settings → "Container ports" keeps them to the VPNs or this machine.
+reachable from everywhere, as Docker does it, unless This VM → Who can
+reach it → "Container ports" keeps them to the VPNs or this machine.
 yardo's firewall rules are nftables tables of its own in
 `/etc/yardo/firewall` (loaded at boot by `yardo-firewall.service`): they
 only keep these ports out, and leave Docker's, the VPNs' and anyone
@@ -404,14 +412,17 @@ Each run leaves a copy for you in
 and how old it is. `sudo yardo` shows the same marks on its screen. `sudo yardo --verify` is the same
 check, failing when something is down, partial or missing.
 
-**Profiles.** `sudo yardo export > team.toml` writes the choices on
+**Profiles.** `sudo yardo export --name team > team.toml` writes the choices on
 a VM as a profile: a TOML file of picks and plain settings (git identity,
 timezone, MCP servers), never secrets. `sudo yardo --profile team.toml
 --yes` applies one (`--profile` repeats, later files win, so a team file and
 a personal one combine); a profile can also be an https URL. Without `--yes`, `--profile` shows the plan for review and asks for the
-secrets it can't hold. A profile with `name = "team"` is a layer: applying
-a newer `team` profile replaces the picks the old one made, and lists the
-ones it dropped (they stay installed, but aren't re-applied). Picks you
+secrets it can't hold; `--dry-run` shows what it would do, changing
+nothing. A profile with `name = "team"` (what `export --name team` writes)
+is a layer: applying a newer `team` profile replaces the picks the old one
+made, and lists the ones it dropped (they stay installed, but aren't
+re-applied). An unnamed profile only ever adds picks. `yardo --list` lists
+every item's id, for writing `picks` by hand. Picks you
 made yourself are never dropped. `user = "ada"` in a profile, or
 `--user ada` (which wins), sets up that account, creating it like the VM's
 first user (passwordless sudo, same groups) if it doesn't exist.

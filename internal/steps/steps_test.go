@@ -206,6 +206,25 @@ func TestAptRepo(t *testing.T) {
 	}
 }
 
+// {{distro}}: Debian gets Docker's debian repo and key, not Ubuntu's.
+func TestAptRepoDistro(t *testing.T) {
+	const fpr = "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) { return []byte("fpr:::::::::" + fpr + ":\n"), nil }}
+	e := testEnv(t, x)
+	e.Distro, e.Codename = "debian", "bookworm"
+	var got string
+	e.Download = func(_ context.Context, url string) ([]byte, error) { got = url; return []byte("KEY"), nil }
+	s := catalog.Step{Type: "apt_repo", Name: "docker", KeyURL: "https://download.docker.com/linux/{{distro}}/gpg", KeyFingerprint: fpr,
+		Source: "Types: deb\nURIs: https://download.docker.com/linux/{{distro}}\nSuites: {{codename}}\n"}
+	apply(t, e, step(t, s))
+	if got != "https://download.docker.com/linux/debian/gpg" {
+		t.Errorf("key url = %s", got)
+	}
+	if src := read(t, e.Path("/etc/apt/sources.list.d/docker.sources")); !strings.Contains(src, "linux/debian\nSuites: bookworm") {
+		t.Errorf("sources = %q", src)
+	}
+}
+
 func TestRunNeedsCreatesOrCheck(t *testing.T) {
 	x := &fakeExec{}
 	e := testEnv(t, x)

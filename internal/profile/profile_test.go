@@ -74,7 +74,7 @@ func TestRoundTrip(t *testing.T) {
 	yes := true
 	src := &answers.Answers{Picks: []string{"dbclients", "zsh"}, MiseExtra: []string{"starship"}, Git: answers.Git{Name: "Ada", Email: "ada@example.com"},
 		TZ: "UTC", MCPServers: []string{"github"}, MCPListen: "127.0.0.1", WireAgents: &yes}
-	b := Export(src, nil)
+	b := Export(src, nil, "")
 	p, err := Parse("exported", b)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, b)
@@ -169,7 +169,7 @@ user = "-x"`} {
 func TestLock(t *testing.T) {
 	src := &answers.Answers{Picks: []string{"go"}}
 	lock := &answers.Lock{Mise: map[string]string{"go": "1.23.4", "go:golang.org/x/tools/gopls": "0.16.2"}, Apt: map[string]string{"docker-ce": "5:27.3.1-1~ubuntu.24.04~noble"}}
-	b := Export(src, lock)
+	b := Export(src, lock, "")
 	p, err := Parse("exported", b)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, b)
@@ -177,12 +177,30 @@ func TestLock(t *testing.T) {
 	if !reflect.DeepEqual(p.Lock, lock) {
 		t.Errorf("lock round trip:\n%s\n got %+v", b, p.Lock)
 	}
-	if strings.Contains(string(Export(src, &answers.Lock{})), "lock") {
+	if strings.Contains(string(Export(src, &answers.Lock{}, "")), "lock") {
 		t.Error("an empty lock is exported")
 	}
 	for _, bad := range []string{"[lock.mise]\ngo = \"1.2 3\"\n", "[lock.apt]\ncurl = \"\"\n", "[lock.mise]\ngo = \"$(x)\"\n", "[lock]\nkubectl = \"1.31.2\"\n"} {
 		if _, err := Parse("p.toml", []byte(bad)); err == nil {
 			t.Errorf("%q: want an error", bad)
 		}
+	}
+}
+
+// export --name: the exported profile is a layer, so a changed one drops
+// what it no longer lists; an unnamed export says how to make it one.
+func TestExportNamed(t *testing.T) {
+	src := &answers.Answers{Picks: []string{"dbclients", "go"}}
+	b := Export(src, nil, "team")
+	if strings.Contains(string(b), "Unnamed") {
+		t.Errorf("named export has the unnamed hint:\n%s", b)
+	}
+	a := &answers.Answers{}
+	apply(t, a, string(b))
+	if d := apply(t, a, "name = \"team\"\npicks = [\"go\"]\n"); !reflect.DeepEqual(d, []string{"dbclients"}) {
+		t.Errorf("dropped = %v, want [dbclients]", d)
+	}
+	if !strings.Contains(string(Export(src, nil, "")), "--name") {
+		t.Error("unnamed export should say how to name it")
 	}
 }

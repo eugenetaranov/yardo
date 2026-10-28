@@ -119,6 +119,9 @@ var (
 	userName  = regexp.MustCompile(`^[a-z][-a-z0-9_]{0,31}$`)
 )
 
+// ValidName reports whether name can name a profile (a layer).
+func ValidName(name string) bool { return layerName.MatchString(name) }
+
 // ValidUser reports whether name is a user name yardo will create
 // (Debian's default NAME_REGEX, without the trailing '$').
 func ValidUser(name string) bool { return userName.MatchString(name) }
@@ -194,10 +197,10 @@ func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnin
 	return dropped, warnings
 }
 
-// Export writes the saved answers as a profile, with lock's versions when
-// it pins any.
-func Export(a *answers.Answers, lock *answers.Lock) []byte {
-	p := Profile{Picks: a.Picks, MiseExtra: a.MiseExtra}
+// Export writes the saved answers as a profile named name (a layer; ""
+// for none), with lock's versions when it pins any.
+func Export(a *answers.Answers, lock *answers.Lock, name string) []byte {
+	p := Profile{Name: name, Picks: a.Picks, MiseExtra: a.MiseExtra}
 	if !lock.Empty() {
 		p.Lock = lock
 	}
@@ -219,6 +222,10 @@ func Export(a *answers.Answers, lock *answers.Lock) []byte {
 	var buf bytes.Buffer
 	buf.WriteString("# yardo profile v1: apply with `sudo yardo --profile <file> --yes`.\n")
 	buf.WriteString("# Data only: picks and settings, never secrets.\n")
+	if name == "" {
+		buf.WriteString("# Unnamed: applying it again only adds picks. Add `name = \"team\"` (or export\n")
+		buf.WriteString("# with --name) so a changed profile also drops the picks it no longer lists.\n")
+	}
 	enc := toml.NewEncoder(&buf)
 	enc.Indent = ""
 	if p.Picks == nil {

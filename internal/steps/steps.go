@@ -60,6 +60,7 @@ type Env struct {
 	Home        string // the user's home, without Root
 	Arch        string // dpkg architecture (amd64, arm64)
 	Codename    string // Ubuntu/Debian codename
+	Distro      string // ubuntu or debian: whose apt repos to use
 	Kernel      string // the running kernel's release (uname -r)
 	Exec        Execer
 	Files       fs.FS // the catalog's files (file/template src)

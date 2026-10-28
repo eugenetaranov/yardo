@@ -211,7 +211,7 @@ if_exists = true
 [[item]]
 id = "mcpjungle-install"
 tab = "ai"
-label = "MCPJungle MCP gateway (Docker; servers: Configure → Agents)"
+label = "MCPJungle MCP gateway (Docker; servers: This VM → Agents)"
 default = true
 needs = ["docker"]
 source = "release binary · systemd mcpjungle@<user> as mcp-<user>"

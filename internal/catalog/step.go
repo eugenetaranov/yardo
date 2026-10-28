@@ -20,8 +20,8 @@ type Step struct {
 	Tools []string `toml:"tools"`
 
 	// apt_repo: a signing key and a sources entry. Name names both files;
-	// Source is the deb822 body, with {{arch}}, {{codename}} and
-	// {{keyring}} filled in.
+	// Source is the deb822 body, with {{arch}}, {{codename}}, {{distro}}
+	// (ubuntu or debian; in KeyURL too) and {{keyring}} filled in.
 	Name           string `toml:"name"`
 	KeyURL         string `toml:"key_url"`
 	KeyFingerprint string `toml:"key_fingerprint"`

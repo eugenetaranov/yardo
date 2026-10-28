@@ -17,7 +17,12 @@ while [ $# -gt 0 ]; do
   case $1 in
     --version) version=${2:?--version needs a tag, like v0.1.0}; shift ;;
     --prefix) prefix=${2:?--prefix needs a directory}; shift ;;
-    -h|--help) sed -n '2,9p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help)
+      echo "Install yardo from its GitHub release, checked against its checksums.txt."
+      echo "  ... | sudo sh                          the latest release"
+      echo "  ... | sudo sh -s -- --version v0.1.0   a given release (or YARDO_VERSION)"
+      echo "  ... | sudo sh -s -- --prefix /opt/bin  another directory"
+      exit 0 ;;
     *) echo "install.sh: unknown argument $1" >&2; exit 2 ;;
   esac
   shift
@@ -31,6 +36,13 @@ case $(uname -m) in
   aarch64|arm64) arch=arm64 ;;
   *) die "no yardo build for $(uname -m)" ;;
 esac
+# yardo sets up Ubuntu and Debian (and their derivatives) only.
+os=$( (. /etc/os-release && echo " ${ID:-} ${ID_LIKE:-} ") 2>/dev/null || true)
+case $os in
+  *" ubuntu "*|*" debian "*) ;;
+  *) die "yardo sets up Ubuntu (22.04 or later) and Debian (12 or later); this is $( (. /etc/os-release && echo "${PRETTY_NAME:-$ID}") 2>/dev/null || echo "a system without /etc/os-release")" ;;
+esac
+[ -w "$prefix" ] || die "can't write to $prefix: run it with sudo (curl ... | sudo sh)"
 
 if command -v curl >/dev/null 2>&1; then
   get() { curl -fsSL --retry 3 -o "$2" "$1"; }
@@ -65,7 +77,6 @@ fi
 [ "$got" = "$want" ] || die "checksum mismatch for $tarball"
 
 tar -xzf "$tmp/$tarball" -C "$tmp" yardo
-[ -w "$prefix" ] || die "can't write to $prefix: run it with sudo"
 install -m 0755 "$tmp/yardo" "$prefix/yardo.new"
 mv -f "$prefix/yardo.new" "$prefix/yardo"
 echo "yardo $version installed to $prefix/yardo; run: sudo yardo"

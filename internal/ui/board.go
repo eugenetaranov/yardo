@@ -62,6 +62,9 @@ type BoardItem struct {
 	// tools; Source how it's installed.
 	Inputs, Updates []string
 	Source          string
+	// Changes are the answers enter can change (label and key), such as
+	// the git identity: a picked item's questions, asked again.
+	Changes [][2]string
 }
 
 // BoardSetting is one of This VM's settings: who can reach a service, or
@@ -102,6 +105,9 @@ const (
 	BoardFix
 	// BoardEdit opens Result.ID's values to fill in.
 	BoardEdit
+	// BoardChange asks Result.ID's Result.Change question again, then
+	// re-applies it.
+	BoardChange
 	// BoardRefresh checks everything again; BoardUpdates checks for newer
 	// versions too.
 	BoardRefresh
@@ -113,7 +119,9 @@ type BoardResult struct {
 	Kind BoardKind
 	ID   string
 	// Inputs are BoardEdit's item's values to fill in.
-	Inputs        []string
+	Inputs []string
+	// Change is BoardChange's answer to change (a BoardItem.Changes key).
+	Change        string
 	Adds, Removes []string
 	// Settings are the queued settings, key to value.
 	Settings map[string]string
@@ -596,10 +604,13 @@ func (b *Board) act(r *row) tea.Cmd {
 		case fixable(i):
 			b.panel = &panel{title: i.Label + ": " + stateWord(i.State),
 				lines: []string{i.Detail},
-				opts:  [][2]string{{"Fix it now (apply it again)", "fix"}, {"Remove it (stays installed; yardo stops looking after it)", "remove"}},
+				opts:  append([][2]string{{"Fix it now (apply it again)", "fix"}}, append(changeOpts(i), [2]string{"Remove it (stays installed; yardo stops looking after it)", "remove"})...),
 				on: func(v string) tea.Cmd {
 					if v == "fix" {
 						return b.done(BoardFix, i.ID)
+					}
+					if cmd := b.change(i, v); cmd != nil {
+						return cmd
 					}
 					i.Pending = "remove"
 					return nil
@@ -620,10 +631,33 @@ func (b *Board) act(r *row) tea.Cmd {
 				lines = append(lines, "yardo can't check this one yet (the bash installer runs it).")
 			}
 			lines = append(lines, "Space removes it.")
-			b.panel = &panel{title: i.Label + ": " + stateWord(i.State), lines: lines}
+			b.panel = &panel{title: i.Label + ": " + stateWord(i.State), lines: lines, opts: changeOpts(i),
+				on: func(v string) tea.Cmd { return b.change(i, v) }}
 		}
 	}
 	return nil
+}
+
+// changeOpts are the panel's options for i's answers: "Change …", each
+// asked again and then applied.
+func changeOpts(i *BoardItem) [][2]string {
+	var opts [][2]string
+	for _, c := range i.Changes {
+		opts = append(opts, [2]string{"Change " + c[0] + " (asks, then applies " + i.Label + " again)", "change:" + c[1]})
+	}
+	return opts
+}
+
+// change leaves the board to change i's answer v ("change:<key>"), or is
+// nil when v is another option.
+func (b *Board) change(i *BoardItem, v string) tea.Cmd {
+	key, ok := strings.CutPrefix(v, "change:")
+	if !ok {
+		return nil
+	}
+	cmd := b.done(BoardChange, i.ID)
+	b.result.Change = key
+	return cmd
 }
 
 // confirm asks before applying the queue.
@@ -824,6 +858,8 @@ func (b *Board) footer(r *row) string {
 			first = k("enter", "fix")
 		case secret(r.item):
 			first = k("enter", "fill in")
+		case len(r.item.Changes) > 0:
+			first = k("enter", "change")
 		}
 		keys = append(keys, first)
 		if r != nil && r.item != nil && r.item.Picked && r.item.Pending == "" {

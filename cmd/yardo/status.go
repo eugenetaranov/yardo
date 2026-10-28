@@ -229,6 +229,15 @@ func writeStatusJSON(w io.Writer, users []userStatus, now time.Time) error {
 // yet) and shows the board: every item, ticked when picked, with its
 // health; This VM's access settings and actions. With updates, it also
 // checks for newer versions (slow).
+// changes are the picked items whose answers enter can change (asked
+// again, then the item applied again): label and asker.change's key.
+var changes = map[string][2]string{
+	"gitid":     {"git name and email", "git"},
+	"zsh":       {"the zsh prompt", "prompt"},
+	"dotfiles":  {"the dotfiles repo", "dotfiles"},
+	"mcpjungle": {"the MCP servers", "mcp"},
+}
+
 func (o *options) board(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, first, updates bool) (ui.BoardResult, error) {
 	status := map[string]itemStatus{}
 	now := time.Now()
@@ -272,6 +281,9 @@ func (o *options) board(ctx context.Context, cat *catalog.Catalog, a *answers.An
 		bi := &ui.BoardItem{ID: it.ID, Label: it.Label, Tab: it.Tab, Picked: picked(it.ID), Source: it.Describe()}
 		if first && it.Default {
 			bi.Pending = "add"
+		}
+		if c, ok := changes[it.ID]; ok && bi.Picked {
+			bi.Changes = [][2]string{c}
 		}
 		if st, ok := status[it.ID]; ok && bi.Picked {
 			bi.State, bi.Detail, bi.Inputs, bi.Updates = st.State, st.Detail, st.Inputs, st.Updates

@@ -301,12 +301,25 @@ func (r aptRepoStep) listPath() string {
 }
 
 func (r aptRepoStep) source(e *Env) string {
-	s := strings.NewReplacer("{{arch}}", e.Arch, "{{codename}}", e.Codename, "{{keyring}}", r.keyPath()).Replace(r.s.Source)
+	s := strings.NewReplacer("{{arch}}", e.Arch, "{{codename}}", e.Codename, "{{distro}}", distro(e), "{{keyring}}", r.keyPath()).Replace(r.s.Source)
 	return strings.TrimSpace(s) + "\n"
 }
 
-func (r aptRepoStep) Plan(*Env) []Action {
-	return []Action{{"repo", r.listPath() + " (key " + r.s.KeyURL + ")"}}
+// keyURL is the signing key's URL, {{distro}} filled in.
+func (r aptRepoStep) keyURL(e *Env) string {
+	return strings.ReplaceAll(r.s.KeyURL, "{{distro}}", distro(e))
+}
+
+// distro is e's apt family, ubuntu when unknown.
+func distro(e *Env) string {
+	if e.Distro == "" {
+		return "ubuntu"
+	}
+	return e.Distro
+}
+
+func (r aptRepoStep) Plan(e *Env) []Action {
+	return []Action{{"repo", r.listPath() + " (key " + r.keyURL(e) + ")"}}
 }
 
 func (r aptRepoStep) Check(_ context.Context, e *Env) (bool, error) {
@@ -318,21 +331,21 @@ func (r aptRepoStep) Check(_ context.Context, e *Env) (bool, error) {
 }
 
 func (r aptRepoStep) Apply(ctx context.Context, e *Env) error {
-	kp := e.Path(r.keyPath())
+	kp, url := e.Path(r.keyPath()), r.keyURL(e)
 	if _, err := os.Stat(kp); err != nil {
 		if e.Download == nil {
 			return errors.New("no downloader")
 		}
-		key, err := e.Download(ctx, r.s.KeyURL)
+		key, err := e.Download(ctx, url)
 		if err != nil {
-			return fmt.Errorf("download the signing key %s: %w", r.s.KeyURL, err)
+			return fmt.Errorf("download the signing key %s: %w", url, err)
 		}
 		if len(key) == 0 {
-			return fmt.Errorf("download the signing key %s: empty", r.s.KeyURL)
+			return fmt.Errorf("download the signing key %s: empty", url)
 		}
 		if r.s.KeyFingerprint != "" {
 			if err := checkFingerprint(ctx, e, key, r.s.KeyFingerprint); err != nil {
-				return fmt.Errorf("%s: %w", r.s.KeyURL, err)
+				return fmt.Errorf("%s: %w", url, err)
 			}
 		}
 		if err := writeFile(kp, key, 0o644); err != nil {

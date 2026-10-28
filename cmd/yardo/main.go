@@ -8,7 +8,7 @@
 //	                              apply profiles (review first without --yes)
 //	yardo version [up [--check] [--yes] [--version vX.Y.Z]]
 //	                              the version; upgrade to the latest release
-//	sudo yardo export [--lock] [file]
+//	sudo yardo export [--name N] [--lock] [file]
 //	                              write the saved choices as a profile
 //	                              (--lock: with the installed versions)
 package main
@@ -56,6 +56,10 @@ const (
 )
 
 func main() {
+	if wantsHelp(os.Args[1:]) {
+		printHelp(os.Stdout, os.Args[1:])
+		return
+	}
 	// yardo version [up]: no share dir, no root except to replace a plain
 	// binary.
 	if len(os.Args) > 1 && os.Args[1] == "version" {
@@ -147,8 +151,10 @@ func cli(args []string, stdout, stderr io.Writer) error {
 	fs.Var(&o.profiles, "profile", "apply a profile (file or https URL; repeatable, later ones win)")
 	fs.StringVar(&o.user, "user", "", "the account to set up, created if missing (wins over profiles)")
 	o.legacy = envOr("YARDO_LEGACY", defaultLegacy)
+	fs.Usage = func() { fmt.Fprintln(stderr, "Run 'yardo --help' for the commands and flags.") }
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
+			printHelp(stdout, args)
 			return nil
 		}
 		return err
@@ -190,7 +196,12 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			}
 			o.status, o.verify = true, true
 		default:
-			return fmt.Errorf("unknown argument %q", fs.Arg(0))
+			return fmt.Errorf("unknown command %q (commands: status, export, connect, gitkey, version, forget; see yardo --help)", fs.Arg(0))
+		}
+	}
+	if !o.dryRun && !o.verify {
+		if err := readOSRelease("/etc/os-release").supported(); err != nil {
+			return err
 		}
 	}
 	interactive := !o.yes && !o.verify
@@ -372,6 +383,17 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				if fix != nil {
 					break loop
 				}
+			case ui.BoardChange:
+				k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) }}
+				before := *a
+				if sec, err = k.change(ctx, res.Change); errors.Is(err, ui.ErrQuit) {
+					*a, sec = before, creds.New()
+					continue // back to the board, nothing changed
+				} else if err != nil {
+					return err
+				}
+				fix, changed = []string{res.ID}, true
+				break loop
 			case ui.BoardApply:
 				board = &res
 				break loop
@@ -802,8 +824,12 @@ func (o *options) export(stdout, stderr io.Writer, cat *catalog.Catalog, st *ans
 	fs := flag.NewFlagSet("yardo export", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	lock := fs.Bool("lock", false, "add a [lock] table with the installed mise and apt versions")
+	name := fs.String("name", "", "name the profile, so applying a changed one drops the picks it no longer lists")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *name != "" && !profile.ValidName(*name) {
+		return fmt.Errorf("export: --name %q: want letters, digits, '.', '_' or '-'", *name)
 	}
 	if fs.NArg() > 1 {
 		return fmt.Errorf("export: unexpected argument %q", fs.Arg(1))
@@ -841,7 +867,7 @@ func (o *options) export(stdout, stderr io.Writer, cat *catalog.Catalog, st *ans
 			return err
 		}
 	}
-	b := profile.Export(a, l)
+	b := profile.Export(a, l, *name)
 	if file == "" {
 		_, err := stdout.Write(b)
 		return err
@@ -939,15 +965,9 @@ func writeSummary(env *steps.Env, items []*catalog.Item, extra []string) error {
 }
 
 // bashHandles says whether the bash yardo runs this command line:
-// forget isn't ported yet, and its help describes both.
+// forget isn't ported yet.
 func bashHandles(args []string) bool {
-	for _, a := range args {
-		switch a {
-		case "forget", "-h", "--help", "-help":
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, "forget")
 }
 
 // userHas reports whether tool is on the user's PATH (mise shims included).

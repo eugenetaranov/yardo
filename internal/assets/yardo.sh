@@ -1,22 +1,14 @@
 #!/usr/bin/env bash
 # yardo — pick what to install on this machine, then install it.
 #
-# The bash part of yardo: the Go binary unpacks it (with its files) to
-# /usr/local/share/yardo and runs it for the items not ported to Go yet,
-# and on architectures without a Go build. It goes once they are ported.
+#   sudo yardo forget         remove the keys, logins and secrets yardo set up
+#   sudo yardo forget --yes   the same, without asking first
 #
-#   sudo yardo             choose tools, languages, AI and settings
-#   sudo yardo --yes       re-apply everything chosen so far, no questions
-#   yardo --dry-run        ask, then show what would happen
-#   sudo yardo forget      remove the keys, logins and secrets it set up
+# forget lists what it removes (what yardo recorded creating) and asks
+# first. The tools stay installed. For everything else: yardo --help.
 #
-# Nothing is preselected. Everything ever chosen (no secrets) accumulates in
-# /var/lib/yardo/answers.json, and ~/yardo.txt lists how each tool
-# was installed and how to manage it.
-#
-# Credentials are never stored anywhere but their own config file: an item
-# that needs one asks once (empty = later) and writes the file at 0600; one
-# left empty is listed under "Secrets to fill in" in ~/yardo.txt.
+# (The bash part of yardo: the Go binary unpacks it to /usr/local/share/yardo
+# and runs it for the items not ported to Go yet.)
 set -euo pipefail
 
 SHARE=${YARDO_SHARE:-/usr/local/share/yardo}
@@ -169,7 +161,7 @@ SCREENS=("system|System" "shell|Shell & CLI" "dev|Dev tools" "lang|Languages"
 
 YES=0 DRY=0 FORGET=0 ONLY= BEGIN=0 FINISH=0 SECRETS=0
 ARGS=("$@")
-usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; }
 while [ $# -gt 0 ]; do
   case "$1" in
     -y|--yes) YES=1 ;;
@@ -826,7 +818,9 @@ add_dropin() {
     printf '\n%s\n' "$line" >> "$1"
   fi
 }
-codename() { . /etc/os-release; echo "${VERSION_CODENAME:-noble}"; }
+codename() { . /etc/os-release; case " ${ID:-} ${ID_LIKE:-} " in *" ubuntu "*) echo "${UBUNTU_CODENAME:-${VERSION_CODENAME:-noble}}" ;; *) echo "${VERSION_CODENAME:-noble}" ;; esac; }
+# distro: whose apt repos this machine uses (ubuntu or debian).
+distro() { . /etc/os-release; case " ${ID:-} ${ID_LIKE:-} " in *" ubuntu "*) echo ubuntu ;; *" debian "*) echo debian ;; *) echo ubuntu ;; esac; }
 
 install_cli() {
   apt_install ripgrep fd-find bat eza zoxide fzf git-delta direnv tree
@@ -910,10 +904,10 @@ install_vimcfg() {
 
 install_docker() {
   apt_install ca-certificates curl
-  add_key docker.asc https://download.docker.com/linux/ubuntu/gpg
+  add_key docker.asc "https://download.docker.com/linux/$(distro)/gpg"
   put_file /etc/apt/sources.list.d/docker.sources 0644 <<EOF || true
 Types: deb
-URIs: https://download.docker.com/linux/ubuntu
+URIs: https://download.docker.com/linux/$(distro)
 Suites: $(codename)
 Components: stable
 Architectures: $(deb_arch)

@@ -63,11 +63,11 @@ packages = ["ca-certificates", "curl"]
 [[item.step]]
 type = "apt_repo"
 name = "docker"
-key_url = "https://download.docker.com/linux/ubuntu/gpg"
+key_url = "https://download.docker.com/linux/{{distro}}/gpg"
 key_fingerprint = "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
 source = """
 Types: deb
-URIs: https://download.docker.com/linux/ubuntu
+URIs: https://download.docker.com/linux/{{distro}}
 Suites: {{codename}}
 Components: stable
 Architectures: {{arch}}
@@ -86,12 +86,12 @@ packages = ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin
 type = "systemctl"
 unit = "docker"
 
-# Where published ports can be reached from (Configure → System settings):
+# Where published ports can be reached from (This VM → Who can reach it):
 # everywhere unless that item says otherwise.
 [[item.step]]
 type = "go:docker_ports"
 
-# The Docker API over TLS, when Configure → System settings says so (off
+# The Docker API over TLS, when This VM → Who can reach it says so (off
 # otherwise: over SSH only).
 [[item.step]]
 type = "go:docker_api"
@@ -121,7 +121,7 @@ packages = ["podman", "uidmap", "slirp4netns", "passt", "skopeo", "buildah"]
 id = "tailscale-install"
 tab = "system"
 label = "Tailscale"
-source = "curl tailscale.com/install.sh · log in under Configure → Logins & keys"
+source = "curl tailscale.com/install.sh · log in under This VM → Logins & keys"
 
 [[item.step]]
 type = "run"
@@ -146,7 +146,7 @@ type = "go:tailscale_up"
 id = "netbird-install"
 tab = "system"
 label = "NetBird"
-source = "apt netbird (pkgs.netbird.io repo) · log in under Configure → Logins & keys"
+source = "apt netbird (pkgs.netbird.io repo) · log in under This VM → Logins & keys"
 
 [[item.step]]
 type = "apt_repo"

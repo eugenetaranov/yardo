@@ -70,7 +70,7 @@ func TestLegacyCmd(t *testing.T) {
 
 func TestBashHandles(t *testing.T) {
 	for args, want := range map[string]bool{
-		"": false, "--dry-run": false, "forget": true, "forget --yes": true, "--help": true,
+		"": false, "--dry-run": false, "forget": true, "forget --yes": true, "--help": false,
 		"--yes": false, "-y --dry-run": false, "--verify": false, "--version": false,
 	} {
 		if got := bashHandles(strings.Fields(args)); got != want {
@@ -440,5 +440,52 @@ func TestAppliedDrift(t *testing.T) {
 	}
 	if got["tmuxcfg"] != "drifted" || got["vimcfg"] != "missing" || us.Items[0].ID != "tmuxcfg" {
 		t.Errorf("states = %v (order %v)", got, us.Items)
+	}
+}
+
+func TestHelp(t *testing.T) {
+	for args, want := range map[string]bool{
+		"--help": true, "-h": true, "help": true, "status --help": true, "--yes -h": true,
+		"": false, "--yes": false, "forget --help": false, "--profile help": false, "-- -h": false,
+	} {
+		if got := wantsHelp(strings.Fields(args)); got != want {
+			t.Errorf("wantsHelp(%q) = %v, want %v", args, got, want)
+		}
+	}
+	for args, want := range map[string]string{
+		"--help": "Commands:", "status -h": "Usage: sudo yardo status", "--yes export --help": "--name NAME",
+		"version up -h": "Usage: yardo version", "--profile x.toml -h": "Commands:",
+	} {
+		var b bytes.Buffer
+		printHelp(&b, strings.Fields(args))
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("printHelp(%q) lacks %q:\n%s", args, want, b.String())
+		}
+	}
+	var out, errb bytes.Buffer
+	if err := cli([]string{"--help"}, &out, &errb); err != nil || !strings.Contains(out.String(), "Commands:") {
+		t.Errorf("cli --help: err %v, out %q", err, out.String())
+	}
+}
+
+func TestOSRelease(t *testing.T) {
+	for body, want := range map[string][3]string{ // distro, codename, supported ("" ok)
+		"ID=ubuntu\nID_LIKE=debian\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n":               {"ubuntu", "noble", ""},
+		"ID=debian\nVERSION_CODENAME=bookworm\n":                                                   {"debian", "bookworm", ""},
+		"ID=linuxmint\nID_LIKE=\"ubuntu debian\"\nVERSION_CODENAME=wilma\nUBUNTU_CODENAME=noble\n": {"ubuntu", "noble", ""},
+		"ID=fedora\nPRETTY_NAME=\"Fedora Linux 40\"\nVERSION_CODENAME=\"\"\n":                      {"", "noble", "Fedora Linux 40"},
+	} {
+		f := filepath.Join(t.TempDir(), "os-release")
+		if err := os.WriteFile(f, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r := readOSRelease(f)
+		err := r.supported()
+		if r.distro() != want[0] || r.codename() != want[1] || (want[2] == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), want[2])) {
+			t.Errorf("%q: distro %q codename %q err %v, want %v", body, r.distro(), r.codename(), err, want)
+		}
+	}
+	if err := readOSRelease("/nonexistent").supported(); err == nil {
+		t.Error("no os-release should be unsupported")
 	}
 }

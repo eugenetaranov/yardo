@@ -49,7 +49,7 @@ tools = ["github:tackhq/tack@latest"]
 [[item]]
 id = "sops-install"
 tab = "iac"
-label = "sops + age (your age key: Configure → Logins & keys)"
+label = "sops + age (your age key: This VM → Logins & keys)"
 
 [[item.step]]
 type = "mise"

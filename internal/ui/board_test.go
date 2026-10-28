@@ -195,3 +195,23 @@ func TestBoardLook(t *testing.T) {
 		t.Errorf("result %+v", b.result)
 	}
 }
+
+// Enter on a picked item with answers offers to change them; choosing it
+// leaves the board with the item and the answer's key.
+func TestBoardChange(t *testing.T) {
+	tabs := []Tab{{ID: "git", Title: "Git & SSH"}}
+	items := []*BoardItem{{ID: "gitid", Label: "Git identity", Tab: "git", Picked: true, State: "ok", Changes: [][2]string{{"git name and email", "git"}}}}
+	b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items, nil, nil, nil)
+	b.Update(tea.WindowSizeMsg{Width: 110, Height: 26})
+	if !strings.Contains(b.View(), "enter change") {
+		t.Errorf("footer lacks enter change:\n%s", b.View())
+	}
+	press2(b, "enter")
+	if b.panel == nil || !strings.Contains(b.View(), "Change git name and email") {
+		t.Fatalf("no change option:\n%s", b.View())
+	}
+	press2(b, "enter")
+	if r := b.result; r.Kind != BoardChange || r.ID != "gitid" || r.Change != "git" {
+		t.Errorf("result %+v", r)
+	}
+}

@@ -98,6 +98,28 @@ func (k *asker) fromBoard(ctx context.Context, res ui.BoardResult, first bool) (
 	return c, k.questions(ctx, c, first, saved)
 }
 
+// change asks the question for key (see changes) again, for an item
+// already set up; the secrets are what it typed (an MCP server's keys).
+func (k *asker) change(ctx context.Context, key string) (*creds.Secrets, error) {
+	c := &choices{secrets: creds.New(), picks: k.a.Picks, miseExtra: k.a.MiseExtra}
+	var err error
+	switch key {
+	case "git":
+		err = k.askGit()
+	case "prompt":
+		err = k.askPrompt()
+	case "dotfiles":
+		err = k.askDotfiles()
+	case "mcp":
+		if c.items, err = plan.Resolve(k.cat, c.picks, len(c.miseExtra) > 0); err == nil {
+			err = k.askMCP(ctx, c, planHas(c.items), false)
+		}
+	default:
+		err = fmt.Errorf("nothing to change for %q", key)
+	}
+	return c.secrets, err
+}
+
 // questions asks every text prompt in one place, for c's picks: what's
 // new since saved (all of it on a first run), plus what every plan needs.
 func (k *asker) questions(ctx context.Context, c *choices, first bool, saved []string) error {
