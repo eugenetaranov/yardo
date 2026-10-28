@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/eugenetaranov/yardo/internal/answers"
+	"github.com/eugenetaranov/yardo/internal/catalog"
 	"github.com/eugenetaranov/yardo/internal/profile"
 	"github.com/eugenetaranov/yardo/internal/steps"
 )
@@ -413,5 +414,31 @@ func TestPrintConnect(t *testing.T) {
 	printConnect(&out, &answers.Answers{User: "ada"}, addrs)
 	if got := out.String(); !strings.Contains(got, "ssh -N -L 8080:127.0.0.1:8080 ada@100.64.1.7") || strings.Contains(got, "Bearer") {
 		t.Errorf("local:\n%s", got)
+	}
+}
+
+// An item yardo applied before that is missing now has drifted.
+func TestAppliedDrift(t *testing.T) {
+	state := t.TempDir()
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	if err := markApplied(state, "ada", []string{"tmuxcfg"}, now); err != nil {
+		t.Fatal(err)
+	}
+	m := loadApplied(state, "ada")
+	if m["tmuxcfg"] != "2026-10-28T12:00:00Z" || len(m) != 1 {
+		t.Fatalf("applied = %v", m)
+	}
+	env := &steps.Env{User: "ada", Home: "/home/ada", Root: t.TempDir(), Exec: steps.OSExec{}}
+	items := []*catalog.Item{
+		{ID: "tmuxcfg", Tab: "shell", Label: "tmux config", Steps: []catalog.Step{{Type: "line", To: "~/.tmux.conf", Line: "set -g mouse on"}}},
+		{ID: "vimcfg", Tab: "shell", Label: "vim config", Steps: []catalog.Step{{Type: "line", To: "~/.vimrc", Line: "set nu"}}},
+	}
+	us := userStatusOf(context.Background(), env, "ada", items, nil, m)
+	got := map[string]string{}
+	for _, it := range us.Items {
+		got[it.ID] = it.State
+	}
+	if got["tmuxcfg"] != "drifted" || got["vimcfg"] != "missing" || us.Items[0].ID != "tmuxcfg" {
+		t.Errorf("states = %v (order %v)", got, us.Items)
 	}
 }

@@ -61,3 +61,32 @@ func TestHomeKeys(t *testing.T) {
 		t.Errorf("details:\n%s", h.View())
 	}
 }
+
+// f re-applies what's down, partial, missing or drifted; e fills in an
+// item's values, and only on such an item.
+func TestHomeFixAndEdit(t *testing.T) {
+	h := testHome()
+	if got := strings.Join(h.Fix(), " "); got != "mcpjungle-install k8s" {
+		t.Errorf("fix = %q", got)
+	}
+	if v := h.View(); !strings.Contains(v, "f fix 2") {
+		t.Errorf("footer lacks f fix 2:\n%s", v)
+	}
+	h.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}) // on the gateway: nothing to fill in
+	if h.action != HomeQuit || h.out {
+		t.Errorf("e on a down item: action %v", h.action)
+	}
+	h.Update(tea.KeyMsg{Type: tea.KeyDown}) // Agent API keys
+	if !strings.Contains(h.View(), "e fill in") {
+		t.Error("footer lacks e fill in on a secret item")
+	}
+	h.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if h.action != HomeEdit || h.Selected().ID != "agentkeys" {
+		t.Errorf("e: action %v on %s", h.action, h.Selected().ID)
+	}
+	h = testHome()
+	h.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	if h.action != HomeFix {
+		t.Errorf("f: action %v", h.action)
+	}
+}

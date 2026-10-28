@@ -112,10 +112,10 @@ type options struct {
 	yes, dryRun, verify, showVersion, list bool
 	// status: `yardo status` (verify, reported per item; --json for
 	// scripts), collected in statuses.
-	status, json bool
-	statuses     []userStatus
-	state, log, legacy, user               string
-	profiles                               list
+	status, json             bool
+	statuses                 []userStatus
+	state, log, legacy, user string
+	profiles                 list
 	// lock is the profiles' [lock] tables, merged.
 	lock *answers.Lock
 	// only limits a --yes run to one item (gitkey), with gitKey (from
@@ -341,28 +341,39 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	var items []*catalog.Item
 	extra := a.MiseExtra
 	sec := creds.New()
+	// fix: the items the home screen re-applies (f, or after e).
+	var fix []string
 	if interactive && len(profs) == 0 && len(a.Picks) > 0 {
 		// Set up already: the home screen first; the picker from there.
+	home:
 		for {
-			act, err := o.home(ctx, cat, a, stdout)
+			h, act, err := o.home(ctx, cat, a, stdout)
 			if err != nil {
 				return err
 			}
-			if act == ui.HomeQuit {
+			switch act {
+			case ui.HomeQuit:
 				return nil
-			}
-			if act == ui.HomeConnect {
+			case ui.HomeChange:
+				break home
+			case ui.HomeFix:
+				fix = h.Fix()
+				break home
+			case ui.HomeEdit:
+				if fix, err = o.fillIn(ctx, a, h.Selected()); err != nil {
+					return err
+				}
+				if fix != nil {
+					break home
+				}
+			case ui.HomeConnect:
 				printConnect(stdout, a, addresses())
 				fmt.Fprint(stdout, "\nPress Enter to go back.")
 				_, _ = fmt.Fscanln(os.Stdin)
-				continue
-			}
-			if act == ui.HomeChange {
-				break
 			}
 		}
 	}
-	if interactive {
+	if interactive && fix == nil {
 		k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) },
 			profile: len(profs) > 0, dropped: dropped, port: func() int { p, _ := st.Port(user); return p }}
 		c, err := k.ask(ctx)
@@ -396,6 +407,14 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		if o.only != "" {
 			items = slices.DeleteFunc(items, func(it *catalog.Item) bool { return it.ID != o.only })
 		}
+		if fix != nil {
+			// What the home screen re-applies, and the helpers (mise) it
+			// needs; extra mise tools only when one of them is listed.
+			items = slices.DeleteFunc(items, func(it *catalog.Item) bool { return !it.Hidden() && !slices.Contains(fix, it.ID) })
+			if !slices.ContainsFunc(fix, func(id string) bool { return strings.HasPrefix(id, "mise:") }) {
+				extra = nil
+			}
+		}
 		listDropped(stdout, cat, dropped)
 	}
 	if a.MCPPort == 0 && slices.ContainsFunc(items, func(it *catalog.Item) bool { return it.ID == "mcpjungle-install" }) {
@@ -427,7 +446,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			return run.DryRun(stdout, env, items, extra)
 		}
 		if o.status {
-			us := userStatusOf(ctx, env, a.User, items, extra)
+			us := userStatusOf(ctx, env, a.User, items, extra, loadApplied(o.state, a.User))
 			if err := saveStatus(ctx, env, o.state, us, time.Now()); err != nil {
 				fmt.Fprintf(stderr, "yardo: saving the status: %v\n", err)
 			}
@@ -487,6 +506,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	}
 	r := &run.Runner{Env: env, Progress: prog, TailLines: 25}
 	res := r.Run(ctx, items, extra)
+	if err := markApplied(o.state, a.User, slices.Concat(res.Changed, res.Unchanged), time.Now()); err != nil {
+		fmt.Fprintf(stderr, "yardo: %v\n", err)
+	}
 	if err := primeZshCompletions(ctx, env, r.Progress); err != nil {
 		res.Failed = append(res.Failed, "zshcomp")
 		res.Errors["zshcomp"] = err.Error()

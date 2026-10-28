@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -53,11 +54,12 @@ type itemStatus struct {
 }
 
 // stateOrder sorts problems first: what to fix, then what to fill in.
-var stateOrder = map[string]int{"down": 0, "partial": 1, "missing": 2, "secret": 3, "unchecked": 4, "ok": 5}
+var stateOrder = map[string]int{"down": 0, "drifted": 1, "partial": 2, "missing": 3, "secret": 4, "unchecked": 5, "ok": 6}
 
 // userStatusOf checks user's items (and extra mise tools) without changing
-// anything.
-func userStatusOf(ctx context.Context, env *steps.Env, user string, items []*catalog.Item, extra []string) userStatus {
+// anything. An item that yardo applied before (applied) and that is now
+// missing or partial has drifted.
+func userStatusOf(ctx context.Context, env *steps.Env, user string, items []*catalog.Item, extra []string, applied map[string]string) userStatus {
 	us := userStatus{User: user, Counts: map[string]int{}}
 	for _, s := range run.Verify(ctx, env, items) {
 		if s.Item.Hidden() {
@@ -67,8 +69,12 @@ func userStatusOf(ctx context.Context, env *steps.Env, user string, items []*cat
 		if s.Item.System() {
 			scope = "system"
 		}
+		state := s.State
+		if (state == "missing" || state == "partial") && applied[s.Item.ID] != "" {
+			state = "drifted"
+		}
 		us.Items = append(us.Items, itemStatus{ID: s.Item.ID, Label: s.Item.Label, Tab: s.Item.Tab, Scope: scope,
-			State: s.State, Detail: s.Detail, Done: s.Done, Total: s.Total, Inputs: s.Inputs})
+			State: state, Detail: s.Detail, Done: s.Done, Total: s.Total, Inputs: s.Inputs})
 	}
 	for _, t := range extra {
 		st := itemStatus{ID: "mise:" + steps.MiseName(t), Label: t + " (extra mise tool)", Tab: "extra", Scope: "user", State: "ok", Total: 1, Done: 1}
@@ -89,7 +95,7 @@ func userStatusOf(ctx context.Context, env *steps.Env, user string, items []*cat
 func printStatus(w io.Writer, us userStatus) {
 	var sum []string
 	for _, s := range []struct{ state, say string }{
-		{"ok", "ok"}, {"down", "down"}, {"partial", "partial"}, {"missing", "missing"},
+		{"ok", "ok"}, {"down", "down"}, {"drifted", "drifted"}, {"partial", "partial"}, {"missing", "missing"},
 		{"secret", "with values to fill in"}, {"unchecked", "not checked"},
 	} {
 		if n := us.Counts[s.state]; n > 0 {
@@ -109,6 +115,39 @@ func printStatus(w io.Writer, us userStatus) {
 		}
 		fmt.Fprintln(w, line)
 	}
+}
+
+// appliedFile is when yardo last applied each of user's items, as it was
+// meant to be (status/<user>.applied.json): what "drifted" goes by.
+func appliedFile(state, user string) string {
+	return filepath.Join(state, "status", user+".applied.json")
+}
+
+func loadApplied(state, user string) map[string]string {
+	m := map[string]string{}
+	if b, err := os.ReadFile(appliedFile(state, user)); err == nil {
+		_ = json.Unmarshal(b, &m)
+	}
+	return m
+}
+
+// markApplied records that ids were applied, as meant, at now.
+func markApplied(state, user string, ids []string, now time.Time) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	m := loadApplied(state, user)
+	for _, id := range ids {
+		m[id] = now.UTC().Format(time.RFC3339)
+	}
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(appliedFile(state, user)), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(appliedFile(state, user), append(b, '\n'), 0o600)
 }
 
 // userStatusCache is where the user's own copy of their status is, for
@@ -162,18 +201,18 @@ func writeStatusJSON(w io.Writer, users []userStatus, now time.Time) error {
 }
 
 // home checks the user's items and shows the home screen.
-func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, stdout io.Writer) (ui.HomeAction, error) {
+func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, stdout io.Writer) (*ui.Home, ui.HomeAction, error) {
 	fmt.Fprintf(stdout, "Checking what's set up for %s…\n", a.User)
 	items, err := plan.Resolve(cat, a.Picks, len(a.MiseExtra) > 0)
 	if err != nil {
-		return ui.HomeQuit, err
+		return nil, ui.HomeQuit, err
 	}
 	env, err := o.env(a, nil, nil)
 	if err != nil {
-		return ui.HomeQuit, err
+		return nil, ui.HomeQuit, err
 	}
 	now := time.Now()
-	us := userStatusOf(ctx, env, a.User, items, a.MiseExtra)
+	us := userStatusOf(ctx, env, a.User, items, a.MiseExtra, loadApplied(o.state, a.User))
 	_ = saveStatus(ctx, env, o.state, us, now)
 	// Where a fine item is listed: its tab's group (Dev, DevOps) or tab,
 	// and every configure tab under Configure.
@@ -212,7 +251,37 @@ func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Ans
 		}
 	}
 	host, _ := os.Hostname()
-	return ui.NewHome("yardo · "+host+" · "+a.User, "checked "+now.Format("15:04"), hi, groups, avail).Run()
+	h := ui.NewHome("yardo · "+host+" · "+a.User, "checked "+now.Format("15:04"), hi, groups, avail)
+	act, err := h.Run()
+	return h, act, err
+}
+
+// fillIn opens the file holding it's first empty value in an editor: as the
+// user for their own files, as the gateway's user (mcp-sync edit) for an
+// MCP server's. It returns the items to re-apply after (an MCP server's
+// registers then), or nil.
+func (o *options) fillIn(ctx context.Context, a *answers.Answers, it *ui.HomeItem) ([]string, error) {
+	if it == nil || len(it.Inputs) == 0 {
+		return nil, nil
+	}
+	path, _, _ := strings.Cut(it.Inputs[0], ": ")
+	home := homeOf(a.User)
+	editor := `exec "$(command -v sensible-editor || echo vi)" "$@"`
+	var c *exec.Cmd
+	var fix []string
+	if rest, ok := strings.CutPrefix(path, "~/.mcp/"); ok {
+		name := strings.SplitN(rest, "/", 2)[0]
+		c = exec.CommandContext(ctx, "runuser", "-u", steps.MCPUser(&steps.Env{User: a.User}), "--",
+			"env", "MCP_DIR="+filepath.Join(home, ".mcp"), "EDITOR=sensible-editor", "/usr/local/bin/mcp-sync", "edit", name)
+		fix = []string{"mcpjungle"}
+	} else {
+		c = exec.CommandContext(ctx, "runuser", "-u", a.User, "--", "sh", "-c", editor, "_", strings.Replace(path, "~", home, 1))
+	}
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := c.Run(); err != nil {
+		return nil, fmt.Errorf("editing %s: %w", path, err)
+	}
+	return fix, nil
 }
 
 // cachedStatus is `yardo status` without sudo: the copy the last check

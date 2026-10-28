@@ -367,15 +367,20 @@ else's rules alone.
 **Status.** `sudo yardo status` checks every item you picked, changing
 nothing, and lists the ones that aren't right first: `down` (set up, but
 its service isn't running), `partial` (some of its steps done),
-`missing`, then values to fill in (a credential left empty: which file,
+`missing`, `drifted` (applied by yardo before, not right now), then
+values to fill in (a credential left empty: which file,
 which key), then `ok`. `--json` prints it for scripts (`"schema": 1`, every
 user set up), and each run keeps the latest in
 `/var/lib/yardo/status/<user>.json`, and a copy for you in
 `~/.cache/yardo/status.json`: `yardo status` without sudo shows that one,
 and how old it is. Once something is set up, `sudo yardo` opens on the
 same view, a home screen (problems first, then what's installed by tab;
-enter shows an item's details), and `a` goes on to the picker to add or
-change things. `sudo yardo --verify` is the same
+enter shows an item's details). From there, `f` re-applies what's down,
+partial, missing or drifted (an item yardo applied before that isn't
+right any more), with your saved answers and nothing upgraded; `e`, on an
+item with values to fill in, opens its file in your editor (an MCP
+server's through `mcp-sync edit`, then registers it); `a` goes on to the
+picker to add or change things. `sudo yardo --verify` is the same
 check, failing when something is down, partial or missing.
 
 **Profiles.** `sudo yardo export > team.toml` writes the choices on

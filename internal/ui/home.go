@@ -32,6 +32,10 @@ const (
 	HomeRefresh
 	// HomeConnect shows how to reach this machine from a laptop.
 	HomeConnect
+	// HomeFix re-applies what needs fixing (Fix lists it).
+	HomeFix
+	// HomeEdit opens the selected item's values to fill in (Selected).
+	HomeEdit
 )
 
 var (
@@ -48,6 +52,8 @@ func glyph(state string) (string, string) {
 		return red.Render("✖"), "down"
 	case "partial":
 		return yellow.Render("◐"), "partial"
+	case "drifted":
+		return yellow.Render("◆"), "drifted"
 	case "missing":
 		return red.Render("○"), "missing"
 	case "secret":
@@ -162,12 +168,46 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "x":
 			h.action = HomeConnect
 			return h, tea.Quit
+		case "f":
+			if len(h.Fix()) > 0 {
+				h.action = HomeFix
+				return h, tea.Quit
+			}
+		case "e":
+			if it := h.Selected(); it != nil && it.State == "secret" {
+				h.action = HomeEdit
+				return h, tea.Quit
+			}
 		case "q", "esc", "ctrl+c":
 			h.action = HomeQuit
 			return h, tea.Quit
 		}
 	}
 	return h, nil
+}
+
+// Fixable reports whether f re-applies an item in this state.
+func Fixable(state string) bool {
+	return state == "down" || state == "partial" || state == "missing" || state == "drifted"
+}
+
+// Fix lists the items f re-applies.
+func (h *Home) Fix() []string {
+	var out []string
+	for _, r := range h.rows {
+		if r.item != nil && Fixable(r.item.State) {
+			out = append(out, r.item.ID)
+		}
+	}
+	return out
+}
+
+// Selected is the item under the cursor.
+func (h *Home) Selected() *HomeItem {
+	if h.cursor < len(h.rows) {
+		return h.rows[h.cursor].item
+	}
+	return nil
 }
 
 // detail is what the details panel shows for it.
@@ -197,7 +237,7 @@ func (h *Home) View() string {
 	gap := max(1, w-3-runewidth.StringWidth(h.title)-runewidth.StringWidth(h.sub))
 	b.WriteString(" " + accentBd.Render(h.title) + strings.Repeat(" ", gap) + muted.Render(h.sub) + "\n")
 	var sum []string
-	for _, s := range []string{"ok", "down", "partial", "missing", "secret", "unchecked"} {
+	for _, s := range []string{"ok", "down", "drifted", "partial", "missing", "secret", "unchecked"} {
 		if n := h.counts[s]; n > 0 {
 			g, say := glyph(s)
 			sum = append(sum, fmt.Sprintf("%s %d %s", g, n, say))
@@ -273,7 +313,15 @@ func (h *Home) View() string {
 	for _, l := range det {
 		b.WriteString("   " + muted.Render(l) + "\n")
 	}
-	b.WriteString(" " + muted.Render("↑/↓ move · enter details · a add or change · x connect from a laptop · r check again · q quit"))
+	keys := "↑/↓ move · enter details"
+	if it := h.Selected(); it != nil && it.State == "secret" {
+		keys += " · e fill in"
+	}
+	if n := len(h.Fix()); n > 0 {
+		keys += fmt.Sprintf(" · f fix %d", n)
+	}
+	keys += " · a add or change · x connect from a laptop · r check again · q quit"
+	b.WriteString(" " + muted.Render(runewidth.Truncate(keys, max(4, w-2), "…")))
 	return b.String()
 }
 
