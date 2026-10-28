@@ -8,8 +8,8 @@ Before=openvpn-server@server.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/sbin/yardo-vpn nat up
-ExecStop=/usr/local/sbin/yardo-vpn nat down
+ExecStart=/usr/local/sbin/yardo-vpn nat up 10.8.0.0/24
+ExecStop=/usr/local/sbin/yardo-vpn nat down 10.8.0.0/24
 
 [Install]
 WantedBy=multi-user.target

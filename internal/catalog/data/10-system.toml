@@ -158,7 +158,7 @@ packages = ["openvpn"]
 id = "openvpn-server"
 tab = "system"
 label = "OpenVPN server (others connect to this machine; UDP 1194)"
-source = "apt openvpn easy-rsa · /etc/openvpn/server · NAT 10.8.0.0/24 · profiles in /srv/openvpn: sudo yardo-vpn client <name>"
+source = "apt openvpn easy-rsa · /etc/openvpn/server · NAT 10.8.0.0/24 · profiles in /srv/openvpn · users: sudo yardo-vpn openvpn client|list|revoke"
 
 [[item.step]]
 type = "apt"
@@ -172,13 +172,13 @@ mode = "0755"
 
 [[item.step]]
 type = "run"
-cmd = "/usr/local/sbin/yardo-vpn setup"
-creates = "/etc/openvpn/server/tc.key"
+cmd = "/usr/local/sbin/yardo-vpn openvpn setup"
+creates = "/etc/openvpn/server/crl.pem"
 
 [[item.step]]
 type = "sysctl"
-src = "sysctl-openvpn.conf"
-to = "/etc/sysctl.d/62-yardo-openvpn.conf"
+src = "sysctl-vpn.conf"
+to = "/etc/sysctl.d/62-yardo-vpn.conf"
 
 [[item.step]]
 type = "file"
@@ -210,9 +210,58 @@ on_change = true
 
 [[item.step]]
 type = "run"
-cmd = "/usr/local/sbin/yardo-vpn client {{user}} >/dev/null"
+cmd = "/usr/local/sbin/yardo-vpn openvpn client {{user}} >/dev/null"
 check = "test -f /srv/openvpn/{{user}}.ovpn"
-text = "OpenVPN server: {{user}}'s profile is /srv/openvpn/{{user}}.ovpn (root only; copy it to your machine: ssh <this machine> sudo cat /srv/openvpn/{{user}}.ovpn > {{user}}.ovpn). Its \"remote\" is this machine's own address: change it if clients reach the machine another way (a public IP behind NAT, a DNS name), and open UDP 1194 in the cloud firewall. Another client: sudo yardo-vpn client <name>"
+text = "OpenVPN server: {{user}}'s profile is /srv/openvpn/{{user}}.ovpn (root only; copy it to your machine: ssh <this machine> sudo cat /srv/openvpn/{{user}}.ovpn > {{user}}.ovpn). Its \"remote\" is this machine's own address: change it if clients reach the machine another way (a public IP behind NAT, a DNS name), and open UDP 1194 in the cloud firewall. Users: sudo yardo-vpn openvpn client|list|revoke <name>"
+
+[[item]]
+id = "wireguard-client"
+tab = "system"
+label = "WireGuard client (connect this machine to a VPN)"
+source = "apt wireguard-tools · a config in /etc/wireguard/<name>.conf, then systemctl enable --now wg-quick@<name>"
+
+[[item.step]]
+type = "apt"
+packages = ["wireguard-tools"]
+
+# The server: UDP 51820, clients on 10.9.0.0/24 with all their traffic sent
+# through this machine (NAT, in the interface's PostUp), and a config for
+# the user in /srv/wireguard (root only: it holds the client's key).
+[[item]]
+id = "wireguard-server"
+tab = "system"
+label = "WireGuard server (others connect to this machine; UDP 51820)"
+source = "apt wireguard-tools · /etc/wireguard/yardo-wg.conf · NAT 10.9.0.0/24 · configs in /srv/wireguard · users: sudo yardo-vpn wireguard client|list|revoke|qr"
+
+[[item.step]]
+type = "apt"
+packages = ["wireguard-tools", "iptables", "qrencode"]
+
+[[item.step]]
+type = "file"
+src = "yardo-vpn"
+to = "/usr/local/sbin/yardo-vpn"
+mode = "0755"
+
+[[item.step]]
+type = "run"
+cmd = "/usr/local/sbin/yardo-vpn wireguard setup"
+creates = "/etc/wireguard/yardo-wg.conf"
+
+[[item.step]]
+type = "sysctl"
+src = "sysctl-vpn.conf"
+to = "/etc/sysctl.d/62-yardo-vpn.conf"
+
+[[item.step]]
+type = "systemctl"
+unit = "wg-quick@yardo-wg"
+
+[[item.step]]
+type = "run"
+cmd = "/usr/local/sbin/yardo-vpn wireguard client {{user}} >/dev/null"
+check = "test -f /srv/wireguard/{{user}}.conf"
+text = "WireGuard server: {{user}}'s config is /srv/wireguard/{{user}}.conf (root only; copy it to your machine: ssh <this machine> sudo cat /srv/wireguard/{{user}}.conf > {{user}}.conf, or scan sudo yardo-vpn wireguard qr {{user}} with the phone app). Its Endpoint is this machine's own address: change it if clients reach the machine another way, and open UDP 51820 in the cloud firewall. Users: sudo yardo-vpn wireguard client|list|revoke|qr <name>"
 
 [[item]]
 id = "devlimits"

@@ -1,25 +1,49 @@
 #!/bin/sh
-# yardo-vpn — the OpenVPN server yardo sets up (yardo rewrites this file).
+# yardo-vpn — the VPN servers yardo sets up (yardo rewrites this file).
 #
-#   yardo-vpn setup          make the CA, the server's key and the tls-crypt key (once)
-#   yardo-vpn client NAME    write NAME's client profile to /srv/openvpn/NAME.ovpn (once;
-#                            root only) and print its path; YARDO_VPN_HOST=<address> sets
-#                            the address clients connect to
-#   yardo-vpn nat up|down    NAT and forwarding for the VPN subnet (yardo-vpn-nat.service)
+#   yardo-vpn openvpn client NAME     add NAME: a profile in /srv/openvpn/NAME.ovpn; prints its path
+#   yardo-vpn openvpn list            the clients, valid or revoked
+#   yardo-vpn openvpn revoke NAME     revoke NAME's certificate and delete its profile
+#   yardo-vpn wireguard client NAME   add NAME: a config in /srv/wireguard/NAME.conf; prints its path
+#   yardo-vpn wireguard list          the clients, their addresses and last handshakes
+#   yardo-vpn wireguard revoke NAME   remove NAME as a peer and delete its config
+#   yardo-vpn wireguard qr NAME       NAME's config as a QR code, for WireGuard's phone apps
+#   yardo-vpn openvpn|wireguard setup the server's keys (yardo runs it, once)
+#   yardo-vpn nat up|down NET         NAT and forwarding for a VPN subnet (the servers run it)
+#
+# A profile holds the client's private key: /srv/openvpn and /srv/wireguard
+# are root only. YARDO_VPN_HOST=<address> sets the address clients connect
+# to (default: this machine's own).
 set -eu
-
-D=/etc/openvpn/server
-OUT=/srv/openvpn
-NET=10.8.0.0/24
-EASYRSA=/usr/share/easy-rsa/easyrsa
-export EASYRSA_PKI="$D/pki" EASYRSA_BATCH=1 EASYRSA_ALGO=ec EASYRSA_CURVE=prime256v1 \
-  EASYRSA_CA_EXPIRE=3650 EASYRSA_CERT_EXPIRE=3650
 umask 077
 
-usage() { sed -n '4,8s/^# \{0,1\}//p' "$0" >&2; exit 2; }
+usage() { sed -n '4,13s/^# \{0,1\}//p' "$0" >&2; exit 2; }
 
-# profile NAME HOST: NAME's client profile, with its key inline.
-profile() {
+vpn_host() { echo "${YARDO_VPN_HOST:-$(ip -4 route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')}"; }
+
+name_ok() {
+  case "$1" in ''|.*|*[!A-Za-z0-9._-]*|server) echo "yardo-vpn: bad client name '$1'" >&2; exit 2 ;; esac
+}
+
+# --- OpenVPN -------------------------------------------------------------------
+
+OVPN=/etc/openvpn/server
+
+easyrsa() {
+  EASYRSA_PKI="$OVPN/pki" EASYRSA_BATCH=1 EASYRSA_ALGO=ec EASYRSA_CURVE=prime256v1 \
+    EASYRSA_CA_EXPIRE=3650 EASYRSA_CERT_EXPIRE=3650 EASYRSA_CRL_DAYS=3650 /usr/share/easy-rsa/easyrsa "$@"
+}
+
+# crl: the revocation list where the server reads it after dropping to
+# nobody (pki/ is root only). It expires in 10 years (easy-rsa's default,
+# 180 days, would lock every client out then).
+crl() {
+  easyrsa gen-crl
+  install -m 0644 "$OVPN/pki/crl.pem" "$OVPN/crl.pem"
+}
+
+# ovpn_profile NAME HOST: NAME's profile, with its key inline.
+ovpn_profile() {
   cat <<OVPN
 # OpenVPN profile for $1 on $(hostname). If clients reach this machine by
 # another address (a public IP behind NAT, a DNS name), change "remote".
@@ -36,58 +60,188 @@ auth SHA256
 data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
 verb 3
 <ca>
-$(cat "$D/pki/ca.crt")
+$(cat "$OVPN/pki/ca.crt")
 </ca>
 <cert>
-$(sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/p' "$D/pki/issued/$1.crt")
+$(sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/p' "$OVPN/pki/issued/$1.crt")
 </cert>
 <key>
-$(cat "$D/pki/private/$1.key")
+$(cat "$OVPN/pki/private/$1.key")
 </key>
 <tls-crypt>
-$(cat "$D/tc.key")
+$(cat "$OVPN/tc.key")
 </tls-crypt>
 OVPN
 }
 
-case "${1:-}" in
-  setup)
-    [ -f "$D/pki/ca.crt" ] || { "$EASYRSA" init-pki; EASYRSA_REQ_CN=yardo-vpn-ca "$EASYRSA" build-ca nopass; }
-    [ -f "$D/pki/issued/server.crt" ] || "$EASYRSA" build-server-full server nopass
-    [ -f "$D/tc.key" ] || openvpn --genkey secret "$D/tc.key"
-    ;;
-  client)
-    n=${2:-}
-    case "$n" in ''|.*|*[!A-Za-z0-9._-]*|server) echo "yardo-vpn: bad client name '$n'" >&2; exit 2 ;; esac
-    f="$OUT/$n.ovpn"
-    if [ ! -f "$f" ]; then
-      [ -f "$D/pki/issued/$n.crt" ] || "$EASYRSA" build-client-full "$n" nopass >&2
-      host=${YARDO_VPN_HOST:-$(ip -4 route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')}
-      install -d -m 0700 "$OUT"
-      profile "$n" "$host" > "$f.tmp"
-      mv "$f.tmp" "$f"
-    fi
-    echo "$f"
-    ;;
-  nat)
-    out=$(ip -4 route show default | awk '{print $5; exit}')
-    # Docker sets FORWARD's policy to DROP; its DOCKER-USER chain is where
-    # rules of our own go.
-    chain=FORWARD
-    iptables -n -L DOCKER-USER >/dev/null 2>&1 && chain=DOCKER-USER
-    case "${2:-}" in up) op=-I ;; down) op=-D ;; *) usage ;; esac
-    # rule TABLE CHAIN ARGS…: added once on up, removed on down.
-    rule() {
-      t=$1 c=$2; shift 2
-      if iptables -t "$t" -C "$c" "$@" 2>/dev/null; then
-        [ "$op" = -I ] || iptables -t "$t" -D "$c" "$@"
-      elif [ "$op" = -I ]; then
-        iptables -t "$t" -I "$c" "$@"
+openvpn_cmd() {
+  case "${1:-}" in
+    setup)
+      [ -f "$OVPN/pki/ca.crt" ] || { easyrsa init-pki; easyrsa --req-cn=yardo-vpn-ca build-ca nopass; }
+      [ -f "$OVPN/pki/issued/server.crt" ] || easyrsa build-server-full server nopass
+      [ -f "$OVPN/tc.key" ] || openvpn --genkey secret "$OVPN/tc.key"
+      [ -f "$OVPN/crl.pem" ] || crl
+      ;;
+    client)
+      n=${2:-}; name_ok "$n"
+      f=/srv/openvpn/$n.ovpn
+      if [ ! -f "$f" ]; then
+        [ -f "$OVPN/pki/issued/$n.crt" ] || easyrsa build-client-full "$n" nopass >&2
+        install -d -m 0700 /srv/openvpn
+        ovpn_profile "$n" "$(vpn_host)" > "$f.tmp"
+        mv "$f.tmp" "$f"
       fi
-    }
-    rule nat POSTROUTING -s "$NET" -o "$out" -j MASQUERADE
-    rule filter "$chain" -s "$NET" -j ACCEPT
-    rule filter "$chain" -d "$NET" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-    ;;
+      echo "$f"
+      ;;
+    list)
+      # index.txt: V (valid) or R (revoked), …, /CN=name
+      awk -F'\t' '$NF !~ /CN=server$/ { n = $NF; sub(/.*CN=/, "", n); print n "\t" ($1 == "R" ? "revoked" : "valid") }' \
+        "$OVPN/pki/index.txt"
+      ;;
+    revoke)
+      n=${2:-}; name_ok "$n"
+      [ -f "$OVPN/pki/issued/$n.crt" ] || { echo "yardo-vpn: no valid certificate for $n" >&2; exit 1; }
+      easyrsa revoke "$n"
+      crl
+      rm -f "/srv/openvpn/$n.ovpn"
+      echo "Revoked $n: it can't connect again. A session it has open lasts until it reconnects (or: systemctl restart openvpn-server@server)."
+      ;;
+    *) usage ;;
+  esac
+}
+
+# --- WireGuard -----------------------------------------------------------------
+
+WG=/etc/wireguard/yardo-wg.conf
+WGNET=10.9.0.0/24
+
+wireguard_cmd() {
+  case "${1:-}" in
+    setup)
+      [ -f "$WG" ] && return 0
+      install -d -m 0700 /etc/wireguard
+      cat > "$WG.tmp" <<CONF
+# yardo's WireGuard server: UDP 51820, clients on $WGNET.
+# yardo-vpn wireguard client NAME adds one (below, as a [Peer]).
+[Interface]
+Address = 10.9.0.1/24
+ListenPort = 51820
+PrivateKey = $(wg genkey)
+PostUp = /usr/local/sbin/yardo-vpn nat up $WGNET
+PostDown = /usr/local/sbin/yardo-vpn nat down $WGNET
+CONF
+      mv "$WG.tmp" "$WG"
+      ;;
+    client)
+      n=${2:-}; name_ok "$n"
+      f=/srv/wireguard/$n.conf
+      if [ ! -f "$f" ]; then
+        if grep -qx "# $n" "$WG"; then
+          echo "yardo-vpn: $n is a peer already, but $f is gone: remove its [Peer] from $WG first" >&2
+          exit 1
+        fi
+        last=$(sed -n 's|^AllowedIPs = 10\.9\.0\.\([0-9]*\)/32$|\1|p' "$WG" | sort -n | tail -n 1)
+        ip=$(( ${last:-1} + 1 ))
+        [ "$ip" -le 254 ] || { echo "yardo-vpn: no addresses left in $WGNET" >&2; exit 1; }
+        key=$(wg genkey)
+        pub=$(printf '%s\n' "$key" | wg pubkey)
+        psk=$(wg genpsk)
+        spub=$(sed -n 's/^PrivateKey = //p' "$WG" | wg pubkey)
+        install -d -m 0700 /srv/wireguard
+        cat > "$f.tmp" <<CONF
+# WireGuard config for $n on $(hostname). If clients reach this machine by
+# another address (a public IP behind NAT, a DNS name), change Endpoint.
+[Interface]
+PrivateKey = $key
+Address = 10.9.0.$ip/32
+DNS = 1.1.1.1, 9.9.9.9
+
+[Peer]
+PublicKey = $spub
+PresharedKey = $psk
+Endpoint = $(vpn_host):51820
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+CONF
+        printf '\n# %s\n[Peer]\nPublicKey = %s\nPresharedKey = %s\nAllowedIPs = 10.9.0.%s/32\n' "$n" "$pub" "$psk" "$ip" >> "$WG"
+        mv "$f.tmp" "$f"
+        # A running server takes the new peer without a restart.
+        if wg show yardo-wg >/dev/null 2>&1; then
+          t=$(mktemp)
+          wg-quick strip yardo-wg > "$t"
+          wg syncconf yardo-wg "$t"
+          rm -f "$t"
+        fi
+      fi
+      echo "$f"
+      ;;
+    qr)
+      n=${2:-}; name_ok "$n"
+      f=/srv/wireguard/$n.conf
+      [ -f "$f" ] || { echo "yardo-vpn: no $f (yardo-vpn wireguard client $n makes it)" >&2; exit 1; }
+      qrencode -t ansiutf8 < "$f"
+      ;;
+    list)
+      # Each peer: the "# NAME" line above its [Peer], its key and address.
+      awk '/^# / { c = substr($0, 3) } /^\[Peer\]/ { name = c } /^PublicKey = / { pub = $3 }
+        /^AllowedIPs = / && name != "" { print name, $3, pub; name = "" }' "$WG" |
+      while read -r name addr pub; do
+        t=$(wg show yardo-wg latest-handshakes 2>/dev/null | awk -v k="$pub" '$1 == k { print $2 }')
+        when=never
+        [ -z "$t" ] || [ "$t" = 0 ] || when=$(date -d "@$t" '+%F %T')
+        printf '%s\t%s\tlast handshake: %s\n' "$name" "$addr" "$when"
+      done
+      ;;
+    revoke)
+      n=${2:-}; name_ok "$n"
+      grep -qx "# $n" "$WG" || { echo "yardo-vpn: $n is not a peer" >&2; exit 1; }
+      # The peer's block: from "# NAME" to the next blank line.
+      awk -v n="# $n" '$0 == n { skip = 1; next } skip && /^$/ { skip = 0; next } !skip' "$WG" > "$WG.tmp"
+      mv "$WG.tmp" "$WG"
+      rm -f "/srv/wireguard/$n.conf"
+      if wg show yardo-wg >/dev/null 2>&1; then
+        t=$(mktemp)
+        wg-quick strip yardo-wg > "$t"
+        wg syncconf yardo-wg "$t"
+        rm -f "$t"
+      fi
+      echo "Removed $n: it can't connect any more."
+      ;;
+    *) usage ;;
+  esac
+}
+
+# --- NAT -----------------------------------------------------------------------
+
+# nat up|down NET: NAT the subnet out of the default route's interface, and
+# let it through forwarding. Docker sets FORWARD's policy to DROP; its
+# DOCKER-USER chain is where rules of our own go.
+nat() {
+  case "${1:-}" in up) op=-I ;; down) op=-D ;; *) usage ;; esac
+  net=${2:-}
+  [ -n "$net" ] || usage
+  out=$(ip -4 route show default | awk '{print $5; exit}')
+  chain=FORWARD
+  iptables -n -L DOCKER-USER >/dev/null 2>&1 && chain=DOCKER-USER
+  rule nat POSTROUTING -s "$net" -o "$out" -j MASQUERADE
+  rule filter "$chain" -s "$net" -j ACCEPT
+  rule filter "$chain" -d "$net" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+}
+
+# rule TABLE CHAIN ARGS…: added once on up, removed on down.
+rule() {
+  t=$1 c=$2
+  shift 2
+  if iptables -t "$t" -C "$c" "$@" 2>/dev/null; then
+    [ "$op" = -I ] || iptables -t "$t" -D "$c" "$@"
+  elif [ "$op" = -I ]; then
+    iptables -t "$t" -I "$c" "$@"
+  fi
+}
+
+case "${1:-}" in
+  openvpn) shift; openvpn_cmd "$@" ;;
+  wireguard) shift; wireguard_cmd "$@" ;;
+  nat) shift; nat "$@" ;;
   *) usage ;;
 esac

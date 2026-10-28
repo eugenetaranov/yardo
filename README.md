@@ -166,8 +166,12 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    chain when Docker is there), and a profile for you in
    `/srv/openvpn/<you>.ovpn`, root only (change its `remote` if clients
    reach the machine by another address, and open UDP 1194 in the cloud
-   firewall). `sudo yardo-vpn client <name>` makes more. The client is for
-   the other way round: connecting this machine to a VPN elsewhere.
+   firewall). WireGuard the same way: UDP 51820, clients on
+   10.9.0.0/24, configs in `/srv/wireguard/<name>.conf`. Users, for
+   either: `sudo yardo-vpn openvpn|wireguard client|list|revoke <name>`
+   (`wireguard qr <name>` shows a config as a QR code for the phone app).
+   The OpenVPN and WireGuard clients are for the other way round:
+   connecting this machine to a VPN elsewhere.
 
 ### [2/2] Configure
 
