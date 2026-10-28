@@ -388,16 +388,19 @@ what's newer (slow: it refreshes apt's lists) and lists it per item; it
 never upgrades (`mise up`, `sudo apt upgrade` do; on the home screen, `u`).
 Each run leaves a copy for you in
 `~/.cache/yardo/status.json`: `yardo status` without sudo shows that one,
-and how old it is. Once something is set up, `sudo yardo` opens on the
-same view, a home screen (problems first, then what's installed by tab;
-enter shows an item's details). From there, `f` re-applies what's down,
-partial, missing or drifted (an item yardo applied before that isn't
-right any more), with your saved answers and nothing upgraded; `e`, on an
-item with values to fill in, opens its file in your editor (an MCP
-server's through `mcp-sync edit`, then registers it); `a` goes on to the
-picker to add or change things (enter on a group's "+ … more to add"
-opens it on that group); `c` changes who can reach the MCP gateway,
-containers' published ports and the Docker API, then re-applies them. `sudo yardo --verify` is the same
+and how old it is. Once something is set up, `sudo yardo` opens on a
+dashboard laid out like k9s: the machine and the keys on top, then a
+table (NAME, GROUP, STATE, NOTE) with three views, `1` installed, `2`
+needing attention (where it opens, when anything does) and `3` available
+to add; `/` filters, enter shows an item's details (on an available one,
+it opens the picker on its tab). `f` re-applies what's down, partial,
+missing or drifted (an item yardo applied before that isn't right any
+more), with your saved answers and nothing upgraded; `e`, on an item with
+values to fill in, opens its file in your editor (an MCP server's through
+`mcp-sync edit`, then registers it); `a` opens the picker to add or
+change things; `c` changes who can reach the MCP gateway, containers'
+published ports and the Docker API, then re-applies them; `x` shows how
+to connect from a laptop; `u` checks for updates. `sudo yardo --verify` is the same
 check, failing when something is down, partial or missing.
 
 **Profiles.** `sudo yardo export > team.toml` writes the choices on

@@ -243,16 +243,9 @@ func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Ans
 	now := time.Now()
 	us := userStatusOf(ctx, env, a.User, items, a.MiseExtra, loadApplied(o.state, a.User), updates)
 	_ = saveStatus(ctx, env, o.state, us, now)
-	// Where a fine item is listed: its tab's group (Dev, DevOps) or tab,
-	// and every configure tab under Configure; and the picker tab that
-	// has it.
+	// Each item's group (Dev, DevOps, … its tab's group or tab; every
+	// configure tab is Configure), and the picker tab that has it.
 	group, ptab := map[string]string{}, map[string]string{}
-	var groups []string
-	add := func(g string) {
-		if !slices.Contains(groups, g) {
-			groups = append(groups, g)
-		}
-	}
 	for _, t := range cat.Tabs {
 		g, pt := t.Title, t.ID
 		switch {
@@ -262,9 +255,7 @@ func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Ans
 			g, pt = t.Group, "group:"+t.Group
 		}
 		group[t.ID], ptab[t.ID] = g, pt
-		add(g)
 	}
-	add("Extra mise tools")
 	group["extra"] = "Extra mise tools"
 	var hi []*ui.HomeItem
 	for _, it := range us.Items {
@@ -275,29 +266,16 @@ func (o *options) home(ctx context.Context, cat *catalog.Catalog, a *answers.Ans
 		hi = append(hi, &ui.HomeItem{ID: it.ID, Label: it.Label, Group: group[it.Tab], Tab: ptab[it.Tab], State: it.State,
 			Detail: it.Detail, Inputs: it.Inputs, Updates: it.Updates, Source: src})
 	}
-	// What each group has to add: not picked, offered in the picker.
-	names, tabOf := map[string][]string{}, map[string]string{}
+	// What can be added: not picked, offered in the picker.
+	var avail []*ui.HomeItem
 	for _, it := range cat.Items {
 		if it.Hidden() || it.Always || slices.Contains(a.Picks, it.ID) {
 			continue
 		}
-		g := group[it.Tab]
-		short, _, _ := strings.Cut(it.Label, " (")
-		names[g] = append(names[g], short)
-		if tabOf[g] == "" {
-			tabOf[g] = ptab[it.Tab]
-		}
-	}
-	more := map[string]*ui.HomeItem{}
-	for g, l := range names {
-		shown := l
-		if len(shown) > 4 {
-			shown = append(slices.Clone(l[:4]), "…")
-		}
-		more[g] = ui.MoreItem(g, tabOf[g], len(l), shown)
+		avail = append(avail, &ui.HomeItem{ID: it.ID, Label: it.Label, Group: group[it.Tab], Tab: ptab[it.Tab], State: "available", Source: it.Describe()})
 	}
 	host, _ := os.Hostname()
-	h := ui.NewHome("yardo · "+host+" · "+a.User, "checked "+now.Format("15:04"), hi, groups, more)
+	h := ui.NewHome(ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04")}, hi, avail)
 	act, err := h.Run()
 	return h, act, err
 }

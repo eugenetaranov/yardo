@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,37 +10,31 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// HomeItem is one picked item on the home screen, with its status.
+// HomeItem is one item on the home screen: picked (with its status) or
+// available to add.
 type HomeItem struct {
 	ID, Label string
-	// Group is where it's listed when it's fine (a picker tab or group);
-	// Tab the picker tab that has it (to open the picker on).
+	// Group is its tab's group or tab (Dev, DevOps, AI, …, Configure); Tab
+	// the picker tab that has it (to open the picker on).
 	Group, Tab string
-	// State is ok, down, partial, missing, secret or unchecked.
+	// State is ok, down, drifted, partial, missing, secret or unchecked for
+	// a picked item, "available" for one to add.
 	State, Detail string
 	// Inputs are the values left empty; Updates newer versions of its
 	// tools (when checked); Source how it's installed.
 	Inputs, Updates []string
 	Source          string
-	// count is how many items a "more" row stands for.
-	count int
 }
 
-// MoreItem is a group's row for what it has to add: n items, named.
-func MoreItem(group, tab string, n int, names []string) *HomeItem {
-	label := fmt.Sprintf("%d more to add", n)
-	if len(names) > 0 {
-		label += ": " + strings.Join(names, ", ")
-	}
-	return &HomeItem{ID: "more:" + group, Label: label, Group: group, Tab: tab, State: "more", count: n}
-}
+// HomeInfo is what the home screen's header says.
+type HomeInfo struct{ Host, User, Checked string }
 
 // HomeAction is what the home screen was left with.
 type HomeAction int
 
 const (
 	HomeQuit HomeAction = iota
-	// HomeChange opens the picker, to add or change items.
+	// HomeChange opens the picker, to add or change items (StartTab).
 	HomeChange
 	// HomeRefresh checks everything again.
 	HomeRefresh
@@ -56,107 +51,153 @@ const (
 )
 
 var (
-	red    = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true)
-	yellow = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
+	red    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	yellow = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	keyOn  = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	rowOn  = lipgloss.NewStyle().Foreground(lipgloss.Color("#1A1A1A")).Background(lipgloss.Color("6")).Bold(true)
+	border = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 )
 
-// glyph is a state's mark and how it's said.
-func glyph(state string) (string, string) {
+// stateStyle colours a row by its state, as k9s does.
+func stateStyle(state string) lipgloss.Style {
 	switch state {
 	case "ok":
-		return green.Render("●"), "ok"
-	case "down":
-		return red.Render("✖"), "down"
-	case "partial":
-		return yellow.Render("◐"), "partial"
-	case "drifted":
-		return yellow.Render("◆"), "drifted"
-	case "missing":
-		return red.Render("○"), "missing"
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	case "down", "missing":
+		return red
+	case "partial", "drifted":
+		return yellow
 	case "secret":
-		return accentBd.Render("✱"), "to fill in"
-	case "more":
-		return accentBd.Render("+"), "to add"
+		return accent
+	case "available":
+		return lipgloss.NewStyle()
 	}
-	return muted.Render("·"), "not checked"
+	return muted
 }
 
-// problem reports whether an item belongs under "Needs attention".
-func problem(state string) bool { return state != "ok" && state != "unchecked" && state != "more" }
-
-type homeRow struct {
-	head string    // a heading row, or
-	item *HomeItem // an item row
+// stateSay is how a state reads in the STATE column.
+func stateSay(state string) string {
+	if state == "secret" {
+		return "fill in"
+	}
+	return state
 }
 
-// Home is the screen `sudo yardo` opens on once something is set up: what's
-// installed and whether it's fine, problems first. It changes nothing; it
-// hands the picker (a), a re-check (r) or quitting back to its caller.
+// severity sorts the installed view: problems first.
+var severity = map[string]int{"down": 0, "drifted": 1, "partial": 2, "missing": 3, "secret": 4, "unchecked": 5, "ok": 6}
+
+// problem reports whether an item belongs in the attention view.
+func problem(state string) bool {
+	return state != "ok" && state != "unchecked" && state != "available"
+}
+
+// Fixable reports whether f re-applies an item in this state.
+func Fixable(state string) bool {
+	return state == "down" || state == "partial" || state == "missing" || state == "drifted"
+}
+
+// The views: what's installed, what needs attention, what can be added.
+const (
+	viewInstalled = iota
+	viewAttention
+	viewAvailable
+)
+
+var viewNames = []string{"installed", "attention", "available"}
+
+// Home is the screen `sudo yardo` opens on once something is set up, laid
+// out like k9s: a header (the machine, the keys), a table of items (1
+// installed, 2 needing attention, 3 available to add; / filters), and a
+// line of views. It changes nothing itself: it hands its caller an action.
 type Home struct {
-	title, sub string
-	rows       []homeRow
-	counts     map[string]int
-	avail      int
-	cursor     int // index into rows (an item row)
-	top        int
-	width      int
-	height     int
-	details    bool
-	action     HomeAction
-	out        bool
+	info      HomeInfo
+	installed []*HomeItem
+	available []*HomeItem
+	view      int
+	filter    string
+	filtering bool
+	cursor    map[int]int
+	top       map[int]int
+	width     int
+	height    int
+	details   bool
+	action    HomeAction
+	out       bool
+	counts    map[string]int
 }
 
-// NewHome builds the home screen: title and sub on the first line, items
-// in groups (in the order of groups), and per group a row for what it has
-// to add (more: its labels, and the picker tab that has them).
-func NewHome(title, sub string, items []*HomeItem, groups []string, more map[string]*HomeItem) *Home {
-	h := &Home{title: title, sub: sub, counts: map[string]int{}, width: 100, height: 30}
-	for _, m := range more {
-		h.avail += m.count
-	}
-	var attention []*HomeItem
-	byGroup := map[string][]*HomeItem{}
-	for _, it := range items {
+// NewHome builds the home screen from the picked items (with their status)
+// and those available to add. It opens on what needs attention, if
+// anything does.
+func NewHome(info HomeInfo, installed, available []*HomeItem) *Home {
+	h := &Home{info: info, installed: installed, available: available, counts: map[string]int{},
+		cursor: map[int]int{}, top: map[int]int{}, width: 100, height: 30}
+	sort.SliceStable(h.installed, func(i, j int) bool {
+		return severity[h.installed[i].State] < severity[h.installed[j].State]
+	})
+	for _, it := range installed {
 		h.counts[it.State]++
-		if problem(it.State) {
-			attention = append(attention, it)
-		} else {
-			byGroup[it.Group] = append(byGroup[it.Group], it)
-		}
 	}
-	if len(attention) > 0 {
-		h.rows = append(h.rows, homeRow{head: "Needs attention"})
-		for _, it := range attention {
-			h.rows = append(h.rows, homeRow{item: it})
-		}
+	if len(h.rows(viewAttention)) > 0 {
+		h.view = viewAttention
 	}
-	for _, g := range groups {
-		if len(byGroup[g]) == 0 && more[g] == nil {
-			continue
-		}
-		h.rows = append(h.rows, homeRow{head: g})
-		for _, it := range byGroup[g] {
-			h.rows = append(h.rows, homeRow{item: it})
-		}
-		if m := more[g]; m != nil {
-			h.rows = append(h.rows, homeRow{item: m})
-		}
-	}
-	h.cursor = h.next(-1, 1)
 	return h
 }
 
-// next is the item row after (dir 1) or before (dir -1) i; i when none.
-func (h *Home) next(i, dir int) int {
-	for j := i + dir; j >= 0 && j < len(h.rows); j += dir {
-		if h.rows[j].item != nil {
-			return j
+// rows are view's items, filtered.
+func (h *Home) rows(view int) []*HomeItem {
+	var src []*HomeItem
+	switch view {
+	case viewAvailable:
+		src = h.available
+	case viewAttention:
+		for _, it := range h.installed {
+			if problem(it.State) {
+				src = append(src, it)
+			}
+		}
+	default:
+		src = h.installed
+	}
+	if h.filter == "" {
+		return src
+	}
+	q := strings.ToLower(h.filter)
+	var out []*HomeItem
+	for _, it := range src {
+		if strings.Contains(strings.ToLower(it.Label+" "+it.Group+" "+it.ID+" "+it.State), q) {
+			out = append(out, it)
 		}
 	}
-	if i < 0 {
-		return 0
+	return out
+}
+
+// Fix lists the items f re-applies.
+func (h *Home) Fix() []string {
+	var out []string
+	for _, it := range h.installed {
+		if Fixable(it.State) {
+			out = append(out, it.ID)
+		}
 	}
-	return i
+	return out
+}
+
+// Selected is the item under the cursor.
+func (h *Home) Selected() *HomeItem {
+	r := h.rows(h.view)
+	if c := h.cursor[h.view]; c < len(r) {
+		return r[c]
+	}
+	return nil
+}
+
+// StartTab is the picker tab to open on: the selected item's.
+func (h *Home) StartTab() string {
+	if it := h.Selected(); it != nil {
+		return it.Tab
+	}
+	return ""
 }
 
 func (h *Home) Init() tea.Cmd { return nil }
@@ -166,209 +207,295 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		h.width, h.height = m.Width, m.Height
 	case tea.KeyMsg:
-		switch m.String() {
-		case "up", "k":
-			h.cursor = h.next(h.cursor, -1)
-		case "down", "j":
-			h.cursor = h.next(h.cursor, 1)
-		case "pgdown":
-			for i := 0; i < 10; i++ {
-				h.cursor = h.next(h.cursor, 1)
-			}
-		case "pgup":
-			for i := 0; i < 10; i++ {
-				h.cursor = h.next(h.cursor, -1)
-			}
-		case "home":
-			h.cursor = h.next(-1, 1)
-		case "end":
-			h.cursor = h.next(len(h.rows), -1)
-		case "enter":
-			if it := h.Selected(); it != nil && it.State == "more" {
-				h.action = HomeChange
-				return h, tea.Quit
-			}
-			h.details = !h.details
-		case "a", "i":
-			h.action = HomeChange
-			return h, tea.Quit
-		case "c":
-			h.action = HomeAccess
-			return h, tea.Quit
-		case "r":
-			h.action = HomeRefresh
-			return h, tea.Quit
-		case "u":
-			h.action = HomeUpdates
-			return h, tea.Quit
-		case "x":
-			h.action = HomeConnect
-			return h, tea.Quit
-		case "f":
-			if len(h.Fix()) > 0 {
-				h.action = HomeFix
-				return h, tea.Quit
-			}
-		case "e":
-			if it := h.Selected(); it != nil && it.State == "secret" {
-				h.action = HomeEdit
-				return h, tea.Quit
-			}
-		case "q", "esc", "ctrl+c":
-			h.action = HomeQuit
-			return h, tea.Quit
+		if h.filtering {
+			return h, h.filterKey(m)
 		}
+		return h, h.key(m)
 	}
 	return h, nil
 }
 
-// Fixable reports whether f re-applies an item in this state.
-func Fixable(state string) bool {
-	return state == "down" || state == "partial" || state == "missing" || state == "drifted"
-}
-
-// Fix lists the items f re-applies.
-func (h *Home) Fix() []string {
-	var out []string
-	for _, r := range h.rows {
-		if r.item != nil && Fixable(r.item.State) {
-			out = append(out, r.item.ID)
+// filterKey edits the filter (/ … enter keeps it, esc drops it).
+func (h *Home) filterKey(m tea.KeyMsg) tea.Cmd {
+	switch m.Type {
+	case tea.KeyEnter:
+		h.filtering = false
+	case tea.KeyEsc:
+		h.filtering, h.filter = false, ""
+	case tea.KeyBackspace:
+		if r := []rune(h.filter); len(r) > 0 {
+			h.filter = string(r[:len(r)-1])
 		}
+	case tea.KeyCtrlC:
+		h.action = HomeQuit
+		return tea.Quit
+	case tea.KeySpace:
+		h.filter += " "
+	case tea.KeyRunes:
+		h.filter += string(m.Runes)
 	}
-	return out
+	h.cursor[h.view], h.top[h.view] = 0, 0
+	return nil
 }
 
-// Selected is the item under the cursor.
-func (h *Home) Selected() *HomeItem {
-	if h.cursor < len(h.rows) {
-		return h.rows[h.cursor].item
+func (h *Home) key(m tea.KeyMsg) tea.Cmd {
+	n := len(h.rows(h.view))
+	move := func(d int) { h.cursor[h.view] = max(0, min(n-1, h.cursor[h.view]+d)) }
+	quit := func(a HomeAction) tea.Cmd { h.action = a; return tea.Quit }
+	switch m.String() {
+	case "up", "k":
+		move(-1)
+	case "down", "j":
+		move(1)
+	case "pgup", "ctrl+b":
+		move(-10)
+	case "pgdown", "ctrl+f":
+		move(10)
+	case "home", "g":
+		h.cursor[h.view] = 0
+	case "end", "G":
+		move(n)
+	case "1", "2", "3":
+		h.view, h.details = int(m.Runes[0]-'1'), false
+	case "tab", "right", "l":
+		h.view, h.details = (h.view+1)%3, false
+	case "shift+tab", "left", "h":
+		h.view, h.details = (h.view+2)%3, false
+	case "/":
+		h.filtering = true
+	case "esc":
+		switch {
+		case h.filter != "":
+			h.filter = ""
+		case h.details:
+			h.details = false
+		default:
+			return quit(HomeQuit)
+		}
+	case "enter":
+		if it := h.Selected(); it != nil && it.State == "available" {
+			return quit(HomeChange)
+		}
+		h.details = !h.details
+	case "a", "i":
+		return quit(HomeChange)
+	case "c":
+		return quit(HomeAccess)
+	case "f":
+		if len(h.Fix()) > 0 {
+			return quit(HomeFix)
+		}
+	case "e":
+		if it := h.Selected(); it != nil && it.State == "secret" {
+			return quit(HomeEdit)
+		}
+	case "x":
+		return quit(HomeConnect)
+	case "u":
+		return quit(HomeUpdates)
+	case "r":
+		return quit(HomeRefresh)
+	case "q", "ctrl+c":
+		return quit(HomeQuit)
 	}
 	return nil
 }
 
-// detail is what the details panel shows for it.
-func detail(it *HomeItem) []string {
-	if it.State == "more" {
-		return []string{"enter: the picker, on " + it.Group + ": tick what to add, then install"}
-	}
-	_, say := glyph(it.State)
-	var out []string
+// note is what the NOTE column says for it.
+func note(it *HomeItem) string {
 	switch {
+	case it.State == "available":
+		return it.Source
 	case it.State == "secret":
-		out = append(out, "To fill in: "+strings.Join(it.Inputs, ", "))
+		return strings.Join(it.Inputs, ", ")
+	case problem(it.State) || it.State == "unchecked":
+		return it.Detail
+	case len(it.Updates) > 0:
+		return "▲ " + strings.Join(it.Updates, ", ")
+	}
+	return ""
+}
+
+// detail is the details pane for it.
+func detail(it *HomeItem) []string {
+	out := []string{"Item: " + it.Label + "  (" + it.ID + ")", "State: " + stateSay(it.State)}
+	switch {
+	case it.State == "available":
+		out[1] = "State: not installed; enter opens the picker on " + it.Group
+	case it.State == "secret":
+		out = append(out, "Fill in: "+strings.Join(it.Inputs, ", ")+"  (e)")
 	case it.Detail != "" && it.State != "ok":
-		out = append(out, say+": "+it.Detail)
-	default:
-		out = append(out, say)
+		out = append(out, "Why: "+it.Detail)
 	}
 	if len(it.Updates) > 0 {
-		out = append(out, "Newer: "+strings.Join(it.Updates, ", ")+" (mise up, or sudo apt upgrade)")
+		out = append(out, "Newer: "+strings.Join(it.Updates, ", ")+"  (mise up, or sudo apt upgrade)")
 	}
-	if it.Source != "" {
+	if it.Source != "" && it.State != "available" {
 		out = append(out, "How: "+it.Source)
 	}
 	return out
+}
+
+// header is the top: the machine on the left, the keys on the right.
+func (h *Home) header(w int) []string {
+	var st []string
+	for _, s := range []string{"ok", "down", "drifted", "partial", "missing", "secret", "unchecked"} {
+		if n := h.counts[s]; n > 0 {
+			st = append(st, stateStyle(s).Render(fmt.Sprintf("%d %s", n, stateSay(s))))
+		}
+	}
+	left := []string{
+		accentBd.Render("Host:    ") + h.info.Host,
+		accentBd.Render("User:    ") + h.info.User,
+		accentBd.Render("Checked: ") + h.info.Checked,
+		accentBd.Render("Status:  ") + strings.Join(st, "  "),
+	}
+	k := func(key, what string) string { return keyOn.Render("<"+key+">") + " " + what }
+	fix := k("f", "fix")
+	if n := len(h.Fix()); n > 0 {
+		fix = k("f", fmt.Sprintf("fix %d", n))
+	}
+	cols := [][]string{
+		{fix, k("e", "fill in"), k("enter", "details"), k("1-3", "views")},
+		{k("a", "add/change"), k("c", "access"), k("/", "filter"), k("q", "quit")},
+		{k("x", "connect"), k("u", "updates"), k("r", "refresh"), ""},
+	}
+	leftW := 0
+	for _, l := range left {
+		leftW = max(leftW, lipgloss.Width(l))
+	}
+	const colW = 18
+	out := make([]string, len(left))
+	for i := range out {
+		line := " " + left[i] + strings.Repeat(" ", leftW-lipgloss.Width(left[i])+4)
+		for _, c := range cols {
+			if lipgloss.Width(line)+colW > w {
+				break
+			}
+			line += c[i] + strings.Repeat(" ", max(1, colW-lipgloss.Width(c[i])))
+		}
+		out[i] = line
+	}
+	return out
+}
+
+// pad cuts or pads s to w cells.
+func pad(s string, w int) string {
+	s = runewidth.Truncate(s, w, "…")
+	return s + strings.Repeat(" ", max(0, w-runewidth.StringWidth(s)))
 }
 
 func (h *Home) View() string {
 	if h.out {
 		return ""
 	}
-	w := h.width
+	w, ht := max(40, h.width), max(12, h.height)
 	var b strings.Builder
-	gap := max(1, w-3-runewidth.StringWidth(h.title)-runewidth.StringWidth(h.sub))
-	b.WriteString(" " + accentBd.Render(h.title) + strings.Repeat(" ", gap) + muted.Render(h.sub) + "\n")
-	var sum []string
-	for _, s := range []string{"ok", "down", "drifted", "partial", "missing", "secret", "unchecked"} {
-		if n := h.counts[s]; n > 0 {
-			g, say := glyph(s)
-			sum = append(sum, fmt.Sprintf("%s %d %s", g, n, say))
-		}
+	head := h.header(w)
+	for _, l := range head {
+		b.WriteString(l + "\n")
 	}
-	nup := 0
-	for _, r := range h.rows {
-		if r.item != nil && len(r.item.Updates) > 0 {
-			nup++
-		}
+
+	rows := h.rows(h.view)
+	title := fmt.Sprintf(" %s[%d] ", viewNames[h.view], len(rows))
+	if h.filter != "" || h.filtering {
+		title = fmt.Sprintf(" %s(/%s)[%d] ", viewNames[h.view], h.filter, len(rows))
 	}
-	if nup > 0 {
-		sum = append(sum, yellow.Render("▲")+fmt.Sprintf(" %d with updates", nup))
-	}
-	if h.avail > 0 {
-		sum = append(sum, muted.Render(fmt.Sprintf("+ %d more to add", h.avail)))
-	}
-	b.WriteString(" " + strings.Join(sum, "   ") + "\n")
-	b.WriteString(" " + h.actions(w) + "\n")
-	b.WriteString(muted.Render(strings.Repeat("─", max(1, w-1))) + "\n")
+	inner := w - 2
+	tw := runewidth.StringWidth(title)
+	tl := max(0, (inner-tw)/2)
+	b.WriteString(border.Render("┌"+strings.Repeat("─", tl)) + accentBd.Render(title) +
+		border.Render(strings.Repeat("─", max(0, inner-tl-tw))+"┐") + "\n")
+
+	// Columns: NAME, GROUP, STATE, NOTE (the rest).
+	nameW := min(44, max(16, inner*2/5))
+	groupW, stateW := 12, 10
+	noteW := max(4, inner-nameW-groupW-stateW-5)
+	line := func(s string) { b.WriteString(border.Render("│") + s + border.Render("│") + "\n") }
+	line(bold.Render(" " + pad("NAME", nameW) + " " + pad("GROUP", groupW) + " " + pad("STATE", stateW) + " " + pad("NOTE", noteW) + " "))
 
 	var det []string
-	if h.cursor < len(h.rows) && h.rows[h.cursor].item != nil {
-		it := h.rows[h.cursor].item
-		if h.details {
-			for _, l := range detail(it) {
-				det = append(det, wrap(l, max(4, w-6))...)
-			}
+	if it := h.Selected(); h.details && it != nil {
+		for _, l := range detail(it) {
+			det = append(det, wrap(l, inner-4)...)
+		}
+	}
+	// Header, the box's top, the column names, its bottom, the views; and
+	// the details with their rule.
+	listH := max(1, ht-len(head)-4-len(det))
+	if len(det) > 0 {
+		listH--
+	}
+	cur := h.cursor[h.view]
+	if cur >= len(rows) {
+		cur = max(0, len(rows)-1)
+		h.cursor[h.view] = cur
+	}
+	top := h.top[h.view]
+	if cur < top {
+		top = cur
+	}
+	if cur >= top+listH {
+		top = cur - listH + 1
+	}
+	h.top[h.view] = top
+	shown := 0
+	for i := top; i < len(rows) && shown < listH; i++ {
+		it := rows[i]
+		cells := " " + pad(it.Label, nameW) + " " + pad(it.Group, groupW) + " " + pad(stateSay(it.State), stateW) + " " + pad(note(it), noteW) + " "
+		if i == cur {
+			line(rowOn.Render(cells))
 		} else {
-			det = []string{runewidth.Truncate(detail(it)[0], max(4, w-6), "…")}
+			line(stateStyle(it.State).Render(cells))
+		}
+		shown++
+	}
+	if len(rows) == 0 {
+		msg := map[int]string{viewInstalled: "Nothing picked yet: a adds.", viewAttention: "Nothing needs attention.", viewAvailable: "Everything is picked."}[h.view]
+		if h.filter != "" {
+			msg = "Nothing matches the filter: esc clears it."
+		}
+		line(muted.Render(" " + pad(msg, inner-2) + " "))
+		shown++
+	}
+	for ; shown < listH; shown++ {
+		line(strings.Repeat(" ", inner))
+	}
+	if len(det) > 0 {
+		b.WriteString(border.Render("├"+strings.Repeat("─", inner)+"┤") + "\n")
+		for _, l := range det {
+			line(" " + pad(l, inner-2) + " ")
 		}
 	}
-	listH := max(1, h.height-6-len(det))
-	if h.cursor < h.top {
-		h.top = h.cursor
-	}
-	// Keep the heading above the cursor's first item in view.
-	for h.cursor-h.top >= listH {
-		h.top++
-	}
-	if h.top > 0 && h.cursor == h.top && h.rows[h.top-1].item == nil {
-		h.top--
-	}
-	// As wide as the longest label, so the notes get the rest.
-	labelW := 14
-	for _, r := range h.rows {
-		if r.item != nil {
-			labelW = max(labelW, runewidth.StringWidth(r.item.Label))
-		}
-	}
-	labelW = min(labelW, 44, max(14, w/2))
-	lines := 0
-	for i := h.top; i < len(h.rows) && lines < listH; i++ {
-		r := h.rows[i]
-		if r.item == nil {
-			b.WriteString(" " + accentBd.Render(r.head) + "\n")
-			lines++
-			continue
-		}
-		it := r.item
-		g, _ := glyph(it.State)
-		mark := "  "
-		lab := runewidth.Truncate(it.Label, labelW, "…")
-		if i == h.cursor {
-			mark = accentBd.Render("›") + " "
-			lab = bold.Render(lab)
-		}
-		pad := max(1, labelW+2-runewidth.StringWidth(runewidth.Truncate(it.Label, labelW, "…")))
-		note := ""
-		if len(it.Updates) > 0 && !problem(it.State) {
-			note = yellow.Render("▲ ") + muted.Render(runewidth.Truncate(strings.Join(it.Updates, ", "), max(4, w-labelW-12), "…"))
-		}
+	b.WriteString(border.Render("└"+strings.Repeat("─", inner)+"┘") + "\n")
+
+	// The views, as k9s's crumbs; the filter being typed.
+	attention := 0
+	for _, it := range h.installed {
 		if problem(it.State) {
-			n := it.Detail
-			if it.State == "secret" {
-				n = strings.Join(it.Inputs, ", ")
-			}
-			note = muted.Render(runewidth.Truncate(n, max(4, w-labelW-10), "…"))
+			attention++
 		}
-		b.WriteString(" " + mark + g + " " + lab + strings.Repeat(" ", pad) + note + "\n")
-		lines++
 	}
-	for ; lines < listH; lines++ {
-		b.WriteString("\n")
+	var crumbs []string
+	for i, n := range viewNames {
+		c := fmt.Sprintf(" <%d> %s ", i+1, n)
+		switch i {
+		case viewAttention:
+			c = fmt.Sprintf(" <%d> %s (%d) ", i+1, n, attention)
+		case viewAvailable:
+			c = fmt.Sprintf(" <%d> %s (%d) ", i+1, n, len(h.available))
+		}
+		if i == h.view {
+			crumbs = append(crumbs, tabOn.Render(c))
+		} else {
+			crumbs = append(crumbs, muted.Render(c))
+		}
 	}
-	for _, l := range det {
-		b.WriteString("   " + muted.Render(l) + "\n")
+	foot := " " + strings.Join(crumbs, " ")
+	if h.filtering {
+		foot += "   " + accentBd.Render("/") + h.filter + "_"
 	}
-	b.WriteString(" " + muted.Render("↑/↓ move · enter: details, or on \"+ … more to add\": open the picker there"))
+	b.WriteString(foot)
 	return b.String()
 }
 
@@ -380,36 +507,4 @@ func (h *Home) Run() (HomeAction, error) {
 	}
 	h.out = true
 	return h.action, nil
-}
-
-// actions is the bar of what can be done, keys highlighted.
-func (h *Home) actions(w int) string {
-	key := func(k, what string) string { return tabOn.Render(" "+k+" ") + " " + what }
-	var a []string
-	if n := len(h.Fix()); n > 0 {
-		a = append(a, key("f", fmt.Sprintf("fix %d", n)))
-	}
-	if it := h.Selected(); it != nil && it.State == "secret" {
-		a = append(a, key("e", "fill in"))
-	}
-	a = append(a, key("a", "add or change"), key("c", "access"), key("x", "connect from a laptop"), key("u", "updates"), key("r", "check again"), key("q", "quit"))
-	out := ""
-	for _, s := range a {
-		if lipgloss.Width(out)+lipgloss.Width(s)+3 > w {
-			break
-		}
-		if out != "" {
-			out += "   "
-		}
-		out += s
-	}
-	return out
-}
-
-// StartTab is the picker tab to open on: the selected row's.
-func (h *Home) StartTab() string {
-	if it := h.Selected(); it != nil {
-		return it.Tab
-	}
-	return ""
 }
