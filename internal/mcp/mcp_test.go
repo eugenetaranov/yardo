@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -27,5 +29,26 @@ func TestLoadShippedSpecs(t *testing.T) {
 	}
 	if !IsSecret("JIRA_API_TOKEN") || IsSecret("JIRA_URL") || !IsSecret("LINEAR_API_KEY") {
 		t.Error("IsSecret")
+	}
+}
+
+// GitHub's token comes with how to make it, and the host (always
+// github.com but for Enterprise) isn't an optional setting to pick.
+func TestGitHubSpecHelp(t *testing.T) {
+	gh, err := Load(context.Background(), []string{"../assets/conf/mcp-catalog"}, "github")
+	if err != nil {
+		t.Fatal(err)
+	}
+	help := gh.Help["GITHUB_PERSONAL_ACCESS_TOKEN"]
+	for _, want := range []string{"fine-grained", "personal-access-tokens/new", "Contents: Read and write", "Pull requests: Read and write", "classic"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("help lacks %q:\n%s", want, help)
+		}
+	}
+	if slices.Contains(gh.Optional, "GITHUB_HOST") || !slices.Contains(gh.Optional, "GITHUB_TOOLSETS") {
+		t.Errorf("optional = %v", gh.Optional)
+	}
+	if !reflect.DeepEqual(gh.Keys, []string{"GITHUB_PERSONAL_ACCESS_TOKEN"}) {
+		t.Errorf("keys = %v", gh.Keys)
 	}
 }

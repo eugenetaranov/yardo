@@ -532,6 +532,9 @@ func (k *asker) askMCP(ctx context.Context, c *choices, has func(string) bool, f
 		}
 		fmt.Fprintf(k.out, "\n%s — %s\nLeave a value empty to fill it in later: mcp-sync edit %s\n", n, s.Description, n)
 		for _, key := range keys {
+			if h := s.Help[key]; h != "" {
+				fmt.Fprintf(k.out, "\n%s\n", h)
+			}
 			cur := steps.EnvGet(envb, key)
 			if cur == "" {
 				cur = s.Defaults[key]

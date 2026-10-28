@@ -21,6 +21,9 @@ type Spec struct {
 	// #KEY= ones. Defaults has a value the skeleton sets.
 	Keys, Optional []string
 	Defaults       map[string]string
+	// Help is the comment right above a KEY= line (how to get its value),
+	// without the "# ".
+	Help map[string]string
 	// Skeleton is the env file a new server starts with.
 	Skeleton string
 }
@@ -72,24 +75,30 @@ skeleton 2>/dev/null || true`
 	if len(f) < 5 {
 		return nil, fmt.Errorf("%s: unreadable", path)
 	}
-	s := &Spec{Name: name, Description: f[0], Image: f[1], URL: f[2], Required: strings.Fields(f[3]), Defaults: map[string]string{}, Skeleton: f[4]}
+	s := &Spec{Name: name, Description: f[0], Image: f[1], URL: f[2], Required: strings.Fields(f[3]), Defaults: map[string]string{}, Help: map[string]string{}, Skeleton: f[4]}
+	var comment []string // the comment lines since the last other line
 	for _, line := range strings.Split(f[4], "\n") {
-		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
-		if !ok || k == "" {
+		line = strings.TrimSpace(line)
+		k, v, ok := strings.Cut(line, "=")
+		if opt, isOpt := strings.CutPrefix(k, "#"); ok && isOpt && validKey(opt) {
+			s.Optional = append(s.Optional, opt)
+			comment = nil
 			continue
 		}
-		if opt, isOpt := strings.CutPrefix(k, "#"); isOpt {
-			if validKey(opt) {
-				s.Optional = append(s.Optional, opt)
-			}
+		if c, isComment := strings.CutPrefix(line, "#"); isComment {
+			comment = append(comment, strings.TrimPrefix(c, " "))
 			continue
 		}
-		if validKey(k) {
+		if ok && validKey(k) {
 			s.Keys = append(s.Keys, k)
 			if v != "" {
 				s.Defaults[k] = v
 			}
+			if len(comment) > 0 {
+				s.Help[k] = strings.Join(comment, "\n")
+			}
 		}
+		comment = nil
 	}
 	return s, nil
 }
