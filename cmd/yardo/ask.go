@@ -476,7 +476,7 @@ func (k *asker) askDotfiles() error {
 
 // askMCPListen asks where the gateway listens (its unit binds it).
 func (k *asker) askMCPListen() error {
-	one, ts, all := "this machine only", "the Tailscale address only (your tailnet)", "all interfaces (no auth — trusted networks only)"
+	one, ts, all := "this machine only", "the Tailscale address only (your tailnet; clients need a token)", "all interfaces (clients need a token)"
 	opts := []string{one}
 	if out, err := exec.Command("tailscale", "ip", "-4").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
 		opts = append(opts, ts)

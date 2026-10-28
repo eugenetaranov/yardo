@@ -200,7 +200,12 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    Docker is root on the machine), added to
    Claude Code, Codex, Gemini CLI, OpenCode and Goose. The gateway listens
    on this machine only, on the VM's Tailscale address only (when Tailscale
-   is up), or on every interface (no auth: trusted networks only).
+   is up), or on every interface. Beyond this machine it needs a token
+   (MCPJungle's enterprise mode): yardo makes the admin token (kept in
+   `~/.mcp`, the gateway user's) and one for the agents on the VM, wired
+   into them; `mcp-sync client <name>` makes one for a laptop's agent,
+   sent as `Authorization: Bearer <token>`. On this machine only, there
+   are no tokens: anything on the VM can use the gateway.
 3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later) and your age key for sops (generate or paste).

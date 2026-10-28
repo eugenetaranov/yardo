@@ -1290,8 +1290,9 @@ SupplementaryGroups=docker
 WorkingDirectory=$mcp
 # Docker-based servers can take a while to start the first time.
 Environment=MCP_SERVER_INIT_REQ_TIMEOUT_SEC=120
-# --host is 127.0.0.1 (this machine) or 0.0.0.0 (all interfaces).
-ExecStart=$BIN/mcpjungle start --host=$A_MCP_LISTEN --port $MCPJUNGLE_PORT --sqlite-db-path $mcp/mcpjungle.db
+# This machine only: the bash installer doesn't set up the gateway's
+# tokens, and without them anyone reaching the port could use it.
+ExecStart=$BIN/mcpjungle start --host=127.0.0.1 --port $MCPJUNGLE_PORT --sqlite-db-path $mcp/mcpjungle.db
 Restart=on-failure
 RestartSec=5
 

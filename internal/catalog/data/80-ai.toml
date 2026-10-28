@@ -251,6 +251,10 @@ type = "go:mcpjungle_unit"
 [[item.step]]
 type = "go:mcp_wait"
 
+# Beyond this machine, tokens: the admin's (for mcp-sync) and the agents'.
+[[item.step]]
+type = "go:mcp_auth"
+
 # The servers, and the agents wired to the gateway. Keeps the old id, so an
 # old pick still means install + servers.
 [[item]]

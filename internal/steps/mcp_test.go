@@ -140,7 +140,8 @@ func TestMCPUnit(t *testing.T) {
 	if got := read(t, e.Path(mcpUnit)); !strings.Contains(got, "User=mcp-%i\n") || !strings.Contains(got, "EnvironmentFile=/etc/mcpjungle/%i.env") {
 		t.Errorf("unit:\n%s", got)
 	}
-	if got := read(t, e.Path("/etc/mcpjungle/ada.env")); got != "MCP_HOST=0.0.0.0\nMCP_PORT=8081\nMCP_DIR=/home/ada/.mcp\n" {
+	// All interfaces: enterprise mode, in a database of its own.
+	if got := read(t, e.Path("/etc/mcpjungle/ada.env")); got != "MCP_HOST=0.0.0.0\nMCP_PORT=8081\nMCP_DIR=/home/ada/.mcp\nMCP_DB=/home/ada/.mcp/mcpjungle-enterprise.db\nSERVER_MODE=enterprise\n" {
 		t.Errorf("env = %q", got)
 	}
 	if _, err := os.Stat(e.Path(oldMCPUnit)); err == nil {
@@ -348,5 +349,93 @@ func TestMCPListenTailscale(t *testing.T) {
 	}
 	if agentURL(e) != "http://100.64.1.2:8080/mcp" || mcpURL(e) != "http://100.64.1.2:8080" {
 		t.Errorf("urls %s %s", agentURL(e), mcpURL(e))
+	}
+}
+
+// Beyond this machine the gateway needs tokens: yardo initializes it (the
+// admin token lands in ~/.mcp for mcp-sync) and creates the agents' client
+// from a file, so no token is on a command line.
+func TestMCPAuth(t *testing.T) {
+	var e *Env
+	created := false
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		args := strings.Join(c.Args, " ")
+		switch {
+		case strings.HasSuffix(args, " init-server"):
+			put(t, e.Path("~/.mcp/.mcpjungle.conf"), "registry_url: x\naccess_token: admin-1\n")
+		case strings.Contains(args, " create mcp-client --conf "):
+			created = true
+		case strings.HasSuffix(args, " list mcp-clients") && created:
+			return []byte("yardo-agents\n"), nil
+		}
+		return nil, nil
+	}}
+	e = mcpEnv(t, x)
+	st := step(t, catalog.Step{Type: "go:mcp_auth"})
+	if !check(t, e, st) {
+		t.Error("this machine only: no tokens, Check = false")
+	}
+	e.Answers.MCPListen = "0.0.0.0"
+	if check(t, e, st) {
+		t.Fatal("enterprise, before the tokens: Check = true")
+	}
+	apply(t, e, st)
+	tok := strings.TrimSpace(read(t, e.Path("~/.mcp/agent-token")))
+	if len(tok) != 64 {
+		t.Errorf("agent token = %q", tok)
+	}
+	client := read(t, e.Path("~/.mcp/agent-client.json"))
+	if !strings.Contains(client, `"allowed_servers": ["*"]`) || !strings.Contains(client, "/home/ada/.mcp/agent-token") || strings.Contains(client, tok) {
+		t.Errorf("client config = %s", client)
+	}
+	for _, c := range x.commands() {
+		if strings.Contains(c, tok) {
+			t.Errorf("the token is on a command line: %s", c)
+		}
+		if strings.Contains(c, "mcpjungle") && !strings.Contains(c, "HOME=/home/ada/.mcp") {
+			t.Errorf("mcpjungle without ~/.mcp as its home: %s", c)
+		}
+	}
+	if !check(t, e, st) {
+		t.Error("Check = false after the tokens")
+	}
+}
+
+// In enterprise mode the agents send the token; back on this machine only,
+// they stop.
+func TestMCPWireToken(t *testing.T) {
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		if c.Name == "sh" && (strings.HasSuffix(c.Args[1], " codex") || strings.HasSuffix(c.Args[1], " opencode") || strings.HasSuffix(c.Args[1], " goose")) {
+			return nil, nil
+		}
+		return nil, errors.New("no")
+	}}
+	e := mcpEnv(t, x)
+	e.Answers.MCPListen = "0.0.0.0"
+	put(t, e.Path("~/.mcp/agent-token"), "tok-1\n")
+	st := step(t, catalog.Step{Type: "go:mcp_wire"})
+	apply(t, e, st)
+	if got := read(t, e.Path("~/.codex/config.toml")); !strings.Contains(got, `http_headers = { "Authorization" = "Bearer tok-1" }`) {
+		t.Errorf("config.toml = %q", got)
+	}
+	if got := read(t, e.Path(openCodeConfig)); !strings.Contains(got, `"Authorization": "Bearer tok-1"`) {
+		t.Errorf("opencode.json:\n%s", got)
+	}
+	if got := read(t, e.Path(gooseConfig)); !strings.Contains(got, "Authorization: Bearer tok-1") {
+		t.Errorf("goose config.yaml:\n%s", got)
+	}
+	if !check(t, e, st) {
+		t.Error("Check = false after wiring with the token")
+	}
+	e.Answers.MCPListen = ""
+	if check(t, e, st) {
+		t.Error("back on this machine only, the token still in the configs: Check = true")
+	}
+	apply(t, e, st)
+	if got := read(t, e.Path("~/.codex/config.toml")); strings.Contains(got, "http_headers") || !strings.Contains(got, `url = "http://localhost:8080/mcp"`) {
+		t.Errorf("config.toml after going local = %q", got)
+	}
+	if got := read(t, e.Path(openCodeConfig)) + read(t, e.Path(gooseConfig)); strings.Contains(got, "Bearer") {
+		t.Errorf("a token stayed:\n%s", got)
 	}
 }

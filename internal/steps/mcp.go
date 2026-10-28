@@ -3,6 +3,9 @@ package steps
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -35,6 +38,7 @@ func init() {
 	RegisterGo("mcp_files", func(catalog.Step) Step { return mcpFilesStep{} })
 	RegisterGo("mcpjungle_unit", func(catalog.Step) Step { return mcpUnitStep{} })
 	RegisterGo("mcp_wait", func(catalog.Step) Step { return mcpWaitStep{} })
+	RegisterGo("mcp_auth", func(catalog.Step) Step { return mcpAuthStep{} })
 	RegisterGo("mcp_servers", func(catalog.Step) Step { return mcpServersStep{} })
 	RegisterGo("mcp_wire", func(catalog.Step) Step { return mcpWireStep{} })
 	RegisterGo("mcp_sync", func(catalog.Step) Step { return mcpSyncStep{} })
@@ -278,6 +282,29 @@ func resolveListen(ctx context.Context, e *Env) error {
 	return nil
 }
 
+// Enterprise reports whether the gateway requires tokens: whenever it
+// listens beyond this machine. In development mode (this machine only)
+// anyone who reaches the port may use every server and register new ones.
+func Enterprise(e *Env) bool { return listen(e) != "127.0.0.1" }
+
+// mcpMode is the gateway's mode, as MCPJungle's SERVER_MODE names it.
+func mcpMode(e *Env) string {
+	if Enterprise(e) {
+		return "enterprise"
+	}
+	return "development"
+}
+
+// mcpDB is the gateway's database: one per mode, since MCPJungle won't
+// start a database in the other mode (mcp-sync registers the servers again
+// in a new one).
+func mcpDB(e *Env) string {
+	if Enterprise(e) {
+		return filepath.Join(e.Home, ".mcp", "mcpjungle-enterprise.db")
+	}
+	return filepath.Join(e.Home, ".mcp", "mcpjungle.db")
+}
+
 // listenHost is the address the gateway binds (resolveListen first).
 func listenHost(e *Env) (string, error) {
 	if listen(e) != "tailscale" {
@@ -290,7 +317,7 @@ func listenHost(e *Env) (string, error) {
 }
 
 // mcpTemplate is the gateway's template unit: one instance per user, each
-// with its host, port and data directory in /etc/mcpjungle/<user>.env.
+// with its host, port, mode and database in /etc/mcpjungle/<user>.env.
 const mcpTemplate = `[Unit]
 Description=MCPJungle MCP gateway for %i
 After=network.target docker.service
@@ -304,8 +331,11 @@ SupplementaryGroups=docker
 EnvironmentFile=/etc/mcpjungle/%i.env
 # Docker-based servers can take a while to start the first time.
 Environment=MCP_SERVER_INIT_REQ_TIMEOUT_SEC=120
-# MCP_HOST is 127.0.0.1 (this machine) or 0.0.0.0 (all interfaces).
-ExecStart=/usr/local/bin/mcpjungle start --host=${MCP_HOST} --port ${MCP_PORT} --sqlite-db-path ${MCP_DIR}/mcpjungle.db
+# Enterprise mode turns telemetry on unless told not to.
+Environment=OTEL_ENABLED=false
+# MCP_HOST is 127.0.0.1 (this machine; SERVER_MODE development) or another
+# address (enterprise: every client needs a token).
+ExecStart=/usr/local/bin/mcpjungle start --host=${MCP_HOST} --port ${MCP_PORT} --sqlite-db-path ${MCP_DB}
 Restart=on-failure
 RestartSec=5
 
@@ -316,7 +346,8 @@ WantedBy=multi-user.target
 func (mcpUnitStep) envFile(e *Env) wantFile {
 	host, _ := listenHost(e)
 	return wantFile{filepath.Join(mcpEnvDir, e.User+".env"),
-		[]byte(fmt.Sprintf("MCP_HOST=%s\nMCP_PORT=%d\nMCP_DIR=%s\n", host, MCPPort(e), filepath.Join(e.Home, ".mcp"))), 0o644}
+		[]byte(fmt.Sprintf("MCP_HOST=%s\nMCP_PORT=%d\nMCP_DIR=%s\nMCP_DB=%s\nSERVER_MODE=%s\n",
+			host, MCPPort(e), filepath.Join(e.Home, ".mcp"), mcpDB(e), mcpMode(e))), 0o644}
 }
 
 // oldUnit reports whether Phase 1's single gateway runs as this user.
@@ -426,6 +457,127 @@ func (mcpWaitStep) Apply(ctx context.Context, e *Env) error {
 	}
 	e.note(fmt.Sprintf("mcpjungle is not answering on port %d after %ds; see: journalctl -u %s", MCPPort(e), mcpWaitTries, mcpInstance(e)))
 	return nil
+}
+
+// randomToken is a client token: 32 random bytes, hex.
+func randomToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// --- go:mcp_auth: the tokens, in enterprise mode -------------------------------
+
+// mcpAuthStep initializes an enterprise-mode gateway (its admin token, in
+// ~/.mcp/.mcpjungle.conf, for mcp-sync) and creates the client the VM's own
+// agents use (allowed every server; its token in ~/.mcp/agent-token). Both
+// stay with the service user; the token reaches the agents' configs.
+type mcpAuthStep struct{}
+
+const (
+	mcpAdminConf  = ".mcpjungle.conf"
+	mcpAgentToken = "agent-token"
+	mcpAgentName  = "yardo-agents"
+)
+
+func (mcpAuthStep) Plan(e *Env) []Action {
+	if !Enterprise(e) {
+		return nil
+	}
+	return []Action{{"run", "mcpjungle init-server; create mcp-client " + mcpAgentName + " (token in ~/.mcp/" + mcpAgentToken + ")"}}
+}
+
+// mj runs the mcpjungle CLI against the user's gateway, as the service
+// user, with ~/.mcp as its home (where the admin token is).
+func mj(ctx context.Context, e *Env, args ...string) ([]byte, error) {
+	a := append([]string{"HOME=" + filepath.Join(e.Home, ".mcp"), "mcpjungle", "--registry", mcpURL(e)}, args...)
+	c := Cmd{Name: "env", Args: a, As: MCPUser(e)}
+	if !mcpAsService(e) {
+		c = Cmd{Name: "env", Args: a, AsUser: true}
+	}
+	return e.Exec.Run(ctx, c)
+}
+
+func (mcpAuthStep) Check(ctx context.Context, e *Env) (bool, error) {
+	if !Enterprise(e) {
+		return true, nil
+	}
+	if err := resolveListen(ctx, e); err != nil {
+		return false, nil
+	}
+	conf, err := mcpRead(ctx, e, mcpAdminConf)
+	if err != nil || !bytes.Contains(conf, []byte("access_token:")) {
+		return false, nil
+	}
+	tok, err := mcpRead(ctx, e, mcpAgentToken)
+	if err != nil || len(bytes.TrimSpace(tok)) == 0 {
+		return false, nil
+	}
+	out, err := mj(ctx, e, "list", "mcp-clients")
+	return err == nil && bytes.Contains(out, []byte(mcpAgentName)), nil
+}
+
+func (mcpAuthStep) Apply(ctx context.Context, e *Env) error {
+	if !Enterprise(e) {
+		return nil
+	}
+	if err := resolveListen(ctx, e); err != nil {
+		return err
+	}
+	conf, err := mcpRead(ctx, e, mcpAdminConf)
+	if err != nil {
+		return err
+	}
+	if !bytes.Contains(conf, []byte("access_token:")) {
+		if out, err := mj(ctx, e, "init-server"); err != nil {
+			return fmt.Errorf("mcpjungle init-server: %w: %s", err, out)
+		}
+	}
+	tok, err := mcpRead(ctx, e, mcpAgentToken)
+	if err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(tok)) == 0 {
+		t, err := randomToken()
+		if err != nil {
+			return err
+		}
+		if err := mcpWrite(ctx, e, mcpAgentToken, []byte(t+"\n")); err != nil {
+			return err
+		}
+	}
+	if out, err := mj(ctx, e, "list", "mcp-clients"); err == nil && bytes.Contains(out, []byte(mcpAgentName)) {
+		return nil
+	}
+	// From a file the CLI reads: on the command line, ps would show it.
+	client := fmt.Sprintf(`{"name": %q, "description": "the coding agents on this machine (yardo)", "allowed_servers": ["*"], "access_token_ref": {"file": %q}}`+"\n",
+		mcpAgentName, filepath.Join(e.Home, ".mcp", mcpAgentToken))
+	if err := mcpWrite(ctx, e, "agent-client.json", []byte(client)); err != nil {
+		return err
+	}
+	if out, err := mj(ctx, e, "create", "mcp-client", "--conf", filepath.Join(e.Home, ".mcp", "agent-client.json")); err != nil {
+		return fmt.Errorf("mcpjungle create mcp-client: %w: %s", err, out)
+	}
+	return nil
+}
+
+// agentHeaders are the headers the agents send the gateway: its client
+// token in enterprise mode, none in development mode.
+func agentHeaders(ctx context.Context, e *Env) (map[string]string, error) {
+	if !Enterprise(e) {
+		return nil, nil
+	}
+	tok, err := mcpRead(ctx, e, mcpAgentToken)
+	if err != nil {
+		return nil, err
+	}
+	t := strings.TrimSpace(string(tok))
+	if t == "" {
+		return nil, errors.New("the gateway's agent token isn't there yet (~/.mcp/" + mcpAgentToken + ")")
+	}
+	return map[string]string{"Authorization": "Bearer " + t}, nil
 }
 
 // --- go:mcp_servers: each picked server's env file ---------------------------
@@ -575,9 +727,9 @@ func has(ctx context.Context, e *Env, tool string) bool {
 const codexSection = "[mcp_servers.mcpjungle]"
 
 // todo lists the agents not wired to the user's gateway yet: not at all
-// ("claude"), or to another port ("claude!", Claude Code only, which
-// needs a remove first; Codex and Gemini are rewritten in place).
-func (mcpWireStep) todo(ctx context.Context, e *Env) []string {
+// ("claude"), or to another port or token ("claude!", Claude Code only,
+// which needs a remove first; the others are rewritten in place).
+func (mcpWireStep) todo(ctx context.Context, e *Env, hdr map[string]string) []string {
 	_ = resolveListen(ctx, e)
 	var out []string
 	url := agentURL(e)
@@ -586,30 +738,32 @@ func (mcpWireStep) todo(ctx context.Context, e *Env) []string {
 		switch {
 		case err != nil:
 			out = append(out, "claude")
-		case !strings.Contains(string(got), url):
+		case !strings.Contains(string(got), url) || (hdr != nil) != strings.Contains(string(got), "Authorization"):
 			out = append(out, "claude!")
 		}
 	}
 	if has(ctx, e, "codex") {
 		b, _ := os.ReadFile(e.Path("~/.codex/config.toml"))
-		if !bytes.Equal(codexWired(b, url), b) {
+		if !bytes.Equal(codexWired(b, url, hdr), b) {
 			out = append(out, "codex")
 		}
 	}
 	if has(ctx, e, "gemini") {
-		if _, err := e.Exec.Run(ctx, Cmd{Name: "jq", Args: []string{"-e", "--arg", "u", url, ".mcpServers.mcpjungle.httpUrl == $u", e.Path("~/.gemini/settings.json")}}); err != nil {
+		h, _ := json.Marshal(hdr)
+		if _, err := e.Exec.Run(ctx, Cmd{Name: "jq", Args: []string{"-e", "--arg", "u", url, "--argjson", "h", string(h),
+			".mcpServers.mcpjungle.httpUrl == $u and (.mcpServers.mcpjungle.headers // null) == $h", e.Path("~/.gemini/settings.json")}}); err != nil {
 			out = append(out, "gemini")
 		}
 	}
 	if has(ctx, e, "opencode") {
 		b, _ := readOrEmpty(e, openCodeConfig)
-		if _, changed, err := openCodeWired(b, url); err != nil || changed {
+		if _, changed, err := openCodeWired(b, url, hdr); err != nil || changed {
 			out = append(out, "opencode")
 		}
 	}
 	if has(ctx, e, "goose") {
 		b, _ := readOrEmpty(e, gooseConfig)
-		if _, changed, err := gooseWired(b, url); err != nil || changed {
+		if _, changed, err := gooseWired(b, url, hdr); err != nil || changed {
 			out = append(out, "goose")
 		}
 	}
@@ -617,24 +771,40 @@ func (mcpWireStep) todo(ctx context.Context, e *Env) []string {
 }
 
 // codexWired returns Codex's config with the mcpjungle section pointing
-// at url: its url line replaced, or the section appended.
-func codexWired(b []byte, url string) []byte {
-	want := fmt.Sprintf("url = %q", url)
+// at url and sending hdr: its url and http_headers lines replaced (the
+// headers line dropped without hdr), or the section appended.
+func codexWired(b []byte, url string, hdr map[string]string) []byte {
+	want := []string{fmt.Sprintf("url = %q", url)}
+	if len(hdr) > 0 {
+		keys := make([]string, 0, len(hdr))
+		for k := range hdr {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var kv []string
+		for _, k := range keys {
+			kv = append(kv, fmt.Sprintf("%q = %q", k, hdr[k]))
+		}
+		want = append(want, "http_headers = { "+strings.Join(kv, ", ")+" }")
+	}
 	lines := strings.Split(string(b), "\n")
 	for i, l := range lines {
 		if l != codexSection {
 			continue
 		}
-		for j := i + 1; j < len(lines) && !strings.HasPrefix(lines[j], "["); j++ {
-			if strings.HasPrefix(strings.TrimSpace(lines[j]), "url") {
-				lines[j] = want
-				return []byte(strings.Join(lines, "\n"))
+		// The section's own lines, without url and http_headers, then ours.
+		j := i + 1
+		var rest []string
+		for ; j < len(lines) && !strings.HasPrefix(lines[j], "["); j++ {
+			k := strings.TrimSpace(lines[j])
+			if !strings.HasPrefix(k, "url") && !strings.HasPrefix(k, "http_headers") {
+				rest = append(rest, lines[j])
 			}
 		}
-		lines = slices.Insert(lines, i+1, want)
-		return []byte(strings.Join(lines, "\n"))
+		out := slices.Concat(lines[:i+1], want, rest, lines[j:])
+		return []byte(strings.Join(out, "\n"))
 	}
-	return append(append([]byte{}, b...), fmt.Sprintf("\n%s\n%s\n", codexSection, want)...)
+	return append(append([]byte{}, b...), fmt.Sprintf("\n%s\n%s\n", codexSection, strings.Join(want, "\n"))...)
 }
 
 func hasLine(b []byte, line string) bool {
@@ -647,14 +817,25 @@ func hasLine(b []byte, line string) bool {
 }
 
 func (w mcpWireStep) Check(ctx context.Context, e *Env) (bool, error) {
-	return !wire(e) || len(w.todo(ctx, e)) == 0, nil
+	if !wire(e) {
+		return true, nil
+	}
+	hdr, err := agentHeaders(ctx, e)
+	if err != nil {
+		return false, nil
+	}
+	return len(w.todo(ctx, e, hdr)) == 0, nil
 }
 
 func (w mcpWireStep) Apply(ctx context.Context, e *Env) error {
 	if !wire(e) {
 		return nil
 	}
-	for _, agent := range w.todo(ctx, e) {
+	hdr, err := agentHeaders(ctx, e)
+	if err != nil {
+		return err
+	}
+	for _, agent := range w.todo(ctx, e, hdr) {
 		var err error
 		switch agent {
 		case "claude!":
@@ -663,11 +844,15 @@ func (w mcpWireStep) Apply(ctx context.Context, e *Env) error {
 			}
 			fallthrough
 		case "claude":
-			_, err = e.run(ctx, Cmd{Name: "claude", Args: []string{"mcp", "add", "--transport", "http", "mcpjungle", agentURL(e), "--scope", "user"}, AsUser: true})
+			args := []string{"mcp", "add", "--transport", "http", "mcpjungle", agentURL(e), "--scope", "user"}
+			for k, v := range hdr {
+				args = append(args, "--header", k+": "+v)
+			}
+			_, err = e.run(ctx, Cmd{Name: "claude", Args: args, AsUser: true})
 		case "codex":
-			err = w.codex(e)
+			err = w.codex(e, hdr)
 		case "gemini":
-			err = w.gemini(ctx, e)
+			err = w.gemini(ctx, e, hdr)
 		case "opencode", "goose":
 			p, wired := openCodeConfig, openCodeWired
 			if agent == "goose" {
@@ -675,7 +860,7 @@ func (w mcpWireStep) Apply(ctx context.Context, e *Env) error {
 			}
 			var cur, b []byte
 			if cur, err = readOrEmpty(e, p); err == nil {
-				if b, _, err = wired(cur, agentURL(e)); err == nil {
+				if b, _, err = wired(cur, agentURL(e), hdr); err == nil {
 					err = writeAgentConfig(e, p, b)
 				}
 			}
@@ -695,7 +880,7 @@ func (mcpWireStep) userDir(e *Env, d string) error {
 	return e.chown(p, e.UID, e.GID)
 }
 
-func (w mcpWireStep) codex(e *Env) error {
+func (w mcpWireStep) codex(e *Env, hdr map[string]string) error {
 	if err := w.userDir(e, "~/.codex"); err != nil {
 		return err
 	}
@@ -708,13 +893,13 @@ func (w mcpWireStep) codex(e *Env) error {
 	if fi, err := os.Stat(p); err == nil {
 		mode = fi.Mode().Perm()
 	}
-	if err := writeFile(p, codexWired(b, agentURL(e)), mode); err != nil {
+	if err := writeFile(p, codexWired(b, agentURL(e), hdr), mode); err != nil {
 		return err
 	}
 	return e.chown(p, e.UID, e.GID)
 }
 
-func (w mcpWireStep) gemini(ctx context.Context, e *Env) error {
+func (w mcpWireStep) gemini(ctx context.Context, e *Env, hdr map[string]string) error {
 	if err := w.userDir(e, "~/.gemini"); err != nil {
 		return err
 	}
@@ -727,7 +912,12 @@ func (w mcpWireStep) gemini(ctx context.Context, e *Env) error {
 		b = []byte("{}")
 	}
 	// jq keeps the user's key order and formatting choices.
-	out, err := e.Exec.Run(ctx, Cmd{Name: "jq", Args: []string{"--arg", "u", agentURL(e), ".mcpServers.mcpjungle = {httpUrl: $u}"}, Stdin: b})
+	h, err := json.Marshal(hdr)
+	if err != nil {
+		return err
+	}
+	out, err := e.Exec.Run(ctx, Cmd{Name: "jq", Args: []string{"--arg", "u", agentURL(e), "--argjson", "h", string(h),
+		".mcpServers.mcpjungle = ({httpUrl: $u} + if $h then {headers: $h} else {} end)"}, Stdin: b})
 	if err != nil {
 		return fmt.Errorf("jq: %w: %s", err, out)
 	}

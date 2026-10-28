@@ -28,8 +28,8 @@ func readOrEmpty(e *Env, p string) ([]byte, error) {
 }
 
 // openCodeWired returns OpenCode's config with the mcpjungle remote server
-// at url, and whether that changes it.
-func openCodeWired(cur []byte, url string) ([]byte, bool, error) {
+// at url, sending hdr (none: no headers), and whether that changes it.
+func openCodeWired(cur []byte, url string, hdr map[string]string) ([]byte, bool, error) {
 	doc := map[string]any{}
 	if len(bytes.TrimSpace(cur)) > 0 {
 		if err := json.Unmarshal(cur, &doc); err != nil {
@@ -42,19 +42,27 @@ func openCodeWired(cur []byte, url string) ([]byte, bool, error) {
 	if servers == nil {
 		servers = map[string]any{}
 	}
-	if s, _ := servers["mcpjungle"].(map[string]any); s != nil && s["url"] == url {
+	want := map[string]any{"type": "remote", "url": url, "enabled": true}
+	if len(hdr) > 0 {
+		h := map[string]any{}
+		for k, v := range hdr {
+			h[k] = v
+		}
+		want["headers"] = h
+	}
+	if s, _ := servers["mcpjungle"].(map[string]any); s != nil && s["url"] == url && sameHeaders(s["headers"], hdr) {
 		return cur, false, nil
 	}
-	servers["mcpjungle"] = map[string]any{"type": "remote", "url": url, "enabled": true}
+	servers["mcpjungle"] = want
 	doc["mcp"] = servers
 	b, err := json.MarshalIndent(doc, "", "  ")
 	return append(b, '\n'), true, err
 }
 
 // gooseWired returns Goose's config with the mcpjungle extension at url,
-// and whether that changes it. It edits the YAML tree, so comments and the
-// order of the rest stay.
-func gooseWired(cur []byte, url string) ([]byte, bool, error) {
+// sending hdr, and whether that changes it. It edits the YAML tree, so
+// comments and the order of the rest stay.
+func gooseWired(cur []byte, url string, hdr map[string]string) ([]byte, bool, error) {
 	var doc yaml.Node
 	if len(bytes.TrimSpace(cur)) > 0 {
 		if err := yaml.Unmarshal(cur, &doc); err != nil {
@@ -74,15 +82,22 @@ func gooseWired(cur []byte, url string) ([]byte, bool, error) {
 		mapSet(root, "extensions", exts)
 	}
 	if ext := mapGet(exts, "mcpjungle"); ext != nil {
-		if uri := mapGet(ext, "uri"); uri != nil && uri.Value == url {
+		var got struct {
+			Headers map[string]string `yaml:"headers"`
+		}
+		if uri := mapGet(ext, "uri"); uri != nil && uri.Value == url && ext.Decode(&got) == nil && sameHeaders(got.Headers, hdr) {
 			return cur, false, nil
 		}
 	}
-	var ext yaml.Node
-	if err := ext.Encode(map[string]any{
+	want := map[string]any{
 		"enabled": true, "name": "mcpjungle", "type": "streamable_http", "uri": url, "timeout": 300,
 		"description": "MCPJungle gateway (yardo): every MCP server registered in it",
-	}); err != nil {
+	}
+	if len(hdr) > 0 {
+		want["headers"] = hdr
+	}
+	var ext yaml.Node
+	if err := ext.Encode(want); err != nil {
 		return nil, false, err
 	}
 	mapSet(exts, "mcpjungle", &ext)
@@ -141,4 +156,34 @@ func lastElem(p string) string {
 		}
 	}
 	return p
+}
+
+// sameHeaders reports whether a config's headers (a JSON or YAML map, or
+// nothing) are exactly want.
+func sameHeaders(got any, want map[string]string) bool {
+	m := map[string]string{}
+	switch g := got.(type) {
+	case map[string]string:
+		m = g
+	case map[string]any:
+		for k, v := range g {
+			s, ok := v.(string)
+			if !ok {
+				return false
+			}
+			m[k] = s
+		}
+	case nil:
+	default:
+		return false
+	}
+	if len(m) != len(want) {
+		return false
+	}
+	for k, v := range want {
+		if m[k] != v {
+			return false
+		}
+	}
+	return true
 }
