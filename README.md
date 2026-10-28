@@ -395,7 +395,9 @@ partial, missing or drifted (an item yardo applied before that isn't
 right any more), with your saved answers and nothing upgraded; `e`, on an
 item with values to fill in, opens its file in your editor (an MCP
 server's through `mcp-sync edit`, then registers it); `a` goes on to the
-picker to add or change things. `sudo yardo --verify` is the same
+picker to add or change things (enter on a group's "+ … more to add"
+opens it on that group); `c` changes who can reach the MCP gateway,
+containers' published ports and the Docker API, then re-applies them. `sudo yardo --verify` is the same
 check, failing when something is down, partial or missing.
 
 **Profiles.** `sudo yardo export > team.toml` writes the choices on

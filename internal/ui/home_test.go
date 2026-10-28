@@ -44,7 +44,7 @@ func TestHomeView(t *testing.T) {
 }
 
 func TestHomeKeys(t *testing.T) {
-	for key, want := range map[string]HomeAction{"a": HomeChange, "r": HomeRefresh, "q": HomeQuit} {
+	for key, want := range map[string]HomeAction{"a": HomeChange, "c": HomeAccess, "x": HomeConnect, "u": HomeUpdates, "r": HomeRefresh, "q": HomeQuit} {
 		h := testHome()
 		h.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 		if h.action != want {

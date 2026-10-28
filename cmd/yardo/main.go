@@ -374,6 +374,18 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				if fix != nil {
 					break home
 				}
+			case ui.HomeAccess:
+				k := &asker{cat: cat, a: a, out: stdout}
+				if fix, err = k.askAccess(); errors.Is(err, ui.ErrQuit) {
+					fix = nil
+					continue
+				} else if err != nil {
+					return err
+				}
+				if fix != nil {
+					changed = true // the settings go to system.json and the user's file
+					break home
+				}
 			case ui.HomeConnect:
 				printConnect(stdout, a, addresses())
 				fmt.Fprint(stdout, "\nPress Enter to go back.")

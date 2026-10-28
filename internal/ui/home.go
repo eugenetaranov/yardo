@@ -51,6 +51,8 @@ const (
 	HomeEdit
 	// HomeUpdates checks again, for newer versions too.
 	HomeUpdates
+	// HomeAccess changes who can reach the gateway, Docker and its ports.
+	HomeAccess
 )
 
 var (
@@ -187,8 +189,11 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return h, tea.Quit
 			}
 			h.details = !h.details
-		case "a", "i", "c":
+		case "a", "i":
 			h.action = HomeChange
+			return h, tea.Quit
+		case "c":
+			h.action = HomeAccess
 			return h, tea.Quit
 		case "r":
 			h.action = HomeRefresh
@@ -387,7 +392,7 @@ func (h *Home) actions(w int) string {
 	if it := h.Selected(); it != nil && it.State == "secret" {
 		a = append(a, key("e", "fill in"))
 	}
-	a = append(a, key("a", "add or change"), key("x", "connect from a laptop"), key("u", "updates"), key("r", "check again"), key("q", "quit"))
+	a = append(a, key("a", "add or change"), key("c", "access"), key("x", "connect from a laptop"), key("u", "updates"), key("r", "check again"), key("q", "quit"))
 	out := ""
 	for _, s := range a {
 		if lipgloss.Width(out)+lipgloss.Width(s)+3 > w {

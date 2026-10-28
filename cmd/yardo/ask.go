@@ -516,6 +516,41 @@ func (k *asker) askMCPListen() error {
 	return nil
 }
 
+// askAccess asks who can reach what's installed of the MCP gateway, the
+// Docker API and containers' published ports, with every choice (off and
+// everywhere too), and returns the items to re-apply.
+func (k *asker) askAccess() ([]string, error) {
+	var fix []string
+	if slices.Contains(k.a.Picks, "mcpjungle-install") {
+		if err := k.askMCPListen(); err != nil {
+			return nil, err
+		}
+		fix = append(fix, "mcpjungle-install", "mcpjungle")
+	}
+	if slices.Contains(k.a.Picks, "docker") {
+		all := "everywhere (Docker's way)"
+		vpn := "this machine and your VPNs (Tailscale, NetBird, WireGuard, OpenVPN)"
+		local := "this machine only"
+		sel := map[string]string{"": all, "vpn": vpn, "local": local}[k.a.DockerPorts]
+		ch, err := ui.Choose("Containers' published ports (docker run -p) can be reached from", []string{all, vpn, local}, sel)
+		if err != nil {
+			return nil, err
+		}
+		k.a.DockerPorts = map[string]string{all: "", vpn: "vpn", local: "local"}[ch]
+		off := "nowhere: Docker over SSH only (the default)"
+		lan := "the local network and your VPNs"
+		vpnOnly := "your VPNs only"
+		sel = map[string]string{"": off, "lan": lan, "vpn": vpnOnly}[k.a.DockerAPI]
+		ch, err = ui.Choose("The Docker API over TLS (port 2376, client certificates) can be reached from", []string{off, lan, vpnOnly}, sel)
+		if err != nil {
+			return nil, err
+		}
+		k.a.DockerAPI = map[string]string{off: "", lan: "lan", vpnOnly: "vpn"}[ch]
+		fix = append(fix, "docker")
+	}
+	return fix, nil
+}
+
 // askDockerAPI asks who can reach the Docker API over TLS.
 func (k *asker) askDockerAPI() error {
 	lan := "the local network (10/8, 172.16/12, 192.168/16, Tailscale's 100.64/10) and your VPNs"
