@@ -84,8 +84,6 @@ type Env struct {
 	// Lock pins mise and apt versions (a profile's [lock]); nil: latest.
 	Lock *answers.Lock
 
-	// tsAddr caches the Tailscale address (listenHost).
-	tsAddr string
 	// checks caches what the Checks read, while it isn't nil (a status
 	// run, which changes nothing between them): see CacheChecks.
 	checks *checkCache

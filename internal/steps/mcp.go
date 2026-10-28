@@ -39,6 +39,8 @@ func init() {
 	RegisterGo("mcpjungle_unit", func(catalog.Step) Step { return mcpUnitStep{} })
 	RegisterGo("mcp_wait", func(catalog.Step) Step { return mcpWaitStep{} })
 	RegisterGo("mcp_auth", func(catalog.Step) Step { return mcpAuthStep{} })
+	RegisterGo("mcp_firewall", func(catalog.Step) Step { return mcpFirewallStep{} })
+	RegisterGo("docker_ports", func(catalog.Step) Step { return dockerPortsStep{} })
 	RegisterGo("mcp_servers", func(catalog.Step) Step { return mcpServersStep{} })
 	RegisterGo("mcp_wire", func(catalog.Step) Step { return mcpWireStep{} })
 	RegisterGo("mcp_sync", func(catalog.Step) Step { return mcpSyncStep{} })
@@ -156,17 +158,10 @@ func MCPPort(e *Env) int {
 	return answers.FirstMCPPort
 }
 
-// clientHost is where this machine reaches the gateway: its Tailscale
-// address when it listens only there, else loopback.
-func clientHost(e *Env, loopback string) string {
-	if h, _ := listenHost(e); h != "127.0.0.1" && h != "0.0.0.0" && h != "" {
-		return h
-	}
-	return loopback
-}
-
+// mcpURL is where this machine reaches the gateway: loopback, which every
+// access setting lets in.
 func mcpURL(e *Env) string {
-	return fmt.Sprintf("http://%s:%d", clientHost(e, "127.0.0.1"), MCPPort(e))
+	return fmt.Sprintf("http://127.0.0.1:%d", MCPPort(e))
 }
 
 // mcpInstance is the user's gateway unit.
@@ -259,27 +254,30 @@ func (mcpUnitStep) Plan(e *Env) []Action {
 	return []Action{{"unit", fmt.Sprintf("enable-now %s on port %d (%s)", mcpInstance(e), MCPPort(e), mcpUnit)}}
 }
 
-// listen is the gateway's listen choice: 127.0.0.1, 0.0.0.0 or tailscale.
+// listen is the gateway's access: "127.0.0.1" (this machine only), "vpn"
+// (this machine and the VPN interfaces: yardo's firewall keeps the rest
+// out) or "0.0.0.0" (everywhere). "tailscale", from before, is "vpn".
 func listen(e *Env) string {
-	if e.Answers != nil && (e.Answers.MCPListen == "0.0.0.0" || e.Answers.MCPListen == "tailscale") {
-		return e.Answers.MCPListen
+	if e.Answers == nil {
+		return "127.0.0.1"
+	}
+	switch e.Answers.MCPListen {
+	case "vpn", "tailscale":
+		return "vpn"
+	case "0.0.0.0":
+		return "0.0.0.0"
 	}
 	return "127.0.0.1"
 }
 
-// resolveListen finds the VM's Tailscale IPv4 address when the gateway
-// listens there (Tailscale must be up); the MCP steps call it first.
-func resolveListen(ctx context.Context, e *Env) error {
-	if listen(e) != "tailscale" || e.tsAddr != "" {
-		return nil
+// bindHost is the address the gateway binds: loopback, or every interface
+// (for "vpn", the firewall decides who gets in: an interface that comes up
+// later, or a VPN address that changes, needs nothing redone).
+func bindHost(e *Env) string {
+	if listen(e) == "127.0.0.1" {
+		return "127.0.0.1"
 	}
-	out, err := e.Exec.Run(ctx, Cmd{Name: "tailscale", Args: []string{"ip", "-4"}})
-	addr, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
-	if err != nil || addr == "" {
-		return errors.New("the gateway listens on the Tailscale address, but Tailscale isn't up: run 'sudo tailscale up', then yardo again")
-	}
-	e.tsAddr = addr
-	return nil
+	return "0.0.0.0"
 }
 
 // Enterprise reports whether the gateway requires tokens: whenever it
@@ -305,17 +303,6 @@ func mcpDB(e *Env) string {
 	return filepath.Join(e.Home, ".mcp", "mcpjungle.db")
 }
 
-// listenHost is the address the gateway binds (resolveListen first).
-func listenHost(e *Env) (string, error) {
-	if listen(e) != "tailscale" {
-		return listen(e), nil
-	}
-	if e.tsAddr == "" {
-		return "", errors.New("the Tailscale address isn't known yet")
-	}
-	return e.tsAddr, nil
-}
-
 // mcpTemplate is the gateway's template unit: one instance per user, each
 // with its host, port, mode and database in /etc/mcpjungle/<user>.env.
 const mcpTemplate = `[Unit]
@@ -333,8 +320,9 @@ EnvironmentFile=/etc/mcpjungle/%i.env
 Environment=MCP_SERVER_INIT_REQ_TIMEOUT_SEC=120
 # Enterprise mode turns telemetry on unless told not to.
 Environment=OTEL_ENABLED=false
-# MCP_HOST is 127.0.0.1 (this machine; SERVER_MODE development) or another
-# address (enterprise: every client needs a token).
+# MCP_HOST is 127.0.0.1 (this machine; SERVER_MODE development) or 0.0.0.0
+# (VPN only, kept so by yardo's firewall, or everywhere; enterprise: every
+# client needs a token).
 ExecStart=/usr/local/bin/mcpjungle start --host=${MCP_HOST} --port ${MCP_PORT} --sqlite-db-path ${MCP_DB}
 Restart=on-failure
 RestartSec=5
@@ -344,7 +332,7 @@ WantedBy=multi-user.target
 `
 
 func (mcpUnitStep) envFile(e *Env) wantFile {
-	host, _ := listenHost(e)
+	host := bindHost(e)
 	return wantFile{filepath.Join(mcpEnvDir, e.User+".env"),
 		[]byte(fmt.Sprintf("MCP_HOST=%s\nMCP_PORT=%d\nMCP_DIR=%s\nMCP_DB=%s\nSERVER_MODE=%s\n",
 			host, MCPPort(e), filepath.Join(e.Home, ".mcp"), mcpDB(e), mcpMode(e))), 0o644}
@@ -357,9 +345,6 @@ func oldUnit(e *Env) bool {
 }
 
 func (u mcpUnitStep) Check(ctx context.Context, e *Env) (bool, error) {
-	if resolveListen(ctx, e) != nil {
-		return false, nil
-	}
 	env := u.envFile(e)
 	if !same(e.Path(mcpUnit), wantFile{b: []byte(mcpTemplate), mode: 0o644}) || !same(e.Path(env.to), env) || oldUnit(e) {
 		return false, nil
@@ -373,9 +358,6 @@ func (mcpUnitStep) Down(ctx context.Context, e *Env) (bool, string) {
 }
 
 func (u mcpUnitStep) Apply(ctx context.Context, e *Env) error {
-	if err := resolveListen(ctx, e); err != nil {
-		return err
-	}
 	var cmds [][]string
 	if oldUnit(e) {
 		// Phase 1's gateway: same user, same database; the instance replaces it.
@@ -442,14 +424,10 @@ var mcpWaitTries = 60
 func (mcpWaitStep) Plan(e *Env) []Action { return []Action{{"wait", mcpURL(e)}} }
 
 func (mcpWaitStep) Check(ctx context.Context, e *Env) (bool, error) {
-	_ = resolveListen(ctx, e)
 	return mcpUp(ctx, mcpURL(e)), nil
 }
 
 func (mcpWaitStep) Apply(ctx context.Context, e *Env) error {
-	if err := resolveListen(ctx, e); err != nil {
-		return err
-	}
 	for i := 0; i < mcpWaitTries; i++ {
 		if mcpUp(ctx, mcpURL(e)) {
 			return nil
@@ -509,9 +487,6 @@ func (mcpAuthStep) Check(ctx context.Context, e *Env) (bool, error) {
 	if !Enterprise(e) {
 		return true, nil
 	}
-	if err := resolveListen(ctx, e); err != nil {
-		return false, nil
-	}
 	conf, err := mcpRead(ctx, e, mcpAdminConf)
 	if err != nil || !bytes.Contains(conf, []byte("access_token:")) {
 		return false, nil
@@ -527,9 +502,6 @@ func (mcpAuthStep) Check(ctx context.Context, e *Env) (bool, error) {
 func (mcpAuthStep) Apply(ctx context.Context, e *Env) error {
 	if !Enterprise(e) {
 		return nil
-	}
-	if err := resolveListen(ctx, e); err != nil {
-		return err
 	}
 	conf, err := mcpRead(ctx, e, mcpAdminConf)
 	if err != nil {
@@ -731,7 +703,7 @@ func wire(e *Env) bool {
 }
 
 func agentURL(e *Env) string {
-	return fmt.Sprintf("http://%s:%d/mcp", clientHost(e, "localhost"), MCPPort(e))
+	return fmt.Sprintf("http://localhost:%d/mcp", MCPPort(e))
 }
 
 func (mcpWireStep) Plan(e *Env) []Action {
@@ -754,7 +726,6 @@ const codexSection = "[mcp_servers.mcpjungle]"
 // ("claude"), or to another port or token ("claude!", Claude Code only,
 // which needs a remove first; the others are rewritten in place).
 func (mcpWireStep) todo(ctx context.Context, e *Env, hdr map[string]string) []string {
-	_ = resolveListen(ctx, e)
 	var out []string
 	url := agentURL(e)
 	if has(ctx, e, "claude") {
@@ -970,9 +941,6 @@ func (mcpSyncStep) Plan(e *Env) []Action {
 func (mcpSyncStep) Check(context.Context, *Env) (bool, error) { return true, nil }
 
 func (mcpSyncStep) Apply(ctx context.Context, e *Env) error {
-	if err := resolveListen(ctx, e); err != nil {
-		return err
-	}
 	args := append([]string{"MCP_DIR=" + filepath.Join(e.Home, ".mcp"), "MCP_CATALOG=" + mcpCatalog, "MCPJUNGLE_REGISTRY=" + mcpURL(e), mcpSync}, servers(e)...)
 	c := Cmd{Name: "env", Args: args, As: MCPUser(e)}
 	if !mcpAsService(e) {
@@ -983,3 +951,45 @@ func (mcpSyncStep) Apply(ctx context.Context, e *Env) error {
 	}
 	return nil
 }
+
+// --- go:mcp_firewall: VPN only ------------------------------------------------
+
+// mcpFirewallStep keeps the gateway's port to this machine and the VPN
+// interfaces when its access is "vpn", and takes the rule away otherwise.
+type mcpFirewallStep struct{}
+
+func (mcpFirewallStep) Plan(e *Env) []Action {
+	t := mcpTable(e)
+	if t.chains == "" {
+		return nil
+	}
+	return []Action{{"run", fmt.Sprintf("nft: port %d only from this machine and %s (%s)", MCPPort(e), strings.Join(VPNInterfaces, ", "), t.file())}}
+}
+
+func (mcpFirewallStep) Check(ctx context.Context, e *Env) (bool, error) {
+	return mcpTable(e).Check(ctx, e), nil
+}
+
+func (mcpFirewallStep) Apply(ctx context.Context, e *Env) error { return mcpTable(e).Apply(ctx, e) }
+
+// --- go:docker_ports: where published ports can be reached from ---------------
+
+type dockerPortsStep struct{}
+
+func (dockerPortsStep) Plan(e *Env) []Action {
+	t := dockerTable(e)
+	if t.chains == "" {
+		return nil
+	}
+	who := "this machine"
+	if DockerPorts(e) == "vpn" {
+		who = "this machine and " + strings.Join(VPNInterfaces, ", ")
+	}
+	return []Action{{"run", "nft: containers' published ports only from " + who + " (" + t.file() + ")"}}
+}
+
+func (dockerPortsStep) Check(ctx context.Context, e *Env) (bool, error) {
+	return dockerTable(e).Check(ctx, e), nil
+}
+
+func (dockerPortsStep) Apply(ctx context.Context, e *Env) error { return dockerTable(e).Apply(ctx, e) }

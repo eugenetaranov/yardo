@@ -86,6 +86,11 @@ packages = ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin
 type = "systemctl"
 unit = "docker"
 
+# Where published ports can be reached from (Configure → System settings):
+# everywhere unless that item says otherwise.
+[[item.step]]
+type = "go:docker_ports"
+
 [[item.step]]
 type = "run"
 cmd = "usermod -aG docker {{user}}"
@@ -332,6 +337,20 @@ to = "/etc/systemd/system.conf.d/60-yardo.conf"
 type = "run"
 cmd = "sysctl --system >/dev/null && systemctl daemon-reexec"
 on_change = true
+
+# Containers' published ports (docker run -p): reachable from the VPN only,
+# or this machine only, instead of everywhere (Docker's way: its rules let
+# them past a host firewall). Unticked: everywhere again.
+[[item]]
+id = "docker-ports"
+tab = "sysconf"
+scope = "system"
+label = "Container ports: VPN only or this machine only (asks; unticked: everywhere)"
+needs = ["docker"]
+source = "nft table yardo_docker_ports: new connections to published ports only from this machine (and the VPN interfaces)"
+
+[[item.step]]
+type = "go:docker_ports"
 
 [[item]]
 id = "zram"

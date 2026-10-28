@@ -395,3 +395,23 @@ func TestCachedStatus(t *testing.T) {
 		}
 	}
 }
+
+// yardo connect: Docker over SSH always; the gateway with a token when it's
+// reachable, else through an SSH tunnel. The first address is a VPN's.
+func TestPrintConnect(t *testing.T) {
+	addrs := []address{{"100.64.1.7", "tailscale0", "Tailscale"}, {"10.0.0.5", "eth0", ""}}
+	var out bytes.Buffer
+	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}, addrs)
+	got := out.String()
+	for _, want := range []string{`docker context create`, `"host=ssh://ada@100.64.1.7"`, "reachable from this machine and the VPNs",
+		"mcp-sync client laptop", "http://100.64.1.7:8081/mcp --header \"Authorization: Bearer <token>\"", "tailscale0 · Tailscale"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("vpn: lacks %q:\n%s", want, got)
+		}
+	}
+	out.Reset()
+	printConnect(&out, &answers.Answers{User: "ada"}, addrs)
+	if got := out.String(); !strings.Contains(got, "ssh -N -L 8080:127.0.0.1:8080 ada@100.64.1.7") || strings.Contains(got, "Bearer") {
+		t.Errorf("local:\n%s", got)
+	}
+}

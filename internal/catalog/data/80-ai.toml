@@ -255,6 +255,10 @@ type = "go:mcp_wait"
 [[item.step]]
 type = "go:mcp_auth"
 
+# VPN only: the port only from this machine and the VPN interfaces.
+[[item.step]]
+type = "go:mcp_firewall"
+
 # The servers, and the agents wired to the gateway. Keeps the old id, so an
 # old pick still means install + servers.
 [[item]]

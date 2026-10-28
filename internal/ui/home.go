@@ -30,6 +30,8 @@ const (
 	HomeChange
 	// HomeRefresh checks everything again.
 	HomeRefresh
+	// HomeConnect shows how to reach this machine from a laptop.
+	HomeConnect
 )
 
 var (
@@ -157,6 +159,9 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			h.action = HomeRefresh
 			return h, tea.Quit
+		case "x":
+			h.action = HomeConnect
+			return h, tea.Quit
 		case "q", "esc", "ctrl+c":
 			h.action = HomeQuit
 			return h, tea.Quit
@@ -268,7 +273,7 @@ func (h *Home) View() string {
 	for _, l := range det {
 		b.WriteString("   " + muted.Render(l) + "\n")
 	}
-	b.WriteString(" " + muted.Render("↑/↓ move · enter details · a add or change · r check again · q quit"))
+	b.WriteString(" " + muted.Render("↑/↓ move · enter details · a add or change · x connect from a laptop · r check again · q quit"))
 	return b.String()
 }
 

@@ -178,6 +178,8 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			if err := o.gitKeyArgs(fs.Args()[1:], stderr); err != nil {
 				return err
 			}
+		case "connect":
+			return o.connect(stdout, st)
 		case "status":
 			sfs := flag.NewFlagSet("yardo status", flag.ContinueOnError)
 			sfs.SetOutput(stderr)
@@ -349,6 +351,12 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			if act == ui.HomeQuit {
 				return nil
 			}
+			if act == ui.HomeConnect {
+				printConnect(stdout, a, addresses())
+				fmt.Fprint(stdout, "\nPress Enter to go back.")
+				_, _ = fmt.Fscanln(os.Stdin)
+				continue
+			}
 			if act == ui.HomeChange {
 				break
 			}
@@ -366,6 +374,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			return err
 		}
 		a.Unpick(c.dropped)
+		if slices.Contains(c.dropped, "docker-ports") {
+			a.DockerPorts = "" // unticked: published ports reachable everywhere again
+		}
 		a.Pick(c.picks)
 		a.MiseExtra = c.miseExtra
 		items, extra, sec = c.items, c.miseExtra, c.secrets

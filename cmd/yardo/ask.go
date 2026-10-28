@@ -197,6 +197,11 @@ func (k *asker) once(ctx context.Context) (*choices, error) {
 			return nil, err
 		}
 	}
+	if isNew("docker-ports") || (has("docker-ports") && k.a.DockerPorts == "") {
+		if err := k.askDockerPorts(); err != nil {
+			return nil, err
+		}
+	}
 	// The server list shows on every run (the saved ones ticked); only
 	// new servers are asked about.
 	if has("mcpjungle") {
@@ -476,21 +481,35 @@ func (k *asker) askDotfiles() error {
 
 // askMCPListen asks where the gateway listens (its unit binds it).
 func (k *asker) askMCPListen() error {
-	one, ts, all := "this machine only", "the Tailscale address only (your tailnet; clients need a token)", "all interfaces (clients need a token)"
-	opts := []string{one}
-	if out, err := exec.Command("tailscale", "ip", "-4").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
-		opts = append(opts, ts)
-	}
-	opts = append(opts, all)
-	sel := map[string]string{"0.0.0.0": all, "tailscale": ts}[k.a.MCPListen]
-	if !slices.Contains(opts, sel) {
+	one := "this machine only (no tokens)"
+	vpn := "this machine and your VPNs: Tailscale, NetBird, WireGuard, OpenVPN (clients need a token)"
+	all := "everywhere (clients need a token; plain HTTP: trusted networks only)"
+	sel := map[string]string{"vpn": vpn, "tailscale": vpn, "0.0.0.0": all}[k.a.MCPListen]
+	if sel == "" {
 		sel = one
 	}
-	l, err := ui.Choose("MCPJungle gateway listens on", opts, sel)
+	l, err := ui.Choose("Who can reach the MCPJungle gateway?", []string{one, vpn, all}, sel)
 	if err != nil {
 		return err
 	}
-	k.a.MCPListen = map[string]string{one: "127.0.0.1", ts: "tailscale", all: "0.0.0.0"}[l]
+	k.a.MCPListen = map[string]string{one: "127.0.0.1", vpn: "vpn", all: "0.0.0.0"}[l]
+	return nil
+}
+
+// askDockerPorts asks where containers' published ports can be reached
+// from, besides this machine.
+func (k *asker) askDockerPorts() error {
+	vpn := "this machine and your VPNs (Tailscale, NetBird, WireGuard, OpenVPN)"
+	local := "this machine only"
+	sel := vpn
+	if k.a.DockerPorts == "local" {
+		sel = local
+	}
+	ch, err := ui.Choose("Containers' published ports (docker run -p) can be reached from", []string{vpn, local}, sel)
+	if err != nil {
+		return err
+	}
+	k.a.DockerPorts = map[string]string{vpn: "vpn", local: "local"}[ch]
 	return nil
 }
 

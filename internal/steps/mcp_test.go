@@ -325,30 +325,71 @@ func TestMCPWireOpenCodeGoose(t *testing.T) {
 	}
 }
 
-func TestMCPListenTailscale(t *testing.T) {
-	up := false
-	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
-		if c.Name == "tailscale" {
-			if !up {
-				return nil, errors.New("not running")
-			}
-			return []byte("100.64.1.2\n"), nil
-		}
-		return nil, nil
-	}}
+// VPN only (and "tailscale", saved before): the gateway binds every
+// interface, needs tokens, and yardo's firewall lets its port in from this
+// machine and the VPN interfaces only. Tailscale needn't be up.
+func TestMCPListenVPN(t *testing.T) {
+	x := &fakeExec{}
 	e := mcpEnv(t, x)
-	e.Answers.MCPListen = "tailscale"
-	st := step(t, catalog.Step{Type: "go:mcpjungle_unit"})
-	if err := st.Apply(context.Background(), e); err == nil || !strings.Contains(err.Error(), "tailscale up") {
-		t.Fatalf("tailscale down: err = %v", err)
-	}
-	up = true
-	apply(t, e, st)
-	if got := read(t, e.Path("/etc/mcpjungle/ada.env")); !strings.HasPrefix(got, "MCP_HOST=100.64.1.2\n") {
+	e.Answers.MCPListen, e.Answers.MCPPort = "tailscale", 8081
+	apply(t, e, step(t, catalog.Step{Type: "go:mcpjungle_unit"}))
+	if got := read(t, e.Path("/etc/mcpjungle/ada.env")); !strings.HasPrefix(got, "MCP_HOST=0.0.0.0\n") || !strings.Contains(got, "SERVER_MODE=enterprise") {
 		t.Errorf("env = %q", got)
 	}
-	if agentURL(e) != "http://100.64.1.2:8080/mcp" || mcpURL(e) != "http://100.64.1.2:8080" {
+	if agentURL(e) != "http://localhost:8081/mcp" || mcpURL(e) != "http://127.0.0.1:8081" {
 		t.Errorf("urls %s %s", agentURL(e), mcpURL(e))
+	}
+	fw := step(t, catalog.Step{Type: "go:mcp_firewall"})
+	apply(t, e, fw)
+	nft := read(t, e.Path("/etc/yardo/firewall/yardo_mcp_ada.nft"))
+	for _, want := range []string{"table inet yardo_mcp_ada\ndelete table inet yardo_mcp_ada\n", `tcp dport 8081 iifname "lo" accept`,
+		`tcp dport 8081 iifname { "tailscale0", "wt0", "yardo-wg", "tun0", "wg0" } accept`, "tcp dport 8081 drop"} {
+		if !strings.Contains(nft, want) {
+			t.Errorf("table lacks %q:\n%s", want, nft)
+		}
+	}
+	if got := strings.Join(x.commands(), "; "); !strings.Contains(got, "nft -f /etc/yardo/firewall/yardo_mcp_ada.nft") || !strings.Contains(got, "systemctl enable yardo-firewall") {
+		t.Errorf("ran %s", got)
+	}
+	if !check(t, e, fw) {
+		t.Error("Check = false after the firewall")
+	}
+	// Back to this machine only: the table goes.
+	e.Answers.MCPListen = ""
+	if check(t, e, fw) {
+		t.Error("this machine only, the table still there: Check = true")
+	}
+	apply(t, e, fw)
+	if _, err := os.Stat(e.Path("/etc/yardo/firewall/yardo_mcp_ada.nft")); err == nil {
+		t.Error("the table's file is still there")
+	}
+	if !strings.Contains(strings.Join(x.commands(), "; "), "nft delete table inet yardo_mcp_ada") {
+		t.Error("the table wasn't deleted")
+	}
+}
+
+// Containers' published ports: VPN only, this machine only, or (no table)
+// everywhere, as Docker does.
+func TestDockerPorts(t *testing.T) {
+	x := &fakeExec{}
+	e := mcpEnv(t, x)
+	st := step(t, catalog.Step{Type: "go:docker_ports"})
+	if !check(t, e, st) {
+		t.Error("everywhere (no table): Check = false")
+	}
+	e.Answers.DockerPorts = "vpn"
+	apply(t, e, st)
+	nft := read(t, e.Path("/etc/yardo/firewall/yardo_docker_ports.nft"))
+	for _, want := range []string{"hook forward priority filter - 1", `ct state new ct status dnat iifname { "lo", "docker0" } accept`,
+		`ct state new ct status dnat iifname { "tailscale0"`, "ct state new ct status dnat drop"} {
+		if !strings.Contains(nft, want) {
+			t.Errorf("vpn table lacks %q:\n%s", want, nft)
+		}
+	}
+	e.Answers.DockerPorts = "local"
+	apply(t, e, st)
+	if nft := read(t, e.Path("/etc/yardo/firewall/yardo_docker_ports.nft")); strings.Contains(nft, "tailscale0") {
+		t.Errorf("local table lets the VPN in:\n%s", nft)
 	}
 }
 

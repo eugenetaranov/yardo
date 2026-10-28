@@ -198,9 +198,12 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    Supabase, OpenSearch; AWS, Azure, Kubernetes, Docker, Grafana, Jenkins;
    Playwright, context7, …; read-only where the server allows it, and
    Docker is root on the machine), added to
-   Claude Code, Codex, Gemini CLI, OpenCode and Goose. The gateway listens
-   on this machine only, on the VM's Tailscale address only (when Tailscale
-   is up), or on every interface. Beyond this machine it needs a token
+   Claude Code, Codex, Gemini CLI, OpenCode and Goose. The gateway can be
+   reached from this machine only; from this machine and your VPNs
+   (Tailscale, NetBird, WireGuard, OpenVPN: it listens everywhere, and
+   yardo's firewall lets its port in on those interfaces only, so a VPN
+   that comes up later needs nothing redone); or from everywhere. Beyond
+   this machine it needs a token
    (MCPJungle's enterprise mode): yardo makes the admin token (kept in
    `~/.mcp`, the gateway user's) and one for the agents on the VM, wired
    into them; `mcp-sync client <name>` makes one for a laptop's agent,
@@ -345,6 +348,21 @@ public key and where to add it.
 `.team-files` win over yardo's own of the same name. A download in an item
 must be pinned (`sha256`) or say why it can't be (`unverified = "…"`), or
 yardo refuses to load it.
+
+**Reaching this machine from a laptop.** `sudo yardo connect` (or `x` on
+the home screen) prints it all, with this machine's addresses (VPNs
+first): Docker over SSH, which opens no port and needs no certificate
+(`docker context create vm --docker "host=ssh://you@vm"`; bind mounts are
+this machine's paths, `-p` ports open here); and the MCP gateway's URL,
+how to make a laptop's token (`mcp-sync client laptop`) and the
+`claude mcp add` and Codex lines that use it, or, when the gateway is for
+this machine only, an SSH tunnel to it. Containers' published ports are
+reachable from everywhere, as Docker does it, unless Configure → System
+settings → "Container ports" keeps them to the VPNs or this machine.
+yardo's firewall rules are nftables tables of its own in
+`/etc/yardo/firewall` (loaded at boot by `yardo-firewall.service`): they
+only keep these ports out, and leave Docker's, the VPNs' and anyone
+else's rules alone.
 
 **Status.** `sudo yardo status` checks every item you picked, changing
 nothing, and lists the ones that aren't right first: `down` (set up, but
