@@ -141,6 +141,37 @@ func TestTailscaleUpKeyFromFile(t *testing.T) {
 	}
 }
 
+// netbird up reads the setup key from a file (not the command line, which
+// ps shows), with the management URL when one was typed.
+func TestNetbirdUp(t *testing.T) {
+	var keyFile string
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		if c.Name == "netbird" {
+			keyFile = c.Args[2]
+			b, _ := os.ReadFile(keyFile)
+			if string(b) != "NB-KEY-1" {
+				t.Errorf("key file holds %q", b)
+			}
+		}
+		return nil, nil
+	}}
+	e := testEnv(t, x)
+	st := step(t, catalog.Step{Type: "go:netbird_up"})
+	if !check(t, e, st) {
+		t.Error("no key typed: Check = false")
+	}
+	e.Secrets = creds.New()
+	e.Secrets.NBSetupKey, e.Secrets.NBManagementURL = "NB-KEY-1", "https://netbird.example.com"
+	apply(t, e, st)
+	cmds := strings.Join(x.commands(), " ")
+	if strings.Contains(cmds, "NB-KEY") || !strings.Contains(cmds, "--setup-key-file") || !strings.Contains(cmds, "--management-url https://netbird.example.com") {
+		t.Errorf("commands: %s", cmds)
+	}
+	if _, err := os.Stat(keyFile); err == nil {
+		t.Error("key file left behind")
+	}
+}
+
 func TestNoteWhen(t *testing.T) {
 	cond := false
 	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
