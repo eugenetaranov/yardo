@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,10 +29,14 @@ const (
 	MenuApply
 	// MenuUpdates checks for newer versions (slow).
 	MenuUpdates
-	// MenuChange asks Result.ID's answer Result.Change again (the MCP
-	// servers), then applies it.
-	MenuChange
+	// MenuMCP does Result.MCP to an MCP server: add, edit, on, rename or
+	// delete it.
+	MenuMCP
 )
+
+// MCPAct is what to do to an MCP server: Do (add, edit, on, rename,
+// delete) to Entry (jira:work); To is a rename's new entry.
+type MCPAct struct{ Do, Entry, To string }
 
 // MenuResult is what the menu was left with.
 type MenuResult struct {
@@ -41,7 +44,7 @@ type MenuResult struct {
 	ID       string
 	Inputs   []string
 	Settings map[string]string
-	Change   string
+	MCP      MCPAct
 }
 
 // menuRow is one of the home's actions.
@@ -56,8 +59,17 @@ type Menu struct {
 	connect  []string
 	checked  bool // updates were checked
 
-	screen string // home, fix, secrets, access, connect, updates
+	screen string // home, fix, secrets, access, connect, updates, mcp, mcp:server, mcp:delete, mcp:add, mcp:name
 	sel    int
+	// The MCP screens: the server and catalog row chosen, the name typed
+	// (for nameFor: a spec to add, or an entry to rename), its error;
+	// fromBoard: esc on the list goes back to the board.
+	mcpSel, addSel int
+	name           []rune
+	nameFor        string
+	renaming       bool
+	nameErr        string
+	fromBoard      bool
 	btn    int
 	shown  map[string]bool // fix: details shown
 	pick   map[string]string
@@ -113,10 +125,23 @@ func (m *Menu) rows() []menuRow {
 		out = append(out, menuRow{"secrets", "Fill in " + plural(len(ss), "secret", "secrets"), strings.Join(keys, ", ")})
 	}
 	out = append(out, menuRow{"tools", "Add or remove tools", "VPNs, languages, AI tools, databases and more"})
-	if slices.ContainsFunc(m.items, func(i *BoardItem) bool { return i.ID == "mcpjungle" && i.Picked }) {
+	if m.hasMCP() {
+		var names []string
+		problems := 0
+		for _, s := range m.info.MCP {
+			if s.Yardo {
+				names = append(names, s.Name)
+				if s.State != "ok" && s.State != "unchecked" {
+					problems++
+				}
+			}
+		}
 		note := "none yet: add GitHub, Jira, Grafana and more"
-		if len(m.info.MCP) > 0 {
-			note = strings.Join(m.info.MCP, ", ")
+		if len(names) > 0 {
+			note = strings.Join(names, ", ")
+			if problems > 0 {
+				note += " · " + plural(problems, "needs you", "need you")
+			}
 		}
 		out = append(out, menuRow{"mcp", "MCP servers", note})
 	}
@@ -156,6 +181,9 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = v.Width, v.Height
 	case tea.KeyMsg:
 		m.toast = ""
+		if m.screen == "mcp:name" {
+			return m, m.nameKey(v)
+		}
 		return m, m.key(v.String())
 	}
 	return m, nil
@@ -207,8 +235,6 @@ func (m *Menu) key(k string) tea.Cmd {
 				return m.quit(MenuResult{Kind: MenuTools})
 			case "check":
 				return m.quit(MenuResult{Kind: MenuUpdates})
-			case "mcp":
-				return m.quit(MenuResult{Kind: MenuChange, ID: "mcpjungle", Change: "mcp"})
 			default:
 				m.open(id)
 			}
@@ -285,6 +311,8 @@ func (m *Menu) key(k string) tea.Cmd {
 			}
 			return m.quit(MenuResult{Kind: MenuApply, Settings: set})
 		}
+	case "mcp", "mcp:server", "mcp:delete", "mcp:add":
+		return m.mcpKey(k, up, down, left, right)
 	case "connect":
 		if k == "esc" || k == "enter" || k == "q" {
 			m.home()
@@ -455,6 +483,10 @@ func (m *Menu) View() string {
 			}
 		}
 		keys = k("esc", "back")
+	case "mcp", "mcp:server", "mcp:delete", "mcp:add", "mcp:name":
+		var lines []string
+		title, lines, keys = m.mcpView(w, h-len(b)-6)
+		add(lines...)
 	case "updates":
 		title = "Updates"
 		for _, i := range m.filter(newer) {

@@ -22,9 +22,30 @@ import (
 // HomeInfo is what the board's header says.
 type HomeInfo struct {
 	Host, User, Checked string
-	// MCP are the gateway's servers (the menu's MCP servers row).
-	MCP []string
+	// MCP are the gateway's servers (yardo's, then the ones found in
+	// ~/.mcp), MCPSpecs the catalog's, to add; MCPDown: the gateway isn't
+	// running.
+	MCP      []MCPServer
+	MCPSpecs []MCPSpec
+	MCPDown  bool
 }
+
+// MCPServer is one MCP server on the menu's MCP servers screen.
+type MCPServer struct {
+	Entry string // as the answers name it: jira, jira:work, mine
+	Name  string // ~/.mcp/<name>, the gateway's name, its tools' prefix
+	Spec  string // its catalog spec; "" for one with its own
+	About string // the spec's description
+	// State is ok, secret (Keys are empty), failed (not registered),
+	// nospec (gone from the catalog), off or byhand (found in ~/.mcp: not
+	// yardo's, registered or not), unchecked.
+	State string
+	Keys  []string
+	Yardo bool // on yardo's list (else found in ~/.mcp)
+}
+
+// MCPSpec is a catalog server, to add.
+type MCPSpec struct{ Name, About string }
 
 var (
 	red    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
@@ -661,7 +682,11 @@ func (b *Board) act(r *row) tea.Cmd {
 func changeOpts(i *BoardItem) [][2]string {
 	var opts [][2]string
 	for _, c := range i.Changes {
-		opts = append(opts, [2]string{"Change " + c[0] + " (asks, then applies " + i.Label + " again)", "change:" + c[1]})
+		label := "Change " + c[0] + " (asks, then applies " + i.Label + " again)"
+		if c[1] == "mcp" {
+			label = "Manage " + c[0] + " (add, edit, rename or delete one)"
+		}
+		opts = append(opts, [2]string{label, "change:" + c[1]})
 	}
 	return opts
 }

@@ -5,10 +5,12 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -165,4 +167,58 @@ func ValidName(n string) bool {
 		}
 	}
 	return true
+}
+
+// EntryFor is the entry for a new server of spec, named typed: "jira"
+// (the catalog's), or "work" or "jira-work" for another one (jira:work);
+// or why it can't be. isSpec says which names are the catalog's, taken
+// which servers there are.
+func EntryFor(spec, typed string, isSpec func(string) bool, taken []string) (string, error) {
+	typed = strings.TrimSpace(typed)
+	entry := spec
+	switch {
+	case typed == "":
+		return "", errors.New("give it a name")
+	case typed != spec:
+		label := strings.TrimPrefix(typed, spec+"-")
+		switch {
+		case label == spec:
+			return "", fmt.Errorf("that's %s itself: name it %s", spec, spec)
+		case !ValidLabel(label):
+			return "", errors.New("use lowercase letters, digits and '-', such as work")
+		case isSpec(spec + "-" + label):
+			return "", fmt.Errorf("%s-%s is a server of its own; name it otherwise", spec, label)
+		}
+		entry = spec + ":" + label
+	}
+	if _, name, _ := Instance(entry); slices.Contains(taken, name) {
+		return "", fmt.Errorf("there's a %s already", name)
+	}
+	return entry, nil
+}
+
+// RenameEntry is entry renamed to typed, as EntryFor names a new one; a
+// server with its own spec (not the catalog's) takes any name.
+func RenameEntry(entry, typed string, isSpec func(string) bool, taken []string) (string, error) {
+	spec, name, err := Instance(entry)
+	if err != nil {
+		return "", err
+	}
+	typed = strings.TrimSpace(typed)
+	if typed == name {
+		return "", errors.New("that's its name already")
+	}
+	taken = slices.DeleteFunc(slices.Clone(taken), func(n string) bool { return n == name })
+	if isSpec(spec) {
+		return EntryFor(spec, typed, isSpec, taken)
+	}
+	switch {
+	case typed == "":
+		return "", errors.New("give it a name")
+	case !ValidName(typed) || strings.Contains(typed, ":"):
+		return "", errors.New("use letters, digits, '.', '_' and '-'")
+	case isSpec(typed) || slices.Contains(taken, typed):
+		return "", fmt.Errorf("there's a %s already", typed)
+	}
+	return typed, nil
 }

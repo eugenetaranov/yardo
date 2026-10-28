@@ -242,24 +242,20 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    into them; `mcp-sync client <name>` makes one for a laptop's agent,
    sent as `Authorization: Bearer <token>`. On this machine only, there
    are no tokens: anything on the VM can use the gateway.
-   **Adding a server** (**MCP servers** on the menu): tick it, and yardo
-   asks its name, the server's own (`jira`) unless you give it another
-   (`work` makes it `jira-work`). Once the run has made its
-   `~/.mcp/<name>/env`, that opens in your editor: its keys, the options
-   commented out (uncomment the ones you want) and how to get each value;
-   yardo then registers it. Later: `mcp-sync edit <name>`, then `mcp-sync`.
-   **More than one of a server** (two Grafanas, a second OpenSearch
-   cluster, an AWS account each): tick "+ another instance of a server"
-   at the end of the list; yardo asks which server and its name. It's
-   `grafana-prod` from then on: its own `~/.mcp/grafana-prod/env`, its
-   tools `grafana-prod__…`, "(grafana-prod)" first in its description, and
-   a row of its own in the list (untick it to drop it; its env stays). A
-   profile lists it as `"grafana:prod"` in `[mcp] servers`.
-   **Renaming or deleting one:** tick "✎ rename or delete a server" (or
-   `mcp-sync rename <name> <new>`, `mcp-sync remove <name>`): it comes off
-   the gateway, and its settings move with it, or go. A server in `~/.mcp`
-   yardo didn't make (by hand, or dropped) shows in the list too, ticked
-   while the gateway has it.
+   **The servers** are the menu's **MCP servers**: each one you have, by
+   name and type (`jira-work` · jira), with how it is (ready, needs
+   `JIRA_API_TOKEN`, didn't register), and the ones found in `~/.mcp` that
+   yardo didn't make. Enter on one edits its settings (its
+   `~/.mcp/<name>/env` in your editor, then it registers), renames it (its
+   settings move with it) or deletes it (off the gateway, with its
+   settings). **Add a server** shows the catalog; then its name, the
+   server's own (`jira`) unless you give another (`work` makes it
+   `jira-work`: a second Jira, another AWS account), and once the run has
+   made its env, that opens in your editor: its keys, the options
+   commented out and how to get each value. Adding tools doesn't ask about
+   MCP servers. By hand: `mcp-sync edit|rename|remove <name>`, then
+   `mcp-sync`. A profile lists another instance as `"grafana:prod"` in
+   `[mcp] servers`.
 3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later) and your age key for sops (generate or paste).

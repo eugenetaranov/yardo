@@ -36,6 +36,7 @@ import (
 	"github.com/eugenetaranov/yardo/internal/assets"
 	"github.com/eugenetaranov/yardo/internal/catalog"
 	"github.com/eugenetaranov/yardo/internal/creds"
+	"github.com/eugenetaranov/yardo/internal/mcp"
 	"github.com/eugenetaranov/yardo/internal/plan"
 	"github.com/eugenetaranov/yardo/internal/profile"
 	"github.com/eugenetaranov/yardo/internal/run"
@@ -114,6 +115,8 @@ func main() {
 
 type options struct {
 	yes, dryRun, verify, showVersion, list bool
+	// specs are the catalog's MCP servers, once loaded (mcpSpecs).
+	specs map[string]*mcp.Spec
 	// status: `yardo status` (verify, reported per item; --json for
 	// scripts), collected in statuses.
 	status, json, updates bool
@@ -381,6 +384,10 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		onBoard := !menu
 		updates := false
 		var d *screen
+		// reopen: the menu screen to come back to (the MCP servers, after
+		// deleting one, or from the board), with toast.
+		var reopen, toast string
+		fromBoard := false
 	loop:
 		for {
 			if d == nil {
@@ -390,7 +397,13 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				updates = false
 			}
 			if !onBoard {
-				res, err := ui.NewMenu(d.info, d.sub, d.items, d.settings, d.connect, d.updates).Run()
+				m := ui.NewMenu(d.info, d.sub, d.items, d.settings, d.connect, d.updates)
+				wasFromBoard := fromBoard
+				if reopen != "" {
+					m.Open(reopen, toast, fromBoard)
+					reopen, toast, fromBoard = "", "", false
+				}
+				res, err := m.Run()
 				if err != nil {
 					return err
 				}
@@ -415,17 +428,24 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				case ui.MenuApply:
 					board = &ui.BoardResult{Kind: ui.BoardApply, Settings: res.Settings}
 					break loop
-				case ui.MenuChange:
-					k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) }}
-					before := *a
-					if sec, err = k.change(ctx, res.Change); errors.Is(err, ui.ErrQuit) {
-						*a, sec = before, creds.New()
-						continue // back to the menu, nothing changed
-					} else if err != nil {
+				case ui.MenuMCP:
+					k := &asker{cat: cat, a: a, share: o.share(), out: io.Discard, installed: func(t string) bool { return userHas(a.User, t) },
+						port: func() int { p, _ := st.Port(user); return p }}
+					out, err := k.mcpDo(ctx, res.MCP, o.mcpSpecs(ctx))
+					if err != nil {
+						reopen, toast, fromBoard, d = "mcp", "✗ "+err.Error(), wasFromBoard, nil
+						continue
+					}
+					if out.apply {
+						// The gateway's install too: this version's catalog
+						// and mcp-sync, and the gateway started.
+						fix, changed, mcpEdit = []string{"mcpjungle-install", "mcpjungle"}, true, out.edit
+						break loop
+					}
+					if err := st.Save(a); err != nil {
 						return err
 					}
-					fix, changed, mcpEdit = []string{res.ID}, true, k.mcpEdit
-					break loop
+					reopen, toast, fromBoard, d = "mcp", out.toast, wasFromBoard, nil
 				}
 				continue
 			}
@@ -456,6 +476,11 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				}
 				d = nil
 			case ui.BoardChange:
+				if res.Change == "mcp" {
+					// The MCP servers are the menu's screen; esc there comes back.
+					onBoard, reopen, fromBoard = false, "mcp", true
+					continue
+				}
 				k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) }}
 				before := *a
 				if sec, err = k.change(ctx, res.Change); errors.Is(err, ui.ErrQuit) {
@@ -464,7 +489,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				} else if err != nil {
 					return err
 				}
-				fix, changed, mcpEdit = []string{res.ID}, true, k.mcpEdit
+				fix, changed = []string{res.ID}, true
 				break loop
 			case ui.BoardApply:
 				board = &res
@@ -489,7 +514,6 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		if err != nil || c == nil {
 			return err
 		}
-		mcpEdit = k.mcpEdit
 		a.Unpick(c.dropped)
 		if slices.Contains(c.dropped, "docker-ports") {
 			a.DockerPorts = "" // unticked: published ports reachable everywhere again
@@ -654,6 +678,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	}
 	fmt.Fprintf(stdout, "How each tool was installed and how to update it: %s/yardo.txt\nLog: %s\n", env.Home, o.log)
 	printKeys(stdout, o.state, env.Home)
+	if planHas(items)("mcpjungle") && !before("mcpjungle") && len(a.MCPServers) == 0 {
+		fmt.Fprintln(stdout, "MCP servers: add GitHub, Jira, Grafana and more from 'sudo yardo' → MCP servers.")
+	}
 	if h := newShellHint(res.Changed); h != "" {
 		fmt.Fprintln(stdout, h)
 	}

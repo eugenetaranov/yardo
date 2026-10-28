@@ -756,7 +756,7 @@ func (mcpServersStep) Apply(ctx context.Context, e *Env) error {
 		if b == nil {
 			spec, err := mcp.Load(ctx, mcp.Dirs(e.Share), srv.spec)
 			if err != nil {
-				return err
+				continue // gone from the catalog: nothing to make it from
 			}
 			b = []byte(spec.Skeleton)
 			if err := e.record("file", filepath.Join(e.Home, ".mcp", n, "env")); err != nil {
@@ -1062,6 +1062,13 @@ func (mcpSyncStep) Plan(e *Env) []Action {
 func (mcpSyncStep) Check(context.Context, *Env) (bool, error) { return true, nil }
 
 func (mcpSyncStep) Apply(ctx context.Context, e *Env) error {
+	// No servers: mcp-sync with none keeps the list it saved, so empty it
+	// (the last one dropped then leaves the gateway).
+	if len(servers(e)) == 0 {
+		if err := mcpWrite(ctx, e, "servers", nil); err != nil {
+			return err
+		}
+	}
 	args := append([]string{"MCP_DIR=" + filepath.Join(e.Home, ".mcp"), "MCP_CATALOG=" + mcpCatalog, "MCPJUNGLE_REGISTRY=" + mcpURL(e), mcpSync}, servers(e)...)
 	c := Cmd{Name: "env", Args: args, As: MCPUser(e)}
 	if !mcpAsService(e) {

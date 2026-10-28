@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/catalog"
+	"github.com/eugenetaranov/yardo/internal/mcp"
 	"github.com/eugenetaranov/yardo/internal/plan"
 	"github.com/eugenetaranov/yardo/internal/run"
 	"github.com/eugenetaranov/yardo/internal/steps"
@@ -366,7 +368,20 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	if len(addrs) > 0 {
 		sub += "  ·  " + addrs[0].ip
 	}
-	return &screen{info: ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04"), MCP: mcpNames(a.MCPServers)}, sub: sub, first: first, updates: updates,
+	info := ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04")}
+	if picked("mcpjungle") && !first {
+		specs := o.mcpSpecs(ctx)
+		info.MCP = mcpRows(a.MCPServers, findMCP(ctx, a.User, specs), status["mcpjungle"].Inputs, specs, len(status) > 0)
+		if info.MCP == nil {
+			info.MCP = []ui.MCPServer{}
+		}
+		for _, n := range slices.Sorted(maps.Keys(specs)) {
+			info.MCPSpecs = append(info.MCPSpecs, ui.MCPSpec{Name: n, About: specs[n].Description})
+		}
+		st := status["mcpjungle-install"].State
+		info.MCPDown = st == "down" || st == "missing"
+	}
+	return &screen{info: info, sub: sub, first: first, updates: updates,
 		tabs: tabs, items: items, settings: settings, actions: actions, connect: strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")}, nil
 }
 
@@ -394,8 +409,6 @@ func (d *screen) forget() {
 	}
 }
 
-
-
 // fillIn opens the file holding the first of an item's empty values
 // (inputs, "file: KEY") in an editor: as the user for their own files, as
 // the gateway's user (mcp-sync edit) for an MCP server's. It returns the
@@ -421,8 +434,23 @@ func (o *options) fillIn(ctx context.Context, a *answers.Answers, inputs []strin
 	return nil, nil
 }
 
-// editMCP opens MCP server name's ~/.mcp/<name>/env in the editor, as the
-// gateway's user (mcp-sync edit), who owns it.
+// mcpSpecs are the catalog's MCP servers, loaded once (the menu's data
+// is gathered again after each action).
+func (o *options) mcpSpecs(ctx context.Context) map[string]*mcp.Spec {
+	if o.specs == nil {
+		dirs := mcp.Dirs(o.share())
+		o.specs = map[string]*mcp.Spec{}
+		for _, n := range mcp.Names(dirs) {
+			if s, err := mcp.Load(ctx, dirs, n); err == nil {
+				o.specs[n] = s
+			}
+		}
+	}
+	return o.specs
+}
+
+// editMCP opens MCP server name's ~/.mcp/<name>/env in the editor, as
+// ~/.mcp's owner (mcp-sync edit): the gateway's user, or the user.
 func editMCP(ctx context.Context, user, name string) error {
 	home := homeOf(user)
 	// The gateway's user runs no binary from the user's home (their
@@ -431,7 +459,7 @@ func editMCP(ctx context.Context, user, name string) error {
 	if strings.HasPrefix(ed, home+"/") {
 		ed = systemEditor()
 	}
-	c := exec.CommandContext(ctx, "runuser", "-u", steps.MCPUser(&steps.Env{User: user}), "--",
+	c := exec.CommandContext(ctx, "runuser", "-u", mcpOwner(user), "--",
 		"env", "MCP_DIR="+filepath.Join(home, ".mcp"), "EDITOR="+ed, "VISUAL="+ed, "/usr/local/bin/mcp-sync", "edit", name)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := c.Run(); err != nil {

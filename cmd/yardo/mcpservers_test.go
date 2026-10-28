@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/mcp"
+	"github.com/eugenetaranov/yardo/internal/ui"
 )
 
 // What's in ~/.mcp, as the answers name it: catalog servers, other
@@ -24,26 +28,111 @@ func TestParseFound(t *testing.T) {
 		"bad name\t\t0", "../x\t\t0", // not names
 		"",
 	}, "\n")
-	want := []foundServer{{"jira", false}, {"opensearch:prod", true}, {"jira:work", false}, {"aws-api", true},
-		{"aws-api:eu", false}, {"mine", true}, {"jira", true}}
+	want := []foundServer{{"jira", false, false, false}, {"opensearch:prod", true, false, true}, {"jira:work", false, false, false},
+		{"aws-api", true, false, false}, {"aws-api:eu", false, false, false}, {"mine", true, true, true}, {"jira", true, false, true}}
 	if got := parseFound(out, specs); !reflect.DeepEqual(got, want) {
 		t.Errorf("parseFound =\n%v\nwant\n%v", got, want)
 	}
 }
 
-// Another instance's name: not its spec's own (jira:jira), nor another
-// catalog server's.
-func TestInstanceEntry(t *testing.T) {
-	specs := map[string]*mcp.Spec{"jira": {}, "aws": {}, "aws-api": {}}
-	if e, err := instanceEntry("jira", "work", specs); err != nil || e != "jira:work" {
-		t.Errorf("jira work = %q, %v", e, err)
-	}
-	for _, c := range [][2]string{{"jira", "jira"}, {"aws", "api"}, {"jira", "Work"}, {"jira", ""}} {
-		if _, err := instanceEntry(c[0], c[1], specs); err == nil {
-			t.Errorf("instanceEntry(%q, %q): want an error", c[0], c[1])
+// The menu's rows: yardo's servers with their state, then the ones found
+// in ~/.mcp (once each), off or on by hand.
+func TestMCPRows(t *testing.T) {
+	specs := map[string]*mcp.Spec{"github": {Description: "GitHub"}, "jira": {Description: "Jira"}, "opensearch": {}}
+	entries := []string{"github", "jira", "jira:work", "opensearch", "gone", "docker"}
+	found := []foundServer{{"github", true, false, false}, {"jira:work", true, false, true}, {"jira", false, false, false},
+		{"opensearch", false, false, false}, {"grafana:test", false, false, false}, {"opensearch:old", false, false, false},
+		{"mine", true, true, true}, {"docker2", true, false, false}}
+	specs["docker"], specs["docker2"] = &mcp.Spec{}, &mcp.Spec{}
+	inputs := []string{"~/.mcp/jira/env: JIRA_URL", "~/.mcp/jira/env: JIRA_API_TOKEN", "~/.config/yardo/agent.env: OPENAI_API_KEY"}
+	got := mcpRows(entries, found, inputs, specs, true)
+	// docker isn't there yet (new); docker2 is registered by hand with no
+	// spec of its own, which the next run would drop: off.
+	want := map[string]string{"github": "ok", "jira": "secret", "jira-work": "ok", "opensearch": "failed", "gone": "nospec",
+		"docker": "new", "opensearch-old": "off", "mine": "byhand", "docker2": "off"}
+	var names []string
+	for _, r := range got {
+		names = append(names, r.Name)
+		if w, ok := want[r.Name]; !ok || r.State != w {
+			t.Errorf("%s: state %q, want %q", r.Name, r.State, w)
 		}
 	}
-	if _, err := instanceEntry("jira", "jira", specs); err == nil || !strings.Contains(err.Error(), "tick jira") {
-		t.Errorf("jira:jira: err = %v", err)
+	// grafana:test has no spec here, nor one of its own: not a server.
+	if strings.Join(names, " ") != "github jira jira-work opensearch gone docker opensearch-old mine docker2" {
+		t.Errorf("rows = %v", names)
+	}
+	if got[1].About != "Jira" || strings.Join(got[1].Keys, " ") != "JIRA_URL JIRA_API_TOKEN" || !got[1].Yardo {
+		t.Errorf("jira = %+v", got[1])
+	}
+	if mine := got[7]; mine.Spec != "" || mine.Yardo {
+		t.Errorf("mine = %+v", mine)
+	}
+	if r := mcpRows([]string{"github"}, []foundServer{{"github", false, false, false}}, nil, specs, false); r[0].State != "unchecked" {
+		t.Errorf("unchecked: %+v", r[0])
+	}
+}
+
+// Each action changes the answers' servers (or doesn't, when mcp-sync
+// fails), and says whether to apply and what to open in the editor.
+func TestMCPDo(t *testing.T) {
+	specs := map[string]*mcp.Spec{"jira": {Keys: []string{"JIRA_URL"}}, "docker": {}}
+	var ran [][]string
+	var edited []string
+	syncErr := error(nil)
+	envThere := true
+	k := &asker{a: &answers.Answers{User: "ada", MCPServers: []string{"jira", "jira:work"}},
+		mcpSync: func(args ...string) error { ran = append(ran, args); return syncErr },
+		edit:    func(n string) (bool, error) { edited = append(edited, n); return envThere, nil }}
+	ctx := context.Background()
+	do := func(act ui.MCPAct) mcpOutcome {
+		t.Helper()
+		out, err := k.mcpDo(ctx, act, specs)
+		if err != nil {
+			t.Fatalf("%+v: %v", act, err)
+		}
+		return out
+	}
+	if out := do(ui.MCPAct{Do: "add", Entry: "jira:prod"}); !out.apply || strings.Join(out.edit, " ") != "jira-prod" {
+		t.Errorf("add: %+v", out)
+	}
+	if out := do(ui.MCPAct{Do: "add", Entry: "docker"}); !out.apply || out.edit != nil {
+		t.Errorf("add docker (no keys): %+v", out)
+	}
+	if out := do(ui.MCPAct{Do: "rename", Entry: "jira:work", To: "jira:team"}); !out.apply ||
+		!reflect.DeepEqual(ran[0], []string{"rename", "jira-work", "jira-team"}) {
+		t.Errorf("rename: %+v, ran %v", out, ran)
+	}
+	if out := do(ui.MCPAct{Do: "delete", Entry: "jira:prod"}); out.apply || out.toast != "jira-prod deleted." ||
+		!reflect.DeepEqual(ran[1], []string{"remove", "jira-prod"}) {
+		t.Errorf("delete: %+v, ran %v", out, ran)
+	}
+	if out := do(ui.MCPAct{Do: "rename", Entry: "grafana:old", To: "grafana:new"}); out.apply || out.toast != "grafana-old is grafana-new now." {
+		t.Errorf("rename a found one: %+v", out)
+	}
+	if got := strings.Join(k.a.MCPServers, " "); got != "jira jira:team docker" {
+		t.Errorf("servers = %q", got)
+	}
+	if out := do(ui.MCPAct{Do: "edit", Entry: "jira"}); !out.apply || out.edit != nil || strings.Join(edited, " ") != "jira" {
+		t.Errorf("edit: %+v, edited %v", out, edited)
+	}
+	envThere = false
+	if out := do(ui.MCPAct{Do: "on", Entry: "grafana:test"}); !out.apply {
+		t.Errorf("on: %+v", out)
+	}
+	if out := do(ui.MCPAct{Do: "edit", Entry: "mine"}); strings.Join(out.edit, " ") != "mine" {
+		t.Errorf("edit without an env: %+v", out)
+	}
+	if got := strings.Join(k.a.MCPServers, " "); got != "jira jira:team docker grafana:test mine" {
+		t.Errorf("servers after on, edit = %q", got)
+	}
+	syncErr = errors.New("there's a jira-x already")
+	before := strings.Join(k.a.MCPServers, " ")
+	for _, act := range []ui.MCPAct{{Do: "rename", Entry: "jira:team", To: "jira:x"}, {Do: "delete", Entry: "docker"}} {
+		if _, err := k.mcpDo(ctx, act, specs); err == nil || !strings.Contains(err.Error(), "jira-x already") {
+			t.Errorf("%+v: err = %v", act, err)
+		}
+	}
+	if got := strings.Join(k.a.MCPServers, " "); got != before {
+		t.Errorf("servers after failures = %q, want %q", got, before)
 	}
 }

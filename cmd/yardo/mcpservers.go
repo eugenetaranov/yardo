@@ -14,17 +14,13 @@ import (
 	"github.com/eugenetaranov/yardo/internal/ui"
 )
 
-// The server list's rows that aren't servers.
-const (
-	addInstance = "+instance"
-	manageRow   = "+manage"
-)
-
 // foundServer is a server in ~/.mcp: entry is how the answers name it
 // (jira, opensearch:prod), registered whether the gateway has it now.
 type foundServer struct {
 	entry      string
 	registered bool
+	own        bool // its own spec, not the catalog's
+	linked     bool // a spec of its own or a link: mcp-sync keeps it on
 }
 
 // mcpOwner is who owns ~/.mcp: the gateway's service user, or the user
@@ -92,7 +88,7 @@ func parseFound(out string, specs map[string]*mcp.Spec) []foundServer {
 			}
 		}
 		if entry != "" {
-			found = append(found, foundServer{entry, reg})
+			found = append(found, foundServer{entry, reg, link == "own", link != ""})
 		}
 	}
 	return found
@@ -117,131 +113,162 @@ func (k *asker) mcpSyncAs(ctx context.Context, args ...string) error {
 		"MCP_DIR=" + filepath.Join(homeOf(k.a.User), ".mcp"), fmt.Sprintf("MCPJUNGLE_REGISTRY=http://127.0.0.1:%d", port),
 		sync}, args...)...)
 	out, err := c.CombinedOutput()
-	if s := strings.TrimSpace(string(out)); s != "" {
+	s := strings.TrimSpace(string(out))
+	if err != nil && s != "" {
+		lines := strings.Split(s, "\n")
+		return fmt.Errorf("%s", strings.TrimPrefix(lines[len(lines)-1], "mcp-sync: "))
+	}
+	if s != "" {
 		fmt.Fprintln(k.out, s)
 	}
 	return err
 }
 
-// askManage renames or deletes servers: the picked ones and others in
-// ~/.mcp (found, dropped). It returns the picked servers as they are
-// after, and the names it renamed to (their settings are filled in).
-func (k *asker) askManage(ctx context.Context, servers, others []string, specs map[string]*mcp.Spec) ([]string, []string, error) {
-	var renamed []string
-	for {
-		cands := slices.Concat(servers, slices.DeleteFunc(slices.Clone(others), func(e string) bool { return slices.Contains(servers, e) }))
-		var names []string
-		byName := map[string]string{}
-		for _, e := range cands {
-			if _, n, err := mcp.Instance(e); err == nil {
-				names = append(names, n)
-				byName[n] = e
-			}
+// mcpRows are the menu's MCP servers: yardo's (entries), then the others
+// found in ~/.mcp, each with its state. inputs are the MCP servers' empty
+// values ("~/.mcp/<name>/env: KEY"); checked: the gateway's state is known.
+func mcpRows(entries []string, found []foundServer, inputs []string, specs map[string]*mcp.Spec, checked bool) []ui.MCPServer {
+	byEntry := map[string]foundServer{}
+	for _, f := range found {
+		byEntry[f.entry] = f
+	}
+	missing := map[string][]string{}
+	for _, in := range inputs {
+		path, key, ok := strings.Cut(in, ": ")
+		if rest, isMCP := strings.CutPrefix(path, "~/.mcp/"); ok && isMCP {
+			n := strings.SplitN(rest, "/", 2)[0]
+			missing[n] = append(missing[n], key)
 		}
-		if len(names) == 0 {
-			fmt.Fprintln(k.out, "No MCP servers to rename or delete.")
-			return servers, renamed, nil
-		}
-		slices.Sort(names)
-		pick, err := ui.Choose("Rename or delete which server?", names, names[0])
+	}
+	row := func(entry string, yardo bool) (ui.MCPServer, bool) {
+		spec, name, err := mcp.Instance(entry)
 		if err != nil {
-			return servers, renamed, err
+			return ui.MCPServer{}, false
 		}
-		entry := byName[pick]
-		const ren, del = "Rename it", "Delete it, with its settings (~/.mcp/"
-		act, err := ui.Choose(pick, []string{ren, del + pick + ")", "Neither"}, ren)
-		if err != nil {
-			return servers, renamed, err
+		f, there := byEntry[entry]
+		r := ui.MCPServer{Entry: entry, Name: name, Spec: spec, Yardo: yardo, Keys: missing[name]}
+		if f.own {
+			r.Spec = "" // its own, even named after a catalog one
+		} else if s := specs[spec]; s != nil {
+			r.About = s.Description
 		}
 		switch {
-		case act == ren:
-			to, err := k.askRename(entry, names, specs)
-			if err != nil {
-				return servers, renamed, err
-			}
-			_, newName, _ := mcp.Instance(to)
-			if err := k.mcpSyncAs(ctx, "rename", pick, newName); err != nil {
-				fmt.Fprintf(k.out, "Couldn't rename %s: %v\n", pick, err)
-				break
-			}
-			if i := slices.Index(servers, entry); i >= 0 {
-				servers[i] = to
-			} else {
-				servers = append(servers, to) // a found one, picked now
-			}
-			others = slices.DeleteFunc(others, func(e string) bool { return e == entry })
-			renamed = append(renamed, newName)
-		case strings.HasPrefix(act, del):
-			yes, err := ui.Confirm("Delete "+pick+"?", "It goes from the gateway, and ~/.mcp/"+pick+" (its settings) is deleted: this can't be undone.", false)
-			if err != nil {
-				return servers, renamed, err
-			}
-			if !yes {
-				break
-			}
-			if err := k.mcpSyncAs(ctx, "remove", pick); err != nil {
-				fmt.Fprintf(k.out, "Couldn't delete %s: %v\n", pick, err)
-				break
-			}
-			servers = slices.DeleteFunc(servers, func(e string) bool { return e == entry })
-			others = slices.DeleteFunc(others, func(e string) bool { return e == entry })
+		case specs[spec] == nil && !f.own && !yardo:
+			return ui.MCPServer{}, false // found, with nothing to run it by
+		case specs[spec] == nil && !f.own:
+			r.State = "nospec"
+		case !yardo && f.registered && f.linked:
+			r.State = "byhand"
+		case !yardo:
+			r.State = "off"
+		case len(r.Keys) > 0:
+			r.State = "secret"
+		case !there:
+			r.State = "new" // not set up yet: the next run makes it
+		case !checked:
+			r.State = "unchecked"
+		case f.registered:
+			r.State = "ok"
+		default:
+			r.State = "failed"
 		}
-		more, err := ui.Confirm("Rename or delete another?", "", false)
-		if err != nil || !more {
-			return servers, renamed, err
+		return r, true
+	}
+	var out []ui.MCPServer
+	for _, e := range entries {
+		if r, ok := row(e, true); ok {
+			out = append(out, r)
 		}
 	}
+	for _, f := range found {
+		if !slices.Contains(entries, f.entry) && !slices.ContainsFunc(out, func(r ui.MCPServer) bool { return r.Entry == f.entry }) {
+			if r, ok := row(f.entry, false); ok {
+				out = append(out, r)
+			}
+		}
+	}
+	return out
 }
 
-// askRename asks entry's new name: another instance's (spec:label) for a
-// catalog server, any name for one with its own spec.
-func (k *asker) askRename(entry string, taken []string, specs map[string]*mcp.Spec) (string, error) {
-	spec, name, _ := mcp.Instance(entry)
-	for {
-		if specs[spec] == nil {
-			to, err := ui.Input("Rename "+name+" to", "Letters, digits, '.', '_' and '-'.", name)
-			if err != nil {
-				return "", err
-			}
-			to = strings.TrimSpace(to)
-			switch {
-			case !mcp.ValidName(to) || strings.Contains(to, ":"):
-				fmt.Fprintf(k.out, "%q isn't a server name.\n", to)
-			case slices.Contains(taken, to) || specs[to] != nil:
-				fmt.Fprintf(k.out, "There's a %s already.\n", to)
-			default:
-				return to, nil
-			}
-			continue
-		}
-		label, err := ui.Input("Rename "+name+" to "+spec+"-<name>", "Lowercase letters, digits and '-', such as prod or work.", "")
-		if err != nil {
-			return "", err
-		}
-		to, err := instanceEntry(spec, strings.TrimSpace(label), specs)
-		if err == nil && slices.Contains(taken, spec+"-"+label) {
-			err = fmt.Errorf("there's a %s-%s already", spec, label)
-		}
-		if err != nil {
-			fmt.Fprintln(k.out, err)
-			continue
-		}
-		return to, nil
-	}
+// mcpOutcome is what an MCP server action leaves: apply the MCP servers
+// again (edit: the env files to open in the editor after), or stay on the
+// menu with toast.
+type mcpOutcome struct {
+	apply bool
+	edit  []string
+	toast string
 }
 
-// instanceEntry is another instance of spec named label (spec:label), or
-// why it can't be.
-func instanceEntry(spec, label string, specs map[string]*mcp.Spec) (string, error) {
-	entry := spec + ":" + label
-	_, name, err := mcp.Instance(entry)
-	switch {
-	case err != nil:
-		return "", err
-	case label == spec:
-		return "", fmt.Errorf("that's %s itself: tick %s in the list instead", spec, spec)
-	case specs[name] != nil:
-		return "", fmt.Errorf("%s is a server of its own; name it otherwise", name)
+// mcpDo does act to an MCP server, changing the answers' servers; on an
+// error they're as they were.
+func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.Spec) (mcpOutcome, error) {
+	spec, name, err := mcp.Instance(act.Entry)
+	if err != nil {
+		return mcpOutcome{}, err
 	}
-	return entry, nil
+	before := slices.Clone(k.a.MCPServers)
+	adopt := func() {
+		if !slices.Contains(k.a.MCPServers, act.Entry) {
+			k.a.MCPServers = append(k.a.MCPServers, act.Entry)
+		}
+	}
+	switch act.Do {
+	case "add":
+		adopt()
+		out := mcpOutcome{apply: true}
+		if s := specs[spec]; s != nil && len(s.Keys)+len(s.Optional) > 0 {
+			out.edit = []string{name} // once the run has made its env
+		}
+		return out, nil
+	case "on":
+		adopt()
+		return mcpOutcome{apply: true}, nil
+	case "edit":
+		adopt()
+		edited, err := k.editNow(ctx, name)
+		if err != nil {
+			k.a.MCPServers = before
+			return mcpOutcome{}, err
+		}
+		out := mcpOutcome{apply: true}
+		if !edited {
+			out.edit = []string{name} // no env yet: the run makes it from the spec
+		}
+		return out, nil
+	case "rename":
+		_, to, err := mcp.Instance(act.To)
+		if err != nil {
+			return mcpOutcome{}, err
+		}
+		if err := k.mcpSyncAs(ctx, "rename", name, to); err != nil {
+			return mcpOutcome{}, fmt.Errorf("couldn't rename %s: %w", name, err)
+		}
+		i := slices.Index(k.a.MCPServers, act.Entry)
+		if i < 0 {
+			// Not yardo's: renamed, and as it was (off stays off).
+			return mcpOutcome{toast: name + " is " + to + " now."}, nil
+		}
+		k.a.MCPServers[i] = act.To
+		return mcpOutcome{apply: true}, nil
+	case "delete":
+		if err := k.mcpSyncAs(ctx, "remove", name); err != nil {
+			return mcpOutcome{}, fmt.Errorf("couldn't delete %s: %w", name, err)
+		}
+		k.a.MCPServers = slices.DeleteFunc(k.a.MCPServers, func(e string) bool { return e == act.Entry })
+		return mcpOutcome{toast: name + " deleted."}, nil
+	}
+	return mcpOutcome{}, fmt.Errorf("nothing to do for %q", act.Do)
+}
+
+// editNow opens name's env in the editor, if there's one yet (else the
+// run makes it from the spec, and it opens then: false).
+func (k *asker) editNow(ctx context.Context, name string) (bool, error) {
+	if k.edit != nil {
+		return k.edit(name)
+	}
+	env := filepath.Join(homeOf(k.a.User), ".mcp", name, "env")
+	if exec.CommandContext(ctx, "runuser", "-u", mcpOwner(k.a.User), "--", "test", "-f", env).Run() != nil {
+		return false, nil
+	}
+	return true, editMCP(ctx, k.a.User, name)
 }
