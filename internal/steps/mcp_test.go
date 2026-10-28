@@ -580,7 +580,7 @@ func TestDockerAPI(t *testing.T) {
 		t.Errorf("drop-in:\n%s", got)
 	}
 	ran := strings.Join(x.commands(), "; ")
-	if !strings.Contains(ran, dockerAPIHelper+" setup") || !strings.HasSuffix(ran, "systemctl daemon-reload; systemctl restart docker") ||
+	if !strings.Contains(ran, dockerAPIHelper+" setup") || !strings.HasSuffix(ran, "systemctl daemon-reload; systemctl reset-failed docker; systemctl restart docker") ||
 		strings.Index(ran, "nft -f /etc/yardo/firewall/yardo_docker_api.nft") > strings.Index(ran, "systemctl restart docker") {
 		t.Errorf("ran %s", ran)
 	}
@@ -598,5 +598,57 @@ func TestDockerAPI(t *testing.T) {
 	}
 	if !check(t, e, st) {
 		t.Error("off again: Check = false")
+	}
+}
+
+// daemon.json's live-restore (yardo's own sets it) keeps the flag out of
+// the drop-in: dockerd won't start with both. A setting the API needs
+// for itself (hosts) is an error, before anything changes.
+func TestDockerAPIDaemonJSON(t *testing.T) {
+	e := mcpEnv(t, &fakeExec{})
+	e.Answers.DockerAPI = "lan"
+	text, err := dockerAPIDropinText(e)
+	if err != nil || !strings.Contains(text, "--live-restore") {
+		t.Errorf("no daemon.json: %v\n%s", err, text)
+	}
+	if err := writeFile(e.Path(dockerDaemonJSON), []byte(`{"log-driver": "local", "live-restore": true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if text, err = dockerAPIDropinText(e); err != nil || strings.Contains(text, "--live-restore") {
+		t.Errorf("daemon.json sets live-restore: %v\n%s", err, text)
+	}
+	if err := writeFile(e.Path(dockerDaemonJSON), []byte(`{"hosts": ["unix:///var/run/docker.sock"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dockerAPIDropinText(e); err == nil || !strings.Contains(err.Error(), `"hosts"`) {
+		t.Errorf("hosts in daemon.json: err = %v", err)
+	}
+}
+
+// Docker that won't start with the API gets it taken off again and is
+// restarted without it, so it keeps running.
+func TestDockerAPIRollsBack(t *testing.T) {
+	restarts := 0
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		if c.Name == "systemctl" && c.Args[0] == "restart" {
+			restarts++
+			if restarts == 1 {
+				return nil, errors.New("exit status 1")
+			}
+		}
+		return nil, nil
+	}}
+	e := mcpEnv(t, x)
+	e.Files = fstest.MapFS{"yardo-docker": {Data: []byte("#!/bin/sh\n")}}
+	e.Answers.DockerAPI = "lan"
+	err := step(t, catalog.Step{Type: "go:docker_api"}).Apply(context.Background(), e)
+	if err == nil || !strings.Contains(err.Error(), "off again") {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := os.Stat(e.Path(dockerAPIDropin)); err == nil {
+		t.Error("the drop-in that broke Docker is still there")
+	}
+	if restarts != 2 {
+		t.Errorf("restarts = %d, want 2", restarts)
 	}
 }
