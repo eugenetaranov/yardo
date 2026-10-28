@@ -323,6 +323,12 @@ pick() {
 # MCP server specs: the installed catalog first, then the ones yardo
 # ships (tack-roles' in mcp-catalog/, yardo's own in conf/mcp-catalog/).
 spec_dirs() { echo "$CATALOG" "$SHARE/mcp-catalog" "$CONF/mcp-catalog"; }
+# A picked MCP server is a spec (grafana) or another instance of one
+# (grafana:prod): mcp_spec is its spec, mcp_name its name (grafana-prod),
+# its ~/.mcp directory and the gateway's server name.
+mcp_spec() { echo "${1%%:*}"; }
+mcp_name() { case $1 in *:*) echo "${1%%:*}-${1#*:}" ;; *) echo "$1" ;; esac; }
+mcp_names() { local n; for n in $A_MCP_SERVERS; do mcp_name "$n"; done; }
 # spec_file NAME — the spec for NAME, if any.
 spec_file() {
   local d
@@ -1310,13 +1316,14 @@ EOF
   # Credentials from the prompts go into each server's env file (the same
   # files mcp-sync creates and reads).
   for n in $A_MCP_SERVERS; do
-    install -d -m 0700 -o "$A_USER" -g "$grp" "$mcp/$n"
-    [ -f "$mcp/$n/env" ] || { spec_skeleton "$n" > "$mcp/$n/env"; record file "$mcp/$n/env"; }
+    local d; d=$(mcp_name "$n")
+    install -d -m 0700 -o "$A_USER" -g "$grp" "$mcp/$d"
+    [ -f "$mcp/$d/env" ] || { spec_skeleton "$(mcp_spec "$n")" > "$mcp/$d/env"; record file "$mcp/$d/env"; }
   done
   for key in "${!MCP_KEYS[@]}"; do
     envset "${key#* }" "${MCP_KEYS[$key]}" "$mcp/${key%% *}/env"
   done
-  for n in $A_MCP_SERVERS; do
+  for n in $(mcp_names); do
     chown -h "$A_USER:$grp" "$mcp/$n/env"; chmod 600 "$mcp/$n/env"
   done
   [ "$A_WIRE_AGENTS" = yes ] && wire_agents
@@ -1641,7 +1648,7 @@ sync_mcp() {
   curl -s -o /dev/null "http://127.0.0.1:$MCPJUNGLE_PORT/" || \
     warn "mcpjungle is not answering on port $MCPJUNGLE_PORT; check: journalctl -u mcpjungle"
   as_user env MCP_CATALOG="$CATALOG" MCPJUNGLE_REGISTRY="http://127.0.0.1:$MCPJUNGLE_PORT" \
-    "$BIN/mcp-sync" $A_MCP_SERVERS || warn "Some servers did not register (see above)."
+    "$BIN/mcp-sync" $(mcp_names) || warn "Some servers did not register (see above)."
   faint "Change credentials in ~$A_USER/.mcp/<name>/env, then run mcp-sync as $A_USER."
 }
 
@@ -1755,9 +1762,9 @@ missing_secrets() {
   esac
   case "$ids" in *" mcpjungle "*)
     for n in $A_MCP_SERVERS; do
-      spec_file "$n" >/dev/null || continue
-      for k in $(spec_field "$n" REQUIRED); do
-        [ -z "$(envget "$k" "$home/.mcp/$n/env")" ] && echo "$home/.mcp/$n/env  $k — see the comments in the file; then run: mcp-sync"
+      spec_file "$(mcp_spec "$n")" >/dev/null || continue
+      for k in $(spec_field "$(mcp_spec "$n")" REQUIRED); do
+        [ -z "$(envget "$k" "$home/.mcp/$(mcp_name "$n")/env")" ] && echo "$home/.mcp/$(mcp_name "$n")/env  $k — see the comments in the file; then run: mcp-sync"
       done
     done ;;
   esac

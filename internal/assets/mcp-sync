@@ -185,6 +185,12 @@ for NAME in $want; do
   unset -f skeleton 2>/dev/null || true
   # shellcheck disable=SC1090
   . "$spec"
+  # Another instance of a catalog server (grafana-prod, a link to
+  # grafana.spec): its name leads the description, so agents tell them apart.
+  case "${spec##*/}" in
+    spec|"$NAME.spec") ;;
+    *) DESCRIPTION="($NAME) ${DESCRIPTION:-}" ;;
+  esac
 
   dir="$MCP_DIR/$NAME"
   mkdir -p "$dir"; chmod 700 "$dir"

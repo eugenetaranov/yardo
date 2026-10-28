@@ -14,6 +14,7 @@ import (
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/catalog"
+	"github.com/eugenetaranov/yardo/internal/mcp"
 )
 
 // Profile is one profile file.
@@ -87,6 +88,13 @@ func Parse(name string, b []byte) (*Profile, error) {
 	}
 	if p.MCP != nil && p.MCP.Listen != "" && p.MCP.Listen != "127.0.0.1" && p.MCP.Listen != "0.0.0.0" && p.MCP.Listen != "tailscale" {
 		return nil, fmt.Errorf("%s: mcp.listen %q: want 127.0.0.1, tailscale or 0.0.0.0", name, p.MCP.Listen)
+	}
+	if p.MCP != nil {
+		for _, srv := range p.MCP.Servers {
+			if _, _, err := mcp.Instance(srv); err != nil {
+				return nil, fmt.Errorf("%s: mcp.servers: %w", name, err)
+			}
+		}
 	}
 	if p.GitKey != nil {
 		for _, h := range p.GitKey.Hosts {

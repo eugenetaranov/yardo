@@ -242,12 +242,19 @@ func TestMCPAsServiceUser(t *testing.T) {
 	e := mcpEnv(t, x)
 	e.Secrets.MCP["github GITHUB_PERSONAL_ACCESS_TOKEN"] = "ghp_1"
 	apply(t, e, step(t, catalog.Step{Type: "go:mcp_servers"}))
-	got := x.commands()
+	// The env's read and write (the reads of the instances' list aside).
+	var got []string
+	var ran []Cmd
+	for i, c := range x.commands() {
+		if !strings.HasSuffix(c, instancesFile) {
+			got, ran = append(got, c), append(ran, x.ran[i])
+		}
+	}
 	if len(got) != 2 || !strings.HasPrefix(got[0], "(as mcp-ada) sh -c ") || !strings.HasSuffix(got[0], " _ /home/ada/.mcp/github/env") ||
 		!strings.HasPrefix(got[1], "(as mcp-ada) sh -c 'umask 077") {
 		t.Errorf("ran %q", got)
 	}
-	if in := string(x.ran[1].Stdin); !strings.Contains(in, "GITHUB_PERSONAL_ACCESS_TOKEN=ghp_1\n") {
+	if in := string(ran[1].Stdin); !strings.Contains(in, "GITHUB_PERSONAL_ACCESS_TOKEN=ghp_1\n") {
 		t.Errorf("wrote %q", in)
 	}
 	x.ran = nil
@@ -650,5 +657,61 @@ func TestDockerAPIRollsBack(t *testing.T) {
 	}
 	if restarts != 2 {
 		t.Errorf("restarts = %d, want 2", restarts)
+	}
+}
+
+// Another instance of a server (github:work): its own env from the
+// spec's skeleton, a spec link to the catalog's, its own typed keys; once
+// dropped, the link goes and the env stays.
+func TestMCPInstances(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("no bash (specs are shell)")
+	}
+	e := mcpEnv(t, &fakeExec{})
+	if err := os.Remove(filepath.Join(e.Share, "mcp-catalog", "github.spec")); err != nil {
+		t.Fatal(err)
+	}
+	e.Answers.MCPServers = []string{"github", "github:work"}
+	e.Secrets.MCP["github-work GITHUB_PERSONAL_ACCESS_TOKEN"] = "ghp_work"
+	st := step(t, catalog.Step{Type: "go:mcp_servers"})
+	apply(t, e, st)
+	if got := read(t, e.Path("~/.mcp/github-work/env")); got != "# GitHub\nGITHUB_PERSONAL_ACCESS_TOKEN=ghp_work\n" {
+		t.Errorf("instance env = %q", got)
+	}
+	if got := read(t, e.Path("~/.mcp/github/env")); strings.Contains(got, "ghp_work") {
+		t.Errorf("the instance's key went to github's env: %q", got)
+	}
+	if got, _ := os.Readlink(e.Path("~/.mcp/github-work/spec")); got != mcpCatalog+"/github.spec" {
+		t.Errorf("spec link = %q", got)
+	}
+	if got := read(t, e.Path("~/.mcp/"+instancesFile)); got != "github-work\n" {
+		t.Errorf("instances = %q", got)
+	}
+	if !check(t, e, st) {
+		t.Error("Check after Apply = false")
+	}
+	if got := strings.Join(servers(e), " "); got != "github github-work" {
+		t.Errorf("servers = %q", got)
+	}
+	// A link made by hand (not yardo's) stays when instances are dropped.
+	if err := os.Symlink(mcpCatalog+"/github.spec", e.Path("~/.mcp/mine")); err != nil {
+		t.Fatal(err)
+	}
+	e.Answers.MCPServers = []string{"github"}
+	if check(t, e, st) {
+		t.Error("Check = true with an instance dropped")
+	}
+	apply(t, e, st)
+	if _, err := os.Lstat(e.Path("~/.mcp/github-work/spec")); err == nil {
+		t.Error("the dropped instance's spec link is still there")
+	}
+	if got := read(t, e.Path("~/.mcp/github-work/env")); !strings.Contains(got, "ghp_work") {
+		t.Errorf("the dropped instance's env went: %q", got)
+	}
+	if _, err := os.Lstat(e.Path("~/.mcp/mine")); err != nil {
+		t.Error("a link made by hand was removed")
+	}
+	if !check(t, e, st) {
+		t.Error("Check after dropping = false")
 	}
 }

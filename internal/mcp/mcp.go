@@ -120,3 +120,49 @@ func IsSecret(k string) bool {
 	return strings.Contains(k, "TOKEN") || strings.Contains(k, "SECRET") || strings.Contains(k, "PASSWORD") ||
 		strings.HasSuffix(k, "_KEY") || strings.HasSuffix(k, "_KEY_ID") || strings.Contains(k, "APIKEY")
 }
+
+// Instance splits a picked server into its spec and its name. "grafana" is
+// the catalog's Grafana (spec and name grafana); "grafana:prod" is another
+// one of the same spec, named grafana-prod: its ~/.mcp directory, the
+// gateway's server name and its tools' prefix (grafana-prod__<tool>).
+func Instance(entry string) (spec, name string, err error) {
+	spec, label, ok := strings.Cut(entry, ":")
+	if !ValidName(spec) {
+		return "", "", fmt.Errorf("%q: not an MCP server", entry)
+	}
+	if !ok {
+		return spec, spec, nil
+	}
+	if !ValidLabel(label) {
+		return "", "", fmt.Errorf("%q: name it with lowercase letters, digits and '-' (e.g. %s:prod)", entry, spec)
+	}
+	return spec, spec + "-" + label, nil
+}
+
+// ValidLabel says whether l can name another instance of a server: short,
+// lowercase letters, digits and inner dashes.
+func ValidLabel(l string) bool {
+	if l == "" || len(l) > 24 || l[0] == '-' || l[len(l)-1] == '-' || strings.Contains(l, "--") {
+		return false
+	}
+	for _, c := range l {
+		if c != '-' && (c < 'a' || c > 'z') && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidName says whether n is a server's name, as mcp-sync takes them: a
+// directory in ~/.mcp, never a path.
+func ValidName(n string) bool {
+	if n == "" || len(n) > 40 || n[0] == '.' || n[0] == '-' || strings.Contains(n, "..") || strings.Contains(n, "__") {
+		return false
+	}
+	for _, c := range n {
+		if c != '.' && c != '_' && c != '-' && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
+}

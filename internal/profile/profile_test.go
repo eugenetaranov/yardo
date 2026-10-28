@@ -204,3 +204,15 @@ func TestExportNamed(t *testing.T) {
 		t.Error("unnamed export should say how to name it")
 	}
 }
+
+// Another instance of a server (grafana:prod) is a server entry of its
+// own; one that isn't a name is an error.
+func TestMCPInstancesInProfile(t *testing.T) {
+	p, err := Parse("p.toml", []byte("[mcp]\nservers = [\"grafana\", \"grafana:prod\"]\n"))
+	if err != nil || len(p.MCP.Servers) != 2 {
+		t.Fatalf("p = %+v, err %v", p, err)
+	}
+	if _, err := Parse("p.toml", []byte("[mcp]\nservers = [\"grafana:Prod Box\"]\n")); err == nil || !strings.Contains(err.Error(), "mcp.servers") {
+		t.Errorf("bad instance: err = %v", err)
+	}
+}

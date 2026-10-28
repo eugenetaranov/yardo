@@ -52,3 +52,20 @@ func TestGitHubSpecHelp(t *testing.T) {
 		t.Errorf("keys = %v", gh.Keys)
 	}
 }
+
+func TestInstance(t *testing.T) {
+	for entry, want := range map[string][2]string{
+		"grafana": {"grafana", "grafana"}, "grafana:prod": {"grafana", "grafana-prod"},
+		"aws-api:eu-1": {"aws-api", "aws-api-eu-1"}, "opensearch:logs": {"opensearch", "opensearch-logs"},
+	} {
+		spec, name, err := Instance(entry)
+		if err != nil || spec != want[0] || name != want[1] {
+			t.Errorf("Instance(%q) = %q, %q, %v", entry, spec, name, err)
+		}
+	}
+	for _, bad := range []string{"", ":prod", "grafana:", "grafana:Prod", "grafana:a b", "grafana:-x", "grafana:a--b", "../x", "grafana:../x", "a__b"} {
+		if _, _, err := Instance(bad); err == nil {
+			t.Errorf("Instance(%q): want an error", bad)
+		}
+	}
+}

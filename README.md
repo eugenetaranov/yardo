@@ -241,6 +241,14 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    into them; `mcp-sync client <name>` makes one for a laptop's agent,
    sent as `Authorization: Bearer <token>`. On this machine only, there
    are no tokens: anything on the VM can use the gateway.
+   **More than one of a server** (two Grafanas, a second OpenSearch
+   cluster, an AWS account each): after the server list, "Add another
+   instance of a server?" asks which server and a name for it, say `prod`,
+   then that instance's keys. It's `grafana-prod` from then on: its own
+   `~/.mcp/grafana-prod/env`, its tools `grafana-prod__…`, "(grafana-prod)"
+   first in its description, and a row of its own in the list (untick it
+   to drop it; its env stays). A profile lists it as `"grafana:prod"` in
+   `[mcp] servers`.
 3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later) and your age key for sops (generate or paste).

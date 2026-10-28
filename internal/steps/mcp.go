@@ -565,17 +565,106 @@ func agentHeaders(ctx context.Context, e *Env) (map[string]string, error) {
 
 type mcpServersStep struct{}
 
-func servers(e *Env) []string {
+// mcpServer is a picked server: its spec, and its name (~/.mcp/<name>,
+// the gateway's server name). Another instance of a spec (grafana:prod)
+// has a name of its own (grafana-prod) and a spec link to the catalog's.
+type mcpServer struct{ spec, name string }
+
+func (s mcpServer) instance() bool { return s.name != s.spec }
+
+// pickedServers are the answers' servers (an entry that isn't one is left
+// out: profiles and answers are checked when read).
+func pickedServers(e *Env) []mcpServer {
 	if e.Answers == nil {
 		return nil
 	}
-	return e.Answers.MCPServers
+	var out []mcpServer
+	for _, entry := range e.Answers.MCPServers {
+		if spec, name, err := mcp.Instance(entry); err == nil {
+			out = append(out, mcpServer{spec, name})
+		}
+	}
+	return out
+}
+
+// servers are the picked servers' names, as mcp-sync takes them.
+func servers(e *Env) []string {
+	var out []string
+	for _, s := range pickedServers(e) {
+		out = append(out, s.name)
+	}
+	return out
+}
+
+// instancesFile lists the instances' directories yardo linked a spec in,
+// so a dropped one's link goes (and mcp-sync deregisters it) while links
+// made by hand stay.
+const instancesFile = ".yardo-instances"
+
+// specLink is an instance's spec: a link to the catalog's.
+func specLink(s mcpServer) (rel, target string) {
+	return s.name + "/spec", filepath.Join(mcpCatalog, s.spec+".spec")
+}
+
+// mcpReadLink reads the link ~/.mcp/rel as the service user ("" when it
+// isn't one).
+func mcpReadLink(ctx context.Context, e *Env, rel string) string {
+	p := filepath.Join(e.Home, ".mcp", rel)
+	if !mcpAsService(e) {
+		t, _ := os.Readlink(e.Path(p))
+		return t
+	}
+	out, _ := e.Exec.Run(ctx, Cmd{Name: "sh", Args: []string{"-c", `[ -L "$1" ] && readlink -- "$1" || true`, "_", p}, As: MCPUser(e)})
+	return strings.TrimSpace(string(out))
+}
+
+// mcpLink makes ~/.mcp/rel a link to target (or removes it, target ""),
+// as the service user.
+func mcpLink(ctx context.Context, e *Env, rel, target string) error {
+	p := filepath.Join(e.Home, ".mcp", rel)
+	if !mcpAsService(e) {
+		if err := os.Remove(e.Path(p)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if target == "" {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(e.Path(p)), 0o700); err != nil {
+			return err
+		}
+		return os.Symlink(target, e.Path(p))
+	}
+	script := `rm -f -- "$1"`
+	if target != "" {
+		script = `umask 077 && mkdir -p -- "$(dirname -- "$1")" && ln -sfn -- "$2" "$1"`
+	}
+	_, err := e.run(ctx, Cmd{Name: "sh", Args: []string{"-c", script, "_", p, target}, As: MCPUser(e)})
+	return err
+}
+
+// linked are the instances yardo linked a spec for (instancesFile).
+func linked(ctx context.Context, e *Env) []string {
+	b, _ := mcpRead(ctx, e, instancesFile)
+	return strings.Fields(string(b))
+}
+
+func instanceNames(e *Env) []string {
+	var out []string
+	for _, s := range pickedServers(e) {
+		if s.instance() {
+			out = append(out, s.name)
+		}
+	}
+	return out
 }
 
 func (mcpServersStep) Plan(e *Env) []Action {
 	var out []Action
-	for _, n := range servers(e) {
-		out = append(out, Action{"file", "~/.mcp/" + n + "/env (0600)"})
+	for _, s := range pickedServers(e) {
+		out = append(out, Action{"file", "~/.mcp/" + s.name + "/env (0600)"})
+		if s.instance() {
+			out = append(out, Action{"file", "~/.mcp/" + s.name + "/spec → " + s.spec + ".spec"})
+		}
 	}
 	return out
 }
@@ -595,6 +684,14 @@ func typed(e *Env, n string) map[string]string {
 }
 
 func (mcpServersStep) Check(ctx context.Context, e *Env) (bool, error) {
+	for _, s := range pickedServers(e) {
+		if rel, target := specLink(s); s.instance() && mcpReadLink(ctx, e, rel) != target {
+			return false, nil
+		}
+	}
+	if !slices.Equal(linked(ctx, e), instanceNames(e)) {
+		return false, nil
+	}
 	for _, n := range servers(e) {
 		b, err := mcpRead(ctx, e, n+"/env")
 		if err != nil || b == nil {
@@ -618,8 +715,9 @@ func (mcpServersStep) Check(ctx context.Context, e *Env) (bool, error) {
 // isn't registered until they're filled in).
 func (mcpServersStep) Missing(ctx context.Context, e *Env) []string {
 	var out []string
-	for _, n := range servers(e) {
-		s, err := mcp.Load(ctx, mcp.Dirs(e.Share), n)
+	for _, srv := range pickedServers(e) {
+		n := srv.name
+		s, err := mcp.Load(ctx, mcp.Dirs(e.Share), srv.spec)
 		if err != nil {
 			continue
 		}
@@ -634,13 +732,29 @@ func (mcpServersStep) Missing(ctx context.Context, e *Env) []string {
 }
 
 func (mcpServersStep) Apply(ctx context.Context, e *Env) error {
-	for _, n := range servers(e) {
+	// Instances dropped since: their spec link goes (mcp-sync then
+	// deregisters them); their env, with what was typed, stays.
+	want := instanceNames(e)
+	for _, n := range linked(ctx, e) {
+		if !slices.Contains(want, n) && mcp.ValidName(n) {
+			if err := mcpLink(ctx, e, n+"/spec", ""); err != nil {
+				return err
+			}
+		}
+	}
+	for _, srv := range pickedServers(e) {
+		n := srv.name
+		if rel, target := specLink(srv); srv.instance() && mcpReadLink(ctx, e, rel) != target {
+			if err := mcpLink(ctx, e, rel, target); err != nil {
+				return err
+			}
+		}
 		b, err := mcpRead(ctx, e, n+"/env")
 		if err != nil {
 			return err
 		}
 		if b == nil {
-			spec, err := mcp.Load(ctx, mcp.Dirs(e.Share), n)
+			spec, err := mcp.Load(ctx, mcp.Dirs(e.Share), srv.spec)
 			if err != nil {
 				return err
 			}
@@ -661,6 +775,9 @@ func (mcpServersStep) Apply(ctx context.Context, e *Env) error {
 		if err := mcpWrite(ctx, e, n+"/env", b); err != nil {
 			return err
 		}
+	}
+	if !slices.Equal(linked(ctx, e), want) {
+		return mcpWrite(ctx, e, instancesFile, []byte(strings.Join(want, "\n")+"\n"))
 	}
 	return nil
 }

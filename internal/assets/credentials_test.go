@@ -193,16 +193,19 @@ func TestMissingSecrets(t *testing.T) {
 	putFile(t, filepath.Join(home, ".claude/.credentials.json"), []byte("{}"), 0o600)
 	mkdirAll(t, filepath.Join(home, ".mcp/linear"), 0o700)
 	putFile(t, filepath.Join(home, ".mcp/linear/env"), []byte("LINEAR_API_KEY=\n"), 0o600)
+	mkdirAll(t, filepath.Join(home, ".mcp/linear-work"), 0o700)
+	putFile(t, filepath.Join(home, ".mcp/linear-work/env"), []byte("LINEAR_API_KEY=\n"), 0o600)
 	putFile(t, filepath.Join(cat, "linear.spec"), []byte("REQUIRED=\"LINEAR_API_KEY\"\nskeleton() { :; }\n"), 0o644)
 	body := `spec_file() { [ -f "` + cat + `/$1.spec" ] && echo "` + cat + `/$1.spec"; }
-A_MCP_SERVERS=linear A_NPM_SCOPE=
+A_MCP_SERVERS="linear linear:work" A_NPM_SCOPE=
 HAVE="claude codex gemini"
 missing_secrets "agentkeys npmrc mcpjungle github"`
-	out := credShell(t, home, body, "spec_field", "cred_logged_in", "npmrc_token", "missing_secrets")
+	out := credShell(t, home, body, "spec_field", "cred_logged_in", "npmrc_token", "mcp_spec", "mcp_name", "missing_secrets")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	want := []string{
 		home + "/.config/yardo/agent.env  OPENAI_API_KEY — https://platform.openai.com/api-keys",
 		home + "/.mcp/linear/env  LINEAR_API_KEY — see the comments in the file; then run: mcp-sync",
+		home + "/.mcp/linear-work/env  LINEAR_API_KEY — see the comments in the file; then run: mcp-sync",
 		"gh  GitHub login — run: gh auth login",
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {

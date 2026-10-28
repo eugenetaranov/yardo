@@ -102,3 +102,41 @@ func TestMCPSyncNamesAndLinks(t *testing.T) {
 		t.Errorf("out:\n%s", out)
 	}
 }
+
+// An instance (grafana-prod, a link to grafana.spec) registers under its
+// own name, its name leading the description.
+func TestMCPSyncInstanceDescription(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	for _, d := range []string{mcp + "/grafana-prod", cat} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(cat, "grafana.spec"), []byte("DESCRIPTION=\"Grafana: dashboards\"\nKIND=docker\nIMAGE=img\nREQUIRED=GRAFANA_URL\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(cat, "grafana.spec"), filepath.Join(mcp, "grafana-prod", "spec")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mcp, "grafana-prod", "env"), []byte("GRAFANA_URL=https://g\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reg := filepath.Join(root, "registered")
+	bin := fakeBin(t, map[string]string{
+		"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`,
+		"docker":    "exit 0",
+	})
+	jq, _ := exec.LookPath("jq")
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	if out, err := mcpSync(t, env); err != nil || !strings.Contains(out, "grafana-prod: registered") {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	b, _ := os.ReadFile(reg)
+	if !strings.Contains(string(b), `"name": "grafana-prod"`) || !strings.Contains(string(b), `"description": "(grafana-prod) Grafana: dashboards"`) {
+		t.Errorf("registered:\n%s", b)
+	}
+}
