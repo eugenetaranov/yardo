@@ -133,6 +133,48 @@ source = "tailscale up --auth-key"
 type = "go:tailscale_up"
 
 [[item]]
+id = "netbird-install"
+tab = "system"
+label = "NetBird"
+source = "apt netbird (pkgs.netbird.io repo) · log in under Configure → Logins & keys"
+
+[[item.step]]
+type = "apt_repo"
+name = "netbird"
+key_url = "https://pkgs.netbird.io/debian/public.key"
+key_fingerprint = "EFE37DF047DF7CCDF1FC54FA83F79AD029778355"
+source = """
+Types: deb
+URIs: https://pkgs.netbird.io/debian
+Suites: stable
+Components: main
+Architectures: {{arch}}
+Signed-By: {{keyring}}
+"""
+
+[[item.step]]
+type = "apt"
+packages = ["netbird"]
+
+# The daemon, in case the package didn't install the service.
+[[item.step]]
+type = "run"
+cmd = "netbird service install 2>/dev/null; netbird service start"
+check = "systemctl is-active --quiet netbird"
+
+# With the setup key typed this run; without one, `sudo netbird up` later.
+[[item]]
+id = "netbird"
+tab = "logins"
+scope = "system"
+label = "NetBird login (setup key, NetBird cloud or your own; or 'sudo netbird up' later)"
+needs = ["netbird-install"]
+source = "netbird up --setup-key-file [--management-url]"
+
+[[item.step]]
+type = "go:netbird_up"
+
+[[item]]
 id = "netfs"
 tab = "system"
 label = "NFS + SMB clients"

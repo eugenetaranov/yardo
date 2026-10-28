@@ -18,6 +18,7 @@ func init() {
 	RegisterGo("docker_daemon", func(catalog.Step) Step { return dockerDaemonStep{} })
 	RegisterGo("timezone", func(catalog.Step) Step { return timezoneStep{} })
 	RegisterGo("tailscale_up", func(catalog.Step) Step { return tailscaleUpStep{} })
+	RegisterGo("netbird_up", func(catalog.Step) Step { return netbirdUpStep{} })
 	RegisterGo("sshharden", func(catalog.Step) Step { return sshHardenStep{} })
 	RegisterGo("fail2ban", func(catalog.Step) Step { return fail2banStep{} })
 }
@@ -135,6 +136,55 @@ func (tailscaleUpStep) Apply(ctx context.Context, e *Env) error {
 		return err
 	}
 	return e.record("tailscale", "")
+}
+
+// --- go:netbird_up -----------------------------------------------------------
+
+// netbirdUpStep joins NetBird with the setup key typed this run, on NetBird's
+// cloud or the self-hosted management URL typed (none: the user runs `sudo
+// netbird up` later).
+type netbirdUpStep struct{}
+
+func setupKey(e *Env) (key, url string) {
+	if e.Secrets == nil {
+		return "", ""
+	}
+	return e.Secrets.NBSetupKey, e.Secrets.NBManagementURL
+}
+
+func (netbirdUpStep) Plan(e *Env) []Action {
+	if k, _ := setupKey(e); k == "" {
+		return nil
+	}
+	return []Action{{"run", "netbird up --setup-key-file … (the key typed)"}}
+}
+
+func (netbirdUpStep) Check(_ context.Context, e *Env) (bool, error) {
+	k, _ := setupKey(e)
+	return k == "", nil
+}
+
+func (netbirdUpStep) Apply(ctx context.Context, e *Env) error {
+	key, url := setupKey(e)
+	if key == "" {
+		return nil
+	}
+	// From a file: on the command line, ps would show the key.
+	f, err := os.CreateTemp("", "netbird-key.")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	_, werr := f.WriteString(key)
+	if err := errors.Join(werr, f.Close()); err != nil {
+		return err
+	}
+	args := []string{"up", "--setup-key-file", f.Name()}
+	if url != "" {
+		args = append(args, "--management-url", url)
+	}
+	_, err = e.run(ctx, Cmd{Name: "netbird", Args: args})
+	return err
 }
 
 // --- go:sshharden ------------------------------------------------------------

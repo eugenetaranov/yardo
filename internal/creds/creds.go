@@ -17,7 +17,10 @@ type Secrets struct {
 	RegUser   map[string]string // registry → username
 	RegPass   map[string]string // registry → password or token
 	TSAuthKey string
-	GHToken   string
+	// NetBird: a setup key, and the management URL of a self-hosted
+	// NetBird (empty: NetBird's cloud).
+	NBSetupKey, NBManagementURL string
+	GHToken                     string
 	// GHPassphrase is "yes" to set a passphrase on a new key (ssh-keygen
 	// asks for it itself).
 	GHPassphrase      string

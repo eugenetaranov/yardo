@@ -371,7 +371,24 @@ func (k *asker) askSecrets(c *choices, has func(string) bool) error {
 			return err
 		}
 	}
+	if has("netbird") && !netbirdConnected() {
+		if c.secrets.NBSetupKey, err = ui.Password("NetBird setup key (empty: run 'sudo netbird up' later)", ""); err != nil {
+			return err
+		}
+		if c.secrets.NBSetupKey != "" {
+			if c.secrets.NBManagementURL, err = ui.Input("NetBird management URL", "Empty for NetBird's cloud; your own server's URL (https://netbird.example.com) if you self-host.", ""); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+// netbirdConnected reports whether NetBird is logged in to its management
+// server already.
+func netbirdConnected() bool {
+	out, err := exec.Command("netbird", "status").Output()
+	return err == nil && strings.Contains(string(out), "Management: Connected")
 }
 
 func (k *asker) gitConfig(key string) string {

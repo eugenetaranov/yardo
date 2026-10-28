@@ -159,8 +159,8 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    own lines in the local files instead (see [Your own
    settings](#your-own-settings)).
 8. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
-   iperf3, nmap, strace, htop, btop, ncdu, …), Tailscale (log in under
-   Configure), NFS/SMB clients, the OpenVPN client, and an OpenVPN server:
+   iperf3, nmap, strace, htop, btop, ncdu, …), Tailscale and NetBird (log
+   in under Configure), NFS/SMB clients, the OpenVPN client, and an OpenVPN server:
    its own CA (easy-rsa), UDP 1194, clients on 10.8.0.0/24 with all their
    traffic sent through the machine (NAT, through Docker's DOCKER-USER
    chain when Docker is there), and a profile for you in
@@ -202,7 +202,8 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    on this machine only, on the VM's Tailscale address only (when Tailscale
    is up), or on every interface (no auth: trusted networks only).
 3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
-   up` later) and your age key for sops (generate or paste).
+   up` later), the NetBird login (a setup key, on NetBird's cloud or your
+   own management URL, or `sudo netbird up` later) and your age key for sops (generate or paste).
 
 In a profile, a split item's old id means both halves: `tailscale`,
 `sops` and `mcpjungle` are the configure items, and each pulls in its
