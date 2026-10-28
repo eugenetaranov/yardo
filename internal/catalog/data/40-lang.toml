@@ -29,24 +29,6 @@ type = "mise"
 tools = ["node@lts", "pnpm@latest", "npm:typescript@latest"]
 
 [[item]]
-id = "bun"
-tab = "lang"
-label = "Bun"
-
-[[item.step]]
-type = "mise"
-tools = ["bun@latest"]
-
-[[item]]
-id = "deno"
-tab = "lang"
-label = "Deno"
-
-[[item.step]]
-type = "mise"
-tools = ["deno@latest"]
-
-[[item]]
 id = "java"
 tab = "lang"
 label = "Java 25 (Temurin) + Maven + Gradle + Kotlin"
@@ -71,49 +53,3 @@ cmd = "mise exec rust -- rustup component add rust-analyzer"
 as_user = true
 check = "mise exec rust -- rustup component list --installed | grep -q '^rust-analyzer'"
 
-[[item]]
-id = "ruby"
-tab = "lang"
-label = "Ruby (builds from source ~5 min)"
-needs = ["rubydeps"]
-
-[[item.step]]
-type = "mise"
-tools = ["ruby@latest"]
-
-[[item]]
-id = "php"
-tab = "lang"
-label = "PHP + Composer"
-
-[[item.step]]
-type = "apt"
-packages = ["php-cli", "php-mbstring", "php-xml", "php-curl", "php-zip", "php-sqlite3", "composer"]
-
-[[item]]
-id = "cpp"
-tab = "lang"
-label = "C/C++ (gcc clang cmake gdb)"
-needs = ["essentials"]
-
-[[item.step]]
-type = "apt"
-packages = ["clang", "clangd", "cmake", "ninja-build", "gdb", "pkg-config"]
-
-[[item]]
-id = "zig"
-tab = "lang"
-label = "Zig"
-
-[[item.step]]
-type = "mise"
-tools = ["zig@latest"]
-
-[[item]]
-id = "dotnet"
-tab = "lang"
-label = ".NET SDK"
-
-[[item.step]]
-type = "mise"
-tools = ["dotnet@latest"]

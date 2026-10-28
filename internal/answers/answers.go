@@ -192,9 +192,11 @@ var PickMap = map[string][]string{
 	"corpca":      {}, // no longer an item
 	"registries":  {}, // no longer an item
 	"iacscan":     {}, // checkov comes with Terraform; trivy is gone
-	"npmrc":       {}, // no longer an item
-	"monitoring":  {}, // no longer an item
-	"sudopw":      {}, // no longer an item
+	// no longer items: the less common languages, profiling
+	"bun": {}, "deno": {}, "ruby": {}, "php": {}, "cpp": {}, "zig": {}, "dotnet": {}, "profiling": {},
+	"npmrc":      {}, // no longer an item
+	"monitoring": {}, // no longer an item
+	"sudopw":     {}, // no longer an item
 	// always applied now
 	"autoupdate-tools": {},
 }
@@ -211,6 +213,14 @@ var pickNotes = map[string]string{
 	"monitoring": "node_exporter + glances is no longer an item: what it installed stays (remove with 'sudo apt remove prometheus-node-exporter').",
 	"editors":    "Vim is no longer an item: Neovim, set up the same way, replaces it. Vim and ~/.vimrc stay as they are.",
 	"registries": "Container registry logins are no longer an item: logins already made stay (sudo yardo forget still logs out of them); log in with 'docker login <registry>'.",
+	"bun":        "Bun is no longer an item: the one installed stays, and the weekly tool updates still update it.",
+	"deno":       "Deno is no longer an item: the one installed stays, and the weekly tool updates still update it.",
+	"ruby":       "Ruby is no longer an item: the one installed stays, and the weekly tool updates still update it.",
+	"php":        "PHP is no longer an item: what it installed stays (remove with 'sudo apt remove php-cli composer').",
+	"cpp":        "C/C++ is no longer an item: gcc and make still come with the essentials; clang, cmake and gdb stay installed.",
+	"zig":        "Zig is no longer an item: the one installed stays, and the weekly tool updates still update it.",
+	"dotnet":     ".NET is no longer an item: the one installed stays, and the weekly tool updates still update it.",
+	"profiling":  "Profiling (perf, valgrind, bpftrace) is no longer an item: what it installed stays.",
 	"iacscan":    "The IaC scanners item is gone: checkov comes with the Terraform item, and trivy is no longer installed (the ones installed stay).",
 	"npmrc":      "The private npm registry is no longer an item: yardo's block in ~/.npmrc stays (sudo yardo forget still removes it); edit ~/.npmrc yourself.",
 }

@@ -302,7 +302,7 @@ func TestDefaults(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	want := "agentcfg claude debug devcli docker github gitid mcpjungle mcpjungle-install neovim openspec tmux zsh"
+	want := "agentcfg claude dbclients debug devcli docker github gitid mcpjungle mcpjungle-install neovim openspec tmux zellij zsh"
 	if strings.Join(got, " ") != want {
 		t.Errorf("defaults: %s\nwant %s", strings.Join(got, " "), want)
 	}

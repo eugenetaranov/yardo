@@ -20,6 +20,7 @@ tools = ["shellcheck@latest", "shfmt@latest", "actionlint@latest", "gitleaks@lat
 id = "dbclients"
 tab = "dev"
 label = "DB clients (psql, pgcli, usql, mariadb, sqlite3, redis-cli)"
+default = true
 source = "apt postgresql-client mariadb-client sqlite3 redis-tools · mise pgcli usql"
 
 [[item.step]]
@@ -29,16 +30,6 @@ packages = ["postgresql-client", "mariadb-client", "sqlite3", "redis-tools"]
 [[item.step]]
 type = "mise"
 tools = ["uv@latest", "pipx:pgcli", "usql@latest"]
-
-[[item]]
-id = "profiling"
-tab = "dev"
-label = "Profiling (perf, valgrind, bpftrace)"
-source = "apt linux-tools-$(uname -r) valgrind bpftrace bpfcc-tools"
-
-[[item.step]]
-type = "apt"
-packages = ["linux-tools-common", "linux-tools-{{kernel}}", "valgrind", "bpftrace", "bpfcc-tools"]
 
 [[item]]
 id = "autoupdate-tools"

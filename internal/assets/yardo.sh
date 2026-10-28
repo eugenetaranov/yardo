@@ -94,21 +94,13 @@ CATALOG_ROWS=(
   "lint|dev|Linters + hooks (shellcheck, shfmt, actionlint, gitleaks, pre-commit)|mise|shellcheck@latest shfmt@latest actionlint@latest gitleaks@latest uv@latest pipx:pre-commit||"
   "dbclients|dev|DB clients (psql, mariadb, sqlite3, redis-cli)|apt|postgresql-client mariadb-client sqlite3 redis-tools||"
   "pgcli|dev|pgcli + usql (friendlier DB shells)|mise|uv@latest pipx:pgcli usql@latest||"
-  "profiling|dev|Profiling (perf, valgrind, bpftrace)|fn|||apt linux-tools-\$(uname -r) valgrind bpftrace bpfcc-tools"
   "act|dev|act (run GitHub Actions locally)|mise|act@latest|docker|"
 
   "go|lang|Go + gopls, delve, govulncheck, golangci-lint|mise|go@latest golangci-lint@latest go:golang.org/x/tools/gopls@latest go:github.com/go-delve/delve/cmd/dlv@latest go:golang.org/x/vuln/cmd/govulncheck@latest||"
   "python|lang|Python 3.13 + uv + ruff|mise|python@3.13 uv@latest ruff@latest||"
   "node|lang|Node.js LTS + pnpm + TypeScript|mise|node@lts pnpm@latest npm:typescript@latest||"
-  "bun|lang|Bun|mise|bun@latest||"
-  "deno|lang|Deno|mise|deno@latest||"
   "java|lang|Java 25 (Temurin) + Maven + Gradle + Kotlin|mise|java@temurin-25 maven@latest gradle@latest kotlin@latest||"
   "rust|lang|Rust (rustup) + rust-analyzer + cargo-binstall|mise|rust@stable cargo-binstall@latest||"
-  "ruby|lang|Ruby (builds from source ~5 min)|mise|ruby@latest|rubydeps|"
-  "php|lang|PHP + Composer|apt|php-cli php-mbstring php-xml php-curl php-zip php-sqlite3 composer||"
-  "cpp|lang|C/C++ (gcc clang cmake gdb)|apt|clang clangd cmake ninja-build gdb pkg-config|essentials|"
-  "zig|lang|Zig|mise|zig@latest||"
-  "dotnet|lang|.NET SDK|mise|dotnet@latest||"
 
   "aws|cloud|AWS CLI|mise|aws-cli@latest||"
   "gcloud|cloud|Google Cloud CLI (large)|mise|gcloud@latest||"
@@ -160,7 +152,6 @@ CATALOG_ROWS=(
 )
 # Hidden helpers pulled in by "needs".
 HIDDEN_ROWS=(
-  "rubydeps|-|Ruby build dependencies|apt|libssl-dev libyaml-dev zlib1g-dev libffi-dev libreadline-dev libgmp-dev||"
   "mise|-|mise|fn|||apt mise (mise.jdx.dev repo)"
   "gitkey|-|SSH for the git hosts|fn|||~/.ssh/yardo_git_key or ~/.ssh/id_ed25519 · ~/.ssh/config · host keys"
 )

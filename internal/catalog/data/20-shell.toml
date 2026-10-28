@@ -94,6 +94,7 @@ keep_orig = true
 id = "zellij"
 tab = "shell"
 label = "zellij (tmux alternative)"
+default = true
 
 [[item.step]]
 type = "mise"

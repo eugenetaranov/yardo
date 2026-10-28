@@ -51,7 +51,8 @@ account is created) and opens the picker, on two screens: first **what to
 install**, then **how to configure it**. On each, categories are tabs across
 the top (←/→ or 1–9 to switch) above a checklist; space ticks an item.
 The first run starts with the usual stack ticked: zsh, Neovim, tmux,
-the linters, the dev CLIs, the admin and debug tools, Docker and
+zellij, the linters, the dev CLIs, the database clients, the admin and
+debug tools, Docker and
 its tools, Claude Code with OpenSpec, the MCPJungle gateway, git (name and email, defaults, lazygit,
 GitHub) and the two agent items. Untick what you don't want, or ctrl-x to
 untick everything. Later runs start with what you picked before: tick
@@ -104,14 +105,15 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 
 ### [1/2] Install
 
-1. **Dev → Languages** (mise, except PHP and C/C++ from apt): Go + gopls, delve,
-   govulncheck, golangci-lint; Python 3.13 + uv + ruff; Node + pnpm +
-   TypeScript; Bun; Deno; Java 25 + Maven + Gradle + Kotlin; Rust +
-   rust-analyzer + cargo-binstall; Ruby; PHP + Composer; C/C++; Zig; .NET.
+1. **Dev → Languages** (mise): Go + gopls, delve, govulncheck,
+   golangci-lint; Python 3.13 + uv + ruff; Node + pnpm + TypeScript;
+   Java 25 + Maven + Gradle + Kotlin; Rust + rust-analyzer +
+   cargo-binstall. Any other language is a search and ctrl-a away (an
+   extra mise tool: `bun`, `deno`, `zig`, `dotnet`, …).
 2. **Dev → Dev tools:** dev CLIs and linters as one item (just, Task,
    watchexec, hyperfine, yq, xh, hurl; shellcheck, shfmt, actionlint,
    gitleaks, pre-commit), database clients (psql, pgcli, usql, mariadb,
-   sqlite3, redis-cli), perf/valgrind/bpftrace.
+   sqlite3, redis-cli).
 3. **DevOps → Containers & Kubernetes:** Docker (with log rotation and
    10.200.0.0/16 networks) and its tools (lazydocker, dive, hadolint, crane,
    cosign), Podman + skopeo + buildah; Kubernetes as one item (kubectl,

@@ -2,15 +2,6 @@
 # `legacy` steps run the bundled bash installer until the item is ported.
 
 [[item]]
-id = "rubydeps"
-tab = "-"
-label = "Ruby build dependencies"
-
-[[item.step]]
-type = "apt"
-packages = ["libssl-dev", "libyaml-dev", "zlib1g-dev", "libffi-dev", "libreadline-dev", "libgmp-dev"]
-
-[[item]]
 id = "mise"
 tab = "-"
 label = "mise"
