@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
@@ -106,9 +107,15 @@ func (k *asker) mcpSyncAs(ctx context.Context, args ...string) error {
 	if port == 0 && k.port != nil {
 		port = k.port()
 	}
+	// This version's mcp-sync (unpacked as root at start): the installed
+	// one is replaced only when the run applies, after these questions.
+	sync := filepath.Join(k.share, "mcp-sync")
+	if _, err := os.Stat(sync); k.share == "" || err != nil {
+		sync = "/usr/local/bin/mcp-sync"
+	}
 	c := exec.CommandContext(ctx, "runuser", append([]string{"-u", mcpOwner(k.a.User), "--", "env",
 		"MCP_DIR=" + filepath.Join(homeOf(k.a.User), ".mcp"), fmt.Sprintf("MCPJUNGLE_REGISTRY=http://127.0.0.1:%d", port),
-		"/usr/local/bin/mcp-sync"}, args...)...)
+		sync}, args...)...)
 	out, err := c.CombinedOutput()
 	if s := strings.TrimSpace(string(out)); s != "" {
 		fmt.Fprintln(k.out, s)
