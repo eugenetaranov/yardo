@@ -9,7 +9,11 @@
 #
 # When yardo runs the gateway as a service user (mcp-<you>, which
 # owns ~/.mcp so agents running as you can't read the tokens), this re-runs
-# itself as that user through sudo.
+# itself as that user through sudo. Nothing of the caller's environment
+# crosses over: the home comes from the passwd entry, the catalog and the
+# gateway's address are fixed, and the editor is a system one. (Else
+# anyone running as you, a coding agent included, could have the service
+# user source a spec of theirs, or send the tokens to a gateway of theirs.)
 #
 # Each server gets ~/.mcp/<name>/ (mode 700) holding its credentials in `env`
 # (KEY=value lines, no quotes). Docker servers read that file at start; it is
@@ -25,11 +29,35 @@ me=$(id -un)
 port=$(sed -n 's/^MCP_PORT=//p' "/etc/mcpjungle/$me.env" 2>/dev/null || true)
 host=$(sed -n 's/^MCP_HOST=//p' "/etc/mcpjungle/$me.env" 2>/dev/null || true)
 case "$host" in ''|0.0.0.0) host=127.0.0.1 ;; esac
+# system_editor — the editor to edit as the service user with: yours when
+# it's one of the usual ones installed for everyone, else vim, else vi.
+system_editor() {
+  for e in "${VISUAL:-}" "${EDITOR:-}" vim vi; do
+    case "${e##*/}" in
+      vim|vi|nvim|nano|emacs|micro|hx|mcedit) ;;
+      *) continue ;;
+    esac
+    for d in /usr/bin /bin /usr/local/bin; do
+      [ -x "$d/${e##*/}" ] && { echo "$d/${e##*/}"; return; }
+    done
+  done
+  echo vi
+}
+
 if [ -z "${MCP_DIR:-}" ] && id "mcp-$me" >/dev/null 2>&1; then
-  exec sudo -u "mcp-$me" env MCP_DIR="$HOME/.mcp" \
-    MCP_CATALOG="${MCP_CATALOG:-/usr/local/share/mcp-catalog}" \
-    MCPJUNGLE_REGISTRY="${MCPJUNGLE_REGISTRY:-http://$host:${port:-8080}}" \
-    EDITOR="${VISUAL:-${EDITOR:-vi}}" "$0" "$@"
+  # The gateway's own record of its directory (root's), else the home's.
+  dir=$(sed -n 's/^MCP_DIR=//p' "/etc/mcpjungle/$me.env" 2>/dev/null || true)
+  if [ -z "$dir" ]; then
+    home=$(getent passwd "$me" | cut -d: -f6)
+    [ -n "$home" ] || { echo "mcp-sync: no home for $me" >&2; exit 1; }
+    dir=$home/.mcp
+  fi
+  self=/usr/local/bin/mcp-sync
+  [ -x "$self" ] || self=$0
+  exec sudo -u "mcp-$me" env MCP_DIR="$dir" \
+    MCP_CATALOG=/usr/local/share/mcp-catalog \
+    MCPJUNGLE_REGISTRY="http://$host:${port:-8080}" \
+    EDITOR="$(system_editor)" "$self" "$@"
 fi
 
 MCP_DIR="${MCP_DIR:-$HOME/.mcp}"
@@ -43,10 +71,17 @@ umask 077
 mkdir -p "$MCP_DIR"
 chmod 700 "$MCP_DIR"
 
-if [ "${1:-}" = edit ]; then
-  case "${2:-}" in
-    ''|.*|*/*) echo "usage: mcp-sync edit <server>" >&2; exit 2 ;;
+# valid_name NAME — a server name: a directory under $MCP_DIR, a gateway
+# server name and its tools' prefix (<name>__<tool>).
+valid_name() {
+  case "$1" in
+    ''|.*|-*|*[!A-Za-z0-9._-]*|*..*|*__*) return 1 ;;
   esac
+  [ "${#1}" -le 64 ]
+}
+
+if [ "${1:-}" = edit ]; then
+  valid_name "${2:-}" || { echo "usage: mcp-sync edit <server>" >&2; exit 2; }
   mkdir -p "$MCP_DIR/$2"
   chmod 700 "$MCP_DIR/$2"
   [ -f "$MCP_DIR/$2/env" ] || : > "$MCP_DIR/$2/env"
@@ -70,22 +105,38 @@ if [ "${1:-}" = client ]; then
 fi
 
 if [ $# -gt 0 ]; then
+  for n in "$@"; do
+    valid_name "$n" || { echo "mcp-sync: not a server name: $n" >&2; exit 2; }
+  done
   printf '%s\n' "$@" > "$MCP_DIR/servers"
 fi
 
 # envget KEY FILE — value of the last KEY=... line (comments ignored).
 envget() { sed -n "s/^$1=//p" "$2" 2>/dev/null | tail -n 1; }
 
+# spec_for NAME — the spec to source for NAME: its own ~/.mcp/<name>/spec
+# (a file only this user can write, or a link into the catalog: a link
+# leading anywhere else is refused), else the catalog's.
 spec_for() {
-  if [ -f "$MCP_DIR/$1/spec" ]; then echo "$MCP_DIR/$1/spec"
+  s="$MCP_DIR/$1/spec"
+  if [ -L "$s" ]; then
+    cat=$(cd "$CATALOG" 2>/dev/null && pwd -P) || return 0
+    t=$(readlink -f "$s" 2>/dev/null) || return 0
+    case "$t" in
+      "$cat"/*.spec) [ -f "$t" ] && echo "$t" ;;
+      *) echo "$1: its spec links outside $CATALOG — skipped" >&2 ;;
+    esac
+  elif [ -f "$s" ]; then echo "$s"
   elif [ -f "$CATALOG/$1.spec" ]; then echo "$CATALOG/$1.spec"
   fi
 }
 
 enabled() {
   { [ -f "$MCP_DIR/servers" ] && grep -v '^[[:space:]]*\(#\|$\)' "$MCP_DIR/servers"
-    for s in "$MCP_DIR"/*/spec; do [ -f "$s" ] && basename "$(dirname "$s")"; done
-  } | sort -u
+    for s in "$MCP_DIR"/*/spec; do { [ -f "$s" ] || [ -L "$s" ]; } && basename "$(dirname "$s")"; done
+  } | sort -u | while read -r n; do
+    if valid_name "$n"; then echo "$n"; else echo "mcp-sync: not a server name, skipped: $n" >&2; fi
+  done
 }
 
 # render NAME — print the MCPJungle JSON config for NAME (spec vars in scope).
