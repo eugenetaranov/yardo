@@ -164,9 +164,10 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    its own CA (easy-rsa), UDP 1194, clients on 10.8.0.0/24 with all their
    traffic sent through the machine (NAT, through Docker's DOCKER-USER
    chain when Docker is there), and a profile for you in
-   `~/openvpn/client.ovpn` (change its `remote` if clients reach the
-   machine by another address, and open UDP 1194 in the cloud firewall).
-   `sudo yardo-vpn client <name> > <name>.ovpn` makes more.
+   `/srv/openvpn/<you>.ovpn`, root only (change its `remote` if clients
+   reach the machine by another address, and open UDP 1194 in the cloud
+   firewall). `sudo yardo-vpn client <name>` makes more. The client is for
+   the other way round: connecting this machine to a VPN elsewhere.
 
 ### [2/2] Configure
 
