@@ -1425,8 +1425,16 @@ github_login() {
     note "GitHub: not logged in — run 'gh auth login' (or 'sudo yardo' to be asked)."
     return 0
   else
+    # --skip-ssh-key is gh 2.47's (yardo adds the key itself); an older gh
+    # (Ubuntu's own) asks instead.
+    local skip=
+    if as_user gh auth login --help 2>/dev/null | grep -q -- --skip-ssh-key; then
+      skip=--skip-ssh-key
+    else
+      faint "When gh asks about an SSH key, choose Skip: yardo adds it."
+    fi
     faint "Open the URL below on any machine and enter the code."
-    as_user sh -c "cd && gh auth login -h github.com -p ssh --skip-ssh-key -w -s $scopes" || {
+    as_user sh -c "cd && gh auth login -h github.com -p ssh $skip -w -s $scopes" || {
       warn "GitHub login skipped; run 'gh auth login' later."; return 0; }
     record gh_login
   fi
