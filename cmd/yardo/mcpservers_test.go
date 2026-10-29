@@ -67,6 +67,10 @@ func TestMCPRows(t *testing.T) {
 	if mine := got[7]; mine.Spec != "" || mine.Yardo {
 		t.Errorf("mine = %+v", mine)
 	}
+	specs["aws-api"] = &mcp.Spec{}
+	if r := mcpRows([]string{"aws-api"}, []foundServer{{"aws-api", true, false, false}}, nil, specs, true); r[0].State != "retired" || r[0].Instead != "aws" {
+		t.Errorf("retired: %+v", r[0])
+	}
 	if r := mcpRows([]string{"github"}, []foundServer{{"github", false, false, false}}, nil, specs, false); r[0].State != "unchecked" {
 		t.Errorf("unchecked: %+v", r[0])
 	}

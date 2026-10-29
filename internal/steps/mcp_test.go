@@ -77,6 +77,27 @@ func TestMCPFiles(t *testing.T) {
 	if !check(t, e, st) {
 		t.Error("Check after Apply = false")
 	}
+	// A retired spec installed before goes; a team's of that name stays.
+	if err := os.WriteFile(e.Path(mcpCatalog+"/aws-api.spec"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if check(t, e, st) {
+		t.Error("Check with aws-api.spec installed = true")
+	}
+	apply(t, e, st)
+	if _, err := os.Stat(e.Path(mcpCatalog + "/aws-api.spec")); err == nil {
+		t.Error("aws-api.spec is still installed")
+	}
+	if err := os.WriteFile(e.Path(mcpCatalog+"/aws-api.spec"), []byte("ours"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(e.Path(mcpCatalog+"/.team-files"), []byte("aws-api.spec\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	apply(t, e, st)
+	if got := read(t, e.Path(mcpCatalog+"/aws-api.spec")); got != "ours" {
+		t.Errorf("the team's aws-api.spec = %q", got)
+	}
 }
 
 func TestMCPServersEnv(t *testing.T) {

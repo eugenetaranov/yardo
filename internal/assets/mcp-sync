@@ -178,6 +178,15 @@ render() {
       # or flags) after it.
       # shellcheck disable=SC2086 # both are intentionally word-split
       set -- run -i --rm --env-file "$dir/env" -v "$dir:/mcp:ro" ${DOCKER_ARGS:-} "$IMAGE" ${IMAGE_ARGS:-}
+      # A spec's image_args: more of them, made from its env file (one a
+      # line; ENV_FILE is the file), e.g. an endpoint in the server's region.
+      if command -v image_args >/dev/null 2>&1; then
+        _ifs=$IFS; IFS='
+'; set -f
+        # shellcheck disable=SC2046 # split on lines only
+        set -- "$@" $(ENV_FILE="$dir/env" image_args)
+        set +f; IFS=$_ifs
+      fi
       printf '%s\n' "$@" | jq -Rn --arg name "$NAME" --arg desc "${DESCRIPTION:-}" \
         '{name: $name, description: $desc, transport: "stdio", command: "docker", args: [inputs], session_mode: "stateful"}' ;;
     http)
@@ -212,7 +221,7 @@ for NAME in $want; do
     continue
   fi
   KIND= IMAGE= DOCKER_ARGS= IMAGE_ARGS= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION=
-  unset -f skeleton 2>/dev/null || true
+  unset -f skeleton image_args 2>/dev/null || true
   # shellcheck disable=SC1090
   . "$spec"
   # Another instance of a catalog server (grafana-prod, a link to

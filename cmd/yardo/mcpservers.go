@@ -124,6 +124,11 @@ func (k *asker) mcpSyncAs(ctx context.Context, args ...string) error {
 	return err
 }
 
+// retiredMCP are catalog servers their makers retired (yardo ships them
+// no more: steps.RetiredSpecs), and what replaces each: one set up before
+// says so on the menu, to delete.
+var retiredMCP = map[string]string{"aws-api": "aws"}
+
 // mcpRows are the menu's MCP servers: yardo's (entries), then the others
 // found in ~/.mcp, each with its state. inputs are the MCP servers' empty
 // values ("~/.mcp/<name>/env: KEY"); checked: the gateway's state is known.
@@ -177,6 +182,9 @@ func mcpRows(entries []string, found []foundServer, inputs []string, specs map[s
 	var out []ui.MCPServer
 	for _, e := range entries {
 		if r, ok := row(e, true); ok {
+			if instead := retiredMCP[entrySpec(r)]; instead != "" {
+				r.State, r.Instead = "retired", instead
+			}
 			out = append(out, r)
 		}
 	}
@@ -188,6 +196,12 @@ func mcpRows(entries []string, found []foundServer, inputs []string, specs map[s
 		}
 	}
 	return out
+}
+
+// entrySpec is r's spec, even when it's gone from the catalog.
+func entrySpec(r ui.MCPServer) string {
+	s, _, _ := mcp.Instance(r.Entry)
+	return s
 }
 
 // mcpOutcome is what an MCP server action leaves: apply the MCP servers

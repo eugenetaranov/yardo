@@ -42,6 +42,9 @@ type MCPServer struct {
 	State string
 	Keys  []string
 	Yardo bool // on yardo's list (else found in ~/.mcp)
+	// Instead is what replaces it, when its maker retired it (State
+	// retired): aws for aws-api.
+	Instead string
 }
 
 // MCPSpec is a catalog server, to add.

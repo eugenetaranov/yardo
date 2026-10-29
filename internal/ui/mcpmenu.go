@@ -85,7 +85,7 @@ func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
 	}
 	out = append(out, mcpAction{"edit", "Edit its settings", "opens ~/.mcp/" + s.Name + "/env, then registers it"})
 	if !m.info.MCPDown {
-		if s.State != "nospec" {
+		if s.State != "nospec" && s.State != "retired" {
 			out = append(out, mcpAction{"rename", "Rename it", "its settings move with it"})
 		}
 		out = append(out, mcpAction{"delete", "Delete it", "from the gateway, with its settings"})
@@ -113,6 +113,8 @@ func mcpWord(s *MCPServer) string {
 		return green.Render("● on, added by hand")
 	case "new":
 		return muted.Render("· not set up yet: applies next")
+	case "retired":
+		return yellow.Render("▲ retired: add " + s.Instead + " instead")
 	}
 	return muted.Render("· not checked")
 }

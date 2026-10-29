@@ -173,6 +173,24 @@ func mcpInstance(e *Env) string { return "mcpjungle@" + e.User }
 
 type mcpFilesStep struct{}
 
+// RetiredSpecs are catalog servers yardo no longer ships (their makers
+// retired them): their installed specs go. aws-api: AWS's managed AWS MCP
+// Server (aws) replaces it.
+var RetiredSpecs = []string{"aws-api"}
+
+// retired are the retired specs still installed (a team's stay).
+func (mcpFilesStep) retired(e *Env) []string {
+	team, _ := os.ReadFile(e.Path(filepath.Join(mcpCatalog, ".team-files")))
+	var out []string
+	for _, n := range RetiredSpecs {
+		p := e.Path(filepath.Join(mcpCatalog, n+".spec"))
+		if _, err := os.Lstat(p); err == nil && !hasLine(team, n+".spec") {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 type wantFile struct {
 	to   string
 	b    []byte
@@ -230,7 +248,7 @@ func (m mcpFilesStep) Check(_ context.Context, e *Env) (bool, error) {
 			return false, nil
 		}
 	}
-	return true, nil
+	return len(m.retired(e)) == 0, nil
 }
 
 func (m mcpFilesStep) Apply(_ context.Context, e *Env) error {
@@ -243,6 +261,11 @@ func (m mcpFilesStep) Apply(_ context.Context, e *Env) error {
 			if err := writeFile(p, f.b, f.mode); err != nil {
 				return err
 			}
+		}
+	}
+	for _, p := range m.retired(e) {
+		if err := os.Remove(p); err != nil {
+			return err
 		}
 	}
 	return nil

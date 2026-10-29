@@ -376,6 +376,9 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			info.MCP = []ui.MCPServer{}
 		}
 		for _, n := range slices.Sorted(maps.Keys(specs)) {
+			if retiredMCP[n] != "" {
+				continue
+			}
 			info.MCPSpecs = append(info.MCPSpecs, ui.MCPSpec{Name: n, About: specs[n].Description})
 		}
 		st := status["mcpjungle-install"].State

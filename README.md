@@ -224,7 +224,10 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    into your settings, not replacing them), agent API keys (Anthropic,
    OpenAI, Gemini), and MCP servers on the MCPJungle gateway (GitHub,
    Jira and Confluence, Linear, Slack, Figma; Postgres, MySQL,
-   Supabase, OpenSearch; AWS, Azure, Kubernetes, Docker, Grafana, Jenkins;
+   Supabase, OpenSearch; AWS (AWS's managed AWS MCP Server, through its
+   SigV4 proxy; it replaces the retired AWS API server, `aws-api`, which a
+   machine set up before shows as retired, to delete), Azure, Kubernetes,
+   Docker, Grafana, Jenkins;
    Playwright, context7, …; read-only where the server allows it, and
    Docker is root on the machine), added to
    Claude Code, Codex, Gemini CLI, OpenCode and Goose. The gateway can be
