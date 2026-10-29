@@ -45,12 +45,12 @@ Community skills SHALL be offered as catalog items off by default, each vendored
 - **THEN** each vendored skill's tree hash equals its lock entry, and its licence file is present
 
 ### Requirement: yardo changes only its own skill folders
-Each skill folder yardo writes SHALL carry a `.yardo-skill` marker with the content hash. yardo SHALL update or remove a folder only while it still matches its marker; a folder the user changed SHALL be left alone and noted.
+Each skill folder yardo writes SHALL carry a `.yardo-skill` marker with the content hash. yardo SHALL update a folder only while it still matches its marker; a folder the user changed, or made without a marker, SHALL be left alone. An unticked skill SHALL stay installed, as every unticked item does.
 
 #### Scenario: Edited skill kept
-- **WHEN** the user edited `~/.agents/skills/jira-tickets/SKILL.md` and yardo ships a new version
-- **THEN** yardo leaves it, and says the skill was changed by hand
+- **WHEN** the user edited `~/.claude/skills/jira-tickets/SKILL.md` and yardo ships a new version
+- **THEN** yardo leaves that copy, and updates the one in `~/.agents/skills` it still owns
 
-#### Scenario: Unticked
-- **WHEN** a community skill set is unticked
-- **THEN** its folders that still match their markers are removed
+#### Scenario: A skill of the user's own
+- **WHEN** `~/.claude/skills/git-commits/` exists without yardo's marker
+- **THEN** yardo leaves it as it is

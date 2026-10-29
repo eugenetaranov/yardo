@@ -1,0 +1,15 @@
+#!/bin/sh
+# yardo: drops the lines a coding agent adds to a commit message (a
+# Co-authored-by for Claude, Codex or Cursor; a "Generated with" footer)
+# and nothing else: a person's Co-authored-by stays. Git runs it as a
+# commit-msg hook (git config hook.yardo-no-agent-trailer.*): $1 is the
+# message file.
+f=${1:-}
+[ -n "$f" ] && [ -f "$f" ] || exit 0
+tmp=$(mktemp "$f.XXXXXX") || exit 0
+grep -Eiv '^[[:space:]]*co-authored-by:[[:space:]]*(claude|codex|cursor)([[:space:]<]|$)|^[[:space:]]*co-authored-by:.*(noreply@anthropic\.com|noreply@openai\.com|cursoragent@cursor\.com)|^[[:space:]]*(🤖[[:space:]]*)?generated (with|by) \[?(claude code|claude|codex|cursor)\]?' "$f" |
+  awk '{ l[NR] = $0 } END { n = NR; while (n > 0 && l[n] ~ /^[[:space:]]*$/) n--; for (i = 1; i <= n; i++) print l[i] }' > "$tmp"
+# Unchanged: leave the file alone (its mode, its links).
+if cmp -s "$tmp" "$f"; then rm -f "$tmp"; exit 0; fi
+cat "$tmp" > "$f"
+rm -f "$tmp"

@@ -20,9 +20,11 @@ func init() { RegisterGo("agentsafe", func(catalog.Step) Step { return agentSafe
 // agentSafeStep writes safety settings for unattended agents into each
 // installed agent's own files, merged with what is there:
 //   - Claude Code: permission rules denying force-pushes, sudo, and reads
-//     of the MCP tokens, SSH keys and agent API keys;
+//     of the MCP tokens, SSH keys and agent API keys; no attribution in
+//     commits and pull requests;
 //   - Codex: an approval policy and a workspace sandbox;
-//   - both: a "Pushing" section in their notes (CLAUDE.md, AGENTS.md).
+//   - both: "Commits" and "Pushing" sections in their notes (CLAUDE.md,
+//     AGENTS.md).
 type agentSafeStep struct{}
 
 // ClaudeDeny are the rules added to permissions.deny.
@@ -43,6 +45,11 @@ const (
 	pushBegin = "<!-- yardo: agentsafe -->"
 	pushEnd   = "<!-- /yardo: agentsafe -->"
 	pushing   = pushBegin + `
+## Commits
+
+- Never add a Co-authored-by line or a "Generated with" footer for an
+  agent (yourself included) to a commit message or pull request.
+
 ## Pushing
 
 - Never force-push or rewrite history that was pushed.
@@ -51,9 +58,9 @@ const (
 
 func (agentSafeStep) Plan(*Env) []Action {
 	return []Action{
-		{"file", "~/.claude/settings.json (permissions.deny: force-push, sudo, ~/.mcp, ~/.ssh, agent.env)"},
+		{"file", "~/.claude/settings.json (permissions.deny: force-push, sudo, ~/.mcp, ~/.ssh, agent.env; no commit or PR attribution)"},
 		{"file", "~/.codex/config.toml (approval_policy, sandbox_mode)"},
-		{"file", "~/.claude/CLAUDE.md, ~/.codex/AGENTS.md (a Pushing section)"},
+		{"file", "~/.claude/CLAUDE.md, ~/.codex/AGENTS.md (Commits and Pushing sections)"},
 	}
 }
 
@@ -96,8 +103,12 @@ func (agentSafeStep) want(ctx context.Context, e *Env) (map[string][]byte, error
 	return out, nil
 }
 
+// claudeNoAttribution is Claude Code's setting for no Co-Authored-By line
+// in commits and no "Generated with" footer in pull requests.
+var claudeNoAttribution = map[string]any{"commit": "", "pr": ""}
+
 // claudeDeny merges ClaudeDeny into a settings.json's permissions.deny,
-// keeping every other setting.
+// and sets attribution off, keeping every other setting.
 func claudeDeny(cur []byte) ([]byte, bool, error) {
 	doc := map[string]any{}
 	if len(bytes.TrimSpace(cur)) > 0 {
@@ -116,9 +127,19 @@ func claudeDeny(cur []byte) ([]byte, bool, error) {
 			deny, changed = append(deny, r), true
 		}
 	}
+	attr, _ := doc["attribution"].(map[string]any)
+	if attr == nil {
+		attr = map[string]any{}
+	}
+	for k, v := range claudeNoAttribution {
+		if attr[k] != v {
+			attr[k], changed = v, true
+		}
+	}
 	if !changed {
 		return cur, false, nil
 	}
+	doc["attribution"] = attr
 	perms["deny"] = deny
 	doc["permissions"] = perms
 	b, err := json.MarshalIndent(doc, "", "  ")

@@ -47,6 +47,9 @@ type Step struct {
 	// "not interactive: return" guard).
 	Top bool `toml:"top"`
 
+	// go:skills: the agent skills to install, by name (conf/skills/<name>)
+	Skills []string `toml:"skills"`
+
 	// git_clone
 	Repo string `toml:"repo"`
 	Ref  string `toml:"ref"`

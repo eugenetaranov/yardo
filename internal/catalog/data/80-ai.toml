@@ -155,6 +155,28 @@ if_absent = true
 [[item.step]]
 type = "go:agentsafe"
 
+# Skills every agent reads (agentskills.io; ~/.agents/skills and
+# ~/.claude/skills), and no agent's name on commits.
+[[item]]
+id = "agentskills"
+tab = "agents"
+after = ["agentcfg"]
+label = "Agent skills: git commits, PR descriptions, Jira tickets; no agent co-author lines"
+default = true
+source = "~/.agents/skills, ~/.claude/skills (Claude Code, Codex, Gemini CLI, OpenCode, Goose, omp) · a git commit-msg hook (Git 2.54+) dropping agents' Co-authored-by"
+
+[[item.step]]
+type = "go:skills"
+skills = ["git-commits", "pr-descriptions", "jira-tickets"]
+
+[[item.step]]
+type = "go:gitattrib"
+
+[[item.step]]
+type = "note"
+text = "Codex adds 'Co-authored-by: Codex' when your ChatGPT account says so, whatever its instructions say: turn commit attribution off in your ChatGPT account's Codex settings (yardo's git hook drops it from local commits)."
+when = "[ -d {{home}}/.codex ]"
+
 [[item]]
 id = "agentkeys"
 tab = "agents"

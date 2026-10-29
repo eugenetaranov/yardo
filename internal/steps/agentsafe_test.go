@@ -25,7 +25,8 @@ func TestAgentSafe(t *testing.T) {
 	}
 	apply(t, e, st)
 	cs := read(t, e.Path("~/.claude/settings.json"))
-	for _, want := range []string{`"FOO": "1"`, `"Bash(rm -rf /:*)"`, `"Bash(git push --force:*)"`, `"Read(~/.mcp/**)"`, `"Bash(sudo:*)"`} {
+	for _, want := range []string{`"FOO": "1"`, `"Bash(rm -rf /:*)"`, `"Bash(git push --force:*)"`, `"Read(~/.mcp/**)"`, `"Bash(sudo:*)"`,
+		`"attribution": {`, `"commit": ""`, `"pr": ""`} {
 		if !strings.Contains(cs, want) {
 			t.Errorf("settings.json lacks %s:\n%s", want, cs)
 		}
@@ -48,5 +49,25 @@ func TestAgentSafe(t *testing.T) {
 	apply(t, e, st)
 	if got := read(t, e.Path("~/.claude/CLAUDE.md")); got != "# This machine\n\n"+pushing+"mine\n" {
 		t.Errorf("refreshed CLAUDE.md = %q", got)
+	}
+}
+
+// Attribution is turned off over a value the user had, keeping its other
+// keys; a settings file already right is left as it is.
+func TestClaudeNoAttribution(t *testing.T) {
+	b, changed, err := claudeDeny([]byte(`{"attribution": {"commit": "🤖 by Claude", "sessionUrl": false}}`))
+	if err != nil || !changed {
+		t.Fatalf("changed %v, err %v", changed, err)
+	}
+	for _, want := range []string{`"commit": ""`, `"pr": ""`, `"sessionUrl": false`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("lacks %s:\n%s", want, b)
+		}
+	}
+	if _, changed, _ := claudeDeny(b); changed {
+		t.Error("a second merge changed it again")
+	}
+	if !strings.Contains(pushing, "Co-authored-by") {
+		t.Error("the notes don't say no agent trailer")
 	}
 }
