@@ -4,6 +4,7 @@
 # OS and editors
 .DS_Store
 Thumbs.db
+ehthumbs.db
 *.swp
 *.swo
 *~
@@ -17,19 +18,40 @@ Thumbs.db
 # Python
 .python-version
 __pycache__/
+*.pyc
 .venv/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
 
-# Environment and secrets
+# Environment and secrets (examples stay tracked)
 .env
-.env.local
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.envrc
 .direnv/
 
 # JavaScript
 node_modules/
 npm-debug.log*
 
-# Terraform working directories (not .terraform.lock.hcl)
-.terraform/
+# Go: test binaries, coverage, local workspaces
+*.test
+coverage.out
+coverage.html
+go.work
+go.work.sum
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+
+# Terraform: working dirs, the lock file too (`git add -f
+# .terraform.lock.hcl` to pin providers), local state, crash logs
+.terraform*
+terraform.tfstate*
+crash.log
+crash.*.log

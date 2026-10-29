@@ -202,12 +202,20 @@ to = "~/.oh-my-zsh/custom/plugins/fzf-tab"
 id = "shellcfg"
 tab = "-"
 label = "Shell niceties for zsh and bash: z, fzf keys, direnv, eza/bat aliases"
-source = "~/.config/yardo/shell.sh, sourced from .zshrc and .bashrc"
+source = "~/.config/yardo/shell.sh, sourced from .zshrc and .bashrc · ~/.config/direnv/direnv.toml (quiet, loads .env)"
 
 [[item.step]]
 type = "template"
 src = "shell.sh"
 to = "~/.config/yardo/shell.sh"
+
+# direnv's settings: quiet loads, .env files too (each still needs
+# `direnv allow`). Written once; yours afterwards.
+[[item.step]]
+type = "file"
+src = "direnv.toml"
+to = "~/.config/direnv/direnv.toml"
+if_absent = true
 
 [[item.step]]
 type = "line"

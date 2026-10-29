@@ -1,0 +1,10 @@
+# direnv's settings, written once by yardo (yours to change).
+# https://direnv.net/man/direnv.toml.1.html
+
+[global]
+# Say "direnv: loading .envrc", not every variable it sets.
+hide_env_diff = true
+# A slow .envrc (nix, a big layout) warns after this long.
+warn_timeout = "30s"
+# A .env next to no .envrc loads too, once you `direnv allow` it.
+load_dotenv = true

@@ -164,7 +164,8 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
    search and completions, fzf-tab (Tab opens an fzf list with directory
    previews), the modern CLI tools (ripgrep, fd, bat, eza, zoxide, fzf,
-   delta, direnv) turned on with keys and aliases (z, fzf keys, direnv,
+   delta, direnv) turned on with keys and aliases (z, fzf keys, direnv
+   with a quiet `direnv.toml` that loads `.env` files too,
    eza/bat aliases, a shared Terraform/OpenTofu provider cache, kubecolor)
    through `~/.config/yardo/shell.sh` (sourced from `.zshrc` and `.bashrc`
    too), and man pages + tldr. It asks for the prompt: Powerlevel10k (ready
@@ -210,8 +211,10 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    GitLab with glab, for gitlab.com or your own host, Bitbucket), each asking how this machine reaches it over
    SSH (a forwarded agent, a key made here, or a key you send; GitHub also
    a token), commit signing with SSH, global git ignores in
-   `~/.config/git/ignore` (`.claude/`, `.python-version`, `.env`, `.venv/`,
-   `node_modules/`, caches, editor files; yardo keeps them as a block at the
+   `~/.config/git/ignore` (`.claude/`, `.python-version`, `.env` and
+   `.env.*` but examples, `.envrc`, `.venv/`, `.terraform*` and local state,
+   `node_modules/`, Go coverage and `go.work`, caches, editor files; yardo
+   keeps them as a block at the
    top and leaves your own lines below it alone), and your dotfiles repo:
    cloned to `~/.dotfiles` (pulled on later runs), then its `install.sh`,
    `bootstrap.sh` or `setup.sh`, or else `stow` for each top-level
