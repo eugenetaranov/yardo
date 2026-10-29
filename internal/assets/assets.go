@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed conf mcp-catalog mcp-sync yardo.sh picker.py
+//go:embed all:conf mcp-catalog mcp-sync yardo.sh picker.py
 var files embed.FS
 
 // ShareDir is where Extract puts the files on the machine.

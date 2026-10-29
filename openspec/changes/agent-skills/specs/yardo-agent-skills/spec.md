@@ -18,8 +18,12 @@ On Git 2.54 or later, yardo SHALL set a global config-based `commit-msg` hook th
 - **WHEN** a repo has its own `.git/hooks/commit-msg`, or husky
 - **THEN** that hook still runs alongside yardo's
 
-#### Scenario: Older git
-- **WHEN** `git --version` is older than 2.54
+#### Scenario: Older git on Ubuntu
+- **WHEN** `git --version` is older than 2.54 on Ubuntu
+- **THEN** git is upgraded from the git-core PPA (its signing key checked against its fingerprint), and the hook is set
+
+#### Scenario: Older git elsewhere
+- **WHEN** `git --version` is older than 2.54 and git can't be upgraded (Debian)
 - **THEN** no hook is set, and `~/yardo.txt` says why
 
 #### Scenario: Codex attribution

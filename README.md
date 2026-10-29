@@ -273,8 +273,15 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    agent's name on commits:** Claude Code's `attribution` setting is off,
    the agents' notes say so, and on Git 2.54+ a global commit-msg hook
    (config-based, so your repos' own hooks still run) drops an agent's
-   `Co-authored-by` and "Generated with" lines, never a person's. Codex
+   `Co-authored-by` and "Generated with" lines, never a person's (older
+   git on Ubuntu is upgraded from the git-core PPA first). Codex
    takes it from your ChatGPT account: turn commit attribution off there.
+   **Community skills** (off by default), shipped inside yardo at pinned
+   commits with their licences: superpowers' `systematic-debugging` and
+   `verification-before-completion`, Matt Pocock's `tdd` and `grill-me`,
+   Sentry's `find-bugs`, `humanizer`, and Anthropic's `skill-creator` and
+   `webapp-testing`. Nothing is fetched on the VM; `scripts/update-skills`
+   re-vendors them (`internal/assets/skills.lock.toml`).
 3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later) and your age key for sops (generate or paste).

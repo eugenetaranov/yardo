@@ -25,7 +25,8 @@ ship a few skills once for all of them, with good community ones on offer.
     (`noreply@anthropic.com`, `noreply@openai.com`, Cursor's, "Generated
     with [Claude Code|Codex]"), never a person's `Co-authored-by`. It's
     set as a config-based hook (Git 2.54+), so repos' own hooks, husky and
-    pre-commit keep working; on older git it's skipped, with a note.
+    pre-commit keep working; older git on Ubuntu is upgraded from the
+    git-core PPA, elsewhere the hook is skipped, with a note.
   - Codex's attribution is a ChatGPT account setting: yardo says so, and
     the hook removes it locally.
   - The agent notes (CLAUDE.md, AGENTS.md) say it too.
@@ -40,16 +41,20 @@ ship a few skills once for all of them, with good community ones on offer.
 - **Community skills, opt-in**, vendored at a pinned commit with their
   licence:
   - obra/superpowers (MIT): systematic-debugging,
-    test-driven-development, verification-before-completion
-  - mattpocock/skills (MIT): tdd, code-review, grill-me
-  - getsentry/skills (Apache-2.0): find-bugs, pr-writer
+    verification-before-completion
+  - mattpocock/skills (MIT): tdd, grill-me
+  - getsentry/skills (Apache-2.0): find-bugs
   - blader/humanizer (MIT): humanizer
   - anthropics/skills (Apache-2.0): skill-creator, webapp-testing
   - Not offered, with the reason: anthropics docx/pdf/pptx/xlsx
     (proprietary licence), doc-coauthoring (no licence file),
     trailofbits (CC-BY-SA, share-alike), vercel-labs/agent-skills (no
     licence), the superpowers bundle as a whole (it takes over the
-    workflow), getsentry `commit` (Sentry's conventions).
+    workflow), getsentry `commit` (Sentry's conventions); dropped as overlaps, to keep
+    setup simple: superpowers `test-driven-development` (mattpocock's
+    shorter `tdd`), mattpocock `code-review` (`find-bugs`, and Claude
+    Code's own `/code-review`), getsentry `pr-writer` (yardo's
+    `pr-descriptions`).
 - **Where they go:** each skill in `~/.agents/skills/<name>/` (read by
   Codex, Gemini CLI, OpenCode, Goose, pi and omp) and in
   `~/.claude/skills/<name>/` (Claude Code reads only its own). Copies, not
@@ -68,7 +73,7 @@ ship a few skills once for all of them, with good community ones on offer.
   `skills.lock.toml` with repo, path, commit, licence and a tree hash) and
   `scripts/update-skills`.
 - Catalog: an "Agent skills" item (yardo's three, default on) and one item
-  per community skill set (off by default), on the Agents tab.
+  for the community skills (off by default), on the Agents tab.
 - `go:agentsafe` gains Claude Code's `attribution`; a new `go:gitattrib`
   step sets the hook; `agent-notes.md` gains the attribution line.
 - Nothing is fetched at install time: skills ship inside yardo, and an

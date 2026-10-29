@@ -26,7 +26,9 @@ The research behind this (2026-10-29, from each agent's docs and source):
 - **The hook is config-based** (`hook.<name>.event commit-msg`, Git 2.54+):
   it runs beside a repo's own hooks. A global `core.hooksPath` would turn
   them off, husky's local one would turn ours off, and pre-commit refuses
-  to install under it, so on older git yardo sets no hook and says so. It
+  to install under it. Older git on Ubuntu is upgraded from the git-core
+  PPA (the Ubuntu Git Maintainers'; key fingerprint pinned); elsewhere
+  yardo sets no hook and says so. It
   strips only lines matching known agent identities, and changes nothing
   else (idempotent). It can't reach commits made through an API or PR
   bodies; the settings and the skill cover those.

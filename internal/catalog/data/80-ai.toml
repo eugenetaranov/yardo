@@ -163,7 +163,7 @@ tab = "agents"
 after = ["agentcfg"]
 label = "Agent skills: git commits, PR descriptions, Jira tickets; no agent co-author lines"
 default = true
-source = "~/.agents/skills, ~/.claude/skills (Claude Code, Codex, Gemini CLI, OpenCode, Goose, omp) · a git commit-msg hook (Git 2.54+) dropping agents' Co-authored-by"
+source = "~/.agents/skills, ~/.claude/skills (Claude Code, Codex, Gemini CLI, OpenCode, Goose, omp) · a git commit-msg hook (Git 2.54+; older git on Ubuntu upgraded from the git-core PPA) dropping agents' Co-authored-by"
 
 [[item.step]]
 type = "go:skills"
@@ -176,6 +176,19 @@ type = "go:gitattrib"
 type = "note"
 text = "Codex adds 'Co-authored-by: Codex' when your ChatGPT account says so, whatever its instructions say: turn commit attribution off in your ChatGPT account's Codex settings (yardo's git hook drops it from local commits)."
 when = "[ -d {{home}}/.codex ]"
+
+# Community skills, vendored at pinned commits with their licences
+# (internal/assets/skills.lock.toml; updated with scripts/update-skills).
+[[item]]
+id = "communityskills"
+tab = "agents"
+after = ["agentcfg"]
+label = "Community skills: debugging, verify before done, TDD, grill me, find bugs, humanizer, skill creator, webapp testing"
+source = "obra/superpowers systematic-debugging, verification-before-completion (MIT) · mattpocock/skills tdd, grill-me (MIT) · getsentry/skills find-bugs (Apache-2.0) · blader/humanizer (MIT) · anthropics/skills skill-creator, webapp-testing (Apache-2.0) · to ~/.agents/skills, ~/.claude/skills"
+
+[[item.step]]
+type = "go:skills"
+skills = ["systematic-debugging", "verification-before-completion", "tdd", "grill-me", "find-bugs", "humanizer", "skill-creator", "webapp-testing"]
 
 [[item]]
 id = "agentkeys"

@@ -3,10 +3,14 @@ package steps
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
 
+	"github.com/BurntSushi/toml"
+
+	"github.com/eugenetaranov/yardo/internal/assets"
 	"github.com/eugenetaranov/yardo/internal/catalog"
 )
 
@@ -79,6 +83,10 @@ func TestShippedSkills(t *testing.T) {
 	if err != nil || len(dirs) == 0 {
 		t.Fatalf("no skills: %v", err)
 	}
+	vendored := map[string]bool{}
+	for _, s := range skillsLock(t) {
+		vendored[s.Name] = true
+	}
 	portable := map[string]bool{"name": true, "description": true, "license": true, "compatibility": true, "metadata": true, "allowed-tools": true}
 	for _, d := range dirs {
 		b, err := os.ReadFile(filepath.Join(d, "SKILL.md"))
@@ -96,7 +104,7 @@ func TestShippedSkills(t *testing.T) {
 		for _, l := range strings.Split(front, "\n") {
 			if k, v, ok := strings.Cut(l, ":"); ok && !strings.HasPrefix(l, " ") {
 				keys[k] = strings.TrimSpace(v)
-				if !portable[k] {
+				if !portable[k] && !vendored[filepath.Base(d)] {
 					t.Errorf("%s: frontmatter key %q isn't portable", d, k)
 				}
 			}
@@ -108,8 +116,64 @@ func TestShippedSkills(t *testing.T) {
 		if n := len(keys["description"]); n == 0 || n > 1024 {
 			t.Errorf("%s: description is %d characters", d, n)
 		}
-		if n := strings.Count(body, "\n"); n > 100 {
+		if n := strings.Count(body, "\n"); n > 100 && !vendored[name] {
 			t.Errorf("%s: %d lines", d, n)
+		}
+	}
+}
+
+type lockedSkill struct {
+	Name, Repo, Path, Commit, License, Sha256 string
+	LicenseFile                               string `toml:"license_file"`
+	Files                                     []string
+}
+
+func skillsLock(t *testing.T) []lockedSkill {
+	t.Helper()
+	var lock struct{ Skill []lockedSkill }
+	if _, err := toml.DecodeFile("../assets/skills.lock.toml", &lock); err != nil {
+		t.Fatal(err)
+	}
+	return lock.Skill
+}
+
+// Each vendored skill is as the lock says (scripts/update-skills made it,
+// unedited), in the binary too, under a licence yardo can ship, with its
+// licence file; a folder that isn't yardo's own is in the lock.
+func TestSkillsLock(t *testing.T) {
+	licences := map[string]bool{"MIT": true, "Apache-2.0": true, "BSD-2-Clause": true, "BSD-3-Clause": true, "ISC": true}
+	e := &Env{Files: assets.Conf()}
+	locked := map[string]bool{}
+	for _, s := range skillsLock(t) {
+		locked[s.Name] = true
+		if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(s.Commit) || s.Repo == "" || s.Path == "" {
+			t.Errorf("%s: commit %q, repo %q, path %q", s.Name, s.Commit, s.Repo, s.Path)
+		}
+		if !licences[s.License] {
+			t.Errorf("%s: licence %q", s.Name, s.License)
+		}
+		files, _, err := onDisk("../assets/conf/skills/" + s.Name)
+		if err != nil || files == nil {
+			t.Errorf("%s: not vendored: %v", s.Name, err)
+			continue
+		}
+		if got := treeHash(files); got != s.Sha256 {
+			t.Errorf("%s: sha256 %s, lock says %s (run scripts/update-skills %s)", s.Name, got, s.Sha256, s.Name)
+		}
+		if embedded, err := shipped(e, s.Name); err != nil || treeHash(embedded) != s.Sha256 {
+			t.Errorf("%s: the embedded copy differs (go:embed leaves out a file?): %v", s.Name, err)
+		}
+		if _, ok := files["LICENSE"]; !ok {
+			if _, ok := files["LICENSE.txt"]; !ok {
+				t.Errorf("%s: no LICENSE", s.Name)
+			}
+		}
+	}
+	dirs, _ := filepath.Glob("../assets/conf/skills/*")
+	for _, d := range dirs {
+		b, _ := os.ReadFile(filepath.Join(d, "SKILL.md"))
+		if n := filepath.Base(d); !locked[n] && !strings.Contains(string(b), "source: yardo") {
+			t.Errorf("%s: neither yardo's (metadata source: yardo) nor in skills.lock.toml", n)
 		}
 	}
 }

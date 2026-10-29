@@ -1,0 +1,79 @@
+# Community skills shipped in yardo (internal/assets/conf/skills/<name>),
+# each a folder from its repo at a pinned commit, with the repo's licence.
+# Nothing is fetched on a VM: an update is a reviewed commit made with
+#   scripts/update-skills [--latest] [NAME...]
+# sha256 is the vendored folder's hash (as the skills step's treeHash);
+# a test checks it, so a hand edit to a vendored skill shows.
+
+[[skill]]
+name = "systematic-debugging"
+repo = "obra/superpowers"
+path = "skills/systematic-debugging"
+commit = "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b"
+license = "MIT"
+license_file = "LICENSE"
+sha256 = "9c23d927e598c27f198c53a6922d2fadc37768670a9fee0c7ad895b99817b46c"
+
+[[skill]]
+name = "verification-before-completion"
+repo = "obra/superpowers"
+path = "skills/verification-before-completion"
+commit = "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b"
+license = "MIT"
+license_file = "LICENSE"
+sha256 = "00e0f5cc32ea07f3be96207f3730ac92d37b0a536fcb81503b46f8adfb033168"
+
+[[skill]]
+name = "tdd"
+repo = "mattpocock/skills"
+path = "skills/engineering/tdd"
+commit = "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa"
+license = "MIT"
+license_file = "LICENSE"
+sha256 = "d87f5e13e1236181bdea99a12051434ec2476548acb95aff0e99ef6a01367850"
+
+[[skill]]
+name = "grill-me"
+repo = "mattpocock/skills"
+path = "skills/productivity/grill-me"
+commit = "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa"
+license = "MIT"
+license_file = "LICENSE"
+sha256 = "5b4520889dc0f15a266a1d16fdecceeb8afe69da4a3ccc06ccdada28cedf0490"
+
+[[skill]]
+name = "find-bugs"
+repo = "getsentry/skills"
+path = "skills/find-bugs"
+commit = "d12f250460ffd961f549dbebf7eeb0cf4afd4c2e"
+license = "Apache-2.0"
+license_file = "LICENSE"
+sha256 = "d5ba96a46ffd252ea9fd326013b4043ececa453151fdf4329a6bc462ffc0879e"
+
+[[skill]]
+name = "humanizer"
+repo = "blader/humanizer"
+path = "."
+files = ["SKILL.md"]
+commit = "0ef9fe5bc3572734fd3ae6c448fe00a30cd5dcf0"
+license = "MIT"
+license_file = "LICENSE"
+sha256 = "07f7cfb1c6b93c83c896eee3d238d1f9d8480732fbcc6bafde795375f4ab77ab"
+
+[[skill]]
+name = "skill-creator"
+repo = "anthropics/skills"
+path = "skills/skill-creator"
+commit = "ca45fc496a3436251f191354091d557da31c15b5"
+license = "Apache-2.0"
+license_file = "skills/skill-creator/LICENSE.txt"
+sha256 = "4557d54c524c67984e4bab23fa436e90196292ae8df4d2093f0ce0e6951bfc1c"
+
+[[skill]]
+name = "webapp-testing"
+repo = "anthropics/skills"
+path = "skills/webapp-testing"
+commit = "ca45fc496a3436251f191354091d557da31c15b5"
+license = "Apache-2.0"
+license_file = "skills/webapp-testing/LICENSE.txt"
+sha256 = "abfaf4cc6cf572346e22fed42dc0cfaacd2f64c5d9667f44a94b02ea0d3b1342"

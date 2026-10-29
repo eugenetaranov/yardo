@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Vendor the community skills in internal/assets/skills.lock.toml.
+
+  scripts/update-skills [--latest] [NAME...]
+
+Each skill's folder is copied from its repo at the lock's commit (with
+--latest, the default branch's head) into internal/assets/conf/skills/<name>,
+with the repo's licence as LICENSE when the folder has none. The lock's
+commit and sha256 are rewritten; review `git diff` and commit the result.
+"""
+import hashlib, os, re, shutil, subprocess, sys, tempfile, tomllib
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOCK = os.path.join(ROOT, "internal/assets/skills.lock.toml")
+SKILLS = os.path.join(ROOT, "internal/assets/conf/skills")
+LICENSES = {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"}
+MAX_BYTES = 512 * 1024
+MARK = ".yardo-skill"
+
+
+def tree_hash(d):
+    """The skills step's treeHash: sorted paths, each path NUL content NUL."""
+    files = []
+    for top, dirs, names in os.walk(d):
+        for n in names:
+            rel = os.path.relpath(os.path.join(top, n), d).replace(os.sep, "/")
+            if rel != MARK:
+                files.append(rel)
+    h = hashlib.sha256()
+    for rel in sorted(files, key=lambda s: s.encode()):
+        h.update(rel.encode() + b"\0")
+        with open(os.path.join(d, rel), "rb") as f:
+            h.update(f.read())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def size(d):
+    return sum(os.path.getsize(os.path.join(t, n)) for t, _, ns in os.walk(d) for n in ns)
+
+
+def git(*args, cwd=None):
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def fetch(repo, commit, cache):
+    d = os.path.join(cache, repo.replace("/", "_"))
+    if not os.path.isdir(d):
+        git("clone", "-q", "--filter=blob:none", f"https://github.com/{repo}", d)
+    if commit:
+        git("checkout", "-q", commit, cwd=d)
+    return d, git("rev-parse", "HEAD", cwd=d)
+
+
+def vendor(s, latest, cache):
+    if s["license"] not in LICENSES:
+        sys.exit(f"{s['name']}: licence {s['license']} isn't one yardo ships")
+    src, commit = fetch(s["repo"], None if latest else s["commit"], cache)
+    dst = os.path.join(SKILLS, s["name"])
+    shutil.rmtree(dst, ignore_errors=True)
+    base = os.path.join(src, s["path"])
+    if "files" in s:
+        os.makedirs(dst)
+        for f in s["files"]:
+            os.makedirs(os.path.dirname(os.path.join(dst, f)), exist_ok=True)
+            shutil.copy2(os.path.join(base, f), os.path.join(dst, f))
+    else:
+        shutil.copytree(base, dst, ignore=shutil.ignore_patterns(".*"))
+    if not any(n.upper().startswith(("LICENSE", "LICENCE")) for n in os.listdir(dst)):
+        shutil.copy2(os.path.join(src, s["license_file"]), os.path.join(dst, "LICENSE"))
+    if not os.path.isfile(os.path.join(dst, "SKILL.md")):
+        sys.exit(f"{s['name']}: no SKILL.md at {s['repo']}/{s['path']}")
+    if (n := size(dst)) > MAX_BYTES:
+        sys.exit(f"{s['name']}: {n} bytes, over {MAX_BYTES}")
+    return commit, tree_hash(dst)
+
+
+def main():
+    args = sys.argv[1:]
+    latest = "--latest" in args
+    names = [a for a in args if a != "--latest"]
+    with open(LOCK, "rb") as f:
+        lock = tomllib.load(f)["skill"]
+    unknown = set(names) - {s["name"] for s in lock}
+    if unknown:
+        sys.exit(f"not in the lock: {', '.join(sorted(unknown))}")
+    text = open(LOCK).read()
+    with tempfile.TemporaryDirectory() as cache:
+        for s in lock:
+            if names and s["name"] not in names:
+                continue
+            commit, sha = vendor(s, latest, cache)
+            block = re.compile(r'(name = "%s"\n(?:(?!\[\[skill\]\]).)*?)commit = "[^"]*"((?:(?!\[\[skill\]\]).)*?)sha256 = "[^"]*"' % re.escape(s["name"]), re.S)
+            text, n = block.subn(lambda m: f'{m[1]}commit = "{commit}"{m[2]}sha256 = "{sha}"', text, count=1)
+            if n != 1:
+                sys.exit(f"{s['name']}: couldn't update its lock entry")
+            print(f"{s['name']}: {s['repo']}@{commit[:12]}")
+    open(LOCK, "w").write(text)
+    print(subprocess.run(["git", "status", "--short", "--", LOCK, SKILLS], cwd=ROOT, capture_output=True, text=True).stdout, end="")
+    print("Review `git diff`, then go test ./internal/steps/ and commit.")
+
+
+main()
