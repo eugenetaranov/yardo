@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 
 	"github.com/eugenetaranov/yardo/internal/catalog"
@@ -19,8 +20,27 @@ func init() { RegisterGo("gitattrib", func(catalog.Step) Step { return gitAttrib
 // commit-msg hook that drops a coding agent's Co-authored-by and
 // "Generated with" lines (a person's stay). It's config-based (Git 2.54
 // and later), so a repo's own hooks, husky's and pre-commit's still run;
-// a global core.hooksPath would turn them off, so older git gets no hook.
+// a global core.hooksPath would turn them off. Older git on Ubuntu is
+// upgraded from the Ubuntu Git Maintainers' PPA; elsewhere it gets no hook.
 type gitAttribStep struct{}
+
+// The git-core PPA (https://launchpad.net/~git-core/+archive/ubuntu/ppa):
+// the current git release, built for each supported Ubuntu.
+const (
+	gitPPAKey = "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF911AB184317630C59970973E363C90F8F1B6217"
+	gitPPAFpr = "F911AB184317630C59970973E363C90F8F1B6217"
+	gitPPA    = `
+Types: deb
+URIs: https://ppa.launchpadcontent.net/git-core/ppa/ubuntu
+Suites: {{codename}}
+Components: main
+Signed-By: {{keyring}}
+`
+)
+
+func gitPPARepo() aptRepoStep {
+	return aptRepoStep{catalog.Step{Type: "apt_repo", Name: "git-core", KeyURL: gitPPAKey, KeyFingerprint: gitPPAFpr, Source: gitPPA}}
+}
 
 const (
 	attribHook = "yardo-no-agent-trailer"
@@ -33,6 +53,7 @@ func (gitAttribStep) Plan(*Env) []Action {
 	return []Action{
 		{"file", attribFile + " (drops agents' Co-authored-by and Generated-with lines)"},
 		{"git", "hook." + attribHook + ".event=commit-msg, .command=" + attribFile + " (Git 2.54+)"},
+		{"apt", "git from the git-core PPA, when git is older than 2.54 (Ubuntu)"},
 	}
 }
 
@@ -84,7 +105,28 @@ func (gitAttribStep) config(e *Env) map[string]string {
 	}
 }
 
+// newGit upgrades git from the git-core PPA (not to the lock's version:
+// the lock has the distro's git, older than the hook needs).
+func (gitAttribStep) newGit(ctx context.Context, e *Env) error {
+	r := gitPPARepo()
+	if done, _ := r.Check(ctx, e); !done {
+		if err := r.Apply(ctx, e); err != nil {
+			return err
+		}
+	}
+	if err := AptUpdate(ctx, e); err != nil {
+		return err
+	}
+	_, err := e.run(ctx, Cmd{Name: "apt-get", Args: append(slices.Clone(AptOpts), "install", "--only-upgrade", "git"), Env: AptEnv})
+	return err
+}
+
 func (g gitAttribStep) Apply(ctx context.Context, e *Env) error {
+	if !g.hasHooks(ctx, e) && distro(e) == "ubuntu" {
+		if err := g.newGit(ctx, e); err != nil {
+			return fmt.Errorf("git 2.54+ from the git-core PPA (for the commit-msg hook): %w", err)
+		}
+	}
 	if !g.hasHooks(ctx, e) {
 		e.note("Agent co-author lines: git here is older than 2.54, so yardo set no hook to drop them " +
 			"(a global core.hooksPath would stop your repos' own hooks); Claude Code's own setting keeps them out.")

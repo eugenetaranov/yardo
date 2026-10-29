@@ -1,9 +1,11 @@
 package steps
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -58,10 +60,10 @@ func TestGitAttrib(t *testing.T) {
 	if !check(t, e, st) {
 		t.Error("Check = false after Apply")
 	}
-	// Older git: nothing set, a note says why.
+	// Older git off Ubuntu: nothing set, a note says why.
 	version = "git version 2.43.0\n"
 	e2 := testEnv(t, x)
-	e2.Files, e2.Note = e.Files, e.Note
+	e2.Files, e2.Note, e2.Distro = e.Files, e.Note, "debian"
 	cfg = map[string]string{}
 	if check(t, e2, st) {
 		t.Error("old git: Check = true before noting")
@@ -72,6 +74,35 @@ func TestGitAttrib(t *testing.T) {
 	}
 	if !check(t, e2, st) {
 		t.Error("old git: Check = false once noted")
+	}
+	if strings.Contains(strings.Join(x.commands(), "\n"), "apt-get") {
+		t.Error("debian: apt-get ran")
+	}
+
+	// Older git on Ubuntu: the git-core PPA's git, then the hook.
+	version = "git version 2.43.0\n"
+	cfg = map[string]string{}
+	x3 := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		switch {
+		case c.Name == "gpg":
+			return []byte("fpr:::::::::" + gitPPAFpr + ":\n"), nil
+		case c.Name == "apt-get" && slices.Contains(c.Args, "--only-upgrade"):
+			version = "git version 2.56.0\n"
+		}
+		return x.reply(c)
+	}}
+	e3 := testEnv(t, x3)
+	e3.Files, e3.Note = e.Files, e.Note
+	e3.Download = func(context.Context, string) ([]byte, error) { return []byte("KEY"), nil }
+	apply(t, e3, st)
+	if got := read(t, e3.Path("/etc/apt/sources.list.d/git-core.sources")); !strings.Contains(got, "git-core/ppa/ubuntu\nSuites: noble\n") {
+		t.Errorf("ubuntu: sources = %q", got)
+	}
+	if cfg["hook.yardo-no-agent-trailer.event"] != "commit-msg" || len(notes) != 1 {
+		t.Errorf("ubuntu: cfg %v, notes %v", cfg, notes)
+	}
+	if !check(t, e3, st) {
+		t.Error("ubuntu: Check = false after Apply")
 	}
 }
 
