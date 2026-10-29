@@ -256,9 +256,13 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    `jira-work`: a second Jira, another AWS account), and once the run has
    made its env, that opens in your editor: its keys, the options
    commented out and how to get each value. Adding tools doesn't ask about
-   MCP servers. By hand: `mcp-sync edit|rename|remove <name>`, then
-   `mcp-sync`. A profile lists another instance as `"grafana:prod"` in
-   `[mcp] servers`.
+   MCP servers. Whatever you change through yardo registers right after,
+   and it says how that went (or why not, on the server's screen, with Try
+   again). yardo keeps watch: opening it registers servers whose settings
+   changed since. From the shell: `sudo yardo mcp` (the screen),
+   `sudo yardo mcp edit <name>`, `sudo yardo mcp sync`,
+   `sudo yardo mcp status`. A profile lists another instance as
+   `"grafana:prod"` in `[mcp] servers`.
 3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later) and your age key for sops (generate or paste).
@@ -318,7 +322,7 @@ the key, where to get it, and the command that applies it (`mcp-sync`,
 | Item | File |
 |---|---|
 | Agent API keys | `~/.config/yardo/agent.env`, exported by interactive shells only (not services or cron) |
-| MCP servers | `~/.mcp/<name>/env`, owned by the gateway's user: `mcp-sync edit <name>`, then `mcp-sync` |
+| MCP servers | `~/.mcp/<name>/env`, owned by the gateway's user: `sudo yardo mcp edit <name>` (it registers it after) |
 | age key | `~/.config/sops/age/keys.txt`, with `SOPS_AGE_KEY_FILE` set |
 
 Each user's MCPJungle gateway runs as a system user of its own,

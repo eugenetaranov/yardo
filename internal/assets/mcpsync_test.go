@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeBin puts scripts named for commands in a directory, first on PATH.
@@ -222,5 +223,78 @@ func TestMCPSyncAWSArgs(t *testing.T) {
 		if err != nil || !strings.HasSuffix(strings.TrimSpace(string(out)), `"public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:1.7.0",`+c.want) {
 			t.Errorf("%q: args %s", c.env, out)
 		}
+	}
+}
+
+// status says each server's state and changes nothing; a failed
+// registration's reason is kept until it registers, and settings edited
+// after it make it worth trying again.
+func TestMCPSyncStatus(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	mkdirAll(t, cat, 0o755)
+	putFile(t, filepath.Join(cat, "svc.spec"), []byte("DESCRIPTION=Svc\nKIND=docker\nIMAGE=img:1\nREQUIRED=TOKEN\n"), 0o644)
+	for _, d := range []string{"a", "b", "c"} {
+		mkdirAll(t, filepath.Join(mcp, d), 0o700)
+		if err := os.Symlink(filepath.Join(cat, "svc.spec"), filepath.Join(mcp, d, "spec")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	putFile(t, filepath.Join(mcp, "a", "env"), []byte("TOKEN=1\n"), 0o600)
+	putFile(t, filepath.Join(mcp, "b", "env"), []byte("TOKEN=\n"), 0o600)
+	putFile(t, filepath.Join(mcp, "c", "env"), []byte("TOKEN=bad\n"), 0o600)
+	// The gateway refuses c's config; it lists what's registered.
+	reg := filepath.Join(root, "live")
+	bin := fakeBin(t, map[string]string{
+		"mcpjungle": `case "$3" in
+  list) [ -f ` + reg + ` ] && cat ` + reg + `; exit 0 ;;
+  register) grep -q '"name": "c"' "$6" && { echo "Error: c: connection refused"; exit 1; }; grep -o '"name": "[a-z]*"' "$6" | cut -d'"' -f4 | sed 's/^/1. /' >> ` + reg + `; exit 0 ;;
+esac; exit 0`,
+		"docker": "exit 0",
+	})
+	jq, _ := exec.LookPath("jq")
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	status := func() string {
+		t.Helper()
+		out, err := mcpSync(t, env, "status")
+		if err != nil {
+			t.Fatalf("status: %v\n%s", err, out)
+		}
+		return out
+	}
+	if got, want := status(), "a\tunregistered\t\nb\twaiting\tTOKEN\nc\tunregistered\t\n"; got != want {
+		t.Errorf("before:\n%q\nwant\n%q", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(mcp, "servers")); err == nil {
+		t.Error("status saved a server list")
+	}
+	if out, err := mcpSync(t, env); err == nil || !strings.Contains(out, "c: registration failed") {
+		t.Fatalf("sync: %v\n%s", err, out)
+	}
+	if got, want := status(), "a\tok\t\nb\twaiting\tTOKEN\nc\tfailed\tError: c: connection refused\n"; got != want {
+		t.Errorf("after:\n%q\nwant\n%q", got, want)
+	}
+	// Edited after it failed: worth trying again.
+	later := time.Now().Add(time.Minute)
+	if err := os.Chtimes(filepath.Join(mcp, "c", "env"), later, later); err != nil {
+		t.Fatal(err)
+	}
+	if got := status(); !strings.Contains(got, "c\tchanged\t") {
+		t.Errorf("edited after failing:\n%s", got)
+	}
+	// a's settings changed since it registered.
+	putFile(t, filepath.Join(mcp, "a", "env"), []byte("TOKEN=2\n"), 0o600)
+	putFile(t, filepath.Join(cat, "svc.spec"), []byte("DESCRIPTION=Svc2\nKIND=docker\nIMAGE=img:1\nREQUIRED=TOKEN\n"), 0o644)
+	if got := status(); !strings.Contains(got, "a\tchanged\t") {
+		t.Errorf("a changed:\n%s", got)
+	}
+	// No gateway: said first, the rest still from what's on disk.
+	bin2 := fakeBin(t, map[string]string{"mcpjungle": "exit 1", "docker": "exit 0"})
+	env[0] = "PATH=" + bin2 + ":" + filepath.Dir(jq) + ":/usr/bin:/bin"
+	if got := status(); !strings.HasPrefix(got, "-\tdown\t") {
+		t.Errorf("down:\n%s", got)
 	}
 }

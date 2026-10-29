@@ -1098,7 +1098,7 @@ func (mcpSyncStep) Apply(ctx context.Context, e *Env) error {
 		c = Cmd{Name: "env", Args: args, AsUser: true}
 	}
 	if _, err := e.run(ctx, c); err != nil {
-		return fmt.Errorf("some MCP servers did not register (see the log); fill in the keys with 'mcp-sync edit <server>', then run mcp-sync: %w", err)
+		return fmt.Errorf("some MCP servers did not register (see the log); sudo yardo mcp status says why; sudo yardo mcp edit <server> fixes one: %w", err)
 	}
 	return nil
 }

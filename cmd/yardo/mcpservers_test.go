@@ -45,7 +45,7 @@ func TestMCPRows(t *testing.T) {
 		{"mine", true, true, true}, {"docker2", true, false, false}}
 	specs["docker"], specs["docker2"] = &mcp.Spec{}, &mcp.Spec{}
 	inputs := []string{"~/.mcp/jira/env: JIRA_URL", "~/.mcp/jira/env: JIRA_API_TOKEN", "~/.config/yardo/agent.env: OPENAI_API_KEY"}
-	got := mcpRows(entries, found, inputs, specs, true)
+	got := mcpRows(entries, found, inputs, specs, true, nil)
 	// docker isn't there yet (new); docker2 is registered by hand with no
 	// spec of its own, which the next run would drop: off.
 	want := map[string]string{"github": "ok", "jira": "secret", "jira-work": "ok", "opensearch": "failed", "gone": "nospec",
@@ -68,10 +68,10 @@ func TestMCPRows(t *testing.T) {
 		t.Errorf("mine = %+v", mine)
 	}
 	specs["aws-api"] = &mcp.Spec{}
-	if r := mcpRows([]string{"aws-api"}, []foundServer{{"aws-api", true, false, false}}, nil, specs, true); r[0].State != "retired" || r[0].Instead != "aws" {
+	if r := mcpRows([]string{"aws-api"}, []foundServer{{"aws-api", true, false, false}}, nil, specs, true, nil); r[0].State != "retired" || r[0].Instead != "aws" {
 		t.Errorf("retired: %+v", r[0])
 	}
-	if r := mcpRows([]string{"github"}, []foundServer{{"github", false, false, false}}, nil, specs, false); r[0].State != "unchecked" {
+	if r := mcpRows([]string{"github"}, []foundServer{{"github", false, false, false}}, nil, specs, false, nil); r[0].State != "unchecked" {
 		t.Errorf("unchecked: %+v", r[0])
 	}
 }
@@ -116,8 +116,11 @@ func TestMCPDo(t *testing.T) {
 	if got := strings.Join(k.a.MCPServers, " "); got != "jira jira:team docker" {
 		t.Errorf("servers = %q", got)
 	}
-	if out := do(ui.MCPAct{Do: "edit", Entry: "jira"}); !out.apply || out.edit != nil || strings.Join(edited, " ") != "jira" {
-		t.Errorf("edit: %+v, edited %v", out, edited)
+	if out := do(ui.MCPAct{Do: "edit", Entry: "jira"}); out.apply || out.sync != "jira" || strings.Join(edited, " ") != "jira" {
+		t.Errorf("edit (registers now): %+v, edited %v", out, edited)
+	}
+	if out := do(ui.MCPAct{Do: "retry", Entry: "jira"}); out.sync != "jira" {
+		t.Errorf("retry: %+v", out)
 	}
 	envThere = false
 	if out := do(ui.MCPAct{Do: "on", Entry: "grafana:test"}); !out.apply {
@@ -138,5 +141,29 @@ func TestMCPDo(t *testing.T) {
 	}
 	if got := strings.Join(k.a.MCPServers, " "); got != before {
 		t.Errorf("servers after failures = %q, want %q", got, before)
+	}
+}
+
+// mcp-sync status's lines, the servers worth registering now, and how
+// each reads after.
+func TestMCPStatus(t *testing.T) {
+	st, down := parseStatus("-\tdown\thttp://127.0.0.1:8080\njira\tok\t\naws\tfailed\tError: denied\ngh\twaiting\tTOKEN URL\nos\tchanged\t\nnew\tunregistered\t\nbad line\n")
+	if !down || st["jira"].state != "ok" || st["aws"].detail != "Error: denied" || st["gh"].detail != "TOKEN URL" || len(st) != 5 {
+		t.Errorf("parseStatus = %v, %v", st, down)
+	}
+	if got := strings.Join(mcpPending(st), " "); got != "new os" {
+		t.Errorf("pending = %q", got)
+	}
+	for name, want := range map[string]string{"jira": "✓ jira: registered", "aws": "✗ aws didn't register: Error: denied",
+		"gh": "not registered until TOKEN URL is filled in (sudo yardo mcp edit gh)"} {
+		if got := mcpSays(name, st[name], true); !strings.Contains(got, want) {
+			t.Errorf("%s: %q", name, got)
+		}
+	}
+	// What mcp-sync says wins: failed with why, pending, waiting's keys.
+	specs := map[string]*mcp.Spec{"aws": {}, "os": {}, "gh": {}}
+	rows := mcpRows([]string{"aws", "os", "gh"}, []foundServer{{"aws", false, false, false}, {"os", true, false, false}, {"gh", false, false, false}}, nil, specs, true, st)
+	if rows[0].State != "failed" || rows[0].Detail != "Error: denied" || rows[1].State != "pending" || rows[2].State != "secret" || strings.Join(rows[2].Keys, " ") != "TOKEN URL" {
+		t.Errorf("rows = %+v", rows)
 	}
 }

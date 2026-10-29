@@ -1698,7 +1698,7 @@ sync_mcp() {
     warn "mcpjungle is not answering on port $MCPJUNGLE_PORT; check: journalctl -u mcpjungle"
   as_user env MCP_CATALOG="$CATALOG" MCPJUNGLE_REGISTRY="http://127.0.0.1:$MCPJUNGLE_PORT" \
     "$BIN/mcp-sync" $(mcp_names) || warn "Some servers did not register (see above)."
-  faint "Change credentials in ~$A_USER/.mcp/<name>/env, then run mcp-sync as $A_USER."
+  faint "Change a server's settings with: sudo yardo mcp edit <name> (it registers it after)."
 }
 
 # read_secrets — the typed secrets the Go yardo passes on stdin:
@@ -1813,7 +1813,7 @@ missing_secrets() {
     for n in $A_MCP_SERVERS; do
       spec_file "$(mcp_spec "$n")" >/dev/null || continue
       for k in $(spec_field "$(mcp_spec "$n")" REQUIRED); do
-        [ -z "$(envget "$k" "$home/.mcp/$(mcp_name "$n")/env")" ] && echo "$home/.mcp/$(mcp_name "$n")/env  $k — see the comments in the file; then run: mcp-sync"
+        [ -z "$(envget "$k" "$home/.mcp/$(mcp_name "$n")/env")" ] && echo "$home/.mcp/$(mcp_name "$n")/env  $k — run: sudo yardo mcp edit $(mcp_name "$n")"
       done
     done ;;
   esac

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/user"
@@ -10,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/mcp"
 	"github.com/eugenetaranov/yardo/internal/ui"
 )
@@ -99,19 +102,11 @@ func (k *asker) mcpSyncAs(ctx context.Context, args ...string) error {
 	if k.mcpSync != nil {
 		return k.mcpSync(args...)
 	}
-	port := k.a.MCPPort
-	if port == 0 && k.port != nil {
-		port = k.port()
+	a := *k.a
+	if a.MCPPort == 0 && k.port != nil {
+		a.MCPPort = k.port()
 	}
-	// This version's mcp-sync (unpacked as root at start): the installed
-	// one is replaced only when the run applies, after these questions.
-	sync := filepath.Join(k.share, "mcp-sync")
-	if _, err := os.Stat(sync); k.share == "" || err != nil {
-		sync = "/usr/local/bin/mcp-sync"
-	}
-	c := exec.CommandContext(ctx, "runuser", append([]string{"-u", mcpOwner(k.a.User), "--", "env",
-		"MCP_DIR=" + filepath.Join(homeOf(k.a.User), ".mcp"), fmt.Sprintf("MCPJUNGLE_REGISTRY=http://127.0.0.1:%d", port),
-		sync}, args...)...)
+	c := mcpSyncCmd(ctx, k.share, &a, args...)
 	out, err := c.CombinedOutput()
 	s := strings.TrimSpace(string(out))
 	if err != nil && s != "" {
@@ -132,7 +127,8 @@ var retiredMCP = map[string]string{"aws-api": "aws"}
 // mcpRows are the menu's MCP servers: yardo's (entries), then the others
 // found in ~/.mcp, each with its state. inputs are the MCP servers' empty
 // values ("~/.mcp/<name>/env: KEY"); checked: the gateway's state is known.
-func mcpRows(entries []string, found []foundServer, inputs []string, specs map[string]*mcp.Spec, checked bool) []ui.MCPServer {
+// st is mcp-sync status's say, when it could (it wins over the rest).
+func mcpRows(entries []string, found []foundServer, inputs []string, specs map[string]*mcp.Spec, checked bool, st map[string]syncState) []ui.MCPServer {
 	byEntry := map[string]foundServer{}
 	for _, f := range found {
 		byEntry[f.entry] = f
@@ -177,6 +173,20 @@ func mcpRows(entries []string, found []foundServer, inputs []string, specs map[s
 		default:
 			r.State = "failed"
 		}
+		if s, ok := st[name]; ok && yardo {
+			switch s.state {
+			case "ok":
+				r.State = "ok"
+			case "waiting":
+				r.State, r.Keys = "secret", strings.Fields(s.detail)
+			case "failed":
+				r.State, r.Detail = "failed", s.detail
+			case "changed", "unregistered":
+				r.State = "pending"
+			case "noenv":
+				r.State = "new"
+			}
+		}
 		return r, true
 	}
 	var out []ui.MCPServer
@@ -211,6 +221,7 @@ type mcpOutcome struct {
 	apply bool
 	edit  []string
 	toast string
+	sync  string // register now (mcp-sync), and say how name went
 }
 
 // mcpDo does act to an MCP server, changing the answers' servers; on an
@@ -238,17 +249,23 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 		adopt()
 		return mcpOutcome{apply: true}, nil
 	case "edit":
+		yardo := slices.Contains(k.a.MCPServers, act.Entry)
 		adopt()
 		edited, err := k.editNow(ctx, name)
 		if err != nil {
 			k.a.MCPServers = before
 			return mcpOutcome{}, err
 		}
+		if edited && yardo {
+			return mcpOutcome{sync: name}, nil // registered now, said on the menu
+		}
 		out := mcpOutcome{apply: true}
 		if !edited {
 			out.edit = []string{name} // no env yet: the run makes it from the spec
 		}
 		return out, nil
+	case "retry":
+		return mcpOutcome{sync: name}, nil
 	case "rename":
 		_, to, err := mcp.Instance(act.To)
 		if err != nil {
@@ -285,4 +302,146 @@ func (k *asker) editNow(ctx context.Context, name string) (bool, error) {
 		return false, nil
 	}
 	return true, editMCP(ctx, k.a.User, name)
+}
+
+// syncState is a server's state as mcp-sync status says it: ok, waiting
+// (detail: the keys), changed, unregistered, failed (detail: why),
+// nospec, noenv.
+type syncState struct{ state, detail string }
+
+// mcpSyncCmd is this version's mcp-sync (unpacked at start; else the
+// installed one) with args, as login's ~/.mcp owner on its gateway.
+func mcpSyncCmd(ctx context.Context, share string, a *answers.Answers, args ...string) *exec.Cmd {
+	sync := filepath.Join(share, "mcp-sync")
+	if _, err := os.Stat(sync); share == "" || err != nil {
+		sync = "/usr/local/bin/mcp-sync"
+	}
+	port := a.MCPPort
+	if port == 0 {
+		port = answers.FirstMCPPort
+	}
+	return exec.CommandContext(ctx, "runuser", append([]string{"-u", mcpOwner(a.User), "--", "env",
+		"MCP_DIR=" + filepath.Join(homeOf(a.User), ".mcp"), fmt.Sprintf("MCPJUNGLE_REGISTRY=http://127.0.0.1:%d", port),
+		"MCP_SYNC_QUIET=1", sync}, args...)...)
+}
+
+// mcpStatus is each server's state (mcp-sync status), and whether the
+// gateway can't be reached; nil when mcp-sync can't say.
+func (o *options) mcpStatus(ctx context.Context, a *answers.Answers) (map[string]syncState, bool) {
+	out, err := mcpSyncCmd(ctx, o.share(), a, "status").Output()
+	if err != nil {
+		return nil, false
+	}
+	return parseStatus(string(out))
+}
+
+func parseStatus(out string) (map[string]syncState, bool) {
+	st := map[string]syncState{}
+	down := false
+	for _, l := range strings.Split(out, "\n") {
+		f := strings.SplitN(l, "\t", 3)
+		if len(f) < 2 {
+			continue
+		}
+		if f[0] == "-" && f[1] == "down" {
+			down = true
+			continue
+		}
+		s := syncState{state: f[1]}
+		if len(f) == 3 {
+			s.detail = f[2]
+		}
+		st[f[0]] = s
+	}
+	return st, down
+}
+
+// mcpSyncNow registers yardo's servers (those changed or not registered
+// yet) now, as the mcp_sync step does; mcp-sync's lines go to w.
+func (o *options) mcpSyncNow(ctx context.Context, a *answers.Answers, w io.Writer) error {
+	c := mcpSyncCmd(ctx, o.share(), a, mcpNames(a.MCPServers)...)
+	c.Stdout, c.Stderr = w, w
+	return c.Run()
+}
+
+// mcpSays is what a server's state reads as, in a line: what happened
+// after it was synced.
+func mcpSays(name string, s syncState, ok bool) string {
+	switch {
+	case !ok:
+		return name + ": yardo can't tell how it is (sudo yardo mcp status)."
+	case s.state == "ok":
+		return "✓ " + name + ": registered; agents see its tools as " + name + "__<tool>."
+	case s.state == "waiting":
+		return "○ " + name + ": not registered until " + s.detail + " is filled in (sudo yardo mcp edit " + name + ")."
+	case s.state == "failed":
+		return "✗ " + name + " didn't register: " + s.detail
+	case s.state == "nospec":
+		return "✗ " + name + ": no longer in the catalog."
+	}
+	return "✗ " + name + ": not registered yet (sudo yardo mcp sync)."
+}
+
+// mcpPending says whether any server would register if synced now: its
+// settings changed, or it never registered (one that failed is tried
+// again only once its settings change).
+func mcpPending(st map[string]syncState) []string {
+	var out []string
+	for n, s := range st {
+		if s.state == "changed" || s.state == "unregistered" {
+			out = append(out, n)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// mcpCmd runs `yardo mcp edit <name>`, `sync` and `status` (the bare
+// `yardo mcp` opens the menu on its MCP servers).
+func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Store, args []string) error {
+	u, err := o.userFor(st)
+	if err != nil {
+		return err
+	}
+	a, _, err := st.Load(u)
+	if err != nil {
+		return err
+	}
+	a.User = u
+	if os.Geteuid() != 0 {
+		return errors.New("run it with sudo: sudo yardo mcp " + strings.Join(args, " "))
+	}
+	show := func(names []string) {
+		s, down := o.mcpStatus(ctx, a)
+		if down {
+			fmt.Fprintln(stdout, "✗ The MCP gateway isn't answering: sudo yardo, then Fix it.")
+		}
+		for _, n := range names {
+			v, ok := s[n]
+			fmt.Fprintln(stdout, mcpSays(n, v, ok))
+		}
+	}
+	switch args[0] {
+	case "edit":
+		if len(args) != 2 || !slices.Contains(mcpNames(a.MCPServers), args[1]) {
+			return fmt.Errorf("usage: sudo yardo mcp edit <server>; the servers: %s", strings.Join(mcpNames(a.MCPServers), ", "))
+		}
+		if err := editMCP(ctx, a.User, args[1]); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "Registering %s…\n", args[1])
+		_ = o.mcpSyncNow(ctx, a, io.Discard)
+		show([]string{args[1]})
+	case "sync":
+		err := o.mcpSyncNow(ctx, a, stdout)
+		show(mcpNames(a.MCPServers))
+		if err != nil {
+			return errors.New("some MCP servers didn't register (above)")
+		}
+	case "status":
+		show(mcpNames(a.MCPServers))
+	default:
+		return fmt.Errorf("unknown: yardo mcp %s (yardo mcp, mcp edit <server>, mcp sync, mcp status)", args[0])
+	}
+	return nil
 }

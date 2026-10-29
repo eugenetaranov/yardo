@@ -6,6 +6,9 @@
 #   mcp-sync edit <name>   edit a server's credentials (~/.mcp/<name>/env)
 #   mcp-sync rename <name> <new>  rename a server (deregistered; run mcp-sync to register it)
 #   mcp-sync remove <name> deregister a server and delete its ~/.mcp/<name> (its settings)
+#   mcp-sync status        each server's state, a line each: <name> TAB <state> TAB <detail>
+#                          (ok, waiting <keys>, changed, unregistered, failed <why>,
+#                          nospec, noenv; "-  down" first when the gateway can't be reached)
 #   mcp-sync client <name> make a token for another MCP client (a laptop's agent), allowed
 #                          every server; only when the gateway listens beyond this machine
 #
@@ -89,7 +92,7 @@ if [ "${1:-}" = edit ]; then
   [ -f "$MCP_DIR/$2/env" ] || : > "$MCP_DIR/$2/env"
   chmod 600 "$MCP_DIR/$2/env"
   "${EDITOR:-vi}" "$MCP_DIR/$2/env"
-  echo "Now run mcp-sync to register it."
+  [ -n "${MCP_SYNC_QUIET:-}" ] || echo "Now run mcp-sync to register it (or: sudo yardo mcp sync)."
   exit 0
 fi
 
@@ -134,7 +137,10 @@ if [ "${1:-}" = remove ]; then
   exit 0
 fi
 
-if [ $# -gt 0 ]; then
+STATUS=
+[ "${1:-}" = status ] && { STATUS=1; shift; }
+
+if [ $# -gt 0 ] && [ -z "$STATUS" ]; then
   for n in "$@"; do
     valid_name "$n" || { echo "mcp-sync: not a server name: $n" >&2; exit 2; }
   done
@@ -210,13 +216,20 @@ render() {
 
 failed=0
 want=$(enabled)
-live=$(mj --registry "$REGISTRY" list servers 2>/dev/null) || {
-  echo "cannot reach the MCPJungle gateway at $REGISTRY" >&2; exit 1; }
-live=$(echo "$live" | sed -n 's/^[0-9][0-9]*\. //p')
+if live=$(mj --registry "$REGISTRY" list servers 2>/dev/null); then
+  live=$(echo "$live" | sed -n 's/^[0-9][0-9]*\. //p')
+elif [ -n "$STATUS" ]; then
+  printf -- '-\tdown\t%s\n' "$REGISTRY"; live=
+else
+  echo "cannot reach the MCPJungle gateway at $REGISTRY" >&2; exit 1
+fi
+# state NAME STATE [DETAIL] — a status line.
+state() { printf '%s\t%s\t%s\n' "$1" "$2" "${3:-}"; }
 
 for NAME in $want; do
   spec=$(spec_for "$NAME")
   if [ -z "$spec" ]; then
+    if [ -n "$STATUS" ]; then state "$NAME" nospec; continue; fi
     echo "$NAME: no spec (not in $CATALOG and no $MCP_DIR/$NAME/spec) — skipped"
     continue
   fi
@@ -232,6 +245,7 @@ for NAME in $want; do
   esac
 
   dir="$MCP_DIR/$NAME"
+  if [ -n "$STATUS" ] && [ ! -f "$dir/env" ]; then state "$NAME" noenv; continue; fi
   mkdir -p "$dir"; chmod 700 "$dir"
   if [ ! -f "$dir/env" ]; then
     if command -v skeleton >/dev/null 2>&1; then skeleton > "$dir/env"; else : > "$dir/env"; fi
@@ -243,32 +257,60 @@ for NAME in $want; do
     [ -n "$(envget "$key" "$dir/env")" ] || missing="$missing $key"
   done
   if [ -n "$missing" ]; then
-    echo "$NAME: waiting for credentials — fill in$missing in $dir/env, then run mcp-sync"
+    if [ -n "$STATUS" ]; then state "$NAME" waiting "${missing# }"; continue; fi
+    echo "$NAME: waiting for credentials — fill in$missing in $dir/env (sudo yardo mcp edit $NAME)"
+    continue
+  fi
+
+  if [ -n "$STATUS" ]; then
+    # Registered as it is now; else changed since (or since it failed:
+    # worth trying again), failed (why), or not registered.
+    if ! render "$NAME" > "$dir/.config.json.status" 2>/dev/null; then
+      rm -f "$dir/.config.json.status"; state "$NAME" failed "its settings don't make a config"; continue
+    fi
+    if [ -f "$dir/.registered.json" ] && cmp -s "$dir/.config.json.status" "$dir/.registered.json"; then
+      if [ -z "$live" ] || echo "$live" | grep -qx "$NAME"; then state "$NAME" ok; else state "$NAME" unregistered; fi
+    elif [ -f "$dir/.registered.json" ]; then
+      state "$NAME" changed
+    elif [ -f "$dir/.error" ] && [ "$dir/env" -nt "$dir/.error" ]; then
+      state "$NAME" changed
+    elif [ -f "$dir/.error" ]; then
+      state "$NAME" failed "$(grep -v '^[[:space:]]*$' "$dir/.error" | head -n 3 | tr '\n\t' '  ' | sed 's/ *$//')"
+    else
+      state "$NAME" unregistered
+    fi
+    rm -f "$dir/.config.json.status"
     continue
   fi
 
   render "$NAME" > "$dir/.config.json.new"
   if [ -f "$dir/.registered.json" ] && cmp -s "$dir/.config.json.new" "$dir/.registered.json" \
      && echo "$live" | grep -qx "$NAME"; then
-    rm -f "$dir/.config.json.new"
+    rm -f "$dir/.config.json.new" "$dir/.error"
     echo "$NAME: up to date"
     continue
   fi
   if [ "$KIND" = docker ] && ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     echo "$NAME: pulling $IMAGE"
-    docker pull -q "$IMAGE" >/dev/null || { echo "$NAME: docker pull failed"; failed=1; continue; }
+    docker pull -q "$IMAGE" >/dev/null || {
+      echo "$NAME: docker pull failed"; echo "couldn't pull $IMAGE" > "$dir/.error"; failed=1; continue; }
   fi
   out=$(mj --registry "$REGISTRY" register --force -c "$dir/.config.json.new" 2>&1) && rc=0 || rc=$?
   if [ "$rc" -eq 0 ]; then
     mv "$dir/.config.json.new" "$dir/.registered.json"
+    rm -f "$dir/.error"
     echo "$NAME: registered"
   else
     rm -f "$dir/.config.json.new" "$dir/.registered.json"
+    # Why, for status (and yardo) to say; kept until it registers.
+    echo "$out" | grep -v '^TIP:' | grep -v '^[[:space:]]*$' > "$dir/.error" || echo "registration failed" > "$dir/.error"
     echo "$NAME: registration failed (check $dir/env):"
-    echo "$out" | grep -v '^TIP:' | grep -v '^$' | sed 's/^/  /'
+    sed 's/^/  /' "$dir/.error"
     failed=1
   fi
 done
+
+[ -n "$STATUS" ] && exit 0
 
 # Deregister servers that were synced before but are no longer enabled.
 for reg in "$MCP_DIR"/*/.registered.json; do

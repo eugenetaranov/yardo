@@ -371,7 +371,14 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	info := ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04")}
 	if picked("mcpjungle") && !first {
 		specs := o.mcpSpecs(ctx)
-		info.MCP = mcpRows(a.MCPServers, findMCP(ctx, a.User, specs), status["mcpjungle"].Inputs, specs, len(status) > 0)
+		// Watchful: servers changed (or never registered) register now.
+		sync, down := o.mcpStatus(ctx, a)
+		if pending := mcpPending(sync); len(pending) > 0 && !down {
+			fmt.Printf("Registering MCP servers: %s…\n", strings.Join(pending, ", "))
+			_ = o.mcpSyncNow(ctx, a, io.Discard)
+			sync, down = o.mcpStatus(ctx, a)
+		}
+		info.MCP = mcpRows(a.MCPServers, findMCP(ctx, a.User, specs), status["mcpjungle"].Inputs, specs, len(status) > 0, sync)
 		if info.MCP == nil {
 			info.MCP = []ui.MCPServer{}
 		}
@@ -382,7 +389,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			info.MCPSpecs = append(info.MCPSpecs, ui.MCPSpec{Name: n, About: specs[n].Description})
 		}
 		st := status["mcpjungle-install"].State
-		info.MCPDown = st == "down" || st == "missing"
+		info.MCPDown = down || st == "down" || st == "missing"
 	}
 	return &screen{info: info, sub: sub, first: first, updates: updates,
 		tabs: tabs, items: items, settings: settings, actions: actions, connect: strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")}, nil
@@ -415,26 +422,32 @@ func (d *screen) forget() {
 // fillIn opens the file holding the first of an item's empty values
 // (inputs, "file: KEY") in an editor: as the user for their own files, as
 // the gateway's user (mcp-sync edit) for an MCP server's. It returns the
-// items to re-apply after (an MCP server's registers then), or nil.
-func (o *options) fillIn(ctx context.Context, a *answers.Answers, inputs []string) ([]string, error) {
+// items to re-apply after, or nil; an MCP server's registers right after,
+// and toast says how it went.
+func (o *options) fillIn(ctx context.Context, a *answers.Answers, inputs []string) ([]string, string, error) {
 	if len(inputs) == 0 {
-		return nil, nil
+		return nil, "", nil
 	}
 	path, _, _ := strings.Cut(inputs[0], ": ")
 	home := homeOf(a.User)
 	if rest, ok := strings.CutPrefix(path, "~/.mcp/"); ok {
-		if err := editMCP(ctx, a.User, strings.SplitN(rest, "/", 2)[0]); err != nil {
-			return nil, err
+		name := strings.SplitN(rest, "/", 2)[0]
+		if err := editMCP(ctx, a.User, name); err != nil {
+			return nil, "", err
 		}
-		return []string{"mcpjungle"}, nil
+		fmt.Printf("Registering %s…\n", name)
+		_ = o.mcpSyncNow(ctx, a, io.Discard)
+		s, _ := o.mcpStatus(ctx, a)
+		v, ok := s[name]
+		return nil, mcpSays(name, v, ok), nil
 	}
 	args := append([]string{"-u", a.User, "--", "sh", "-c", steps.UserShell, "_"}, editorFor(ctx, a.User, home)...)
 	c := exec.CommandContext(ctx, "runuser", append(args, strings.Replace(path, "~", home, 1))...)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := c.Run(); err != nil {
-		return nil, fmt.Errorf("editing %s: %w", path, err)
+		return nil, "", fmt.Errorf("editing %s: %w", path, err)
 	}
-	return nil, nil
+	return nil, "", nil
 }
 
 // mcpSpecs are the catalog's MCP servers, loaded once (the menu's data

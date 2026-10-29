@@ -20,6 +20,9 @@ Usage:
 
 Commands:
   status [--json] [--updates]  what's installed, down, partial or waiting for a value
+  mcp [edit NAME | sync | status]
+                               the MCP servers: the screen; edit one's settings (then
+                               it registers); register what changed; how each is
   export [--name N] [--lock] [FILE]
                                write the saved choices as a profile
   connect                      how to reach this machine from a laptop

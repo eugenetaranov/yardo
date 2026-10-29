@@ -45,6 +45,8 @@ type MCPServer struct {
 	// Instead is what replaces it, when its maker retired it (State
 	// retired): aws for aws-api.
 	Instead string
+	// Detail is why it didn't register (State failed).
+	Detail string
 }
 
 // MCPSpec is a catalog server, to add.

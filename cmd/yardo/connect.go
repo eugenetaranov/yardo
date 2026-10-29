@@ -114,19 +114,9 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address) {
 // connect is `yardo connect`: how to reach this machine from a laptop, for
 // the user who ran sudo (or --user).
 func (o *options) connect(stdout io.Writer, st *answers.Store) error {
-	u := o.user
-	if u == "" {
-		u = os.Getenv("SUDO_USER")
-	}
-	if u == "" || u == "root" {
-		saved, _, err := st.Users()
-		if err != nil {
-			return err
-		}
-		if len(saved) != 1 {
-			return errors.New("which user? give --user")
-		}
-		u = saved[0]
+	u, err := o.userFor(st)
+	if err != nil {
+		return err
 	}
 	a, _, err := st.Load(u)
 	if err != nil {
@@ -135,4 +125,24 @@ func (o *options) connect(stdout io.Writer, st *answers.Store) error {
 	a.User = u
 	printConnect(stdout, a, addresses())
 	return nil
+}
+
+// userFor is whose answers a command is about: --user, the sudo user, or
+// the one user set up.
+func (o *options) userFor(st *answers.Store) (string, error) {
+	u := o.user
+	if u == "" {
+		u = os.Getenv("SUDO_USER")
+	}
+	if u == "" || u == "root" {
+		saved, _, err := st.Users()
+		if err != nil {
+			return "", err
+		}
+		if len(saved) != 1 {
+			return "", errors.New("which user? give --user")
+		}
+		u = saved[0]
+	}
+	return u, nil
 }

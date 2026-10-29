@@ -139,7 +139,7 @@ func mcpMenu() *Menu {
 		{Entry: "github", Name: "github", Spec: "github", About: "GitHub: repositories and pull requests", State: "ok", Yardo: true},
 		{Entry: "jira", Name: "jira", Spec: "jira", About: "Jira and Confluence", State: "secret", Keys: []string{"JIRA_API_TOKEN"}, Yardo: true},
 		{Entry: "jira:work", Name: "jira-work", Spec: "jira", About: "Jira and Confluence", State: "ok", Yardo: true},
-		{Entry: "opensearch", Name: "opensearch", Spec: "opensearch", State: "failed", Yardo: true},
+		{Entry: "opensearch", Name: "opensearch", Spec: "opensearch", State: "failed", Detail: "Error: connection refused", Yardo: true},
 		{Entry: "grafana:test", Name: "grafana-test", Spec: "grafana", State: "off"},
 	}
 	m.info.MCPSpecs = []MCPSpec{{"aws-api", "AWS: run AWS CLI commands"}, {"github", "GitHub"}, {"grafana", "Grafana"}, {"jira", "Jira and Confluence"}}
@@ -348,5 +348,42 @@ func TestMenuMCPScroll(t *testing.T) {
 	}
 	if v := m.View(); !strings.Contains(v, "› spec29") || strings.Contains(v, "aws-api") {
 		t.Errorf("scrolled:\n%s", v)
+	}
+}
+
+// A server that didn't register says why, and offers Try again first.
+func TestMenuMCPFailed(t *testing.T) {
+	m := mcpMenu()
+	onRow(m, "mcp")
+	mk(m, "enter", "down", "down", "down", "enter") // opensearch
+	if v := m.View(); !strings.Contains(v, "Error: connection refused") || !strings.Contains(v, "› Try again") {
+		t.Fatalf("failed server:\n%s", v)
+	}
+	mk(m, "enter")
+	if r := m.result; r.MCP != (MCPAct{Do: "retry", Entry: "opensearch"}) {
+		t.Errorf("retry: %+v", r)
+	}
+}
+
+// e on the list edits the server under the cursor (not the Add row).
+func TestMenuMCPEditKey(t *testing.T) {
+	m := mcpMenu()
+	onRow(m, "mcp")
+	mk(m, "enter", "down", "e")
+	if r := m.result; r.Kind != MenuMCP || r.MCP != (MCPAct{Do: "edit", Entry: "jira"}) {
+		t.Errorf("e: %+v", r)
+	}
+	m = mcpMenu()
+	onRow(m, "mcp")
+	mk(m, "enter")
+	for range len(m.info.MCP) {
+		mk(m, "down")
+	}
+	mk(m, "e")
+	if m.result.Kind != MenuQuit || m.screen != "mcp" {
+		t.Errorf("e on Add: %+v", m.result)
+	}
+	if !strings.Contains(m.View(), "e edit its settings") {
+		t.Errorf("keys:\n%s", m.View())
 	}
 }

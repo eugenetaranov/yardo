@@ -117,6 +117,8 @@ type options struct {
 	yes, dryRun, verify, showVersion, list bool
 	// specs are the catalog's MCP servers, once loaded (mcpSpecs).
 	specs map[string]*mcp.Spec
+	// startMCP: `yardo mcp` opens the menu on its MCP servers.
+	startMCP bool
 	// status: `yardo status` (verify, reported per item; --json for
 	// scripts), collected in statuses.
 	status, json, updates bool
@@ -195,6 +197,13 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			}
 		case "connect":
 			return o.connect(stdout, st)
+		case "mcp":
+			if fs.NArg() > 1 {
+				ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+				defer stop()
+				return o.mcpCmd(ctx, stdout, st, fs.Args()[1:])
+			}
+			o.startMCP = true // the menu, on its MCP servers
 		case "status":
 			sfs := flag.NewFlagSet("yardo status", flag.ContinueOnError)
 			sfs.SetOutput(stderr)
@@ -205,7 +214,7 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			}
 			o.status, o.verify = true, true
 		default:
-			return fmt.Errorf("unknown command %q (commands: status, export, connect, gitkey, version, forget; see yardo --help)", fs.Arg(0))
+			return fmt.Errorf("unknown command %q (commands: status, mcp, export, connect, gitkey, version, forget; see yardo --help)", fs.Arg(0))
 		}
 	}
 	if !o.dryRun && !o.verify {
@@ -388,6 +397,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		// deleting one, or from the board), with toast.
 		var reopen, toast string
 		fromBoard := false
+		if o.startMCP && !first {
+			menu, onBoard, reopen = true, false, "mcp"
+		}
 	loop:
 		for {
 			if d == nil {
@@ -418,13 +430,17 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					fix = []string{res.ID}
 					break loop
 				case ui.MenuEdit:
-					if fix, err = o.fillIn(ctx, a, res.Inputs); err != nil {
+					var said string
+					if fix, said, err = o.fillIn(ctx, a, res.Inputs); err != nil {
 						return err
 					}
 					if fix != nil {
 						break loop
 					}
 					d = nil
+					if said != "" {
+						reopen, toast = "home", said
+					}
 				case ui.MenuApply:
 					board = &ui.BoardResult{Kind: ui.BoardApply, Settings: res.Settings}
 					break loop
@@ -434,6 +450,17 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					out, err := k.mcpDo(ctx, res.MCP, o.mcpSpecs(ctx))
 					if err != nil {
 						reopen, toast, fromBoard, d = "mcp", "✗ "+err.Error(), wasFromBoard, nil
+						continue
+					}
+					if out.sync != "" {
+						if err := st.Save(a); err != nil {
+							return err
+						}
+						fmt.Fprintf(stdout, "Registering %s…\n", out.sync)
+						_ = o.mcpSyncNow(ctx, a, io.Discard)
+						s, _ := o.mcpStatus(ctx, a)
+						v, ok := s[out.sync]
+						reopen, toast, fromBoard, d = "mcp", mcpSays(out.sync, v, ok), wasFromBoard, nil
 						continue
 					}
 					if out.apply {
@@ -468,7 +495,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				fix = []string{res.ID}
 				break loop
 			case ui.BoardEdit:
-				if fix, err = o.fillIn(ctx, a, res.Inputs); err != nil {
+				if fix, _, err = o.fillIn(ctx, a, res.Inputs); err != nil {
 					return err
 				}
 				if fix != nil {
@@ -672,7 +699,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		}
 	}
 	if len(mcpEdit) > 0 && !slices.Contains(res.Failed, "mcpjungle") {
-		if err := o.fillMCP(ctx, r, a.User, items, mcpEdit, stdout); err != nil {
+		if err := o.fillMCP(ctx, r, a, items, mcpEdit, stdout); err != nil {
 			fmt.Fprintf(stderr, "yardo: %v\n", err)
 		}
 	}
@@ -1120,19 +1147,21 @@ func asRoot(args []string) error {
 // fillMCP opens each new MCP server's env file (its spec's skeleton: the
 // settings, the optional ones commented out) in the editor, then applies
 // the MCP servers again, which registers those filled in.
-func (o *options) fillMCP(ctx context.Context, r *run.Runner, user string, items []*catalog.Item, names []string, stdout io.Writer) error {
+func (o *options) fillMCP(ctx context.Context, r *run.Runner, a *answers.Answers, items []*catalog.Item, names []string, stdout io.Writer) error {
 	for _, n := range names {
-		fmt.Fprintf(stdout, "\n%s: its settings open in the editor. Fill in the values, uncomment the options you want, save and quit. (Later: mcp-sync edit %s)\n", n, n)
-		if err := editMCP(ctx, user, n); err != nil {
+		fmt.Fprintf(stdout, "\n%s: its settings open in the editor. Fill in the values, uncomment the options you want, save and quit. (Later: sudo yardo mcp edit %s)\n", n, n)
+		if err := editMCP(ctx, a.User, n); err != nil {
 			return err
 		}
 	}
 	mcpItems := slices.DeleteFunc(slices.Clone(items), func(it *catalog.Item) bool { return it.ID != "mcpjungle" })
-	if len(mcpItems) == 0 {
-		return nil
+	if len(mcpItems) > 0 {
+		_ = r.Run(ctx, mcpItems, nil) // how each went is said below
 	}
-	if res := r.Run(ctx, mcpItems, nil); !res.OK() {
-		return fmt.Errorf("MCP servers: %s", res.Errors["mcpjungle"])
+	s, _ := o.mcpStatus(ctx, a)
+	for _, n := range names {
+		v, ok := s[n]
+		fmt.Fprintln(stdout, mcpSays(n, v, ok))
 	}
 	return nil
 }

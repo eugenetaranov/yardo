@@ -83,6 +83,9 @@ func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
 	if !s.Yardo && s.State == "off" {
 		out = append(out, mcpAction{"on", "Turn it on", "adds it to yardo's servers and registers it"})
 	}
+	if s.Yardo && (s.State == "failed" || s.State == "pending") && !m.info.MCPDown {
+		out = append(out, mcpAction{"retry", "Try again", "registers it as its settings are now"})
+	}
 	out = append(out, mcpAction{"edit", "Edit its settings", "opens ~/.mcp/" + s.Name + "/env, then registers it"})
 	if !m.info.MCPDown {
 		if s.State != "nospec" && s.State != "retired" {
@@ -105,6 +108,8 @@ func mcpWord(s *MCPServer) string {
 		return accent.Render("○ needs " + strings.Join(s.Keys, ", "))
 	case "failed":
 		return yellow.Render("▲ didn't register: check its settings")
+	case "pending":
+		return accent.Render("○ not registered yet")
 	case "nospec":
 		return yellow.Render("▲ no longer in the catalog")
 	case "off":
@@ -149,6 +154,9 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 			m.sel = max(0, m.sel-1)
 		case down:
 			m.sel = min(n, m.sel+1)
+		case k == "e" && m.sel < n:
+			s := m.mcpServers()[m.sel]
+			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "edit", Entry: s.Entry}})
 		case k == "a" || (k == "enter" && m.sel == n):
 			m.mcpSel = n
 			m.screen, m.sel = "mcp:add", m.addSel
@@ -326,7 +334,7 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		}
 		add(window(lines, selLine, room-len(b)-2)...)
 		add("", "  "+muted.Render("Agents reach their tools through the gateway as <name>__<tool>."))
-		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("a", "add"), k("esc", "back")}, "   ")
+		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("e", "edit its settings"), k("a", "add"), k("esc", "back")}, "   ")
 	case "mcp:server", "mcp:delete":
 		s := m.mcpServer()
 		if s == nil {
@@ -344,7 +352,13 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		if s.About != "" {
 			add("  " + s.About)
 		}
-		add("  "+mcpWord(s), "  "+muted.Render("Settings in ~/.mcp/"+s.Name+"/env · tools show as "+s.Name+"__<tool>"), "")
+		add("  " + mcpWord(s))
+		if s.Detail != "" {
+			for _, l := range wrap(s.Detail, w-6) {
+				add("    " + yellow.Render(l))
+			}
+		}
+		add("  "+muted.Render("Settings in ~/.mcp/"+s.Name+"/env · tools show as "+s.Name+"__<tool>"), "")
 		title := "MCP servers  ›  " + s.Name
 		if m.screen == "mcp:delete" {
 			btn := func(n int, label string) string {

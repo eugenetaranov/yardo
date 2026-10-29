@@ -204,8 +204,8 @@ missing_secrets "agentkeys npmrc mcpjungle github"`
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	want := []string{
 		home + "/.config/yardo/agent.env  OPENAI_API_KEY — https://platform.openai.com/api-keys",
-		home + "/.mcp/linear/env  LINEAR_API_KEY — see the comments in the file; then run: mcp-sync",
-		home + "/.mcp/linear-work/env  LINEAR_API_KEY — see the comments in the file; then run: mcp-sync",
+		home + "/.mcp/linear/env  LINEAR_API_KEY — run: sudo yardo mcp edit linear",
+		home + "/.mcp/linear-work/env  LINEAR_API_KEY — run: sudo yardo mcp edit linear-work",
 		"gh  GitHub login — run: gh auth login",
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
