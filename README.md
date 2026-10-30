@@ -130,7 +130,7 @@ to. Esc clears the search; Esc on an empty search quits (on Configure:
 goes back).
 
 **Always**, on every machine, with nothing to pick. Installing: essentials
-(git, curl, jq, gh, build tools). Configuring: automatic security updates
+(git, curl, jq, yq, gh, build tools). Configuring: automatic security updates
 (no auto-reboot) with needrestart restarting services quietly; weekly
 updates of your tools (a systemd timer running `mise up` and `krew upgrade`
 as you); SSH keys only, no root login
@@ -149,7 +149,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    cargo-binstall. Any other language is a search and ctrl-a away (an
    extra mise tool: `bun`, `deno`, `zig`, `dotnet`, …).
 2. **Dev → Dev tools:** dev CLIs and linters as one item (just, Task,
-   watchexec, hyperfine, yq, xh, hurl; shellcheck, shfmt, actionlint,
+   watchexec, hyperfine, xh, hurl; shellcheck, shfmt, actionlint,
    gitleaks, pre-commit), database clients (psql, pgcli, usql, mariadb,
    sqlite3, redis-cli), jiractl (Jira from the terminal), restic + rclone
    (backups, cloud storage).
