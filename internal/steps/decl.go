@@ -213,7 +213,9 @@ func MiseHas(ctx context.Context, e *Env, tools []string) (bool, error) {
 	for _, t := range tools {
 		name := MiseName(t)
 		vs, ok := have[name]
-		if !ok {
+		// A version the config asks for and that isn't installed (lts
+		// moving to a new major) is listed too: missing.
+		if !ok || slices.ContainsFunc(vs, func(v miseVersion) bool { return !v.Installed }) {
 			return false, nil
 		}
 		if e.Lock != nil && e.Lock.Mise[name] != "" && !slices.ContainsFunc(vs, func(v miseVersion) bool { return v.Version == e.Lock.Mise[name] }) {

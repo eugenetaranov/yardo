@@ -514,3 +514,14 @@ func TestMiseReinstallFromGit(t *testing.T) {
 		t.Errorf("ran %s", got)
 	}
 }
+
+// A version the config asks for but isn't installed (node@lts after a new
+// LTS) makes the tool missing, so a re-run installs it.
+func TestMiseHasMissingVersion(t *testing.T) {
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		return []byte(`{"node":[{"version":"24.22.1","installed":true},{"version":"26.13.0","installed":false,"active":true}]}`), nil
+	}}
+	if ok, _ := MiseHas(context.Background(), testEnv(t, x), []string{"node@lts"}); ok {
+		t.Error("node@26 not installed: should be missing")
+	}
+}
