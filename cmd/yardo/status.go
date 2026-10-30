@@ -291,8 +291,8 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	for _, t := range cat.PhaseTabs(catalog.PhaseConfigure) {
 		vm.Sections = append(vm.Sections, ui.Tab{ID: t.ID, Title: t.Title})
 	}
-	vm.Sections = append(vm.Sections, ui.Tab{ID: "__access__", Title: "Who can reach it"}, ui.Tab{ID: "__look__", Title: "Look"},
-		ui.Tab{ID: "__machine__", Title: "This machine"})
+	vm.Sections = append(vm.Sections, ui.Tab{ID: "__access__", Title: "Who can connect"}, ui.Tab{ID: "__look__", Title: "Look"},
+		ui.Tab{ID: "__machine__", Title: "Status & updates"})
 	tabs = append(tabs, vm)
 
 	picked := func(id string) bool { return slices.Contains(a.Picks, id) }

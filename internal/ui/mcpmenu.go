@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/eugenetaranov/yardo/internal/mcp"
@@ -19,6 +20,8 @@ import (
 // on it goes back to the board.
 func (m *Menu) Open(screen, toast string, fromBoard bool) *Menu {
 	m.screen, m.toast, m.fromBoard = screen, toast, fromBoard
+	m.sortMCP()
+	m.normalize()
 	return m
 }
 
@@ -26,21 +29,28 @@ func (m *Menu) hasMCP() bool {
 	return slices.ContainsFunc(m.items, func(i *BoardItem) bool { return i.ID == "mcpjungle" && i.Picked })
 }
 
-// mcpServers are the list's servers in order: yardo's, then the found ones.
-func (m *Menu) mcpServers() []*MCPServer {
-	var yardo, found []*MCPServer
-	for n := range m.info.MCP {
-		s := &m.info.MCP[n]
-		if s.Yardo {
-			yardo = append(yardo, s)
-		} else {
-			found = append(found, s)
+// sortMCP puts the servers in the list's order, once (when the menu is
+// made, or the list opened): yardo's, then the found ones, each by name.
+func (m *Menu) sortMCP() {
+	m.info.MCP = slices.Clone(m.info.MCP)
+	slices.SortStableFunc(m.info.MCP, func(a, b MCPServer) int {
+		if a.Yardo != b.Yardo {
+			if a.Yardo {
+				return -1
+			}
+			return 1
 		}
+		return strings.Compare(a.Name, b.Name)
+	})
+}
+
+// mcpServers are the list's servers, in sortMCP's order.
+func (m *Menu) mcpServers() []*MCPServer {
+	out := make([]*MCPServer, len(m.info.MCP))
+	for n := range m.info.MCP {
+		out[n] = &m.info.MCP[n]
 	}
-	by := func(a, b *MCPServer) int { return strings.Compare(a.Name, b.Name) }
-	slices.SortStableFunc(yardo, by)
-	slices.SortStableFunc(found, by)
-	return append(yardo, found...)
+	return out
 }
 
 func (m *Menu) mcpServer() *MCPServer {
@@ -307,7 +317,6 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 	switch m.screen {
 	case "mcp":
 		ss := m.mcpServers()
-		m.sel = min(m.sel, len(ss))
 		if m.info.MCPDown {
 			add("  "+yellow.Render("▲  The gateway is stopped: fix it from Home first."), "")
 		}
@@ -328,7 +337,7 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 				// Its state padded, so what it is starts in one column.
 				const col = 2 + 21 + 2 + 13 + 2 + 30 + 2
 				head := "  " + rowOn.Render(padTo(" › "+s.Name, 21)) + "  " + padTo(mcpType(s), 13) + "  " + mcpWord(s)
-				head += strings.Repeat(" ", max(2, col-runewidth.StringWidth(stripANSI(head))))
+				head += strings.Repeat(" ", max(2, col-lipgloss.Width(head)))
 				from := ""
 				if s.From != "" {
 					from = fromLine(s)
@@ -350,9 +359,8 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("e", "edit its settings"), k("a", "add"), k("esc", "back")}, "   ")
 	case "mcp:server", "mcp:delete":
 		s := m.mcpServer()
-		if s == nil {
-			m.screen = "mcp"
-			return m.mcpView(w, room)
+		if s == nil { // normalize goes back to the list first
+			return "MCP servers", nil, k("esc", "back")
 		}
 		what := "a " + s.Spec + " server"
 		if s.Spec == "" {
@@ -390,7 +398,6 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			return title, b, strings.Join([]string{k("←→", "choose"), k("enter", "do it"), k("esc", "back")}, "   ")
 		}
 		as := m.mcpActions(s)
-		m.sel = min(m.sel, len(as)-1)
 		for n, a := range as {
 			if n == m.sel {
 				add("  " + rowOn.Render(padTo(" › "+a.label, 24)) + "  " + muted.Render(a.note))
@@ -401,7 +408,6 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		return title, b, strings.Join([]string{k("↑↓", "choose"), k("enter", "do it"), k("esc", "back")}, "   ")
 	case "mcp:add":
 		specs := m.info.MCPSpecs
-		m.sel = min(m.sel, max(0, len(specs)-1))
 		var lines []string
 		for n, s := range specs {
 			note := ""
@@ -411,7 +417,7 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			about := muted.Render(runewidth.Truncate(s.About, max(10, w-50), "…"))
 			if n == m.sel {
 				head := "  " + rowOn.Render(padTo(" › "+s.Name, 21)) + "  "
-				ls := beside(head, 25, w-2-runewidth.StringWidth(stripANSI(note)), muted, s.About)
+				ls := beside(head, 25, w-2-lipgloss.Width(note), muted, s.About)
 				ls[0] += note
 				lines = append(lines, ls...)
 			} else {

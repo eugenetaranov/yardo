@@ -41,24 +41,10 @@ type = "mise"
 tools = ["github:eugenetaranov/jiractl@latest"]
 
 [[item]]
-id = "autoupdate-tools"
-tab = "sysconf"
-label = "Weekly tool updates (mise up, krew upgrade; a systemd timer)"
-always = true
-needs = ["mise"]
-source = "yardo-update@<user>.timer: weekly, as you · run now: sudo systemctl start yardo-update@<user>"
+id = "backup"
+tab = "dev"
+label = "restic + rclone (backups, cloud storage)"
 
 [[item.step]]
-type = "file"
-src = "yardo-update@.service"
-to = "/etc/systemd/system/yardo-update@.service"
-
-[[item.step]]
-type = "file"
-src = "yardo-update@.timer"
-to = "/etc/systemd/system/yardo-update@.timer"
-
-[[item.step]]
-type = "run"
-cmd = "systemctl daemon-reload && systemctl enable --now yardo-update@{{user}}.timer"
-check = "systemctl is-enabled --quiet yardo-update@{{user}}.timer && systemctl is-active --quiet yardo-update@{{user}}.timer"
+type = "mise"
+tools = ["restic@latest", "rclone@latest"]

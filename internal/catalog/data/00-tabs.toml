@@ -3,8 +3,8 @@
 # installs everything first, then configures.
 #
 # Tabs with the same group show as one picker tab, named after the group,
-# each under its own heading: the Dev and DevOps tabs. Items still name
-# the tab (the section) they're in.
+# each under its own heading: the Dev, DevOps, AI and System tabs. Items
+# still name the tab (the section) they're in.
 
 [[tab]]
 id = "lang"
@@ -33,7 +33,14 @@ group = "DevOps"
 
 [[tab]]
 id = "ai"
-title = "AI"
+title = "Coding agents"
+group = "AI"
+
+# What the agents use: specs, agent packs, an MCP gateway, local models.
+[[tab]]
+id = "aiext"
+title = "Add-ons & models"
+group = "AI"
 
 [[tab]]
 id = "shell"
@@ -42,15 +49,19 @@ title = "Shell & CLI"
 [[tab]]
 id = "system"
 title = "System"
+group = "System"
 
 # VPNs and mesh networks: this machine reaching others, and others it.
 [[tab]]
 id = "net"
 title = "Connectivity"
+group = "System"
 
+# Machine settings: the visible ones are who can connect to Docker's
+# ports and API; the rest are always on (baseline every machine gets).
 [[tab]]
 id = "sysconf"
-title = "System settings"
+title = "Who can connect"
 phase = "configure"
 
 [[tab]]
@@ -65,5 +76,5 @@ phase = "configure"
 
 [[tab]]
 id = "logins"
-title = "Logins & keys"
+title = "VPN logins"
 phase = "configure"

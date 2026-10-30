@@ -5,14 +5,16 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
 
 // The menu is yardo's calm home: three lines of how the machine is, then a
 // short menu of plain actions that changes with it ("Fix 2 problems",
-// "Fill in 1 secret", "Add or remove tools", "Who can connect", "Connect
-// from a laptop", updates). Each opens one focused screen; esc comes back.
-// Adding and removing tools opens the board.
+// "Fill in 1 secret", "Add or remove tools", "Who can connect", "Change
+// settings", "Connect from a laptop", updates). Each opens one focused
+// screen; esc (or q) comes back. On the home, q quits. Adding and removing
+// tools, and changing settings, open the board.
 
 // MenuKind is what the menu was left with.
 type MenuKind int
@@ -21,8 +23,8 @@ const (
 	MenuQuit MenuKind = iota
 	// MenuTools opens the board, to add or remove tools.
 	MenuTools
-	// MenuFix re-applies Result.ID now; MenuEdit opens its values to
-	// fill in (Result.Inputs).
+	// MenuFix re-applies Result.IDs now (Fix all: every problem; ID is
+	// the first); MenuEdit opens its values to fill in (Result.Inputs).
 	MenuFix
 	MenuEdit
 	// MenuApply applies Result.Settings (who can connect).
@@ -32,6 +34,9 @@ const (
 	// MenuMCP does Result.MCP to an MCP server: add, edit, on, rename or
 	// delete it.
 	MenuMCP
+	// MenuSettings opens the board on This VM: git, prompt, dotfiles,
+	// the accent colour.
+	MenuSettings
 )
 
 // MCPAct is what to do to an MCP server: Do (add, edit, on, rename,
@@ -42,6 +47,7 @@ type MCPAct struct{ Do, Entry, To string }
 type MenuResult struct {
 	Kind     MenuKind
 	ID       string
+	IDs      []string
 	Inputs   []string
 	Settings map[string]string
 	MCP      MCPAct
@@ -70,21 +76,36 @@ type Menu struct {
 	renaming       bool
 	nameErr        string
 	fromBoard      bool
-	btn    int
-	shown  map[string]bool // fix: details shown
-	pick   map[string]string
-	toast  string
-	width  int
-	height int
-	result MenuResult
-	out    bool
+	btn            int
+	shown          map[string]bool // fix: details shown
+	pick           map[string]string
+	toast          string
+	width          int
+	height         int
+	result         MenuResult
+	out            bool
 }
 
 // NewMenu builds the menu. sub is the header's second half (OS, address);
 // checked: updates were looked for (Items carry them).
 func NewMenu(info HomeInfo, sub string, items []*BoardItem, settings []*BoardSetting, connect []string, checked bool) *Menu {
-	return &Menu{info: info, sub: sub, items: items, settings: settings, connect: connect, checked: checked,
+	m := &Menu{info: info, sub: sub, items: items, settings: settings, connect: connect, checked: checked,
 		screen: "home", shown: map[string]bool{}, pick: map[string]string{}, width: 100, height: 30}
+	m.sortMCP()
+	m.normalize()
+	return m
+}
+
+// access are the settings Who can connect shows: who can reach what,
+// not the look (the accent colour).
+func (m *Menu) access() []*BoardSetting {
+	var out []*BoardSetting
+	for _, s := range m.settings {
+		if s.Section == "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func (m *Menu) filter(f func(*BoardItem) bool) []*BoardItem {
@@ -145,13 +166,14 @@ func (m *Menu) rows() []menuRow {
 		}
 		out = append(out, menuRow{"mcp", "MCP servers", note})
 	}
-	if len(m.settings) > 0 {
+	if as := m.access(); len(as) > 0 {
 		var now []string
-		for _, s := range m.settings {
+		for _, s := range as {
 			now = append(now, s.Label+": "+s.label(s.Value))
 		}
 		out = append(out, menuRow{"access", "Who can connect", strings.Join(now, " · ")})
 	}
+	out = append(out, menuRow{"settings", "Change settings", "git, prompt, dotfiles, accent colour…"})
 	out = append(out, menuRow{"connect", "Connect from a laptop", "Docker over SSH, the MCP gateway"})
 	if us := m.filter(newer); len(us) > 0 {
 		var v []string
@@ -161,6 +183,12 @@ func (m *Menu) rows() []menuRow {
 		out = append(out, menuRow{"updates", "See " + plural(len(us), "update", "updates"), strings.Join(v, " · ")})
 	} else if !m.checked {
 		out = append(out, menuRow{"check", "Check for updates", "apt and mise; takes a while"})
+	} else {
+		note := "none found"
+		if m.info.Checked != "" {
+			note += " at " + m.info.Checked
+		}
+		out = append(out, menuRow{"check", "Check again", note + "; takes a while"})
 	}
 	return out
 }
@@ -181,12 +209,68 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = v.Width, v.Height
 	case tea.KeyMsg:
 		m.toast = ""
+		var cmd tea.Cmd
 		if m.screen == "mcp:name" {
-			return m, m.nameKey(v)
+			cmd = m.nameKey(v)
+		} else {
+			cmd = m.key(v.String())
 		}
-		return m, m.key(v.String())
+		m.normalize()
+		return m, cmd
 	}
 	return m, nil
+}
+
+// clamp is v within lo and hi; lo when hi < lo (an empty list).
+func clamp(v, lo, hi int) int {
+	return max(lo, min(v, hi))
+}
+
+// normalize keeps the screen and its cursor valid as the menu is now: a
+// screen with nothing left on it goes back, and the cursor stays on a
+// row. It runs after every key (and when the menu is made), so View only
+// reads.
+func (m *Menu) normalize() {
+	switch m.screen {
+	case "fix":
+		if len(m.filter(fixable)) == 0 {
+			m.home()
+		}
+	case "secrets":
+		if len(m.filter(secret)) == 0 {
+			m.home()
+		}
+	case "mcp:server", "mcp:delete":
+		if m.mcpServer() == nil {
+			m.screen, m.sel = "mcp", 0
+		}
+	}
+	switch m.screen {
+	case "home":
+		m.sel = clamp(m.sel, 0, len(m.rows())-1)
+	case "fix":
+		m.sel = clamp(m.sel, 0, m.fixRows()-1)
+	case "secrets":
+		m.sel = clamp(m.sel, 0, len(m.filter(secret))-1)
+	case "access":
+		m.sel = clamp(m.sel, 0, len(m.access())) // Apply is the last
+	case "mcp":
+		m.sel = clamp(m.sel, 0, len(m.mcpServers())) // Add a server is the last
+	case "mcp:server":
+		m.sel = clamp(m.sel, 0, len(m.mcpActions(m.mcpServer()))-1)
+	case "mcp:add":
+		m.sel = clamp(m.sel, 0, len(m.info.MCPSpecs)-1)
+	}
+}
+
+// fixRows are the fix screen's rows: a card per problem, then Fix all
+// (with two or more).
+func (m *Menu) fixRows() int {
+	n := len(m.filter(fixable))
+	if n >= 2 {
+		n++
+	}
+	return n
 }
 
 func (m *Menu) quit(r MenuResult) tea.Cmd {
@@ -197,8 +281,11 @@ func (m *Menu) quit(r MenuResult) tea.Cmd {
 // open goes to screen, at its first row.
 func (m *Menu) open(screen string) {
 	m.screen, m.sel, m.btn = screen, 0, 0
-	if screen == "access" {
+	switch screen {
+	case "access":
 		m.pick = map[string]string{}
+	case "mcp":
+		m.sortMCP()
 	}
 }
 
@@ -219,20 +306,28 @@ func (m *Menu) key(k string) tea.Cmd {
 	}
 	up, down := k == "up" || k == "k", k == "down" || k == "j"
 	left, right := k == "left" || k == "h", k == "right" || k == "l"
+	// esc and q go back on every screen but the home; there, q quits and
+	// esc only says so. up and down move; normalize keeps the cursor on a
+	// row.
+	back := k == "esc" || k == "q"
 	switch m.screen {
 	case "home":
 		rs := m.rows()
 		switch {
 		case up:
-			m.sel = max(0, m.sel-1)
+			m.sel--
 		case down:
-			m.sel = min(len(rs)-1, m.sel+1)
-		case k == "q" || k == "esc":
+			m.sel++
+		case k == "q":
 			return m.quit(MenuResult{Kind: MenuQuit})
+		case k == "esc":
+			m.toast = "q quits"
 		case k == "enter":
 			switch id := rs[m.sel].id; id {
 			case "tools":
 				return m.quit(MenuResult{Kind: MenuTools})
+			case "settings":
+				return m.quit(MenuResult{Kind: MenuSettings})
 			case "check":
 				return m.quit(MenuResult{Kind: MenuUpdates})
 			default:
@@ -242,47 +337,54 @@ func (m *Menu) key(k string) tea.Cmd {
 	case "fix":
 		ps := m.filter(fixable)
 		switch {
-		case k == "esc":
+		case back:
 			m.home()
 		case up:
-			m.sel, m.btn = max(0, m.sel-1), 0
+			m.sel, m.btn = m.sel-1, 0
 		case down:
-			m.sel, m.btn = min(len(ps)-1, m.sel+1), 0
+			m.sel, m.btn = m.sel+1, 0
 		case left:
 			m.btn = 0
 		case right:
 			m.btn = 1
-		case k == "enter" && len(ps) > 0:
+		case k == "enter" && len(ps) >= 2 && m.sel == len(ps): // Fix all
+			ids := make([]string, len(ps))
+			for n, i := range ps {
+				ids[n] = i.ID
+			}
+			return m.quit(MenuResult{Kind: MenuFix, ID: ids[0], IDs: ids})
+		case k == "enter" && m.sel < len(ps):
 			i := ps[m.sel]
 			if m.btn == 1 {
 				m.shown[i.ID] = !m.shown[i.ID]
 				return nil
 			}
-			return m.quit(MenuResult{Kind: MenuFix, ID: i.ID})
+			return m.quit(MenuResult{Kind: MenuFix, ID: i.ID, IDs: []string{i.ID}})
 		}
 	case "secrets":
 		ss := m.filter(secret)
 		switch {
-		case k == "esc":
+		case back:
 			m.home()
 		case up:
-			m.sel = max(0, m.sel-1)
+			m.sel--
 		case down:
-			m.sel = min(len(ss)-1, m.sel+1)
-		case k == "enter" && len(ss) > 0:
+			m.sel++
+		case k == "enter" && m.sel < len(ss):
 			return m.quit(MenuResult{Kind: MenuEdit, ID: ss[m.sel].ID, Inputs: ss[m.sel].Inputs})
 		}
 	case "access":
-		n := len(m.settings)
+		as := m.access()
+		n := len(as)
 		switch {
-		case k == "esc":
+		case back:
 			m.home()
 		case up:
-			m.sel = max(0, m.sel-1)
+			m.sel--
 		case down:
-			m.sel = min(n, m.sel+1)
+			m.sel++
 		case (left || right) && m.sel < n:
-			s := m.settings[m.sel]
+			s := as[m.sel]
 			cur := m.value(s)
 			idx := 0
 			for c, ch := range s.Choices {
@@ -300,7 +402,7 @@ func (m *Menu) key(k string) tea.Cmd {
 			m.sel = n // on to Apply
 		case k == "enter":
 			set := map[string]string{}
-			for _, s := range m.settings {
+			for _, s := range as {
 				if v, ok := m.pick[s.Key]; ok && v != s.Value {
 					set[s.Key] = v
 				}
@@ -313,12 +415,8 @@ func (m *Menu) key(k string) tea.Cmd {
 		}
 	case "mcp", "mcp:server", "mcp:delete", "mcp:add":
 		return m.mcpKey(k, up, down, left, right)
-	case "connect":
-		if k == "esc" || k == "enter" || k == "q" {
-			m.home()
-		}
-	case "updates":
-		if k == "esc" || k == "enter" || k == "q" {
+	case "connect", "updates":
+		if back || k == "enter" {
 			m.home()
 		}
 	}
@@ -331,26 +429,6 @@ func (m *Menu) value(s *BoardSetting) string {
 		return v
 	}
 	return s.Value
-}
-
-// what each access choice means, in a sentence.
-var accessSay = map[string]map[string]string{
-	"mcp": {
-		"127.0.0.1": "Only programs on this machine can use it.",
-		"vpn":       "Your laptop too, once it's on Tailscale, NetBird or WireGuard, with a token.",
-		"public":    "Anyone with a token, over HTTPS at your domain name.",
-		"0.0.0.0":   "Anyone who can reach this machine, with a token, over plain HTTP.",
-	},
-	"ports": {
-		"all":   "Ports you publish with docker run -p are open to every network.",
-		"vpn":   "Published ports only from this machine and your VPNs.",
-		"local": "Published ports only from this machine.",
-	},
-	"api": {
-		"off": "Use Docker from your laptop over SSH. Nothing else opens.",
-		"lan": "Port 2376 with client certificates, from your network and VPNs.",
-		"vpn": "Port 2376 with client certificates, from your VPNs only.",
-	},
 }
 
 func (m *Menu) View() string {
@@ -384,9 +462,7 @@ func (m *Menu) View() string {
 			sum = append(sum, keyOn.Render("↑  "+plural(us, "update", "updates")))
 		}
 		add("  "+strings.Join(sum, "      "), "", "", "  "+bold.Render("What would you like to do?"), "")
-		rs := m.rows()
-		m.sel = min(m.sel, len(rs)-1)
-		for n, r := range rs {
+		for n, r := range m.rows() {
 			note := muted.Render(runewidth.Truncate(r.note, max(4, w-36), "…"))
 			if n == m.sel {
 				add(beside("  "+rowOn.Render(padTo(" › "+r.label, 28))+"  ", 32, w-2, muted, r.note)...)
@@ -397,11 +473,6 @@ func (m *Menu) View() string {
 		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("q", "quit")}, "   ")
 	case "fix":
 		ps := m.filter(fixable)
-		if len(ps) == 0 {
-			m.home()
-			return m.View()
-		}
-		m.sel = min(m.sel, len(ps)-1)
 		title = "Fix " + plural(len(ps), "problem", "problems")
 		for n, i := range ps {
 			add("  " + yellow.Render("▲  ") + bold.Render(padTo(short(i.Label), 56)) + "  " + yellow.Render(stateWord(i.State)))
@@ -420,14 +491,18 @@ func (m *Menu) View() string {
 			}
 			add("")
 		}
+		if len(ps) >= 2 {
+			all := fmt.Sprintf("Fix all %d", len(ps))
+			if m.sel == len(ps) {
+				all = rowOn.Render(" " + all + " ")
+			} else {
+				all = muted.Render("[ ") + all + muted.Render(" ]")
+			}
+			add("  " + all + "   " + muted.Render("in one run"))
+		}
 		keys = strings.Join([]string{k("↑↓ ←→", "choose"), k("enter", "do it"), k("esc", "back")}, "   ")
 	case "secrets":
 		ss := m.filter(secret)
-		if len(ss) == 0 {
-			m.home()
-			return m.View()
-		}
-		m.sel = min(m.sel, len(ss)-1)
 		title = "Fill in " + plural(len(ss), "secret", "secrets")
 		for n, i := range ss {
 			label := padTo(short(i.Label), 40)
@@ -442,7 +517,8 @@ func (m *Menu) View() string {
 		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "fill in"), k("esc", "back")}, "   ")
 	case "access":
 		title = "Who can connect"
-		for n, s := range m.settings {
+		as := m.access()
+		for n, s := range as {
 			on := n == m.sel
 			name := bold.Render("  " + s.Label)
 			if on {
@@ -468,7 +544,7 @@ func (m *Menu) View() string {
 			add("     "+muted.Render(accessSay[s.Key][cur]), "")
 		}
 		apply := muted.Render("[ ") + "Apply" + muted.Render(" ]")
-		if m.sel == len(m.settings) {
+		if m.sel == len(as) {
 			apply = rowOn.Render(" Apply ")
 		}
 		add("  " + apply + "   " + muted.Render("esc leaves without changing anything"))
@@ -518,7 +594,7 @@ func wrapStyled(parts []string, w int) []string {
 	var out []string
 	line := ""
 	for _, p := range parts {
-		if line != "" && runewidth.StringWidth(stripANSI(line))+4+runewidth.StringWidth(stripANSI(p)) > w {
+		if line != "" && lipgloss.Width(line)+4+lipgloss.Width(p) > w {
 			out = append(out, line)
 			line = ""
 		}
@@ -528,23 +604,6 @@ func wrapStyled(parts []string, w int) []string {
 		line += p
 	}
 	return append(out, line)
-}
-
-// stripANSI drops terminal styling, to measure text.
-func stripANSI(s string) string {
-	var b strings.Builder
-	in := false
-	for _, r := range s {
-		switch {
-		case r == 0x1b:
-			in = true
-		case in && (r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'):
-			in = false
-		case !in:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
 
 // Run shows the menu; it returns what it was left with.

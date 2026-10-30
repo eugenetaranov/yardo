@@ -397,6 +397,10 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		// deleting one, or from the board), with toast.
 		var reopen, toast string
 		fromBoard := false
+		// tab: the board's tab to open on (This VM, for Change settings);
+		// checking: updates were just looked for.
+		var tab string
+		checking := false
 		if o.startMCP && !first {
 			menu, onBoard, reopen = true, false, "mcp"
 		}
@@ -408,6 +412,13 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				}
 				updates = false
 			}
+			if checking && !onBoard && reopen == "" {
+				// Nothing newer: say so, rather than just a row gone.
+				if !slices.ContainsFunc(d.items, func(i *ui.BoardItem) bool { return i.Picked && len(i.Updates) > 0 }) {
+					reopen, toast = "home", "✓ No updates: everything is current."
+				}
+			}
+			checking = false
 			if !onBoard {
 				m := ui.NewMenu(d.info, d.sub, d.items, d.settings, d.connect, d.updates)
 				wasFromBoard := fromBoard
@@ -424,10 +435,16 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					return nil
 				case ui.MenuTools:
 					onBoard = true
+				case ui.MenuSettings:
+					onBoard, tab = true, "__vm__"
 				case ui.MenuUpdates:
-					d, updates = nil, true
+					d, updates, checking = nil, true, true
 				case ui.MenuFix:
-					fix = []string{res.ID}
+					// Fix all: every problem, in one run.
+					fix = res.IDs
+					if len(fix) == 0 {
+						fix = []string{res.ID}
+					}
 					break loop
 				case ui.MenuEdit:
 					var said string
@@ -476,7 +493,14 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				}
 				continue
 			}
-			res, err := ui.NewBoard(d.info, first, d.tabs, d.items, d.settings, d.actions, d.connect).Run()
+			b := ui.NewBoard(d.info, first, d.tabs, d.items, d.settings, d.actions, d.connect)
+			// From the menu: esc goes back to it.
+			b.SetFromMenu(menu)
+			if tab != "" {
+				b.Open(tab)
+				tab = ""
+			}
+			res, err := b.Run()
 			if err != nil {
 				return err
 			}

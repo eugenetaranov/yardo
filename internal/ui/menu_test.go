@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func testMenu(healthy bool) *Menu {
@@ -21,6 +22,8 @@ func testMenu(healthy bool) *Menu {
 	settings := []*BoardSetting{
 		{Key: "mcp", Label: "MCP gateway", Value: "127.0.0.1", Choices: [][2]string{{"127.0.0.1", "this machine only"}, {"vpn", "this machine and your VPNs"}}},
 		{Key: "api", Label: "Docker API", Value: "off", Choices: [][2]string{{"off", "off"}, {"lan", "local network"}}},
+		// The look: This VM's, not who can connect.
+		{Key: "accent", Label: "Accent colour", Section: "__look__", Value: "blue", Choices: [][2]string{{"blue", "Blue"}, {"green", "Green"}}},
 	}
 	m := NewMenu(HomeInfo{Host: "vm", User: "ada"}, "Ubuntu 24.04  ·  10.0.0.5", items, settings, []string{"Docker, over SSH:", "  docker context create vm …"}, false)
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
@@ -55,10 +58,14 @@ func TestMenuHome(t *testing.T) {
 	m := testMenu(false)
 	v := m.View()
 	for _, want := range []string{"What would you like to do?", "Fix 1 problem", "Docker Engine + Compose stopped", "Fill in 1 secret", "OPENAI_API_KEY",
-		"Add or remove tools", "Who can connect", "MCP gateway: this machine only", "Connect from a laptop", "Check for updates", "1 needs attention"} {
+		"Add or remove tools", "Who can connect", "MCP gateway: this machine only", "Change settings", "git, prompt, dotfiles, accent colour…",
+		"Connect from a laptop", "Check for updates", "1 needs attention"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("home lacks %q:\n%s", want, v)
 		}
+	}
+	if strings.Contains(v, "Accent colour:") {
+		t.Errorf("the accent colour in who can connect's note:\n%s", v)
 	}
 	h := testMenu(true).View()
 	if strings.Contains(h, "Fix ") || strings.Contains(h, "Fill in") || !strings.Contains(h, "Everything is healthy. 3 tools ready.") {
@@ -102,9 +109,14 @@ func TestMenuSecretsAndTools(t *testing.T) {
 func TestMenuAccess(t *testing.T) {
 	m := testMenu(false)
 	mk(m, "down", "down", "down", "enter")
-	if v := m.View(); !strings.Contains(v, "Home  ›  Who can connect") || !strings.Contains(v, "(•) this machine only") {
+	if v := m.View(); !strings.Contains(v, "Home  ›  Who can connect") || !strings.Contains(v, "(•) this machine only") || strings.Contains(v, "Accent colour") {
 		t.Fatalf("access:\n%s", v)
 	}
+	mk(m, "down", "down", "down", "down")
+	if m.sel != 2 {
+		t.Errorf("past Apply: on row %d, want 2", m.sel)
+	}
+	mk(m, "up", "up")
 	mk(m, "right")
 	if !strings.Contains(m.View(), "once it's on Tailscale") {
 		t.Errorf("no sentence for the choice:\n%s", m.View())
@@ -122,7 +134,8 @@ func TestMenuAccess(t *testing.T) {
 
 func TestMenuConnect(t *testing.T) {
 	m := testMenu(false)
-	mk(m, "down", "down", "down", "down", "enter")
+	onRow(m, "connect")
+	mk(m, "enter")
 	if v := m.View(); !strings.Contains(v, "Home  ›  Connect from a laptop") || !strings.Contains(v, "docker context create vm") {
 		t.Errorf("connect:\n%s", v)
 	}
@@ -191,7 +204,7 @@ func TestMenuMCPList(t *testing.T) {
 			t.Errorf("description not beside the row:\n%s", v)
 		}
 	}
-	if !strings.Contains(strings.Join(strings.Fields(stripANSI(v)), " "), "GitHub: repositories and pull requests") {
+	if !strings.Contains(strings.Join(strings.Fields(ansi.Strip(v)), " "), "GitHub: repositories and pull requests") {
 		t.Errorf("list lacks the description:\n%s", v)
 	}
 	if strings.Index(v, "opensearch") > strings.Index(v, "grafana-test") {
@@ -394,5 +407,142 @@ func TestMenuMCPEditKey(t *testing.T) {
 	}
 	if !strings.Contains(m.View(), "e edit its settings") {
 		t.Errorf("keys:\n%s", m.View())
+	}
+}
+
+// Change settings, after Who can connect, opens the board on This VM.
+func TestMenuSettings(t *testing.T) {
+	m := testMenu(false)
+	rs := m.rows()
+	for n, r := range rs {
+		if r.id == "settings" && (n == 0 || rs[n-1].id != "access") {
+			t.Errorf("Change settings isn't after Who can connect: %v", rs)
+		}
+	}
+	onRow(m, "settings")
+	mk(m, "enter")
+	if m.result.Kind != MenuSettings {
+		t.Errorf("settings: %+v", m.result)
+	}
+}
+
+// With two problems or more, Fix all hands them all back; one is fixed
+// alone, with no Fix all.
+func TestMenuFixAll(t *testing.T) {
+	m := testMenu(false)
+	mk(m, "enter")
+	if strings.Contains(m.View(), "Fix all") {
+		t.Errorf("Fix all for one problem:\n%s", m.View())
+	}
+	m = testMenu(false)
+	m.items[2].State = "missing" // Go too
+	mk(m, "enter")
+	if !strings.Contains(m.View(), "Fix all 2") {
+		t.Fatalf("no Fix all:\n%s", m.View())
+	}
+	mk(m, "down", "down", "down")
+	if m.sel != 2 {
+		t.Fatalf("on row %d, want Fix all (2)", m.sel)
+	}
+	mk(m, "enter")
+	if r := m.result; r.Kind != MenuFix || len(r.IDs) != 2 || r.IDs[0] != "docker" || r.IDs[1] != "go" {
+		t.Errorf("fix all: %+v", r)
+	}
+	m = testMenu(false)
+	m.items[2].State = "missing"
+	mk(m, "enter", "down", "enter")
+	if r := m.result; r.Kind != MenuFix || r.ID != "go" || len(r.IDs) != 1 {
+		t.Errorf("fix one: %+v", r)
+	}
+}
+
+// esc and q go back from every screen; on the home q quits, esc only
+// says so.
+func TestMenuEscQ(t *testing.T) {
+	m := testMenu(false)
+	mk(m, "esc")
+	if m.result.Kind != MenuQuit || m.screen != "home" || !strings.Contains(m.View(), "q quits") {
+		t.Errorf("esc on home: %+v\n%s", m.result, m.View())
+	}
+	for _, id := range []string{"fix", "secrets", "access", "connect"} {
+		for _, k := range []string{"esc", "q"} {
+			m := testMenu(false)
+			onRow(m, id)
+			mk(m, "enter", k)
+			if m.screen != "home" || m.rows()[m.sel].id != id {
+				t.Errorf("%s on %s: on %s, row %d", k, id, m.screen, m.sel)
+			}
+		}
+	}
+	m = testMenu(false)
+	mk(m, "q")
+	if m.result.Kind != MenuQuit || m.out {
+		t.Errorf("q: %+v", m.result)
+	}
+}
+
+// Checked, with nothing newer: Check again, with the time; Open shows
+// that nothing was found.
+func TestMenuCheckAgain(t *testing.T) {
+	m := NewMenu(HomeInfo{Host: "vm", Checked: "14:05"}, "", testMenu(true).items, nil, nil, true)
+	if v := m.View(); !strings.Contains(v, "Check again") || !strings.Contains(v, "none found at 14:05") {
+		t.Errorf("no Check again:\n%s", v)
+	}
+	onRow(m, "check")
+	mk(m, "enter")
+	if m.result.Kind != MenuUpdates {
+		t.Errorf("check again: %+v", m.result)
+	}
+	m = NewMenu(HomeInfo{Host: "vm"}, "", testMenu(true).items, nil, nil, true).Open("home", "✓ No updates: everything is current.", false)
+	if !strings.Contains(m.View(), "No updates: everything is current.") {
+		t.Errorf("no toast:\n%s", m.View())
+	}
+}
+
+// View only reads; Update keeps the screen and cursor valid, never -1.
+func TestMenuNormalize(t *testing.T) {
+	m := testMenu(false)
+	m.sel = 99
+	m.View()
+	if m.sel != 99 {
+		t.Errorf("View moved the cursor to %d", m.sel)
+	}
+	mk(m, "down")
+	if m.sel != len(m.rows())-1 {
+		t.Errorf("cursor %d, want the last row", m.sel)
+	}
+	// The secret filled in elsewhere: its screen is empty, so home.
+	m = testMenu(false)
+	onRow(m, "secrets")
+	mk(m, "enter")
+	m.items[1].State = "ok"
+	mk(m, "down")
+	if m.screen != "home" || m.sel < 0 {
+		t.Errorf("empty secrets: on %s, row %d", m.screen, m.sel)
+	}
+	// An empty catalog: down stays at 0.
+	m = mcpMenu()
+	m.info.MCPSpecs = nil
+	onRow(m, "mcp")
+	mk(m, "enter", "a", "down", "down")
+	if m.screen != "mcp:add" || m.sel != 0 {
+		t.Errorf("empty catalog: on %s, row %d", m.screen, m.sel)
+	}
+}
+
+// The servers are sorted once, when the menu is made: yardo's by name,
+// then the found ones; the caller's slice is left as it was.
+func TestMenuMCPSorted(t *testing.T) {
+	info := HomeInfo{MCP: []MCPServer{{Name: "zed"}, {Name: "jira", Yardo: true}, {Name: "abc"}, {Name: "github", Yardo: true}}}
+	m := NewMenu(info, "", nil, nil, nil, false)
+	var got []string
+	for _, s := range m.mcpServers() {
+		got = append(got, s.Name)
+	}
+	if strings.Join(got, " ") != "github jira abc zed" {
+		t.Errorf("order: %v", got)
+	}
+	if info.MCP[0].Name != "zed" {
+		t.Error("sorted the caller's servers")
 	}
 }

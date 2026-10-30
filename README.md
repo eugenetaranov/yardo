@@ -56,14 +56,18 @@ apply|verify|gitkey`).
 account is created). Once something is set up, it opens on a short menu:
 how the machine is, in three lines, then what you can do, in plain
 words, changing with the machine: **Fix 2 problems** (one card each:
-fix it, or see how it's set up), **Fill in 1 secret** (opens its file in
+fix it, or see how it's set up; with two or more, **Fix all** fixes them
+in one run), **Fill in 1 secret** (opens its file in
 your editor), **Add or remove tools**, **MCP servers** (the gateway's
 list: add one, or another instance of one), **Who can connect** (the MCP
 gateway, containers' published ports and the Docker API, each a row of
-choices with a sentence saying what it means), **Connect from a laptop**
-and **Check for updates**. Esc always goes back. **Add or remove
+choices with a sentence saying what it means), **Change settings** (the
+full screen's This VM tab: git, prompt, dotfiles, accent colour),
+**Connect from a laptop** and **Check for updates** (when nothing is
+newer it says so, and offers **Check again**). Esc or q goes back from
+any screen; on the menu itself, q quits. **Add or remove
 tools**, and the first run, open the full screen: tabs by area (**Dev**, **DevOps**,
-**AI**, **Shell & CLI**, **System**, **Connectivity**, then **This VM**) above a checklist,
+**AI**, **Shell & CLI**, **System**, then **This VM**) above a checklist,
 where a ticked box means installed and a mark beside it how it is: `✓`
 ready, `✗` stopped or not installed, `~` half set up, changed since
 yardo set it up, or set up by an older yardo (this one ships newer
@@ -83,10 +87,10 @@ files; Fix applies them), `?` needs a value, `↑` a newer version is out.
 - **/** searches every tab; for a tool the catalog doesn't have, ctrl-a
   adds it as an extra mise tool.
 - **Needs you** comes first while something does: what's broken, what
-  needs a value, what has updates. **This VM** holds git, agents, logins
-  and system settings, who can reach the MCP gateway, containers'
-  published ports and the Docker API, the accent colour, how to connect
-  from a laptop, and checking for updates or checking again.
+  needs a value, what has updates. **This VM** holds Who can connect
+  (the MCP gateway, containers' published ports, the Docker API), Git &
+  SSH, Agents, VPN logins, Look (the accent colour), and Status & updates
+  (how to connect from a laptop, checking for updates or checking again).
 
 **Accent colour.** This VM → Look → Accent colour: Coral (the default),
 Lagoon (aqua blue), Pistachio, Lavender, Amber or Rose. yardo's screen
@@ -145,7 +149,8 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 2. **Dev → Dev tools:** dev CLIs and linters as one item (just, Task,
    watchexec, hyperfine, yq, xh, hurl; shellcheck, shfmt, actionlint,
    gitleaks, pre-commit), database clients (psql, pgcli, usql, mariadb,
-   sqlite3, redis-cli), jiractl (Jira from the terminal).
+   sqlite3, redis-cli), jiractl (Jira from the terminal), restic + rclone
+   (backups, cloud storage).
 3. **DevOps → Containers & Kubernetes:** Docker (with log rotation and
    10.200.0.0/16 networks) and its tools (lazydocker, dive, hadolint, crane,
    cosign), Podman + skopeo + buildah; Kubernetes as one item (kubectl,
@@ -159,17 +164,19 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    terraform-docs and checkov, OpenTofu, Packer, Ansible, tack, sops + age,
    Vault.
 5. **DevOps → Cloud** (mise): AWS, Google Cloud, Azure, DigitalOcean, Hetzner,
-   cloudflared, restic + rclone. AWS is one item with what goes with the
+   cloudflared. AWS is one item with what goes with the
    CLI: AWS's session-manager-plugin (pinned) and aws-ssm-connect (a
    shell on an EC2 instance, picked with fzf, through Session Manager),
    ssmsearch (search SSM Parameter Store) and
    [rds-mysql](https://github.com/eugenetaranov/rds-mysql) (pick an RDS
    MySQL cluster, writer or reader, and connect; the password from an SSM
    parameter it remembers once it logs in, or typed in).
-6. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,
-   Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no
-   hooks), and the MCPJungle gateway (its servers: MCP servers, on the menu).
-7. **Shell and CLI:** one zsh item that brings everything: zsh as the login
+6. **AI → Coding agents:** Claude Code, Codex CLI, Gemini CLI, OpenCode,
+   Aider, Goose, omp.
+7. **AI → Add-ons & models:** OpenSpec, ECC for Claude Code (agents, rules
+   and commands, no hooks), the MCPJungle gateway (runs in Docker; its
+   servers: MCP servers, on the menu), Ollama (local models).
+8. **Shell & CLI:** one zsh item that brings everything: zsh as the login
    shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
    search and completions, fzf-tab (Tab opens an fzf list with directory
    previews), the modern CLI tools (ripgrep, fd, bat, eza, zoxide, fzf,
@@ -207,10 +214,10 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    `tf-format`, `tfl`; `aws_profiles` (a menu that switches this
    shell's AWS profile; `aws-profile` too), `aws-list-rds`, `aws-ec2-list`,
    `ec2ctl`; `openssl_connect`, `openssl_info_text`.
-8. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
+9. **System → System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
    iperf3, nmap, strace, htop, btop, ncdu, …), NFS/SMB clients.
-9. **Connectivity (root):** Tailscale and NetBird (log in under This VM →
-   Logins & keys), the OpenVPN client, and an OpenVPN server:
+10. **System → Connectivity (root):** Tailscale and NetBird (log in under
+   This VM → VPN logins), the OpenVPN client, and an OpenVPN server:
    its own CA (easy-rsa), UDP 1194, clients on 10.8.0.0/24 with all their
    traffic sent through the machine (NAT, through Docker's DOCKER-USER
    chain when Docker is there), and a profile for you in
@@ -225,7 +232,12 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 
 ### This VM: configuring it
 
-1. **Git & SSH:** git name, email and defaults as one item, with lazygit (rebase on pull, push
+1. **Who can connect:** who can reach the MCP gateway, containers'
+   published ports (everywhere, Docker's way; this machine and your VPNs;
+   or this machine only) and the Docker API (off: Docker over SSH only;
+   over TLS from the local network and your VPNs, or your VPNs only), each
+   a row of choices.
+2. **Git & SSH:** git name, email and defaults as one item, with lazygit (rebase on pull, push
    sets upstream, delta diffs, aliases, a global ignore file), one item per
    git host (GitHub with the gh login and act to run Actions locally,
    GitLab with glab, for gitlab.com or your own host, Bitbucket), each asking how this machine reaches it over
@@ -240,7 +252,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    `bootstrap.sh` or `setup.sh`, or else `stow` for each top-level
    directory. It runs after everything else, so your files win (`[dotfiles]
    repo = "…"` in a personal profile).
-2. **Agents:** one item for a `CLAUDE.md` / `AGENTS.md` describing the VM and settings for
+3. **Agents:** one item for a `CLAUDE.md` / `AGENTS.md` describing the VM and settings for
    agents left to run unattended (Claude Code may not force-push, sudo, or
    read `~/.mcp`, `~/.ssh` or the agent keys; Codex asks first and works in
    a sandbox; both are told never to rewrite pushed history; merged
@@ -305,7 +317,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    Sentry's `find-bugs`, `humanizer`, and Anthropic's `skill-creator` and
    `webapp-testing`. Nothing is fetched on the VM; `scripts/update-skills`
    re-vendors them (`internal/assets/skills.lock.toml`).
-3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
+4. **VPN logins:** the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later).
 
@@ -448,8 +460,8 @@ must be pinned (`sha256`) or say why it can't be (`unverified = "…"`), or
 yardo refuses to load it.
 
 **Away from home, and back.** For a VM on your home network (Proxmox,
-say), run a mesh VPN on the VM itself (Tailscale, on This VM → Logins &
-keys) and on the laptop, and always use the VM's VPN name
+say), run a mesh VPN on the VM itself (Tailscale, on This VM → VPN
+logins) and on the laptop, and always use the VM's VPN name
 (`payzoff.<tailnet>.ts.net`), at home too. At home Tailscale finds the
 direct path over your LAN, so it's as fast as the LAN; away it goes
 through the tunnel. The name and address don't change when the laptop

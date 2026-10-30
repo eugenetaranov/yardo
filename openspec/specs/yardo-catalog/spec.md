@@ -7,58 +7,58 @@ coding agents.
 ## Requirements
 
 ### Requirement: Tabs
-The picker SHALL show these tabs in order, followed by Review: **System · Shell & CLI · Dev tools · Languages · Cloud · IaC · Kubernetes · AI · Accounts**. Moving an existing item to a new tab SHALL keep its id.
+The catalog's tabs (`internal/catalog/data/00-tabs.toml`) SHALL be, in order:
+
+| id | title | group | phase |
+|---|---|---|---|
+| lang | Languages | Dev | install |
+| dev | Dev tools | Dev | install |
+| k8s | Containers & Kubernetes | DevOps | install |
+| iac | IaC | DevOps | install |
+| cloud | Cloud | DevOps | install |
+| ai | Coding agents | AI | install |
+| aiext | Add-ons & models | AI | install |
+| shell | Shell & CLI | | install |
+| system | System | System | install |
+| net | Connectivity | System | install |
+| sysconf | Who can connect | | configure |
+| git | Git & SSH | | configure |
+| agents | Agents | | configure |
+| logins | VPN logins | | configure |
+
+Tabs of one group SHALL show as one picker tab named after the group, each tab a section under its own heading, so the install tabs read **Dev · DevOps · AI · Shell & CLI · System**. The configure tabs SHALL show as sections of **This VM**, followed by yardo's own sections: "Who can connect" (who can reach the MCP gateway, containers' published ports, the Docker API), "Look" and "Status & updates". The sysconf tab's only visible items are `docker-ports` and `docker-api`; its other items are `always` (the baseline every machine gets). Moving an existing item to a new tab SHALL keep its id.
 
 #### Scenario: Tab order
-- **WHEN** yardo opens the picker
-- **THEN** the tab bar reads System, Shell & CLI, Dev tools, Languages, Cloud, IaC, Kubernetes, AI, Accounts, Review
+- **WHEN** yardo opens the menu
+- **THEN** the tab bar reads Dev, DevOps, AI, Shell & CLI, System, This VM
+
+#### Scenario: Grouped sections
+- **WHEN** the user opens the AI tab
+- **THEN** it shows a "Coding agents" section and an "Add-ons & models" section
 
 #### Scenario: Moved item keeps answers
-- **WHEN** saved answers contain `terraform` and `k8s`
-- **THEN** both are ticked, on the IaC and Kubernetes tabs respectively
+- **WHEN** saved answers contain `backup` and `ollama`
+- **THEN** both are ticked, under Dev tools and Add-ons & models respectively
 
 ### Requirement: Catalog items
-In addition to the system, shell and security items in the other capabilities, the catalog SHALL offer the items below. Each SHALL install with the listed method and spec, and depend on the listed items.
+The catalog SHALL offer the items below, besides the hidden helpers other items pull in through `needs` and the `always` sysconf items. Items on the System and Connectivity tabs, and those with `scope = "system"`, are machine-wide; the rest are per user.
 
-| id | tab | label | how · what | needs |
-|---|---|---|---|---|
-| neovim | Shell & CLI | Neovim (latest) | mise `neovim@latest` | |
-| zellij | Shell & CLI | zellij (tmux alternative) | mise `zellij@latest` | |
-| mosh | Shell & CLI | mosh (SSH that survives sleep) | apt `mosh` | |
-| docs | Shell & CLI | Man pages, completion, tldr | apt `man-db manpages-dev bash-completion command-not-found plocate tealdeer`; runs `unminimize` on minimal images (fn) | |
-| lazygit | Dev tools | lazygit (git TUI) | mise `lazygit@latest` | |
-| runners | Dev tools | just + watchexec + hyperfine | mise `just@latest watchexec@latest hyperfine@latest` | |
-| http | Dev tools | HTTP clients (xh, hurl) | mise `xh@latest hurl@latest` | |
-| lint | Dev tools | Linters + hooks (shellcheck, shfmt, actionlint, gitleaks, pre-commit) | mise `shellcheck@latest shfmt@latest actionlint@latest gitleaks@latest uv@latest pipx:pre-commit` | |
-| dbclients | Dev tools | DB clients (psql, mariadb, sqlite3, redis-cli) | apt `postgresql-client mariadb-client sqlite3 redis-tools` | |
-| pgcli | Dev tools | pgcli + usql | mise `uv@latest pipx:pgcli usql@latest` | |
-| profiling | Dev tools | Profiling (perf, valgrind, bpftrace) | fn: apt `linux-tools-generic linux-tools-$(uname -r) valgrind bpftrace bpfcc-tools` | |
-| act | Dev tools | act (run GitHub Actions locally) | mise `act@latest` | docker |
-| ctools | System | Container tools (lazydocker, dive, hadolint, crane, cosign) | mise `lazydocker@latest dive@latest hadolint@latest crane@latest cosign@latest` | docker |
-| netfs | System | NFS + SMB clients | apt `nfs-common cifs-utils autofs` | |
-| monitoring | System | node_exporter (localhost) + glances | fn: apt `prometheus-node-exporter` listening on 127.0.0.1:9100; mise `pipx:glances` | |
-| hcloud | Cloud | Hetzner Cloud CLI | mise `hcloud@latest` | |
-| cloudflared | Cloud | cloudflared (Cloudflare tunnels) | mise `cloudflared@latest` | |
-| backup | Cloud | restic + rclone | mise `restic@latest rclone@latest` | |
-| iaclint | IaC | Terraform helpers (terragrunt, tflint, terraform-docs) | mise `terragrunt@latest tflint@latest terraform-docs@latest` | |
-| iacscan | IaC | IaC and image scanners (trivy, checkov) | mise `trivy@latest uv@latest pipx:checkov` | |
-| vault | IaC | Vault CLI | mise `vault@latest` | |
-| k8sextra | Kubernetes | K8s extras (stern, kustomize, kubecolor, kubie, kubeconform) | mise `stern@latest kustomize@latest kubecolor@latest kubie@latest kubeconform@latest` | k8s |
-| krew | Kubernetes | kubectl krew + plugins (neat, tree, view-secret) | fn | k8s |
-| helmfile | Kubernetes | helmfile + helm-diff | fn: mise `helmfile@latest`, then `helm plugin install` helm-diff | k8s |
-| gitops | Kubernetes | GitOps CLIs (Argo CD, Flux) | mise `argocd@latest flux2@latest` | k8s |
-| k3d | Kubernetes | k3d (k3s in Docker) | mise `k3d@latest` | docker |
-| k3s | Kubernetes | k3s cluster on this VM (systemd) | fn: get.k3s.io, kubeconfig copied to `~/.kube/config` mode 600 | |
-| devloop | Kubernetes | Inner loop (Tilt, Skaffold, ctlptl) | mise `tilt@latest skaffold@latest ctlptl@latest` | k8s |
-| talos | Kubernetes | talosctl | mise `talosctl@latest` | |
-| opencode | AI | OpenCode | mise `opencode@latest` | |
-| aider | AI | Aider | mise `uv@latest pipx:aider-chat[uvx_args=--python=3.12]` (pydub needs `audioop`, removed in Python 3.13) | |
-| goose | AI | Goose | mise `aqua:block/goose@latest` | |
-| ollama | AI | Ollama (local models; CPU-only without GPU passthrough, large) | fn: ollama.com/install.sh, listens on 127.0.0.1 | |
-| openspec | AI | OpenSpec (spec-driven development CLI) | mise `npm:@fission-ai/openspec@latest` | node |
-| ecc | AI | ECC for Claude Code (~68 agents, rules, commands; no hooks) | fn: `npx --yes ecc-universal@<pinned> install --profile minimal --target claude` as the user | node claude |
-| agentcfg | AI | Describe this VM to agents (CLAUDE.md, AGENTS.md) | fn: writes `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` only if absent | |
-| glab | Accounts | GitLab CLI (glab) | mise `glab@latest` | |
+| tab | items |
+|---|---|
+| Languages | go, python, node, java, rust |
+| Dev tools | devcli, dbclients, jiractl, backup (restic + rclone) |
+| Containers & Kubernetes | docker, podman, k8s, k8stools, k3s |
+| IaC | terraform, opentofu, packer, ansible, tack, sops-install, vault |
+| Cloud | aws, gcloud, azure, doctl, hcloud, cloudflared |
+| Coding agents | claude, codex, gemini, opencode, aider, goose, omp |
+| Add-ons & models | openspec, ecc, mcpjungle-install, ollama |
+| Shell & CLI | zsh, neovim, tmux, zellij, mosh, helpers |
+| System | etckeeper, essentials, debug, netfs |
+| Connectivity | tailscale-install, netbird-install, openvpn-client, openvpn-server, wireguard-client, wireguard-server |
+| Who can connect | docker-ports, docker-api; always: devlimits, zram, journald, tzlocale, autoupdates, autoupdate-tools, sshharden, fail2ban |
+| Git & SSH | gitid, github, gitlab, bitbucket, gitsign, dotfiles |
+| Agents | agentcfg, agentskills, communityskills, agentkeys, mcpjungle |
+| VPN logins | tailscale, netbird |
 
 #### Scenario: Every item resolves
 - **WHEN** a test VM runs `yardo --yes` with every catalog id picked
@@ -86,16 +86,16 @@ The `k8s` row SHALL install `helm@3` instead of `helm@latest`.
 - **THEN** `rust-analyzer --version` succeeds
 
 ### Requirement: Self-explanatory labels
-Every label SHALL say what the item is, without the user needing to know the tool's name. Items that download more than about 500 MB or build from source SHALL say "large" or give a time estimate. These relabels apply:
-- `cli` → "CLI upgrades (ripgrep, fd, bat, eza, fzf, zoxide, delta, direnv)"
-- `task` → "Task (Makefile alternative)"
+Every label SHALL say what the item is, without the user needing to know the tool's name. Items that download more than about 500 MB or build from source SHALL say "large" or give a time estimate. Among them:
 - `omp` → "omp (oh-my-pi coding agent)"
-- `docker` → "Docker Engine + Compose", with the docker-group note kept in the source column
-- `essentials` → "Essentials (recommended)"
+- `docker-ports` → "Limit containers' published ports to this machine or your VPNs (asks)"
+- `mcpjungle-install` → "MCPJungle MCP gateway (runs in Docker; its servers: MCP servers, on the menu)"
+- `agentcfg` → "Agent notes and safety settings for this VM", with the details in its source
+- `tailscale-install` and `netbird-install` → the VPN's name, then "(log in under This VM → VPN logins)"
 - `azure` and `gcloud` → "(large)" appended
 
 #### Scenario: Large items marked
-- **WHEN** the user views the Cloud tab
+- **WHEN** the user views the Cloud section
 - **THEN** the Azure CLI and Google Cloud CLI labels include "(large)"
 
 ### Requirement: MCP gateway wired into picked agents
@@ -119,16 +119,14 @@ The catalog SHALL offer these items. Each one follows the ask-or-skip contract o
 
 | id | tab | label | what it manages | needs |
 |---|---|---|---|---|
-| agentkeys | AI | Agent API keys (Anthropic, OpenAI, Gemini) | `~/.config/yardo/agent.env` | |
-| npmrc | Dev tools | Private npm registry (scope + token) | managed block in `~/.npmrc` | node |
-| registries | System | Container registry logins (ghcr.io, …) | `docker login` per registry | docker |
-| agekey | IaC | age key for sops (generate or paste) | `~/.config/sops/age/keys.txt` | sops |
-| gitsign | Accounts | Sign commits with SSH | git signing config + signing key on GitHub | github |
-
-The `github` item's label SHALL become "GitHub login (forwarded agent, key or token)".
+| agentkeys | Agents | Agent API keys (Anthropic, OpenAI, Gemini) | `~/.config/yardo/agent.env` | |
+| github | Git & SSH | GitHub: gh login + SSH key for git, act (run Actions locally) | gh login, SSH key on GitHub | |
+| gitsign | Git & SSH | Sign commits with SSH | git signing config + signing key on GitHub | github |
+| tailscale | VPN logins | Tailscale login (auth key; or 'sudo tailscale up' later) | `tailscale up --auth-key` | tailscale-install |
+| netbird | VPN logins | NetBird login (setup key, NetBird cloud or your own; or 'sudo netbird up' later) | `netbird up --setup-key-file` | netbird-install |
 
 #### Scenario: Items present
-- **WHEN** the picker opens
+- **WHEN** the menu opens
 - **THEN** each item above is on its tab, with its label
 
 #### Scenario: Needs pulled in

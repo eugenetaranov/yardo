@@ -30,12 +30,12 @@ func loadErr(t *testing.T, local fstest.MapFS) string {
 func TestEmbeddedCatalogLoads(t *testing.T) {
 	c := load(t, nil)
 	inst, conf := c.PhaseTabs(PhaseInstall), c.PhaseTabs(PhaseConfigure)
-	if len(c.Tabs) != 13 || len(inst) != 9 || len(conf) != 4 || inst[0].ID != "lang" || inst[0].Group != "Dev" || conf[0].ID != "sysconf" {
+	if len(c.Tabs) != 14 || len(inst) != 10 || len(conf) != 4 || inst[0].ID != "lang" || inst[0].Group != "Dev" || conf[0].ID != "sysconf" {
 		t.Errorf("tabs = %+v", c.Tabs)
 	}
 	// Install tabs first, then configure: the picker's two screens.
 	for i, tb := range c.Tabs {
-		if (i < 9) != (tb.PhaseOf() == PhaseInstall) {
+		if (i < 10) != (tb.PhaseOf() == PhaseInstall) {
 			t.Errorf("tab %d %s: phase %s", i, tb.ID, tb.PhaseOf())
 		}
 	}
@@ -48,6 +48,22 @@ func TestEmbeddedCatalogLoads(t *testing.T) {
 	for _, id := range []string{"tailscale-install", "netbird-install", "openvpn-client", "openvpn-server", "wireguard-client", "wireguard-server"} {
 		if it := c.Item(id); it.Tab != "net" || !it.System() {
 			t.Errorf("%s: tab %s, system %v; want net, machine-wide", id, it.Tab, it.System())
+		}
+	}
+	// Grouped tabs: the AI tab's two sections, System's two.
+	group := map[string]string{}
+	for _, tb := range c.Tabs {
+		group[tb.ID] = tb.Group
+	}
+	for id, want := range map[string]string{"ai": "AI", "aiext": "AI", "system": "System", "net": "System", "shell": ""} {
+		if group[id] != want {
+			t.Errorf("tab %s: group %q, want %q", id, group[id], want)
+		}
+	}
+	// Per user, off the System tab.
+	for id, tab := range map[string]string{"backup": "dev", "autoupdate-tools": "sysconf", "mcpjungle-install": "aiext"} {
+		if it := c.Item(id); it.Tab != tab || it.System() {
+			t.Errorf("%s: tab %s, system %v; want %s, per user", id, it.Tab, it.System(), tab)
 		}
 	}
 	if c.Item("zsh") == nil || c.Item("mise") == nil || !c.Item("mise").Hidden() {

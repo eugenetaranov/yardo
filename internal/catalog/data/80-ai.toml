@@ -90,7 +90,7 @@ unverified = "omp's own installer, which fetches its latest release"
 
 [[item]]
 id = "ollama"
-tab = "ai"
+tab = "aiext"
 scope = "system"
 label = "Ollama (local models; large, CPU-only without GPU passthrough)"
 source = "curl ollama.com/install.sh · listens on 127.0.0.1:11434"
@@ -109,7 +109,7 @@ when = "! lspci 2>/dev/null | grep -qiE 'nvidia|amd/ati'"
 
 [[item]]
 id = "openspec"
-tab = "ai"
+tab = "aiext"
 label = "OpenSpec (spec-driven development CLI)"
 default = true
 needs = ["node"]
@@ -120,7 +120,7 @@ tools = ["npm:@fission-ai/openspec@latest"]
 
 [[item]]
 id = "ecc"
-tab = "ai"
+tab = "aiext"
 label = "ECC for Claude Code (~68 agents, rules, commands; no hooks)"
 needs = ["node", "claude"]
 source = "npx ecc-universal@2.2.3 install --profile minimal · npx ecc-universal uninstall to remove"
@@ -135,9 +135,9 @@ check = "grep -q '\"repoVersion\": \"2.2.3\"' ~/.claude/ecc/install-state.json"
 id = "agentcfg"
 tab = "agents"
 after = ["claude", "codex"]
-label = "Set up agents for this VM (notes; no sudo, force-push or reading SSH keys and tokens; Codex sandbox)"
+label = "Agent notes and safety settings for this VM"
 default = true
-source = "~/.claude/CLAUDE.md, ~/.codex/AGENTS.md (only if absent) · ~/.claude/settings.json deny rules · ~/.codex/config.toml sandbox"
+source = "notes: ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md (only if absent) · ~/.claude/settings.json deny rules: no sudo, force-push or reading SSH keys and tokens · ~/.codex/config.toml sandbox"
 
 [[item.step]]
 type = "file"
@@ -245,8 +245,8 @@ if_exists = true
 
 [[item]]
 id = "mcpjungle-install"
-tab = "ai"
-label = "MCPJungle MCP gateway (Docker; its servers: MCP servers, on the menu)"
+tab = "aiext"
+label = "MCPJungle MCP gateway (runs in Docker; its servers: MCP servers, on the menu)"
 default = true
 needs = ["docker"]
 source = "release binary · systemd mcpjungle@<user> as mcp-<user>"

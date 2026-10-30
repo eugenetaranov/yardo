@@ -143,7 +143,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		}
 	} else if len(addrs) > 0 {
 		fmt.Fprintf(w, "\nThe commands below use %s, which works only on its own network; a VPN (Tailscale:\n", addr)
-		fmt.Fprintln(w, "This VM → Logins & keys in 'sudo yardo') gives one name for home and away.")
+		fmt.Fprintln(w, "This VM → VPN logins in 'sudo yardo') gives one name for home and away.")
 	}
 	if ts != nil && len(ts.Self.Tags) == 0 && ts.Self.KeyExpiry != nil {
 		fmt.Fprintf(w, "\nTailscale: this machine's key expires on %s, and then it drops off the tailnet. Turn that off in\n",

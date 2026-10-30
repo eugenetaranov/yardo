@@ -171,7 +171,11 @@ type Board struct {
 	actions  []BoardAction
 	connect  []string
 
+	// tabID is the current tab; tab its index when last found, for when
+	// the tab goes (Needs you, once nothing does).
+	tabID     string
 	tab       int
+	fromMenu  bool
 	cursor    map[string]int
 	search    *string
 	panel     *panel
@@ -192,6 +196,8 @@ type panel struct {
 	opts     [][2]string
 	sel      int
 	swatches map[string]string
+	// say is a sentence per value, shown for the selected choice.
+	say map[string]string
 	// on is what a choice does.
 	on func(value string) tea.Cmd
 }
@@ -216,6 +222,31 @@ func NewBoard(info HomeInfo, first bool, tabs []Tab, items []*BoardItem, setting
 	}
 	b.tabs = tabs
 	return b
+}
+
+// Open shows the tab with id (This VM is "__vm__"); nothing when there's
+// no such tab.
+func (b *Board) Open(tabID string) {
+	tabs := b.visibleTabs()
+	if n := slices.IndexFunc(tabs, func(t Tab) bool { return t.ID == tabID }); n >= 0 {
+		b.tabID, b.tab = tabID, n
+	}
+}
+
+// SetFromMenu says the board was opened from the menu: esc goes back to
+// it, rather than quitting.
+func (b *Board) SetFromMenu(on bool) { b.fromMenu = on }
+
+// current is the current tab's index in tabs (the visible ones): found by
+// its id, or, gone, the one now at its place.
+func (b *Board) current(tabs []Tab) int {
+	if n := slices.IndexFunc(tabs, func(t Tab) bool { return t.ID == b.tabID }); n >= 0 {
+		b.tab = n
+		return n
+	}
+	b.tab = max(0, min(b.tab, len(tabs)-1))
+	b.tabID = tabs[b.tab].ID
+	return b.tab
 }
 
 // visibleTabs are the tabs as shown: Needs you first while something
@@ -331,7 +362,8 @@ func (b *Board) rows() []row {
 		}
 		return out
 	}
-	t := b.visibleTabs()[b.tab]
+	tabs := b.visibleTabs()
+	t := tabs[b.current(tabs)]
 	switch t.ID {
 	case needsTab:
 		add := func(head string, f func(*BoardItem) bool) {
@@ -402,7 +434,8 @@ func (b *Board) key() string {
 	if b.search != nil {
 		return "?search"
 	}
-	return b.visibleTabs()[b.tab].ID
+	tabs := b.visibleTabs()
+	return tabs[b.current(tabs)].ID
 }
 
 // selected is the row under the cursor (moved onto one that can be).
@@ -418,18 +451,23 @@ func (b *Board) selected(rs []row) (int, *row) {
 	return c, &rs[c]
 }
 
-func (b *Board) move(d int) {
-	rs := b.rows()
+// move moves the cursor n selectable rows of rs (the rows listed) down,
+// or up when n < 0, as far as there are.
+func (b *Board) move(rs []row, n int) {
 	c, _ := b.selected(rs)
 	if c < 0 {
 		return
 	}
-	for j := c + d; j >= 0 && j < len(rs); j += d {
+	d := 1
+	if n < 0 {
+		d, n = -1, -n
+	}
+	for j := c + d; j >= 0 && j < len(rs) && n > 0; j += d {
 		if rs[j].selectable() {
-			b.cursor[b.key()] = j
-			return
+			c, n = j, n-1
 		}
 	}
+	b.cursor[b.key()] = c
 }
 
 func (b *Board) Init() tea.Cmd { return nil }
@@ -486,25 +524,22 @@ func (b *Board) toggle(i *BoardItem) {
 
 func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 	tabs := b.visibleTabs()
+	cur := b.current(tabs)
 	rs := b.rows()
 	_, r := b.selected(rs)
 	switch m.String() {
 	case "up", "k":
-		b.move(-1)
+		b.move(rs, -1)
 	case "down", "j":
-		b.move(1)
+		b.move(rs, 1)
 	case "pgup":
-		for n := 0; n < 10; n++ {
-			b.move(-1)
-		}
+		b.move(rs, -10)
 	case "pgdown":
-		for n := 0; n < 10; n++ {
-			b.move(1)
-		}
+		b.move(rs, 10)
 	case "left", "h", "shift+tab":
-		b.tab = (b.tab + len(tabs) - 1) % len(tabs)
+		b.tabID = tabs[(cur+len(tabs)-1)%len(tabs)].ID
 	case "right", "l", "tab":
-		b.tab = (b.tab + 1) % len(tabs)
+		b.tabID = tabs[(cur+1)%len(tabs)].ID
 	case " ":
 		switch {
 		case r != nil && r.item != nil:
@@ -526,13 +561,15 @@ func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 	case "esc", "q", "ctrl+c":
 		if m.String() != "ctrl+c" && b.queued() > 0 && !b.quitAsked {
 			b.quitAsked = true
-			b.flash = fmt.Sprintf("%d change(s) queued and not applied: a applies them; %s again quits without them.", b.queued(), m.String())
+			leave := "quits"
+			if b.fromMenu {
+				leave = "goes back"
+			}
+			b.flash = fmt.Sprintf("%d change(s) queued and not applied: a applies them; %s again %s without them.", b.queued(), m.String(), leave)
 			return nil
 		}
 		return b.done(BoardQuit, "")
 	}
-	// The tab may have gone (Needs you, once nothing does).
-	b.tab = min(b.tab, len(b.visibleTabs())-1)
 	return nil
 }
 
@@ -550,9 +587,9 @@ func (b *Board) searchKey(m tea.KeyMsg) tea.Cmd {
 		}
 		delete(b.cursor, "?search")
 	case tea.KeyUp:
-		b.move(-1)
+		b.move(rs, -1)
 	case tea.KeyDown:
-		b.move(1)
+		b.move(rs, 1)
 	case tea.KeySpace:
 		if r != nil && r.item != nil {
 			b.toggle(r.item)
@@ -614,7 +651,8 @@ func (b *Board) act(r *row) tea.Cmd {
 		}
 		p := &panel{title: s.Label, swatches: s.Swatches}
 		if s.Section == "" || s.Section == accessSection {
-			p.title = "Who can reach the " + s.Label
+			p.title = "Who can connect to the " + s.Label
+			p.say = accessSay[s.Key]
 		}
 		for n, c := range s.Choices {
 			mark := "( ) "
@@ -649,37 +687,17 @@ func (b *Board) act(r *row) tea.Cmd {
 		case i.Pending != "" || !i.Picked:
 			b.toggle(i)
 		case fixable(i):
-			b.panel = &panel{title: i.Label + ": " + stateWord(i.State),
-				lines: []string{i.Detail},
-				opts:  append([][2]string{{"Fix it now (apply it again)", "fix"}}, append(changeOpts(i), [2]string{"Remove it (stays installed; yardo stops looking after it)", "remove"})...),
-				on: func(v string) tea.Cmd {
-					if v == "fix" {
-						return b.done(BoardFix, i.ID)
-					}
-					if cmd := b.change(i, v); cmd != nil {
-						return cmd
-					}
-					i.Pending = "remove"
-					return nil
-				}}
+			b.panel = b.itemPanel(i, []string{i.Detail}, [2]string{"Fix it now (apply it again)", "fix"}, func() tea.Cmd {
+				return b.done(BoardFix, i.ID)
+			})
 		case secret(i):
 			// Filling in comes first; its answers (the MCP servers) can
 			// still be changed.
-			b.panel = &panel{title: i.Label + ": " + stateWord(i.State),
-				lines: []string{"Empty: " + strings.Join(i.Inputs, ", ")},
-				opts:  append([][2]string{{"Fill in " + plural(len(i.Inputs), "value", "values"), "edit"}}, append(changeOpts(i), [2]string{"Remove it (stays installed; yardo stops looking after it)", "remove"})...),
-				on: func(v string) tea.Cmd {
-					if v == "edit" {
-						cmd := b.done(BoardEdit, i.ID)
-						b.result.Inputs = i.Inputs
-						return cmd
-					}
-					if cmd := b.change(i, v); cmd != nil {
-						return cmd
-					}
-					i.Pending = "remove"
-					return nil
-				}}
+			b.panel = b.itemPanel(i, []string{"Empty: " + strings.Join(i.Inputs, ", ")}, [2]string{"Fill in " + plural(len(i.Inputs), "value", "values"), "edit"}, func() tea.Cmd {
+				cmd := b.done(BoardEdit, i.ID)
+				b.result.Inputs = i.Inputs
+				return cmd
+			})
 		default:
 			var lines []string
 			if newer(i) {
@@ -691,22 +709,31 @@ func (b *Board) act(r *row) tea.Cmd {
 			if i.State == "unchecked" {
 				lines = append(lines, "yardo can't check this one yet (the bash installer runs it).")
 			}
-			opts := append([][2]string{{"Apply it again (rewrites its files, installs what's missing)", "fix"}}, changeOpts(i)...)
-			opts = append(opts, [2]string{"Remove it (stays installed; yardo stops looking after it)", "remove"})
-			b.panel = &panel{title: i.Label + ": " + stateWord(i.State), lines: lines, opts: opts,
-				on: func(v string) tea.Cmd {
-					switch v {
-					case "fix":
-						return b.done(BoardFix, i.ID)
-					case "remove":
-						i.Pending = "remove"
-						return nil
-					}
-					return b.change(i, v)
-				}}
+			b.panel = b.itemPanel(i, lines, [2]string{"Apply it again (rewrites its files, installs what's missing)", "fix"}, func() tea.Cmd {
+				return b.done(BoardFix, i.ID)
+			})
 		}
 	}
 	return nil
+}
+
+// itemPanel is a picked item's panel: lines, then first (choosing it calls
+// do), changing each of its answers, and removing it. Any other value does
+// nothing.
+func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func() tea.Cmd) *panel {
+	opts := append([][2]string{first}, changeOpts(i)...)
+	opts = append(opts, [2]string{"Remove it (stays installed; yardo stops looking after it)", "remove"})
+	return &panel{title: i.Label + ": " + stateWord(i.State), lines: lines, opts: opts,
+		on: func(v string) tea.Cmd {
+			switch v {
+			case first[1]:
+				return do()
+			case "remove":
+				i.Pending = "remove"
+				return nil
+			}
+			return b.change(i, v)
+		}}
 }
 
 // changeOpts are the panel's options for i's answers: "Change …", each
@@ -897,8 +924,32 @@ func (b *Board) header(w int) string {
 }
 
 func (b *Board) tabBar(w int) string {
+	// Each tab's worst: 3 something to fix, 2 to fill in, 1 an update.
+	tabOf := map[string]string{}
+	for _, t := range b.tabs {
+		for _, s := range sectionsOf(t) {
+			tabOf[s.ID] = t.ID
+		}
+	}
+	worst := map[string]int{}
+	for _, i := range b.items {
+		lvl := 0
+		switch {
+		case fixable(i):
+			lvl = 3
+		case secret(i):
+			lvl = 2
+		case newer(i):
+			lvl = 1
+		}
+		if t, ok := tabOf[i.Tab]; ok && lvl > worst[t] {
+			worst[t] = lvl
+		}
+	}
+	tabs := b.visibleTabs()
+	cur := b.current(tabs)
 	var parts []string
-	for n, t := range b.visibleTabs() {
+	for n, t := range tabs {
 		badge := ""
 		switch t.ID {
 		case needsTab:
@@ -908,21 +959,11 @@ func (b *Board) tabBar(w int) string {
 				badge = fmt.Sprintf(" %d", q)
 			}
 		default:
-			in := func(i *BoardItem) bool {
-				return slices.ContainsFunc(sectionsOf(t), func(s Tab) bool { return s.ID == i.Tab })
-			}
-			switch {
-			case b.count(func(i *BoardItem) bool { return in(i) && fixable(i) }) > 0:
-				badge = " ✗"
-			case b.count(func(i *BoardItem) bool { return in(i) && secret(i) }) > 0:
-				badge = " ?"
-			case b.count(func(i *BoardItem) bool { return in(i) && newer(i) }) > 0:
-				badge = " ↑"
-			}
+			badge = [...]string{"", " ↑", " ?", " ✗"}[worst[t.ID]]
 		}
 		label := " " + t.Title + badge + " "
 		switch {
-		case n == b.tab && b.search == nil:
+		case n == cur && b.search == nil:
 			parts = append(parts, tabOn.Render(label))
 		case t.ID == needsTab:
 			parts = append(parts, red.Render(label))
@@ -971,7 +1012,11 @@ func (b *Board) footer(r *row) string {
 		if n := b.queued(); n > 0 {
 			keys = append(keys, accentBd.Render("a")+" "+accentBd.Render(fmt.Sprintf("APPLY %d", n)))
 		}
-		keys = append(keys, k("←→", "tabs"), k("/", "search"), k("q", "quit"))
+		leave := k("q", "quit")
+		if b.fromMenu {
+			leave = k("esc", "menu")
+		}
+		keys = append(keys, k("←→", "tabs"), k("/", "search"), leave)
 	}
 	if b.flash != "" {
 		return " " + yellow.Render(b.flash)
@@ -1009,19 +1054,30 @@ func (b *Board) View() string {
 			}
 			pl = append(pl, " "+accentBd.Render("│")+" "+line)
 		}
+		if p.sel < len(p.opts) && p.say[p.opts[p.sel][1]] != "" {
+			for _, wl := range wrap(p.say[p.opts[p.sel][1]], w-8) {
+				pl = append(pl, " "+accentBd.Render("│")+"  "+muted.Render(wl))
+			}
+		}
 		pl = append(pl, " "+accentBd.Render("└"+strings.Repeat("─", max(0, w-4))))
 	}
 	listH := max(1, h-5-len(pl))
 	// Labels as wide as the longest one, leaving the notes beside them
 	// room (up to 2/5 of the screen) when any row has one.
+	// Each row's note, worked out once.
+	type noted struct {
+		text  string
+		style lipgloss.Style
+	}
+	notes := make([]noted, len(rs))
 	longest, noteMax := 0, 0
-	for _, x := range rs {
-		if x.head != "" || x.text != "" {
+	for n, x := range rs {
+		if !x.selectable() {
 			continue
 		}
 		longest = max(longest, runewidth.StringWidth(x.label()))
-		note, _ := b.note(x)
-		noteMax = max(noteMax, runewidth.StringWidth(note))
+		notes[n].text, notes[n].style = b.note(x)
+		noteMax = max(noteMax, runewidth.StringWidth(notes[n].text))
 	}
 	reserve := 0
 	if noteMax > 0 {
@@ -1031,7 +1087,7 @@ func (b *Board) View() string {
 	// The selected row's note wraps under itself: the lines it takes more.
 	more := 0
 	if cur >= 0 && cur < len(rs) && b.panel == nil && rs[cur].head == "" && rs[cur].text == "" {
-		note, _ := b.note(rs[cur])
+		note := notes[cur].text
 		more = max(0, len(wrap(note, max(4, w-labelW-12)))-1)
 		more = min(more, max(0, listH-1))
 	}
@@ -1068,7 +1124,7 @@ func (b *Board) View() string {
 		case x.action != nil:
 			mk, ms = "›", accent
 		}
-		note, ns := b.note(x)
+		note, ns := notes[n].text, notes[n].style
 		pointer := " "
 		if n == cur && b.panel == nil {
 			pointer = ">"

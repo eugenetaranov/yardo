@@ -85,13 +85,3 @@ label = "cloudflared (Cloudflare tunnels)"
 [[item.step]]
 type = "mise"
 tools = ["cloudflared@latest"]
-
-[[item]]
-id = "backup"
-tab = "cloud"
-label = "restic + rclone (backups, cloud storage)"
-
-[[item.step]]
-type = "mise"
-tools = ["restic@latest", "rclone@latest"]
-

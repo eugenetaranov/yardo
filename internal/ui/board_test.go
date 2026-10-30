@@ -172,7 +172,7 @@ func TestBoardSearch(t *testing.T) {
 // This VM's actions: connect shows how, in a panel.
 func TestBoardConnect(t *testing.T) {
 	b := testBoard(false)
-	b.tab = len(b.visibleTabs()) - 2 // This VM
+	b.Open("__vm__")
 	press2(b, "down", "down", "enter")
 	if b.panel == nil || !strings.Contains(b.View(), "docker context create vm") {
 		t.Errorf("connect:\n%s", b.View())
@@ -191,7 +191,7 @@ func TestBoardLook(t *testing.T) {
 	b.tabs[2].Sections = append(secs[:len(secs)-1:len(secs)-1], Tab{ID: "__look__", Title: "Look"}, secs[len(secs)-1])
 	b.settings = append(b.settings, &BoardSetting{Key: "accent", Label: "Accent colour", Section: "__look__", Value: "coral",
 		Choices: [][2]string{{"coral", "Coral"}, {"lagoon", "Lagoon (aqua blue)"}}})
-	b.tab = len(b.visibleTabs()) - 2 // This VM
+	b.Open("__vm__")
 	v := b.View()
 	if !strings.Contains(v, "Look") || !strings.Contains(v, "Accent colour") || strings.Index(v, "Accent colour") < strings.Index(v, "MCP gateway") {
 		t.Fatalf("This VM:\n%s", v)
@@ -272,5 +272,65 @@ func TestBoardReadyItemActions(t *testing.T) {
 	press2(b, "enter")
 	if b.items[0].Pending != "remove" {
 		t.Errorf("remove: pending %q", b.items[0].Pending)
+	}
+}
+
+// Open goes to a tab by its id; an unknown id leaves the tab as it was.
+func TestBoardOpen(t *testing.T) {
+	b := testBoard(false)
+	b.Open("__vm__")
+	if b.key() != "__vm__" || !strings.Contains(b.View(), "MCP gateway") {
+		t.Fatalf("Open(__vm__): on %q", b.key())
+	}
+	b.Open("nope")
+	if b.key() != "__vm__" {
+		t.Errorf("Open(nope) moved to %q", b.key())
+	}
+}
+
+// From the menu, the footer and the queue's warning say esc goes back.
+func TestBoardFromMenu(t *testing.T) {
+	b := testBoard(false)
+	if f := b.footer(nil); !strings.Contains(f, "quit") || strings.Contains(f, "menu") {
+		t.Errorf("standalone footer: %s", f)
+	}
+	b.SetFromMenu(true)
+	if f := b.footer(nil); !strings.Contains(f, "menu") || strings.Contains(f, "quit") {
+		t.Errorf("from the menu footer: %s", f)
+	}
+	b.Open("system")
+	press2(b, "space", "esc")
+	if !strings.Contains(b.flash, "esc again goes back without them") {
+		t.Errorf("flash %q", b.flash)
+	}
+}
+
+// ctrl-a adds the Extra tab; the tab shown stays the one it was (Review,
+// past which Extra goes).
+func TestBoardExtraKeepsTab(t *testing.T) {
+	b := testBoard(false)
+	b.Open(boardReview)
+	press2(b, "/", "p", "u", "l", "u", "m", "i", "ctrl+a")
+	if b.key() != boardReview {
+		t.Fatalf("on %q, want Review", b.key())
+	}
+	if v := b.View(); !strings.Contains(v, "pulumi (extra mise tool)") {
+		t.Errorf("Review lacks the extra:\n%s", v)
+	}
+}
+
+// Enter on an access setting: titled like the menu's screen, with what the
+// highlighted choice means.
+func TestBoardAccessSay(t *testing.T) {
+	b := testBoard(false)
+	b.Open("__vm__")
+	press2(b, "down", "enter")
+	v := b.View()
+	if !strings.Contains(v, "Who can connect to the MCP gateway") || !strings.Contains(v, accessSay["mcp"]["127.0.0.1"]) {
+		t.Fatalf("access panel:\n%s", v)
+	}
+	press2(b, "down")
+	if v := b.View(); !strings.Contains(v, accessSay["mcp"]["vpn"]) || strings.Contains(v, accessSay["mcp"]["127.0.0.1"]) {
+		t.Errorf("after down:\n%s", v)
 	}
 }
