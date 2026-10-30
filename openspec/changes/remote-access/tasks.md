@@ -17,6 +17,7 @@
 - [ ] 3.1 `netbird_up`: Check = connected; `--hostname`; after the login, a note when the peer awaits approval
 - [ ] 3.2 `connect`: the NetBird FQDN; tests with NetBird, and both
 - [ ] 3.3 A setup key with an auto-group: the item's prompt says so
+- [ ] 3.4 `netbird_up` records the join, and `yardo forget` runs `netbird down` + deregisters it (as it does `tailscale logout`): pmox delete doesn't log VMs out, so forget is the only way a deleted VM leaves the network
 
 ## 4. WireGuard and OpenVPN servers
 
