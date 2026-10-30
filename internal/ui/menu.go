@@ -37,6 +37,9 @@ const (
 	// MenuSettings opens the board on This VM: git, prompt, dotfiles,
 	// the accent colour.
 	MenuSettings
+	// MenuUpgrade installs the newer versions the Updates screen lists
+	// (mise up, apt's only-upgrade), once confirmed.
+	MenuUpgrade
 )
 
 // MCPAct is what to do to an MCP server: Do (add, edit, on, rename,
@@ -77,6 +80,7 @@ type Menu struct {
 	nameErr        string
 	fromBoard      bool
 	btn            int
+	sure           bool            // updates: Update all was pressed once; enter again confirms
 	shown          map[string]bool // fix: details shown
 	pick           map[string]string
 	toast          string
@@ -280,7 +284,7 @@ func (m *Menu) quit(r MenuResult) tea.Cmd {
 
 // open goes to screen, at its first row.
 func (m *Menu) open(screen string) {
-	m.screen, m.sel, m.btn = screen, 0, 0
+	m.screen, m.sel, m.btn, m.sure = screen, 0, 0, false
 	switch screen {
 	case "access":
 		m.pick = map[string]string{}
@@ -292,7 +296,7 @@ func (m *Menu) open(screen string) {
 // home goes back, onto the row of the screen it came from.
 func (m *Menu) home() {
 	from := m.screen
-	m.screen, m.sel, m.btn = "home", 0, 0
+	m.screen, m.sel, m.btn, m.sure = "home", 0, 0, false
 	for n, r := range m.rows() {
 		if r.id == from {
 			m.sel = n
@@ -415,9 +419,21 @@ func (m *Menu) key(k string) tea.Cmd {
 		}
 	case "mcp", "mcp:server", "mcp:delete", "mcp:add":
 		return m.mcpKey(k, up, down, left, right)
-	case "connect", "updates":
+	case "connect":
 		if back || k == "enter" {
 			m.home()
+		}
+	case "updates":
+		// enter asks, enter again updates; esc takes the question back.
+		switch {
+		case back && m.sure:
+			m.sure = false
+		case back:
+			m.home()
+		case k == "enter" && m.sure:
+			return m.quit(MenuResult{Kind: MenuUpgrade})
+		case k == "enter" && len(m.filter(newer)) > 0:
+			m.sure = true
 		}
 	}
 	return nil
@@ -568,8 +584,16 @@ func (m *Menu) View() string {
 		for _, i := range m.filter(newer) {
 			add("  " + keyOn.Render("↑  ") + padTo(short(i.Label), 40) + muted.Render(strings.Join(i.Updates, ", ")))
 		}
-		add("", "  "+muted.Render("yardo doesn't upgrade on its own: mise up updates your tools, sudo apt upgrade the system's."))
-		keys = k("esc", "back")
+		n := len(m.filter(newer))
+		add("")
+		if m.sure {
+			add("  " + bold.Render("Update "+plural(n, "item", "items")+"?") + "  " + muted.Render("mise up for the tools, apt for the packages; nothing else changes"))
+			keys = strings.Join([]string{k("enter", "yes, update"), k("esc", "no")}, "   ")
+		} else {
+			add("  "+rowOn.Render(" Update all ")+"   "+muted.Render("asks first"),
+				"", "  "+muted.Render("yardo doesn't upgrade on its own: this, or mise up for your tools and sudo apt upgrade for the system's."))
+			keys = strings.Join([]string{k("enter", "update"), k("esc", "back")}, "   ")
+		}
 	}
 	if title != "" {
 		b = append(b[:3], append([]string{"  " + muted.Render("Home  ›  ") + bold.Render(title), ""}, b[3:]...)...)

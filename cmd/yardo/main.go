@@ -439,6 +439,12 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					onBoard, tab = true, "__vm__"
 				case ui.MenuUpdates:
 					d, updates, checking = nil, true, true
+				case ui.MenuUpgrade:
+					said, err := o.upgrade(ctx, cat, a)
+					if err != nil {
+						return err
+					}
+					d, reopen, toast = nil, "home", said
 				case ui.MenuFix:
 					// Fix all: every problem, in one run.
 					fix = res.IDs

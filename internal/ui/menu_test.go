@@ -546,3 +546,27 @@ func TestMenuMCPSorted(t *testing.T) {
 		t.Error("sorted the caller's servers")
 	}
 }
+
+// Updates: enter asks, esc takes it back, enter twice updates.
+func TestMenuUpgrade(t *testing.T) {
+	m := testMenu(true)
+	m.items[2].Updates = []string{"go 1.25.1 → 1.25.2"}
+	m.checked = true
+	onRow(m, "updates")
+	mk(m, "enter")
+	if v := m.View(); !strings.Contains(v, "Update all") || m.sure {
+		t.Fatalf("updates screen:\n%s", v)
+	}
+	mk(m, "enter")
+	if v := m.View(); !strings.Contains(v, "Update 1 item?") {
+		t.Fatalf("no question:\n%s", v)
+	}
+	mk(m, "esc")
+	if m.sure || m.screen != "updates" || m.out {
+		t.Fatalf("esc should take the question back: sure %v screen %s", m.sure, m.screen)
+	}
+	mk(m, "enter", "enter")
+	if m.result.Kind != MenuUpgrade {
+		t.Errorf("result %+v, want MenuUpgrade", m.result)
+	}
+}

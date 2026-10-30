@@ -64,7 +64,9 @@ gateway, containers' published ports and the Docker API, each a row of
 choices with a sentence saying what it means), **Change settings** (the
 full screen's This VM tab: git, prompt, dotfiles, accent colour),
 **Connect from a laptop** and **Check for updates** (when nothing is
-newer it says so, and offers **Check again**). Esc or q goes back from
+newer it says so, and offers **Check again**; when something is, **Update
+all** asks, then updates just those: `mise up` for the tools, apt for the
+packages). Esc or q goes back from
 any screen; on the menu itself, q quits. **Add or remove
 tools**, and the first run, open the full screen: tabs by area (**Dev**, **DevOps**,
 **AI**, **Shell & CLI**, **System**, then **This VM**) above a checklist,
@@ -183,7 +185,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 8. **Shell & CLI:** one zsh item that brings everything: zsh as the login
    shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
    search and completions, fzf-tab (Tab opens an fzf list with directory
-   previews), the modern CLI tools (ripgrep, fd, bat, eza, zoxide, fzf,
+   previews), the modern CLI tools (ripgrep, ag, fd, bat, eza, zoxide, fzf,
    delta, direnv) turned on with keys and aliases (z, fzf keys, direnv
    with a quiet `direnv.toml` that loads `.env` files too,
    eza/bat aliases, a shared Terraform/OpenTofu provider cache, kubecolor)

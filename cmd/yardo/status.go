@@ -607,3 +607,47 @@ func ago(d time.Duration) string {
 	}
 	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 }
+
+// upgrade installs the newer versions the Updates screen listed: the
+// picked items' mise tools and apt packages, and the extra mise tools
+// (looked up again, as they may have changed). It says how it went, for
+// the menu's toast; a failed update is said, not returned.
+func (o *options) upgrade(ctx context.Context, cat *catalog.Catalog, a *answers.Answers) (string, error) {
+	items, err := plan.Resolve(cat, a.Picks, len(a.MiseExtra) > 0)
+	if err != nil {
+		return "", err
+	}
+	logf, err := os.OpenFile(o.log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return "", err
+	}
+	defer logf.Close()
+	env, err := o.env(a, nil, logf)
+	if err != nil {
+		return "", err
+	}
+	fmt.Println("Looking for the newer versions again (apt and mise)…")
+	mise, apt := steps.Outdated(ctx, env)
+	var tools, pkgs []string
+	for _, it := range items {
+		if it.Hidden() {
+			continue
+		}
+		t, p := steps.ItemOutdated(env, it.Steps, mise, apt)
+		tools, pkgs = append(tools, t...), append(pkgs, p...)
+	}
+	for _, t := range a.MiseExtra {
+		if n := steps.MiseName(t); mise[n] != "" {
+			tools = append(tools, n)
+		}
+	}
+	if len(tools)+len(pkgs) == 0 {
+		return "✓ No updates: everything is current.", nil
+	}
+	fmt.Printf("Updating %s…\n", strings.Join(append(slices.Clone(tools), pkgs...), ", "))
+	fmt.Fprintf(logf, "=== yardo %s, update, user %s\n", version, a.User)
+	if err := steps.Upgrade(ctx, env, tools, pkgs); err != nil {
+		return "✗ Update failed: " + err.Error() + " (see " + o.log + ")", nil
+	}
+	return fmt.Sprintf("✓ Updated %d: %s.", len(tools)+len(pkgs), strings.Join(append(slices.Clone(tools), pkgs...), ", ")), nil
+}

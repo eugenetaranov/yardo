@@ -466,3 +466,23 @@ func TestOutdated(t *testing.T) {
 		t.Errorf("updates = %v", got)
 	}
 }
+
+// Upgrade updates just the tools and packages it's given: mise up as the
+// user (a locked tool left alone), apt's only-upgrade; a failure says why.
+func TestUpgrade(t *testing.T) {
+	x := &fakeExec{}
+	e := testEnv(t, x)
+	e.Lock = &answers.Lock{Mise: map[string]string{"node": "24.1.0"}}
+	tm, pm := ItemOutdated(e, []catalog.Step{{Type: "mise", Tools: []string{"terraform@latest", "node@24", "go@latest"}}, {Type: "apt", Packages: []string{"tmux", "git"}}},
+		map[string]string{"terraform": "1 → 2", "node": "24.1.0 → 24.2.0"}, map[string]string{"tmux": "3.4-1 → 3.4-2"})
+	if err := Upgrade(context.Background(), e, append(tm, "terraform"), pm); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(x.commands(), "; "); got != "(as user) mise up --yes terraform; apt-get install -y -q --only-upgrade tmux" {
+		t.Errorf("ran %s", got)
+	}
+	x = &fakeExec{reply: func(Cmd) ([]byte, error) { return []byte("E: Could not get lock\n"), errors.New("exit status 100") }}
+	if err := Upgrade(context.Background(), testEnv(t, x), nil, []string{"tmux"}); err == nil || !strings.Contains(err.Error(), "Could not get lock") {
+		t.Errorf("err = %v", err)
+	}
+}

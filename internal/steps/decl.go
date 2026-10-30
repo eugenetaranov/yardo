@@ -959,21 +959,68 @@ func Outdated(ctx context.Context, e *Env) (mise, apt map[string]string) {
 // packages, from Outdated ("terraform 1.9.0 → 1.10.1", …).
 func ItemUpdates(e *Env, s []catalog.Step, mise, apt map[string]string) []string {
 	var out []string
+	m, a := ItemOutdated(e, s, mise, apt)
+	for _, t := range m {
+		out = append(out, t+" "+mise[t])
+	}
+	for _, p := range a {
+		out = append(out, p+" "+apt[p])
+	}
+	return out
+}
+
+// ItemOutdated are an item's mise tools and apt packages that Outdated
+// found newer versions of.
+func ItemOutdated(e *Env, s []catalog.Step, mise, apt map[string]string) (tools, pkgs []string) {
 	for _, st := range s {
 		switch st.Type {
 		case "mise":
 			for _, t := range st.Tools {
-				if v := mise[MiseName(t)]; v != "" {
-					out = append(out, MiseName(t)+" "+v)
+				if mise[MiseName(t)] != "" {
+					tools = append(tools, MiseName(t))
 				}
 			}
 		case "apt":
 			for _, p := range (aptStep{st}).Packages(e) {
-				if v := apt[p]; v != "" {
-					out = append(out, p+" "+v)
+				if apt[p] != "" {
+					pkgs = append(pkgs, p)
 				}
 			}
 		}
 	}
-	return out
+	return tools, pkgs
+}
+
+// Upgrade installs the newer versions of these mise tools (the user's,
+// mise up; a locked one is left at its version) and apt packages (only
+// upgrading what's installed). Nothing else changes.
+func Upgrade(ctx context.Context, e *Env, tools, pkgs []string) error {
+	tools = slices.DeleteFunc(slices.Compact(slices.Sorted(slices.Values(tools))), func(t string) bool {
+		return e.Lock != nil && e.Lock.Mise[t] != ""
+	})
+	pkgs = slices.Compact(slices.Sorted(slices.Values(pkgs)))
+	var cmds []Cmd
+	if len(tools) > 0 {
+		cmds = append(cmds, Cmd{Name: "mise", Args: append([]string{"up", "--yes"}, tools...), AsUser: true})
+	}
+	if len(pkgs) > 0 {
+		cmds = append(cmds, Cmd{Name: "apt-get", Args: append([]string{"install", "-y", "-q", "--only-upgrade"}, pkgs...), Env: AptEnv})
+	}
+	for _, c := range cmds {
+		if e.Log != nil {
+			fmt.Fprintf(e.Log, "$ %s\n", c)
+		}
+		out, err := e.Exec.Run(ctx, c)
+		if e.Log != nil {
+			_, _ = e.Log.Write(out)
+		}
+		if err != nil {
+			last := strings.TrimSpace(string(out))
+			if i := strings.LastIndexByte(last, '\n'); i >= 0 {
+				last = last[i+1:]
+			}
+			return fmt.Errorf("%s: %w: %s", c.Name, err, last)
+		}
+	}
+	return nil
 }
