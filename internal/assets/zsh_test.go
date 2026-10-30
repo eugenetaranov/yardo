@@ -54,7 +54,7 @@ func needZsh(t *testing.T) string {
 
 func TestZshFilesParse(t *testing.T) {
 	z := needZsh(t)
-	for _, p := range []string{"conf/completions.zsh", "conf/zshrc.tmpl", "conf/shell.sh", "conf/p10k-yardo.zsh"} {
+	for _, p := range []string{"conf/completions.zsh", "conf/zshrc.tmpl", "conf/shell.sh", "conf/helpers.sh", "conf/p10k-yardo.zsh"} {
 		f := filepath.Join(t.TempDir(), filepath.Base(p))
 		if err := os.WriteFile(f, []byte(readEmbedded(t, p)), 0o644); err != nil {
 			t.Fatal(err)

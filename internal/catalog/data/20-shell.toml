@@ -270,3 +270,32 @@ type = "run"
 cmd = "tldr --update || true"
 as_user = true
 creates = "~/.cache/tealdeer"
+
+# Shell functions and aliases for everyday DevOps work, each needing its
+# tool only when run: git branches, kubectl shortcuts and fzf pickers,
+# Terraform resets, AWS profile and EC2 pickers, TLS checks.
+[[item]]
+id = "helpers"
+tab = "shell"
+label = "Shell helpers (git branch pickers, kubectl shortcuts, tfreset, aws-profile, ec2ctl, …)"
+source = "~/.config/yardo/helpers.sh, sourced from .zshrc and .bashrc · git-make-branch recent_branches fzf-git-checkout · kev kgn kdn keit kdebug kgnami k8s_config_switch k8s_node_terminate · tfreset tfl · aws-profile aws-ec2-list ec2ctl · openssl_connect"
+
+[[item.step]]
+type = "apt"
+packages = ["fzf", "jq"]
+
+[[item.step]]
+type = "file"
+src = "helpers.sh"
+to = "~/.config/yardo/helpers.sh"
+
+[[item.step]]
+type = "line"
+to = "~/.bashrc"
+line = '[ -r ~/.config/yardo/helpers.sh ] && . ~/.config/yardo/helpers.sh'
+
+[[item.step]]
+type = "line"
+to = "~/.zshrc"
+line = '[ -r ~/.config/yardo/helpers.sh ] && . ~/.config/yardo/helpers.sh'
+if_exists = true

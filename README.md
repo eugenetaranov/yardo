@@ -187,7 +187,15 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    `~/.tmux.conf`: mouse, splits, 50k history), zellij, mosh. The zsh,
    Neovim and tmux files replace yours, keeping the old ones as `.orig`; keep your
    own lines in the local files instead (see [Your own
-   settings](#your-own-settings)).
+   settings](#your-own-settings)). **Shell helpers**, in
+   `~/.config/yardo/helpers.sh` (zsh and bash): `git-make-branch
+   <ticket>`, `recent_branches`, `fzf-git-checkout`,
+   `default_branch_git`; `kev`, `kgn`, `kdn`, `kgpres`, `sternf`, `keit`,
+   `kgpf`, `kdebug` (a throwaway netshoot pod), `kgnami`,
+   `k8s_config_switch`, `k8s_pods_restarted_pods_stats`,
+   `k8s_node_terminate` and `k8s_delete_ns` (both ask first); `tfreset`,
+   `tf-format`, `tfl`; `aws-profile`, `aws-list-rds`, `aws-ec2-list`,
+   `ec2ctl`; `openssl_connect`, `openssl_info_text`.
 8. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
    iperf3, nmap, strace, htop, btop, ncdu, …), Tailscale and NetBird (log
    in under Configure), NFS/SMB clients, the OpenVPN client, and an OpenVPN server:
