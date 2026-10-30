@@ -4,12 +4,12 @@
 [[item]]
 id = "devcli"
 tab = "dev"
-label = "Dev CLIs and linters (just, Task, watchexec, yq, xh, hurl, shellcheck, shfmt, actionlint, gitleaks, pre-commit, …)"
+label = "Dev CLIs and linters (just, Task, watchexec, xh, hurl, shellcheck, shfmt, actionlint, gitleaks, pre-commit, …)"
 default = true
 
 [[item.step]]
 type = "mise"
-tools = ["just@latest", "task@latest", "watchexec@latest", "hyperfine@latest", "yq@latest", "xh@latest", "hurl@latest"]
+tools = ["just@latest", "task@latest", "watchexec@latest", "hyperfine@latest", "xh@latest", "hurl@latest"]
 
 # Linters and hooks.
 [[item.step]]

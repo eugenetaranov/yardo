@@ -496,6 +496,20 @@ type = "file"
 src = "needrestart-yardo.conf"
 to = "/etc/needrestart/conf.d/yardo.conf"
 
+# yq, jq's YAML twin, on every machine as jq is (mikefarah's, from mise:
+# apt's yq is a different tool on Debian). Per user, like the timer below.
+[[item]]
+id = "yq"
+tab = "sysconf"
+label = "yq (YAML, JSON and TOML, like jq)"
+always = true
+needs = ["mise"]
+source = "mise yq"
+
+[[item.step]]
+type = "mise"
+tools = ["yq@latest"]
+
 # Per user (no scope: the sysconf tab is not the System tab): the
 # timer runs as you.
 [[item]]
