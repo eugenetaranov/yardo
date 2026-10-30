@@ -43,8 +43,8 @@ func TestWriteReadRoundTrip(t *testing.T) {
 }
 
 func TestMigratePicks(t *testing.T) {
-	got, notes := MigratePicks([]string{"cli", "shell", "kubectl", "helm", "chrony", "zsh", "krew", "tmuxcfg", "agekey"})
-	if want := []string{"zsh", "k8s", "k8stools", "tmux", "sops"}; !reflect.DeepEqual(got, want) {
+	got, notes := MigratePicks([]string{"cli", "shell", "kubectl", "helm", "chrony", "zsh", "krew", "tmuxcfg", "agekey", "sops"})
+	if want := []string{"zsh", "k8s", "k8stools", "tmux", "sops-install"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("picks = %v, want %v", got, want)
 	}
 	if len(notes) != 1 || !strings.Contains(notes[0], "clock sync") {

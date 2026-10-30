@@ -59,18 +59,18 @@ func TestMiseFirst(t *testing.T) {
 	}
 }
 
-// sops (Logins & keys) needs sops-install (IaC): it goes after.
+// mcpjungle (Agents) needs mcpjungle-install (AI): it goes after.
 func TestCrossTabNeeds(t *testing.T) {
-	got := resolve(t, "sops")
-	if index(got, "sops-install") > index(got, "sops") || index(got, "mise") > index(got, "sops-install") {
-		t.Errorf("plan = %v, want mise, sops-install, sops in that order", got)
+	got := resolve(t, "mcpjungle")
+	if index(got, "mcpjungle-install") > index(got, "mcpjungle") {
+		t.Errorf("plan = %v, want mcpjungle-install, then mcpjungle", got)
 	}
 }
 
 // Installing comes first: every install item before every configure item,
 // and dotfiles last of all.
 func TestInstallThenConfigure(t *testing.T) {
-	items, err := Resolve(cat(t), []string{"dotfiles", "github", "tailscale", "docker", "sops", "mcpjungle", "agentcfg", "claude"}, false)
+	items, err := Resolve(cat(t), []string{"dotfiles", "github", "tailscale", "docker", "mcpjungle", "agentcfg", "claude"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestInstallThenConfigure(t *testing.T) {
 // The configure half of a split item kept the old id: an old pick still
 // installs both halves.
 func TestSplitItemsPullInTheirInstall(t *testing.T) {
-	for cfg, inst := range map[string]string{"tailscale": "tailscale-install", "sops": "sops-install", "mcpjungle": "mcpjungle-install"} {
+	for cfg, inst := range map[string]string{"tailscale": "tailscale-install", "mcpjungle": "mcpjungle-install"} {
 		got := resolve(t, cfg)
 		if i, j := index(got, inst), index(got, cfg); i < 0 || i > j {
 			t.Errorf("%s should pull in %s before it: %v", cfg, inst, got)

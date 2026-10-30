@@ -1,7 +1,6 @@
 package steps
 
 import (
-	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -85,56 +84,5 @@ GEMINI_API_KEY=
 	}
 	if got := answers.ReadCreated(e.State); len(got) != 1 || got[0].Value != "/home/ada/.config/yardo/agent.env" {
 		t.Errorf("created = %+v", got)
-	}
-}
-
-func TestAgeKey(t *testing.T) {
-	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
-		if c.Name == "sh" && strings.Contains(c.Args[1], "age-keygen -o") {
-			return nil, os.WriteFile(c.Args[3], []byte("# created\nAGE-SECRET-KEY-1GEN\n"), 0o600)
-		}
-		if c.Name == "age-keygen" {
-			return []byte("age1pub\n"), nil
-		}
-		return nil, errors.New("unexpected")
-	}}
-	e := credEnv(t, x)
-	var notes []string
-	e.Note = func(s string) { notes = append(notes, s) }
-	st := step(t, catalog.Step{Type: "go:agekey"})
-	p := e.Path(ageKeys)
-	// Later: a commented file to fill in.
-	e.Secrets.AgeChoice = "later"
-	apply(t, e, st)
-	if got := read(t, p); !strings.HasPrefix(got, "# age key for sops") {
-		t.Errorf("keys.txt = %q", got)
-	}
-	if !check(t, e, st) {
-		t.Error("later: Check after Apply = false")
-	}
-	// Paste: the key goes in; the comment stays.
-	e.Secrets.AgeChoice, e.Secrets.AgeKey = "paste", " AGE-SECRET-KEY-1PASTED \n"
-	if check(t, e, st) {
-		t.Error("paste: Check = true without a key")
-	}
-	apply(t, e, st)
-	if got := read(t, p); !strings.HasSuffix(got, "\nAGE-SECRET-KEY-1PASTED\n") {
-		t.Errorf("keys.txt = %q", got)
-	}
-	// Generate with a key there: nothing to do.
-	e.Secrets.AgeChoice = "generate"
-	if !check(t, e, st) {
-		t.Error("generate with a key: Check = false")
-	}
-	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
-		t.Errorf("mode %v", fi.Mode())
-	}
-	// Generate on a fresh home.
-	if err := os.Remove(p); err != nil {
-		t.Fatal(err)
-	}
-	apply(t, e, st)
-	if !strings.Contains(read(t, p), "AGE-SECRET-KEY-1GEN") || len(notes) != 1 || !strings.Contains(notes[0], "age1pub") {
-		t.Errorf("keys.txt = %q, notes %q", read(t, p), notes)
 	}
 }

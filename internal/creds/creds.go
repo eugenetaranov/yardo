@@ -23,8 +23,7 @@ type Secrets struct {
 	GHToken                     string
 	// GHPassphrase is "yes" to set a passphrase on a new key (ssh-keygen
 	// asks for it itself).
-	GHPassphrase      string
-	AgeChoice, AgeKey string
+	GHPassphrase string
 	// GitKey is a private key for gitkey, sent on stdin to yardo gitkey.
 	GitKey []byte
 }
@@ -63,7 +62,5 @@ func (s *Secrets) Encode() []byte {
 	put("TS_AUTHKEY", s.TSAuthKey)
 	put("GH_TOKEN_IN", s.GHToken)
 	put("GH_PASSPHRASE", s.GHPassphrase)
-	put("AGE_CHOICE", s.AgeChoice)
-	put("AGE_KEY", s.AgeKey)
 	return b.Bytes()
 }

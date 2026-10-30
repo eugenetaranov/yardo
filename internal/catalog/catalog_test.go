@@ -30,18 +30,24 @@ func loadErr(t *testing.T, local fstest.MapFS) string {
 func TestEmbeddedCatalogLoads(t *testing.T) {
 	c := load(t, nil)
 	inst, conf := c.PhaseTabs(PhaseInstall), c.PhaseTabs(PhaseConfigure)
-	if len(c.Tabs) != 12 || len(inst) != 8 || len(conf) != 4 || inst[0].ID != "lang" || inst[0].Group != "Dev" || conf[0].ID != "sysconf" {
+	if len(c.Tabs) != 13 || len(inst) != 9 || len(conf) != 4 || inst[0].ID != "lang" || inst[0].Group != "Dev" || conf[0].ID != "sysconf" {
 		t.Errorf("tabs = %+v", c.Tabs)
 	}
 	// Install tabs first, then configure: the picker's two screens.
 	for i, tb := range c.Tabs {
-		if (i < 8) != (tb.PhaseOf() == PhaseInstall) {
+		if (i < 9) != (tb.PhaseOf() == PhaseInstall) {
 			t.Errorf("tab %d %s: phase %s", i, tb.ID, tb.PhaseOf())
 		}
 	}
-	for id, want := range map[string]bool{"docker": false, "mise": false, "gitkey": true, "sops": true, "github": true, "tailscale": true, "tailscale-install": false} {
+	for id, want := range map[string]bool{"docker": false, "mise": false, "gitkey": true, "github": true, "tailscale": true, "tailscale-install": false} {
 		if got := c.Item(id).Configure(); got != want {
 			t.Errorf("%s: Configure() = %v, want %v", id, got, want)
+		}
+	}
+	// Moved off the System tab, still machine-wide.
+	for _, id := range []string{"tailscale-install", "netbird-install", "openvpn-client", "openvpn-server", "wireguard-client", "wireguard-server"} {
+		if it := c.Item(id); it.Tab != "net" || !it.System() {
+			t.Errorf("%s: tab %s, system %v; want net, machine-wide", id, it.Tab, it.System())
 		}
 	}
 	if c.Item("zsh") == nil || c.Item("mise") == nil || !c.Item("mise").Hidden() {
@@ -215,7 +221,7 @@ func TestScope(t *testing.T) {
 
 func TestPhases(t *testing.T) {
 	for file, want := range map[string]string{
-		"[[tab]]\nid = \"x\"\ntitle = \"X\"\nphase = \"later\"\n": "phase \"later\"",
+		"[[tab]]\nid = \"x\"\ntitle = \"X\"\nphase = \"later\"\n":                                                                         "phase \"later\"",
 		"[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\nphase = \"configure\"\n[[item.step]]\ntype = \"apt\"\npackages = [\"jq\"]\n": "phase comes from the tab",
 		"[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\nneeds = [\"tailscale\"]\n":                                                   "can't need or come after \"tailscale\"",
 	} {

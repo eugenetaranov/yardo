@@ -49,33 +49,11 @@ tools = ["github:tackhq/tack@latest"]
 [[item]]
 id = "sops-install"
 tab = "iac"
-label = "sops + age (your age key: This VM → Logins & keys)"
+label = "sops + age (encrypted secrets in files)"
 
 [[item.step]]
 type = "mise"
 tools = ["sops@latest", "age@latest"]
-
-# Keeps the old id, so an old pick still means install + key.
-[[item]]
-id = "sops"
-tab = "logins"
-needs = ["sops-install"]
-source = "~/.config/sops/age/keys.txt (0600) · SOPS_AGE_KEY_FILE"
-label = "age key for sops (generate or paste)"
-
-[[item.step]]
-type = "go:agekey"
-
-[[item.step]]
-type = "line"
-to = "~/.zshenv"
-line = 'export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"'
-
-[[item.step]]
-type = "line"
-to = "~/.bashrc"
-line = 'export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"'
-top = true
 
 [[item]]
 id = "vault"

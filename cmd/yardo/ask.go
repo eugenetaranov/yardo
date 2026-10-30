@@ -287,11 +287,6 @@ func (k *asker) askSecrets(c *choices, has func(string) bool) error {
 	if err := k.askCreds(c, has); err != nil {
 		return err
 	}
-	if has("sops") {
-		if err := k.askAgeKey(c); err != nil {
-			return err
-		}
-	}
 	if has("tailscale") && exec.Command("tailscale", "status").Run() != nil {
 		if c.secrets.TSAuthKey, err = ui.Password("Tailscale auth key: a tagged one (Settings → Keys → Tags) never expires the VM (empty: 'sudo tailscale up' later)", "tskey-auth-…"); err != nil {
 			return err
@@ -621,34 +616,6 @@ func (k *asker) askCreds(c *choices, has func(string) bool) error {
 				c.secrets.Cred[it.ID+" "+key.Name] = v
 			}
 		}
-	}
-	return nil
-}
-
-func (k *asker) askAgeKey(c *choices) error {
-	f := filepath.Join(homeOf(k.a.User), ".config", "sops", "age", "keys.txt")
-	// A key line, not the skeleton's comment that mentions one.
-	if b, err := os.ReadFile(f); err == nil && steps.HasAgeKey(b) {
-		c.secrets.AgeChoice = "keep"
-		return nil
-	}
-	ch, err := ui.Choose("age key for "+k.a.User, []string{"Generate a new key", "Paste an existing key", "Later"}, "Generate a new key")
-	if err != nil {
-		return err
-	}
-	switch {
-	case strings.HasPrefix(ch, "Gen"):
-		c.secrets.AgeChoice = "generate"
-	case strings.HasPrefix(ch, "Paste"):
-		c.secrets.AgeChoice = "paste"
-		if c.secrets.AgeKey, err = ui.Password("age secret key (AGE-SECRET-KEY-1…)", ""); err != nil {
-			return err
-		}
-		if c.secrets.AgeKey == "" {
-			c.secrets.AgeChoice = "later"
-		}
-	default:
-		c.secrets.AgeChoice = "later"
 	}
 	return nil
 }

@@ -187,7 +187,8 @@ var PickMap = map[string][]string{
 	"tmuxcfg": {"tmux"}, "vimcfg": {"neovim"},
 	"k8sextra": {"k8s"}, "krew": {"k8stools"}, "helmfile": {"k8stools"},
 	"runners": {"devcli"}, "task": {"devcli"}, "yq": {"devcli"}, "http": {"devcli"},
-	"pgcli": {"dbclients"}, "iaclint": {"terraform"}, "agekey": {"sops"},
+	"pgcli": {"dbclients"}, "iaclint": {"terraform"},
+	"agekey": {}, "sops": {"sops-install"}, // the age key is no longer an item
 	"needrestart": {}, // with security updates, which every machine gets
 	"ufw":         {}, // no longer an item
 	"act":         {}, // comes with the GitHub item

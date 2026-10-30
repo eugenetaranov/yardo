@@ -63,10 +63,11 @@ gateway, containers' published ports and the Docker API, each a row of
 choices with a sentence saying what it means), **Connect from a laptop**
 and **Check for updates**. Esc always goes back. **Add or remove
 tools**, and the first run, open the full screen: tabs by area (**Dev**, **DevOps**,
-**AI**, **Shell & CLI**, **System**, then **This VM**) above a checklist,
+**AI**, **Shell & CLI**, **System**, **Connectivity**, then **This VM**) above a checklist,
 where a ticked box means installed and a mark beside it how it is: `✓`
-ready, `✗` stopped or not installed, `~` half set up or changed by hand,
-`?` needs a value, `↑` a newer version is out.
+ready, `✗` stopped or not installed, `~` half set up, changed since
+yardo set it up, or set up by an older yardo (this one ships newer
+files; Fix applies them), `?` needs a value, `↑` a newer version is out.
 
 - **space** queues adding (`[+]`) or removing (`[-]`) an item; removing one
   stops yardo looking after it, and it stays installed.
@@ -203,8 +204,9 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    `tf-format`, `tfl`; `aws-profile`, `aws-list-rds`, `aws-ec2-list`,
    `ec2ctl`; `openssl_connect`, `openssl_info_text`.
 8. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
-   iperf3, nmap, strace, htop, btop, ncdu, …), Tailscale and NetBird (log
-   in under Configure), NFS/SMB clients, the OpenVPN client, and an OpenVPN server:
+   iperf3, nmap, strace, htop, btop, ncdu, …), NFS/SMB clients.
+9. **Connectivity (root):** Tailscale and NetBird (log in under This VM →
+   Logins & keys), the OpenVPN client, and an OpenVPN server:
    its own CA (easy-rsa), UDP 1194, clients on 10.8.0.0/24 with all their
    traffic sent through the machine (NAT, through Docker's DOCKER-USER
    chain when Docker is there), and a profile for you in
@@ -301,12 +303,12 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    re-vendors them (`internal/assets/skills.lock.toml`).
 3. **Logins & keys:** the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
-   own management URL, or `sudo netbird up` later) and your age key for sops (generate or paste).
+   own management URL, or `sudo netbird up` later).
 
-In a profile, a split item's old id means both halves: `tailscale`,
-`sops` and `mcpjungle` are the configure items, and each pulls in its
-install item (`tailscale-install`, `sops-install`, `mcpjungle-install`),
-which a profile can also list alone. Merged items' old ids still work in
+In a profile, a split item's old id means both halves: `tailscale` and
+`mcpjungle` are the configure items, and each pulls in its install item
+(`tailscale-install`, `mcpjungle-install`), which a profile can also list
+alone. `sops` is `sops-install` now: yardo no longer sets up an age key. Merged items' old ids still work in
 saved choices: `ctools` is `docker`, `lint` is `devcli`, `gitcfg` is
 `gitid`, `lazygit` is `gitid`, `agentsafe` is `agentcfg` and `k3d` is `kind`.
 
@@ -346,8 +348,7 @@ survives `sudo yardo --yes`.
 ### Credentials
 
 yardo never stores or ships a credential. An item that needs one
-(agent API keys, MCP server keys, an npm or registry token, an age key, a
-GitHub token) asks for it once and writes it straight into that tool's own
+(agent API keys, MCP server keys, a GitHub token) asks for it once and writes it straight into that tool's own
 config file, readable only by you (0600). Leave a value empty, or run with
 `--yes`, and the file is still written, with each key left empty and a
 comment saying where to get it. Either way, `~/yardo.txt` ends with
@@ -359,7 +360,6 @@ the key, where to get it, and the command that applies it (`mcp-sync`,
 |---|---|
 | Agent API keys | `~/.config/yardo/agent.env`, exported by interactive shells only (not services or cron) |
 | MCP servers | `~/.mcp/<name>/env`, owned by the gateway's user: `sudo yardo mcp edit <name>` (it registers it after) |
-| age key | `~/.config/sops/age/keys.txt`, with `SOPS_AGE_KEY_FILE` set |
 
 Each user's MCPJungle gateway runs as a system user of its own,
 `mcp-<you>`, which owns `~/.mcp`: a coding agent running as you can use the

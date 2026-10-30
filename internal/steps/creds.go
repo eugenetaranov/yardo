@@ -18,7 +18,6 @@ import (
 // stays empty, and ~/yardo.txt lists it under "Secrets to fill in".
 
 func init() {
-	RegisterGo("agekey", func(catalog.Step) Step { return ageKeyStep{} })
 }
 
 type credStep struct {
@@ -121,91 +120,6 @@ func (c credStep) Apply(_ context.Context, e *Env) error {
 		return err
 	}
 	if err := writeFile(p, want, 0o600); err != nil {
-		return err
-	}
-	return e.chown(p, e.UID, e.GID)
-}
-
-// --- go:agekey ---------------------------------------------------------------
-
-// ageKeyStep sets up ~/.config/sops/age/keys.txt (0600) as chosen this run:
-// generate a key, paste one, or leave a commented file to fill in.
-type ageKeyStep struct{}
-
-const ageKeys = "~/.config/sops/age/keys.txt"
-
-func (ageKeyStep) choice(e *Env) (string, string) {
-	if e.Secrets == nil {
-		return "", ""
-	}
-	return e.Secrets.AgeChoice, e.Secrets.AgeKey
-}
-
-func (ageKeyStep) Plan(*Env) []Action { return []Action{{"cred", ageKeys + " (0600)"}} }
-
-// HasAgeKey reports whether an age keys file has a secret key line.
-func HasAgeKey(b []byte) bool {
-	for _, l := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(l, "AGE-SECRET-KEY-") {
-			return true
-		}
-	}
-	return false
-}
-
-func (a ageKeyStep) Check(_ context.Context, e *Env) (bool, error) {
-	p := e.Path(ageKeys)
-	b, err := os.ReadFile(p)
-	if err != nil {
-		return false, nil
-	}
-	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
-		return false, nil
-	}
-	choice, _ := a.choice(e)
-	return (choice != "generate" && choice != "paste") || HasAgeKey(b), nil
-}
-
-func (a ageKeyStep) Apply(ctx context.Context, e *Env) error {
-	p := e.Path(ageKeys)
-	home := filepath.Join(e.Home, strings.TrimPrefix(ageKeys, "~/"))
-	cur, err := os.ReadFile(p)
-	exists := err == nil
-	if err := mkdirFor(e, p, catalog.Step{To: ageKeys}); err != nil {
-		return err
-	}
-	choice, key := a.choice(e)
-	if !HasAgeKey(cur) && (choice == "generate" || choice == "paste") {
-		if !exists {
-			if err := e.record("file", home); err != nil {
-				return err
-			}
-		}
-		switch choice {
-		case "generate":
-			_ = os.Remove(p)
-			if _, err := e.run(ctx, Cmd{Name: "sh", Args: []string{"-c", `umask 077; age-keygen -o "$1"`, "_", p}, AsUser: true}); err != nil {
-				return err
-			}
-			if pub, err := e.Exec.Run(ctx, Cmd{Name: "age-keygen", Args: []string{"-y", p}, AsUser: true}); err == nil {
-				e.note("age: new key; its public key is " + strings.TrimSpace(string(pub)))
-			}
-		case "paste":
-			if err := writeFile(p, append(cur, strings.TrimSpace(key)+"\n"...), 0o600); err != nil {
-				return err
-			}
-		}
-		exists = true
-	}
-	if !exists {
-		if err := e.record("file", home); err != nil {
-			return err
-		}
-		if err := writeFile(p, []byte("# age key for sops: paste a line AGE-SECRET-KEY-1… here, or run: age-keygen -o ~/.config/sops/age/keys.txt\n"), 0o600); err != nil {
-			return err
-		}
-	}
-	if err := os.Chmod(p, 0o600); err != nil {
 		return err
 	}
 	return e.chown(p, e.UID, e.GID)

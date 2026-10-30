@@ -43,6 +43,11 @@ title = "Shell & CLI"
 id = "system"
 title = "System"
 
+# VPNs and mesh networks: this machine reaching others, and others it.
+[[tab]]
+id = "net"
+title = "Connectivity"
+
 [[tab]]
 id = "sysconf"
 title = "System settings"
