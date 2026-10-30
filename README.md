@@ -142,7 +142,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 2. **Dev → Dev tools:** dev CLIs and linters as one item (just, Task,
    watchexec, hyperfine, yq, xh, hurl; shellcheck, shfmt, actionlint,
    gitleaks, pre-commit), database clients (psql, pgcli, usql, mariadb,
-   sqlite3, redis-cli).
+   sqlite3, redis-cli), jiractl (Jira from the terminal).
 3. **DevOps → Containers & Kubernetes:** Docker (with log rotation and
    10.200.0.0/16 networks) and its tools (lazydocker, dive, hadolint, crane,
    cosign), Podman + skopeo + buildah; Kubernetes as one item (kubectl,
@@ -156,7 +156,13 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    terraform-docs and checkov, OpenTofu, Packer, Ansible, tack, sops + age,
    Vault.
 5. **DevOps → Cloud** (mise): AWS, Google Cloud, Azure, DigitalOcean, Hetzner,
-   cloudflared, restic + rclone.
+   cloudflared, restic + rclone. AWS is one item with what goes with the
+   CLI: AWS's session-manager-plugin (pinned) and aws-ssm-connect (a
+   shell on an EC2 instance, picked with fzf, through Session Manager),
+   ssmsearch (search SSM Parameter Store) and
+   [rds-mysql](https://github.com/eugenetaranov/rds-mysql) (pick an RDS
+   MySQL cluster, writer or reader, and connect; the password from an SSM
+   parameter it remembers once it logs in, or typed in).
 6. **AI:** Claude Code, Codex CLI, Gemini CLI, OpenCode, Aider, Goose, omp,
    Ollama, OpenSpec, ECC for Claude Code (agents, rules and commands, no
    hooks), and the MCPJungle gateway (its servers: MCP servers, on the menu).

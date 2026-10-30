@@ -1,14 +1,45 @@
 # yardo catalog: the Cloud tab.
 # `legacy` steps run the bundled bash installer until the item is ported.
 
+# AWS as one item: the CLI and what goes with it. aws-ssm-connect (a shell
+# on an EC2 instance through SSM Session Manager) needs AWS's
+# session-manager-plugin, pinned here (it's in no apt repo or mise);
+# ssmsearch searches Parameter Store; rds-mysql connects to an RDS MySQL
+# cluster with a password from SSM, through the mysql client.
 [[item]]
 id = "aws"
 tab = "cloud"
-label = "AWS CLI"
+label = "AWS tools (aws CLI, Session Manager + aws-ssm-connect, ssmsearch, rds-mysql)"
+source = "mise aws-cli, github:eugenetaranov/aws-ssm-connect, github:eugenetaranov/ssmsearch, pipx:git+https://github.com/eugenetaranov/rds-mysql.git · session-manager-plugin 1.2.896.0 (AWS's .deb) · apt mariadb-client"
 
 [[item.step]]
 type = "mise"
-tools = ["aws-cli@latest"]
+tools = ["aws-cli@latest", "github:eugenetaranov/aws-ssm-connect@latest", "github:eugenetaranov/ssmsearch@latest"]
+
+# rds-mysql: a uv tool, from its git repo.
+[[item.step]]
+type = "mise"
+tools = ["uv@latest", "pipx:git+https://github.com/eugenetaranov/rds-mysql.git"]
+
+[[item.step]]
+type = "apt"
+packages = ["curl", "mariadb-client"]
+
+[[item.step]]
+type = "run"
+cmd = """
+case {{arch}} in
+  amd64) d=ubuntu_64bit s=53f51fcc67314a4bf85888a38a3967cd41f8d0f28a60a9469a63acf935ba713e ;;
+  arm64) d=ubuntu_arm64 s=914eeca87b18b55356c58be197080f73742b3ca60d3823f0a45670dc9056aa9c ;;
+  *) echo "session-manager-plugin has no package for {{arch}}" >&2; exit 1 ;;
+esac
+t=$(mktemp --suffix=.deb)
+curl -fsSL -o "$t" "https://s3.amazonaws.com/session-manager-downloads/plugin/1.2.896.0/$d/session-manager-plugin.deb" &&
+  echo "$s  $t" | sha256sum -c --quiet &&
+  dpkg -i "$t"
+rc=$?; rm -f "$t"; exit $rc
+"""
+creates = "/usr/local/sessionmanagerplugin/bin/session-manager-plugin"
 
 [[item]]
 id = "gcloud"
@@ -63,3 +94,4 @@ label = "restic + rclone (backups, cloud storage)"
 [[item.step]]
 type = "mise"
 tools = ["restic@latest", "rclone@latest"]
+

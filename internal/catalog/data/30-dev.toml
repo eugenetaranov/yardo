@@ -32,6 +32,15 @@ type = "mise"
 tools = ["uv@latest", "pipx:pgcli", "usql@latest"]
 
 [[item]]
+id = "jiractl"
+tab = "dev"
+label = "jiractl (Jira from the terminal: issues, saved JQL queries)"
+
+[[item.step]]
+type = "mise"
+tools = ["github:eugenetaranov/jiractl@latest"]
+
+[[item]]
 id = "autoupdate-tools"
 tab = "sysconf"
 label = "Weekly tool updates (mise up, krew upgrade; a systemd timer)"
