@@ -35,6 +35,7 @@ var Dropins = []struct{ File, Line string }{
 	{"~/.config/yardo/agent-env.sh", "[ -r ~/.config/yardo/agent-env.sh ] && . ~/.config/yardo/agent-env.sh"},
 	{"~/.config/yardo/nvim.sh", "[ -r ~/.config/yardo/nvim.sh ] && . ~/.config/yardo/nvim.sh"},
 	{"~/.config/yardo/helpers.sh", "[ -r ~/.config/yardo/helpers.sh ] && . ~/.config/yardo/helpers.sh"},
+	{"~/.config/yardo/aws.sh", "[ -r ~/.config/yardo/aws.sh ] && . ~/.config/yardo/aws.sh"},
 }
 
 func init() {

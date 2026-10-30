@@ -9,8 +9,8 @@
 [[item]]
 id = "aws"
 tab = "cloud"
-label = "AWS tools (aws CLI, Session Manager + aws-ssm-connect, ssmsearch, rds-mysql)"
-source = "mise aws-cli, github:eugenetaranov/aws-ssm-connect, github:eugenetaranov/ssmsearch, pipx:git+https://github.com/eugenetaranov/rds-mysql.git · session-manager-plugin 1.2.896.0 (AWS's .deb) · apt mariadb-client"
+label = "AWS tools (aws CLI, aws_profile, Session Manager + aws-ssm-connect, ssmsearch, rds-mysql)"
+source = "mise aws-cli, github:eugenetaranov/aws-ssm-connect, github:eugenetaranov/ssmsearch, pipx:git+https://github.com/eugenetaranov/rds-mysql.git · session-manager-plugin 1.2.896.0 (AWS's .deb) · apt mariadb-client · ~/.config/yardo/aws.sh (aws_profile)"
 
 [[item.step]]
 type = "mise"
@@ -40,6 +40,29 @@ curl -fsSL -o "$t" "https://s3.amazonaws.com/session-manager-downloads/plugin/1.
 rc=$?; rm -f "$t"; exit $rc
 """
 creates = "/usr/local/sessionmanagerplugin/bin/session-manager-plugin"
+
+# aws_profile: an fzf menu that switches this shell's AWS profile, through
+# oh-my-zsh's asp when it's there. The aws plugin's aws_profiles is left
+# alone.
+[[item.step]]
+type = "apt"
+packages = ["fzf"]
+
+[[item.step]]
+type = "file"
+src = "aws.sh"
+to = "~/.config/yardo/aws.sh"
+
+[[item.step]]
+type = "line"
+to = "~/.bashrc"
+line = '[ -r ~/.config/yardo/aws.sh ] && . ~/.config/yardo/aws.sh'
+
+[[item.step]]
+type = "line"
+to = "~/.zshrc"
+line = '[ -r ~/.config/yardo/aws.sh ] && . ~/.config/yardo/aws.sh'
+if_exists = true
 
 [[item]]
 id = "gcloud"

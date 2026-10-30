@@ -102,8 +102,7 @@ prompt config it wrote (its first line says so); after `p10k configure`,
 or once you take that line off your `starship.toml`, the file is yours.
 
 The first run comes with the usual stack queued: zsh, Neovim, tmux,
-zellij, the shell helpers (aws_profiles, the git and kubectl pickers,
-…), the linters, the dev CLIs, the database clients, the admin and
+zellij, the shell helpers (the git and kubectl pickers, …), the linters, the dev CLIs, the database clients, the admin and
 debug tools, Docker and its tools, Claude Code with OpenSpec, the
 MCPJungle gateway, git (name and email, defaults, lazygit, GitHub) and
 the two agent items. Space takes off what you don't want; a installs.
@@ -171,7 +170,11 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    ssmsearch (search SSM Parameter Store) and
    [rds-mysql](https://github.com/eugenetaranov/rds-mysql) (pick an RDS
    MySQL cluster, writer or reader, and connect; the password from an SSM
-   parameter it remembers once it logs in, or typed in).
+   parameter it remembers once it logs in, or typed in), and
+   `aws_profile` (`aws-profile` too): a menu of your profiles that
+   switches this shell's AWS profile, through oh-my-zsh's `asp` when
+   it's there (`aws_profile NAME` switches straight to one; oh-my-zsh's
+   `aws_profiles` still lists them), in `~/.config/yardo/aws.sh`.
 6. **AI → Coding agents:** Claude Code, Codex CLI, Gemini CLI, OpenCode,
    Aider, Goose, omp.
 7. **AI → Add-ons & models:** OpenSpec, ECC for Claude Code (agents, rules
@@ -212,8 +215,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    `k8s_config_switch` (a menu of the kubeconfigs in `~/.kube`, then
    the picked one's contexts), `k8s_pods_restarted_pods_stats`,
    `k8s_node_terminate` and `k8s_delete_ns` (both ask first); `tfreset`,
-   `tf-format`, `tfl`; `aws_profiles` (a menu that switches this
-   shell's AWS profile; `aws-profile` too), `aws-list-rds`, `aws-ec2-list`,
+   `tf-format`, `tfl`; `aws-list-rds`, `aws-ec2-list`,
    `ec2ctl`; `openssl_connect`, `openssl_info_text`.
 9. **System → System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
    iperf3, nmap, strace, htop, btop, ncdu, …), NFS/SMB clients.
