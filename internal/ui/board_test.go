@@ -220,6 +220,7 @@ func TestBoardChange(t *testing.T) {
 	if b.panel == nil || !strings.Contains(b.View(), "Change git name and email") {
 		t.Fatalf("no change option:\n%s", b.View())
 	}
+	press2(b, "down") // past Apply it again
 	press2(b, "enter")
 	if r := b.result; r.Kind != BoardChange || r.ID != "gitid" || r.Change != "git" {
 		t.Errorf("result %+v", r)
@@ -243,5 +244,33 @@ func TestBoardLabelWidth(t *testing.T) {
 	b.Update(tea.WindowSizeMsg{Width: 90, Height: 26})
 	if v := b.View(); strings.Contains(v, long) || !strings.Contains(v, "changed since") {
 		t.Errorf("narrow: want the label shortened and the note kept:\n%s", v)
+	}
+}
+
+// Enter on a ready item offers to apply it again (a newer yardo's files)
+// or to remove it.
+func TestBoardReadyItemActions(t *testing.T) {
+	tabs := []Tab{{ID: "shell", Title: "Shell & CLI"}}
+	mk := func() *Board {
+		items := []*BoardItem{{ID: "helpers", Label: "Shell helpers", Tab: "shell", Picked: true, State: "ok"}}
+		b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items, nil, nil, nil)
+		b.Update(tea.WindowSizeMsg{Width: 110, Height: 26})
+		return b
+	}
+	b := mk()
+	press2(b, "enter")
+	if v := b.View(); !strings.Contains(v, "Apply it again") || !strings.Contains(v, "Remove it") {
+		t.Fatalf("panel lacks the actions:\n%s", v)
+	}
+	press2(b, "enter")
+	if r := b.result; r.Kind != BoardFix || r.ID != "helpers" {
+		t.Errorf("apply again: result %+v", r)
+	}
+	b = mk()
+	press2(b, "enter")
+	press2(b, "down")
+	press2(b, "enter")
+	if b.items[0].Pending != "remove" {
+		t.Errorf("remove: pending %q", b.items[0].Pending)
 	}
 }

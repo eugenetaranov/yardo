@@ -691,9 +691,19 @@ func (b *Board) act(r *row) tea.Cmd {
 			if i.State == "unchecked" {
 				lines = append(lines, "yardo can't check this one yet (the bash installer runs it).")
 			}
-			lines = append(lines, "Space removes it.")
-			b.panel = &panel{title: i.Label + ": " + stateWord(i.State), lines: lines, opts: changeOpts(i),
-				on: func(v string) tea.Cmd { return b.change(i, v) }}
+			opts := append([][2]string{{"Apply it again (rewrites its files, installs what's missing)", "fix"}}, changeOpts(i)...)
+			opts = append(opts, [2]string{"Remove it (stays installed; yardo stops looking after it)", "remove"})
+			b.panel = &panel{title: i.Label + ": " + stateWord(i.State), lines: lines, opts: opts,
+				on: func(v string) tea.Cmd {
+					switch v {
+					case "fix":
+						return b.done(BoardFix, i.ID)
+					case "remove":
+						i.Pending = "remove"
+						return nil
+					}
+					return b.change(i, v)
+				}}
 		}
 	}
 	return nil
