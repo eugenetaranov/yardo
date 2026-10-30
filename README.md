@@ -102,7 +102,8 @@ prompt config it wrote (its first line says so); after `p10k configure`,
 or once you take that line off your `starship.toml`, the file is yours.
 
 The first run comes with the usual stack queued: zsh, Neovim, tmux,
-zellij, the linters, the dev CLIs, the database clients, the admin and
+zellij, the shell helpers (aws_profiles, the git and kubectl pickers,
+…), the linters, the dev CLIs, the database clients, the admin and
 debug tools, Docker and its tools, Claude Code with OpenSpec, the
 MCPJungle gateway, git (name and email, defaults, lazygit, GitHub) and
 the two agent items. Space takes off what you don't want; a installs.

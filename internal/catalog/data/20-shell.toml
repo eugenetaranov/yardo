@@ -277,6 +277,7 @@ creates = "~/.cache/tealdeer"
 [[item]]
 id = "helpers"
 tab = "shell"
+default = true
 label = "Shell helpers (git branch pickers, kubectl shortcuts, tfreset, aws_profiles, ec2ctl, …)"
 source = "~/.config/yardo/helpers.sh, sourced from .zshrc and .bashrc · git-make-branch recent_branches fzf-git-checkout · kev kgn kdn keit kdebug kgnami k8s_config_switch k8s_node_terminate · tfreset tfl · aws_profiles aws-ec2-list ec2ctl · openssl_connect"
 
