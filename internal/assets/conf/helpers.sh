@@ -75,14 +75,29 @@ if command -v kubectl >/dev/null 2>&1; then
 fi
 command -v stern >/dev/null 2>&1 && alias sternf='stern --only-log-lines --no-follow'
 
-# Pick a kubeconfig under ~/.kube and export KUBECONFIG for this shell.
+# k8s_config_switch: pick a kubeconfig under ~/.kube (each one's contexts
+# beside it) and point this shell at it (KUBECONFIG), then, when it has
+# more than one, pick its context (kubectl config use-context, saved in
+# that file, as kubectx does).
 k8s_config_switch() {
-  local f
-  f=$(find ~/.kube -type f \( -name config -o -name '*.yaml' -o -name '*.yml' -o -name '*.conf' \) \
-        -not -path '*/cache/*' 2>/dev/null | sed "s|^$HOME/.kube/||" | sort |
-      fzf --prompt='kubeconfig> ' --height=40% --reverse) || return
+  local now f ctx n
+  now=${KUBECONFIG:-$HOME/.kube/config}
+  f=$(find ~/.kube -maxdepth 3 -type f -not -path '*/cache/*' -not -path '*/http-cache/*' \
+        -size -1024k -exec grep -l '^clusters:' {} + 2>/dev/null |
+      sed "s|^$HOME/.kube/||" | sort |
+      fzf --prompt='kubeconfig > ' --height=40% --reverse \
+          --header="now: ${now#"$HOME"/.kube/} · $(kubectl config current-context 2>/dev/null || echo 'no context')" \
+          --preview="kubectl config get-contexts --kubeconfig \"$HOME/.kube/{}\" 2>&1" \
+          --preview-window=right,60%) || return
   export KUBECONFIG="$HOME/.kube/$f"
-  echo "KUBECONFIG=$KUBECONFIG"
+  n=$(kubectl config get-contexts -o name 2>/dev/null | wc -l)
+  if [ "$n" -gt 1 ]; then
+    ctx=$(kubectl config get-contexts -o name |
+          fzf --prompt='context > ' --height=40% --reverse \
+              --header="now: $(kubectl config current-context 2>/dev/null || echo none)")
+    [ -n "$ctx" ] && kubectl config use-context "$ctx" >/dev/null
+  fi
+  echo "KUBECONFIG=$KUBECONFIG · context: $(kubectl config current-context 2>/dev/null || echo none)"
 }
 
 # keit <pod> [shell]: a shell in the pod (bash, else sh).

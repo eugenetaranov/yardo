@@ -199,7 +199,8 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    <ticket>`, `recent_branches`, `fzf-git-checkout`,
    `default_branch_git`; `kev`, `kgn`, `kdn`, `kgpres`, `sternf`, `keit`,
    `kgpf`, `kdebug` (a throwaway netshoot pod), `kgnami`,
-   `k8s_config_switch`, `k8s_pods_restarted_pods_stats`,
+   `k8s_config_switch` (a menu of the kubeconfigs in `~/.kube`, then
+   the picked one's contexts), `k8s_pods_restarted_pods_stats`,
    `k8s_node_terminate` and `k8s_delete_ns` (both ask first); `tfreset`,
    `tf-format`, `tfl`; `aws_profiles` (a menu that switches this
    shell's AWS profile; `aws-profile` too), `aws-list-rds`, `aws-ec2-list`,
