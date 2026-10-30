@@ -9,6 +9,9 @@
 #   mcp-sync status        each server's state, a line each: <name> TAB <state> TAB <detail>
 #                          (ok, waiting <keys>, changed, unregistered, failed <why>,
 #                          nospec, noenv; "-  down" first when the gateway can't be reached)
+#   mcp-sync source [name ...]  where each server runs from, a line each:
+#                          <name> TAB <image or URL> [TAB <version> TAB <id> TAB <built>]
+#                          (the last three for an image pulled here)
 #   mcp-sync client <name> make a token for another MCP client (a laptop's agent), allowed
 #                          every server; only when the gateway listens beyond this machine
 #
@@ -139,8 +142,10 @@ fi
 
 STATUS=
 [ "${1:-}" = status ] && { STATUS=1; shift; }
+SOURCE=
+[ "${1:-}" = source ] && { SOURCE=1; shift; }
 
-if [ $# -gt 0 ] && [ -z "$STATUS" ]; then
+if [ $# -gt 0 ] && [ -z "$STATUS$SOURCE" ]; then
   for n in "$@"; do
     valid_name "$n" || { echo "mcp-sync: not a server name: $n" >&2; exit 2; }
   done
@@ -213,6 +218,33 @@ render() {
     *) echo "unknown KIND '$KIND'" >&2; return 1 ;;
   esac
 }
+
+# source [name ...] — where each server (these, else the enabled ones) runs
+# from, a line each: <name> TAB <image or URL>, and for an image pulled
+# here: TAB <its version label> TAB <its id> TAB <when it was built>.
+if [ -n "$SOURCE" ]; then
+  # shellcheck disable=SC2046 # names have no spaces (valid_name)
+  [ $# -gt 0 ] || set -- $(enabled)
+  for NAME in "$@"; do
+    valid_name "$NAME" || continue
+    spec=$(spec_for "$NAME")
+    [ -n "$spec" ] || continue
+    KIND= IMAGE= URL= URL_VAR= URL_SUFFIX=
+    unset -f skeleton image_args 2>/dev/null || true
+    # shellcheck disable=SC1090
+    . "$spec"
+    case "$KIND" in
+      docker)
+        here=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}	{{.Id}}	{{.Created}}' "$IMAGE" 2>/dev/null) || here=
+        if [ -n "$here" ]; then printf '%s\t%s\t%s\n' "$NAME" "$IMAGE" "$here"; else printf '%s\t%s\n' "$NAME" "$IMAGE"; fi ;;
+      http)
+        url="${URL:-}"
+        [ -n "${URL_VAR:-}" ] && url="$(envget "$URL_VAR" "$MCP_DIR/$NAME/env" | sed 's:/*$::')${URL_SUFFIX:-}"
+        printf '%s\t%s\n' "$NAME" "$url" ;;
+    esac
+  done
+  exit 0
+fi
 
 failed=0
 want=$(enabled)

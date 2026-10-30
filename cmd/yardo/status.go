@@ -382,6 +382,18 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		if info.MCP == nil {
 			info.MCP = []ui.MCPServer{}
 		}
+		var names []string
+		for _, r := range info.MCP {
+			names = append(names, r.Name)
+		}
+		if len(names) > 0 {
+			src := o.mcpSources(ctx, a, names)
+			for n := range info.MCP {
+				if f, ok := src[info.MCP[n].Name]; ok {
+					info.MCP[n].From, info.MCP[n].Cached = f.from, f.cached()
+				}
+			}
+		}
 		for _, n := range slices.Sorted(maps.Keys(specs)) {
 			if retiredMCP[n] != "" {
 				continue

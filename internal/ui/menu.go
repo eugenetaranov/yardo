@@ -389,7 +389,7 @@ func (m *Menu) View() string {
 		for n, r := range rs {
 			note := muted.Render(runewidth.Truncate(r.note, max(4, w-36), "…"))
 			if n == m.sel {
-				add("  " + rowOn.Render(padTo(" › "+r.label, 28)) + "  " + note)
+				add(beside("  "+rowOn.Render(padTo(" › "+r.label, 28))+"  ", 32, w-2, muted, r.note)...)
 			} else {
 				add("     " + padTo(r.label, 25) + "  " + note)
 			}

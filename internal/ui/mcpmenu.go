@@ -131,6 +131,14 @@ func mcpType(s *MCPServer) string {
 	return s.Spec
 }
 
+// fromLine is where s runs from, and which of its image is here.
+func fromLine(s *MCPServer) string {
+	if s.Cached == "" {
+		return "from " + s.From
+	}
+	return "from " + s.From + " · " + s.Cached
+}
+
 // examples names a few servers to add, and how many more there are.
 func (m *Menu) examples() string {
 	n := len(m.info.MCPSpecs)
@@ -317,10 +325,15 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			cols := padTo(mcpType(s), 13) + "  " + mcpWord(s)
 			if n == m.sel {
 				selLine = len(lines)
-				lines = append(lines, "  "+rowOn.Render(padTo(" › "+s.Name, 21))+"  "+cols)
-				if s.About != "" {
-					lines = append(lines, "       "+muted.Render(runewidth.Truncate(s.About, max(10, w-10), "…")))
+				// Its state padded, so what it is starts in one column.
+				const col = 2 + 21 + 2 + 13 + 2 + 30 + 2
+				head := "  " + rowOn.Render(padTo(" › "+s.Name, 21)) + "  " + padTo(mcpType(s), 13) + "  " + mcpWord(s)
+				head += strings.Repeat(" ", max(2, col-runewidth.StringWidth(stripANSI(head))))
+				from := ""
+				if s.From != "" {
+					from = fromLine(s)
 				}
+				lines = append(lines, beside(head, col, w-2, muted, s.About, from)...)
 			} else {
 				lines = append(lines, "     "+padTo(s.Name, 18)+"  "+cols)
 			}
@@ -351,6 +364,9 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		add("  " + bold.Render(s.Name) + muted.Render(" · "+what))
 		if s.About != "" {
 			add("  " + s.About)
+		}
+		if s.From != "" {
+			add("  " + muted.Render(fromLine(s)))
 		}
 		add("  " + mcpWord(s))
 		if s.Detail != "" {
@@ -394,7 +410,10 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			}
 			about := muted.Render(runewidth.Truncate(s.About, max(10, w-50), "…"))
 			if n == m.sel {
-				lines = append(lines, "  "+rowOn.Render(padTo(" › "+s.Name, 21))+"  "+about+note)
+				head := "  " + rowOn.Render(padTo(" › "+s.Name, 21)) + "  "
+				ls := beside(head, 25, w-2-runewidth.StringWidth(stripANSI(note)), muted, s.About)
+				ls[0] += note
+				lines = append(lines, ls...)
 			} else {
 				lines = append(lines, "     "+padTo(s.Name, 18)+"  "+about+note)
 			}

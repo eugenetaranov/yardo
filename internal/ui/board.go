@@ -47,6 +47,10 @@ type MCPServer struct {
 	Instead string
 	// Detail is why it didn't register (State failed).
 	Detail string
+	// From is where it runs from: its image or URL. Cached is which of
+	// its image is pulled here ("cached: 0.23.1, built 2026-03-02", "not
+	// pulled yet"); "" for a URL.
+	From, Cached string
 }
 
 // MCPSpec is a catalog server, to add.
@@ -809,6 +813,32 @@ func (b *Board) note(r row) (string, lipgloss.Style) {
 	return strings.TrimSuffix(pre, " · "), muted
 }
 
+// beside lays a selected row out: head (rendered, at col cells wide), then
+// each of notes in style to its right, wrapped to the w left: as many lines
+// as they take, the ones after under the first. Too narrow a column for
+// them, they go below head instead.
+func beside(head string, col, w int, style lipgloss.Style, notes ...string) []string {
+	indent := col
+	if w-col < 24 {
+		indent = min(col, 7)
+	}
+	var wrapped []string
+	for _, n := range notes {
+		if n != "" {
+			wrapped = append(wrapped, wrap(n, max(10, w-indent))...)
+		}
+	}
+	out := []string{head}
+	for i, l := range wrapped {
+		if i == 0 && indent == col {
+			out[0] = head + style.Render(l)
+			continue
+		}
+		out = append(out, strings.Repeat(" ", indent)+style.Render(l))
+	}
+	return out
+}
+
 func padTo(s string, w int) string {
 	s = runewidth.Truncate(s, w, "…")
 	return s + strings.Repeat(" ", max(0, w-runewidth.StringWidth(s)))
@@ -957,12 +987,19 @@ func (b *Board) View() string {
 		pl = append(pl, " "+accentBd.Render("└"+strings.Repeat("─", max(0, w-4))))
 	}
 	listH := max(1, h-5-len(pl))
-	top := 0
-	if cur >= listH {
-		top = cur - listH + 1
-	}
 	labelW := min(44, max(20, w*2/5))
-	for n := top; n < len(rs) && n < top+listH; n++ {
+	// The selected row's note wraps under itself: the lines it takes more.
+	more := 0
+	if cur >= 0 && cur < len(rs) && b.panel == nil && rs[cur].head == "" && rs[cur].text == "" {
+		note, _ := b.note(rs[cur])
+		more = max(0, len(wrap(note, max(4, w-labelW-12)))-1)
+		more = min(more, max(0, listH-1))
+	}
+	top := 0
+	if cur >= listH-more {
+		top = cur - (listH - more) + 1
+	}
+	for n := top; n < len(rs) && len(out) < 3+listH; n++ {
 		x := rs[n]
 		switch {
 		case x.head != "":
@@ -1000,7 +1037,21 @@ func (b *Board) View() string {
 		plain := fmt.Sprintf(" %s%s %s %s  ", pointer, box, mk, padTo(label, labelW))
 		noteW := max(4, w-runewidth.StringWidth(plain)-1)
 		if n == cur && b.panel == nil {
-			out = append(out, rowOn.Render(padTo(plain+note, w-1)))
+			ls := wrap(note, noteW)
+			if note == "" {
+				ls = []string{""}
+			}
+			pad := strings.Repeat(" ", runewidth.StringWidth(plain))
+			for j, l := range ls {
+				if j > 0 && len(out) >= 3+listH {
+					break
+				}
+				lead := plain
+				if j > 0 {
+					lead = pad
+				}
+				out = append(out, rowOn.Render(padTo(lead+l, w-1)))
+			}
 		} else {
 			out = append(out, fmt.Sprintf(" %s%s %s %s  ", pointer, box, ms.Render(mk), padTo(label, labelW))+ns.Render(runewidth.Truncate(note, noteW, "…")))
 		}

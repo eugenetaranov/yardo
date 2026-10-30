@@ -298,3 +298,42 @@ esac; exit 0`,
 		t.Errorf("down:\n%s", got)
 	}
 }
+
+// source says where each server runs from: an image (and, pulled here,
+// its version), or a URL made from its env; it leaves the saved list be.
+func TestMCPSyncSource(t *testing.T) {
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	for _, d := range []string{mcp + "/jira", mcp + "/seq", mcp + "/jenkins", cat} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		cat + "/jira.spec":    "KIND=docker\nIMAGE=img/jira:1.2\n",
+		cat + "/seq.spec":     "KIND=docker\nIMAGE=img/seq:latest\n",
+		cat + "/jenkins.spec": "KIND=http\nURL_VAR=JENKINS_URL\nURL_SUFFIX=/mcp-server/mcp\n",
+		mcp + "/jenkins/env":  "JENKINS_URL=https://ci.example/\n",
+		mcp + "/servers":      "jira\n",
+	}
+	for f, body := range files {
+		if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bin := fakeBin(t, map[string]string{
+		"docker": `[ "$5" = img/jira:1.2 ] || exit 1; printf '1.2\tsha256:abc\t2026-03-02T00:00:00Z\n'`,
+	})
+	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	out, err := mcpSync(t, env, "source", "jira", "seq", "jenkins", "nope")
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	want := "jira\timg/jira:1.2\t1.2\tsha256:abc\t2026-03-02T00:00:00Z\nseq\timg/seq:latest\njenkins\thttps://ci.example/mcp-server/mcp\n"
+	if out != want {
+		t.Errorf("out %q, want %q", out, want)
+	}
+	if b, _ := os.ReadFile(mcp + "/servers"); string(b) != "jira\n" {
+		t.Errorf("servers rewritten: %q", b)
+	}
+}

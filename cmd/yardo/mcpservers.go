@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/mcp"
@@ -356,6 +357,73 @@ func parseStatus(out string) (map[string]syncState, bool) {
 	return st, down
 }
 
+// mcpSource is where a server runs from: its image or URL, and for an
+// image pulled here, its version (the image's label, else its id) and
+// when it was built.
+type mcpSource struct {
+	from, version, id string
+	built             time.Time
+	here              bool // the image is pulled here
+}
+
+// mcpSources is where each server named runs from (mcp-sync source); nil
+// when mcp-sync can't say.
+func (o *options) mcpSources(ctx context.Context, a *answers.Answers, names []string) map[string]mcpSource {
+	out, err := mcpSyncCmd(ctx, o.share(), a, append([]string{"source"}, names...)...).Output()
+	if err != nil {
+		return nil
+	}
+	return parseSources(string(out))
+}
+
+func parseSources(out string) map[string]mcpSource {
+	src := map[string]mcpSource{}
+	for _, l := range strings.Split(out, "\n") {
+		f := strings.Split(l, "\t")
+		if len(f) < 2 || f[1] == "" {
+			continue
+		}
+		s := mcpSource{from: f[1]}
+		if len(f) == 5 {
+			s.here, s.version, s.id = true, f[2], strings.TrimPrefix(f[3], "sha256:")
+			if len(s.id) > 12 {
+				s.id = s.id[:12]
+			}
+			s.built, _ = time.Parse(time.RFC3339Nano, f[4])
+		}
+		src[f[0]] = s
+	}
+	return src
+}
+
+// cached says which of a server's image is pulled here: its version (else
+// its id) and when it was built; "" for a URL, "not pulled yet" for an
+// image that isn't.
+func (s mcpSource) cached() string {
+	if !s.here {
+		if strings.Contains(s.from, "://") {
+			return ""
+		}
+		return "not pulled yet"
+	}
+	v := s.version
+	if v == "" {
+		v = s.id
+	}
+	if !s.built.IsZero() {
+		v += ", built " + s.built.Format("2006-01-02")
+	}
+	return "cached: " + v
+}
+
+// says is a server's source in a line: from where, and what's cached.
+func (s mcpSource) says() string {
+	if c := s.cached(); c != "" {
+		return s.from + " (" + c + ")"
+	}
+	return s.from
+}
+
 // mcpSyncNow registers yardo's servers (those changed or not registered
 // yet) now, as the mcp_sync step does; mcp-sync's lines go to w.
 func (o *options) mcpSyncNow(ctx context.Context, a *answers.Answers, w io.Writer) error {
@@ -416,9 +484,13 @@ func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Stor
 		if down {
 			fmt.Fprintln(stdout, "✗ The MCP gateway isn't answering: sudo yardo, then Fix it.")
 		}
+		src := o.mcpSources(ctx, a, names)
 		for _, n := range names {
 			v, ok := s[n]
 			fmt.Fprintln(stdout, mcpSays(n, v, ok))
+			if f, ok := src[n]; ok {
+				fmt.Fprintln(stdout, "    from "+f.says())
+			}
 		}
 	}
 	switch args[0] {

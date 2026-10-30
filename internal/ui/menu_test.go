@@ -180,10 +180,19 @@ func TestMenuMCPList(t *testing.T) {
 	mk(m, "enter")
 	v := m.View()
 	for _, want := range []string{"Home  ›  MCP servers", "needs JIRA_API_TOKEN", "didn't register", "Also in ~/.mcp", "grafana-test", "· off",
-		"+ Add a server", "GitHub: repositories and pull requests", "<name>__<tool>"} {
+		"+ Add a server", "<name>__<tool>"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("list lacks %q:\n%s", want, v)
 		}
+	}
+	// The selected one's description is right of it, wrapped as it needs.
+	for _, l := range strings.Split(v, "\n") {
+		if strings.Contains(l, "› github") && !strings.Contains(l, "GitHub:") {
+			t.Errorf("description not beside the row:\n%s", v)
+		}
+	}
+	if !strings.Contains(strings.Join(strings.Fields(stripANSI(v)), " "), "GitHub: repositories and pull requests") {
+		t.Errorf("list lacks the description:\n%s", v)
 	}
 	if strings.Index(v, "opensearch") > strings.Index(v, "grafana-test") {
 		t.Errorf("found servers before yardo's:\n%s", v)

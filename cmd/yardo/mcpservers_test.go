@@ -167,3 +167,26 @@ func TestMCPStatus(t *testing.T) {
 		t.Errorf("rows = %+v", rows)
 	}
 }
+
+// mcp-sync source's lines: an image pulled here (its label, else its id),
+// one not pulled yet, and a URL.
+func TestParseSources(t *testing.T) {
+	src := parseSources("jira\tghcr.io/x/atlassian:0.23.1\t0.23.1\tsha256:0123456789abcdef\t2026-03-02T10:00:00.123Z\n" +
+		"seq\tmcp/seq:latest\t\tsha256:abcdef0123456789\t2026-01-05T00:00:00Z\n" +
+		"gh\tghcr.io/github/gh:1\n" +
+		"c7\thttps://mcp.context7.com/mcp\n" +
+		"bad line\nempty\t\n")
+	for name, want := range map[string]string{
+		"jira": "ghcr.io/x/atlassian:0.23.1 (cached: 0.23.1, built 2026-03-02)",
+		"seq":  "mcp/seq:latest (cached: abcdef012345, built 2026-01-05)",
+		"gh":   "ghcr.io/github/gh:1 (not pulled yet)",
+		"c7":   "https://mcp.context7.com/mcp",
+	} {
+		if got := src[name].says(); got != want {
+			t.Errorf("%s: %q, want %q", name, got, want)
+		}
+	}
+	if len(src) != 4 {
+		t.Errorf("parseSources = %v", src)
+	}
+}
