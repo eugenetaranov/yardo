@@ -590,8 +590,8 @@ func (m *Menu) View() string {
 			add("  " + bold.Render("Update "+plural(n, "item", "items")+"?") + "  " + muted.Render("mise up for the tools, apt for the packages; nothing else changes"))
 			keys = strings.Join([]string{k("enter", "yes, update"), k("esc", "no")}, "   ")
 		} else {
-			add("  "+rowOn.Render(" Update all ")+"   "+muted.Render("asks first"),
-				"", "  "+muted.Render("yardo doesn't upgrade on its own: this, or mise up for your tools and sudo apt upgrade for the system's."))
+			add("  "+rowOn.Render(" Update all "),
+				"", "  "+muted.Render("yardo doesn't upgrade on its own."))
 			keys = strings.Join([]string{k("enter", "update"), k("esc", "back")}, "   ")
 		}
 	}
