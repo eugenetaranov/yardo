@@ -191,7 +191,17 @@ func MiseName(spec string) string {
 	return spec
 }
 
-func (m miseStep) Check(ctx context.Context, e *Env) (bool, error) { return MiseHas(ctx, e, m.s.Tools) }
+func (m miseStep) Check(ctx context.Context, e *Env) (bool, error) {
+	if e.Reinstall && slices.ContainsFunc(m.s.Tools, fromGit) {
+		return false, nil
+	}
+	return MiseHas(ctx, e, m.s.Tools)
+}
+
+// fromGit reports whether a mise tool installs from a git repo
+// (pipx:git+https://…): its version is just "latest", whatever the repo
+// is at now.
+func fromGit(tool string) bool { return strings.Contains(MiseName(tool), "git+") }
 
 // MiseHas reports whether every tool is in the user's global mise config,
 // at its locked version when there is one.
@@ -275,7 +285,19 @@ func Versions(ctx context.Context, e *Env, tools, pkgs []string) (l *answers.Loc
 	return l, missing
 }
 
-func (m miseStep) Apply(ctx context.Context, e *Env) error { return MiseUse(ctx, e, m.s.Tools) }
+func (m miseStep) Apply(ctx context.Context, e *Env) error {
+	if err := MiseUse(ctx, e, m.s.Tools); err != nil || !e.Reinstall {
+		return err
+	}
+	for _, t := range m.s.Tools {
+		if fromGit(t) {
+			if _, err := e.run(ctx, Cmd{Name: "mise", Args: []string{"install", "--force", "--yes", MiseName(t) + "@latest"}, AsUser: true}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 // MiseUse installs tools globally for the user, at their locked versions.
 func MiseUse(ctx context.Context, e *Env, tools []string) error {

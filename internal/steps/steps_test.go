@@ -486,3 +486,31 @@ func TestUpgrade(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// Applied again on purpose, a tool from a git repo is fetched again (its
+// version is always "latest"); otherwise it's left as it is.
+func TestMiseReinstallFromGit(t *testing.T) {
+	tools := []string{"uv@latest", "pipx:git+https://github.com/eugenetaranov/rds-mysql.git"}
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		if c.Name == "mise" && c.Args[0] == "ls" {
+			return []byte(`{"uv":[{"version":"0.9.0","installed":true}],"pipx:git+https://github.com/eugenetaranov/rds-mysql.git":[{"version":"latest","installed":true}]}`), nil
+		}
+		return nil, nil
+	}}
+	e := testEnv(t, x)
+	s := step(t, catalog.Step{Type: "mise", Tools: tools})
+	if done, _ := s.Check(context.Background(), e); !done {
+		t.Fatal("installed tools: not done")
+	}
+	e.Reinstall = true
+	if done, _ := s.Check(context.Background(), e); done {
+		t.Fatal("Reinstall: a git tool should be fetched again")
+	}
+	x.ran = nil
+	if err := s.Apply(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(x.commands(), "; "); !strings.Contains(got, "mise install --force --yes pipx:git+https://github.com/eugenetaranov/rds-mysql.git@latest") || strings.Contains(got, "install --force --yes uv") {
+		t.Errorf("ran %s", got)
+	}
+}

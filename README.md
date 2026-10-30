@@ -81,7 +81,8 @@ files; Fix applies them), `?` needs a value, `↑` a newer version is out.
   in a missing value (in your editor), change a setting or an answer (git
   name and email, the prompt, the dotfiles repo, the MCP servers), or show
   an item's details, with Apply it again (after `yardo version up`, to
-  take a newer yardo's files) and Remove it. On a row not installed,
+  take a newer yardo's files; tools installed from a git repo, such as
+  rds-mysql, are fetched again too) and Remove it. On a row not installed,
   enter queues adding it, as space does.
 - **a** applies the queue: it asks what the new items need (git name,
   prompt, MCP servers, keys), then installs. **Review**, the last tab,

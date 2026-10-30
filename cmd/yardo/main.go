@@ -659,6 +659,8 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	if err != nil {
 		return err
 	}
+	// Fixed or applied again on purpose: git-sourced tools are fetched again.
+	env.Reinstall = fix != nil
 	if created {
 		env.Note(fmt.Sprintf("Created user %s (passwordless sudo, no password or SSH key): add a key to %s/.ssh/authorized_keys, or use 'sudo -iu %s'.", a.User, env.Home, a.User))
 	}

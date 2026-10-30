@@ -84,6 +84,10 @@ type Env struct {
 	Secrets *creds.Secrets
 	// Lock pins mise and apt versions (a profile's [lock]); nil: latest.
 	Lock *answers.Lock
+	// Reinstall: the items are applied again on purpose (Fix, Apply it
+	// again), so tools installed from a git repo are fetched again; a
+	// version check can't tell they're behind.
+	Reinstall bool
 
 	// checks caches what the Checks read, while it isn't nil (a status
 	// run, which changes nothing between them): see CacheChecks.
