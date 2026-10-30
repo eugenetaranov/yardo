@@ -236,15 +236,32 @@ tfl() {
 
 # --- AWS ---------------------------------------------------------------
 
-# Pick a profile from ~/.aws/config and export AWS_PROFILE.
-aws-profile() {
-  local p
-  p=$(awk '/^\[default\]/ {print "default"}
-           /^\[profile / {gsub(/^\[profile |\]$/, ""); print}' ~/.aws/config |
-      sort | fzf --prompt='AWS profile > ' --height=40% --reverse) || return
-  export AWS_PROFILE="$p"
+# aws_profiles: pick a profile (~/.aws/config and ~/.aws/credentials) and
+# switch this shell to it, through oh-my-zsh's asp when it's there (the
+# prompt follows). Replaces the aws plugin's aws_profiles, which only
+# lists them; piped or captured (asp's Tab completion), it still does.
+aws_profiles() {
+  local profiles p
+  profiles=$(cat ~/.aws/config ~/.aws/credentials 2>/dev/null |
+    sed -n 's/^\[\(profile \)\{0,1\}\([^]]*\)\].*/\2/p' | sort -u)
+  if [ ! -t 1 ]; then
+    [ -n "$profiles" ] && printf '%s\n' "$profiles"
+    return 0
+  fi
+  [ -n "$profiles" ] || { echo "No profiles in ~/.aws/config or ~/.aws/credentials"; return 1; }
+  p=$(printf '%s\n' "$profiles" |
+      fzf --prompt='AWS profile > ' --height=40% --reverse \
+          --header="now: ${AWS_PROFILE:-default}" \
+          --preview="awk -v p={} '/^\\[/ {on = (\$0 == \"[\" p \"]\" || \$0 == \"[profile \" p \"]\")} on' ~/.aws/config ~/.aws/credentials 2>/dev/null | grep -viE 'secret|token|access_key'" \
+          --preview-window=right,50%) || return
+  if type asp >/dev/null 2>&1; then
+    asp "$p"
+  else
+    export AWS_PROFILE="$p" AWS_DEFAULT_PROFILE="$p"
+  fi
   echo "AWS_PROFILE=$AWS_PROFILE"
 }
+alias aws-profile=aws_profiles
 
 aws-list-rds() {
   aws rds describe-db-clusters --query 'DBClusters[*].[DBClusterIdentifier,Endpoint]' --output text |

@@ -201,7 +201,8 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    `kgpf`, `kdebug` (a throwaway netshoot pod), `kgnami`,
    `k8s_config_switch`, `k8s_pods_restarted_pods_stats`,
    `k8s_node_terminate` and `k8s_delete_ns` (both ask first); `tfreset`,
-   `tf-format`, `tfl`; `aws-profile`, `aws-list-rds`, `aws-ec2-list`,
+   `tf-format`, `tfl`; `aws_profiles` (a menu that switches this
+   shell's AWS profile; `aws-profile` too), `aws-list-rds`, `aws-ec2-list`,
    `ec2ctl`; `openssl_connect`, `openssl_info_text`.
 8. **System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
    iperf3, nmap, strace, htop, btop, ncdu, …), NFS/SMB clients.
