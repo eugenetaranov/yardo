@@ -34,7 +34,7 @@ Where a server reports usage by default and has a documented switch, its spec SH
 - **THEN** `GRAFANA_USAGE_STATS=disabled` or `AZURE_MCP_COLLECT_TELEMETRY=false` is set
 
 ### Requirement: Retired MCP servers
-A catalog server its maker retired SHALL leave yardo's catalog, its installed spec SHALL be removed (a team's spec of that name stays), the catalog refresh from tack-roles SHALL drop it, and one already set up SHALL show on the MCP servers screen as retired, naming its replacement, with Delete.
+A catalog server its maker retired SHALL leave yardo's catalog, its installed spec SHALL be removed (a team's spec of that name stays), and one already set up SHALL show on the MCP servers screen as retired, naming its replacement, with Delete.
 
 #### Scenario: aws-api
 - **WHEN** a machine set up before has an `aws-api` server

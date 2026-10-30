@@ -19,11 +19,49 @@ import (
 // (and VPN) it's on; name is the VPN's DNS name for it, when it has one.
 type address struct{ ip, iface, vpn, name string }
 
-// vpnNames name the VPN interfaces.
-var vpnNames = map[string]string{"tailscale0": "Tailscale", "wt0": "NetBird", "yardo-wg": "WireGuard (yardo's server)", "tun0": "OpenVPN", "wg0": "WireGuard"}
+// VPN kinds: a mesh (Tailscale, NetBird) finds the direct path at home;
+// yardo's servers have one address everywhere; a client is this machine's
+// connection out to another network, not a way in from your laptop.
+const (
+	vpnMesh   = "mesh"
+	vpnServer = "server"
+	vpnClient = "client"
+)
 
-// addresses are this machine's IPv4 addresses a laptop could reach: VPNs
-// first; not loopback or Docker's bridges.
+// vpnOf names the VPN an interface and address are on, and its kind
+// ("" for neither). yardo's OpenVPN server is 10.8.0.1 on a tun device.
+func vpnOf(iface, ip string) (name, kind string) {
+	switch {
+	case iface == "tailscale0":
+		return "Tailscale", vpnMesh
+	case iface == "wt0":
+		return "NetBird", vpnMesh
+	case iface == "yardo-wg":
+		return "WireGuard (yardo's server)", vpnServer
+	case strings.HasPrefix(iface, "tun") && ip == "10.8.0.1":
+		return "OpenVPN (yardo's server)", vpnServer
+	case strings.HasPrefix(iface, "tun"):
+		return "OpenVPN client (this machine's connection out)", vpnClient
+	case strings.HasPrefix(iface, "wg"):
+		return "WireGuard client (this machine's connection out)", vpnClient
+	}
+	return "", ""
+}
+
+// rank orders addresses for a laptop: a mesh VPN's, yardo's servers', the
+// local network's, then connections out.
+func (x address) rank() int {
+	_, kind := vpnOf(x.iface, x.ip)
+	return map[string]int{vpnMesh: 0, vpnServer: 1, "": 2, vpnClient: 3}[kind]
+}
+
+func (x address) kind() string {
+	_, k := vpnOf(x.iface, x.ip)
+	return k
+}
+
+// addresses are this machine's IPv4 addresses a laptop could reach, in
+// rank order; not loopback or Docker's bridges.
 func addresses() []address {
 	ifs, _ := net.Interfaces()
 	var out []address
@@ -35,19 +73,12 @@ func addresses() []address {
 		addrs, _ := i.Addrs()
 		for _, a := range addrs {
 			if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil {
-				out = append(out, address{ip: n.IP.String(), iface: i.Name, vpn: vpnNames[i.Name]})
+				name, _ := vpnOf(i.Name, n.IP.String())
+				out = append(out, address{ip: n.IP.String(), iface: i.Name, vpn: name})
 			}
 		}
 	}
-	slices.SortStableFunc(out, func(a, b address) int {
-		switch {
-		case a.vpn != "" && b.vpn == "":
-			return -1
-		case a.vpn == "" && b.vpn != "":
-			return 1
-		}
-		return 0
-	})
+	slices.SortStableFunc(out, func(a, b address) int { return a.rank() - b.rank() })
 	return out
 }
 
@@ -78,7 +109,10 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 	addr := host
 	for i, x := range addrs {
 		where := x.iface
-		if x.vpn != "" {
+		switch {
+		case x.kind() == vpnClient:
+			where += " · " + x.vpn
+		case x.vpn != "":
 			where += " · " + x.vpn + " (bring it up on your laptop too)"
 		}
 		if x.name != "" {
@@ -92,10 +126,15 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 	if len(addrs) == 0 {
 		fmt.Fprintln(w, "  (none found)")
 	}
-	if len(addrs) > 0 && addrs[0].vpn != "" {
-		fmt.Fprintf(w, "\nUse %s at home and away: at home %s takes the direct path over your\n", addr, addrs[0].vpn)
-		fmt.Fprintln(w, "network, and the name and address stay the same when your laptop changes network. Not the")
-		fmt.Fprintln(w, "local address: VPN-only services (the MCP gateway, container ports) aren't open there.")
+	if len(addrs) > 0 && (addrs[0].kind() == vpnMesh || addrs[0].kind() == vpnServer) {
+		fmt.Fprintf(w, "\nUse %s at home and away: ", addr)
+		if addrs[0].kind() == vpnMesh {
+			fmt.Fprintf(w, "at home %s takes the direct path over your network, and\n", addrs[0].vpn)
+		} else {
+			fmt.Fprintf(w, "keep %s connected on your laptop at home too, and\n", addrs[0].vpn)
+		}
+		fmt.Fprintln(w, "the address stays the same when your laptop changes network. Not the local address:")
+		fmt.Fprintln(w, "VPN-only services (the MCP gateway, container ports) aren't open there.")
 		fmt.Fprintln(w, "\nYour laptop's ~/.ssh/config (then: ssh "+ctxName+", and VS Code Remote-SSH to "+ctxName+"):")
 		fmt.Fprintf(w, "  Host %s\n    HostName %s\n    User %s\n    HostKeyAlias %s\n    ServerAliveInterval 15\n    ServerAliveCountMax 8\n",
 			ctxName, addr, a.User, ctxName)

@@ -71,9 +71,8 @@ specs say:
 
 - `internal/assets/conf/mcp-catalog/*.spec`: aws, figma, github, grafana,
   mysql, opensearch, postgres, slack, azure.
-- `internal/assets/mcp-catalog/` (vendored from tack-roles): jenkins, jira,
-  sequential-thinking. These edits go to tack-roles too, or `assets:sync`
-  undoes them.
+- `internal/assets/mcp-catalog/` (from tack-roles once, yardo's own now):
+  jenkins, jira, sequential-thinking.
 - Machines set up before: a changed spec re-registers on the next run
   (mcp-sync compares configs). Skeleton changes reach only new env files,
   so the read-only switches that live in a skeleton (opensearch, slack) are

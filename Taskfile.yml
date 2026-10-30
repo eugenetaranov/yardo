@@ -60,20 +60,6 @@ tasks:
     cmds:
       - ./scripts/e2e.sh
 
-  assets:sync:
-    desc: Refresh the MCP files (mcp-sync, MCP catalog) from a tack-roles checkout (TACK_ROLES=path)
-    vars:
-      TACK_ROLES: '{{.TACK_ROLES | default "../tack-roles"}}'
-      DST: internal/assets
-    cmds:
-      # Only the files yardo and tack-roles both install; conf/ is yardo's own.
-      - rm -rf {{.DST}}/mcp-catalog && mkdir -p {{.DST}}/mcp-catalog
-      - cp {{.TACK_ROLES}}/roles/ai-tools/files/mcp-sync {{.DST}}/mcp-sync
-      - cp {{.TACK_ROLES}}/roles/ai-tools/files/mcp-catalog/*.spec {{.DST}}/mcp-catalog/
-      # Retired ones yardo doesn't ship (steps.RetiredSpecs; aws-api: AWS's managed server, aws, replaces it).
-      - rm -f {{.DST}}/mcp-catalog/aws-api.spec
-      - git -C {{.TACK_ROLES}} log -1 --format='tack-roles %H %cs' > {{.DST}}/SOURCE
-
   clean:
     desc: Remove build output
     cmds:

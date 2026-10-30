@@ -4,8 +4,8 @@
 // that still runs a few items until they are ported. The Go code reads
 // them from here; Extract writes them to ShareDir for the bash part.
 //
-// mcp-catalog/ and mcp-sync are copies from github.com/tackhq/tack-roles
-// (see SOURCE), so yardo and the tack roles install the same MCP servers.
+// mcp-catalog/ and mcp-sync began as copies from github.com/tackhq/tack-roles;
+// they're yardo's own now, edited here.
 package assets
 
 import (

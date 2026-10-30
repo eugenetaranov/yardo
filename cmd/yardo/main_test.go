@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -447,6 +448,29 @@ func TestPrintConnectNames(t *testing.T) {
 	printConnect(&out, &answers.Answers{User: "ada"}, addrs[1:], nil)
 	if got := out.String(); !strings.Contains(got, "works only on its own network") || strings.Contains(got, "HostKeyAlias") {
 		t.Errorf("no vpn:\n%s", got)
+	}
+}
+
+// A VPN client (this machine connected out) is no way in: it ranks after
+// the local network and gets no ssh block; yardo's OpenVPN server does.
+func TestConnectVPNKinds(t *testing.T) {
+	out := []address{{"10.135.100.2", "tun0", "", ""}, {"192.168.0.171", "eth0", "", ""}, {"10.8.0.1", "tun1", "", ""}, {"100.64.1.7", "tailscale0", "", ""}}
+	slices.SortStableFunc(out, func(a, b address) int { return a.rank() - b.rank() })
+	if got := []string{out[0].ip, out[1].ip, out[2].ip, out[3].ip}; !slices.Equal(got, []string{"100.64.1.7", "10.8.0.1", "192.168.0.171", "10.135.100.2"}) {
+		t.Errorf("order = %v", got)
+	}
+	name, _ := vpnOf("tun0", "10.135.100.2")
+	client := []address{{"192.168.0.171", "eth0", "", ""}, {"10.135.100.2", "tun0", name, ""}}
+	var b bytes.Buffer
+	printConnect(&b, &answers.Answers{User: "ada"}, client, nil)
+	if got := b.String(); strings.Contains(got, "HostKeyAlias") || !strings.Contains(got, "tun0 · OpenVPN client (this machine's connection out)\n") {
+		t.Errorf("client:\n%s", got)
+	}
+	name, _ = vpnOf("tun0", "10.8.0.1")
+	b.Reset()
+	printConnect(&b, &answers.Answers{User: "ada"}, []address{{"10.8.0.1", "tun0", name, ""}}, nil)
+	if got := b.String(); !strings.Contains(got, "keep OpenVPN (yardo's server) connected on your laptop") || !strings.Contains(got, "HostName 10.8.0.1") {
+		t.Errorf("server:\n%s", got)
 	}
 }
 
