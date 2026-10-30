@@ -59,7 +59,7 @@ type itemStatus struct {
 }
 
 // stateOrder sorts problems first: what to fix, then what to fill in.
-var stateOrder = map[string]int{"down": 0, "drifted": 1, "partial": 2, "missing": 3, "secret": 4, "unchecked": 5, "ok": 6}
+var stateOrder = map[string]int{"down": 0, "drifted": 1, "outdated": 2, "partial": 3, "missing": 4, "secret": 5, "unchecked": 6, "ok": 7}
 
 // userStatusOf checks user's items (and extra mise tools) without changing
 // anything. An item that yardo applied before (applied) and that is now
@@ -82,6 +82,11 @@ func userStatusOf(ctx context.Context, env *steps.Env, user string, items []*cat
 		state := s.State
 		if (state == "missing" || state == "partial") && applied[s.Item.ID] != "" {
 			state = "drifted"
+			// Applied by another yardo: its files may just be older than
+			// this one's, not changed by hand.
+			if _, by, ok := strings.Cut(applied[s.Item.ID], " "); ok && by != version {
+				state = "outdated"
+			}
 		}
 		us.Items = append(us.Items, itemStatus{ID: s.Item.ID, Label: s.Item.Label, Tab: s.Item.Tab, Scope: scope,
 			State: state, Detail: s.Detail, Done: s.Done, Total: s.Total, Inputs: s.Inputs,
@@ -112,7 +117,7 @@ func userStatusOf(ctx context.Context, env *steps.Env, user string, items []*cat
 func printStatus(w io.Writer, us userStatus) {
 	var sum []string
 	for _, s := range []struct{ state, say string }{
-		{"ok", "ok"}, {"down", "down"}, {"drifted", "drifted"}, {"partial", "partial"}, {"missing", "missing"},
+		{"ok", "ok"}, {"down", "down"}, {"drifted", "drifted"}, {"outdated", "behind this yardo"}, {"partial", "partial"}, {"missing", "missing"},
 		{"secret", "with values to fill in"}, {"unchecked", "not checked"},
 	} {
 		if n := us.Counts[s.state]; n > 0 {
@@ -144,8 +149,10 @@ func printStatus(w io.Writer, us userStatus) {
 	}
 }
 
-// appliedFile is when yardo last applied each of user's items, as it was
-// meant to be (status/<user>.applied.json): what "drifted" goes by.
+// appliedFile is when, and by which yardo version, each of user's items
+// was last applied as it was meant to be (status/<user>.applied.json,
+// "<time> <version>"; older files have the time only): what "drifted" and
+// "outdated" go by.
 func appliedFile(state, user string) string {
 	return filepath.Join(state, "status", user+".applied.json")
 }
@@ -158,14 +165,15 @@ func loadApplied(state, user string) map[string]string {
 	return m
 }
 
-// markApplied records that ids were applied, as meant, at now.
+// markApplied records that ids were applied, as meant, at now, by this
+// yardo.
 func markApplied(state, user string, ids []string, now time.Time) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	m := loadApplied(state, user)
 	for _, id := range ids {
-		m[id] = now.UTC().Format(time.RFC3339)
+		m[id] = now.UTC().Format(time.RFC3339) + " " + version
 	}
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {

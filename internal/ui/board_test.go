@@ -225,3 +225,23 @@ func TestBoardChange(t *testing.T) {
 		t.Errorf("result %+v", r)
 	}
 }
+
+// Labels take the screen's width, not a fixed column: a wide terminal
+// shows a long label whole, a narrow one shortens it and keeps the note.
+func TestBoardLabelWidth(t *testing.T) {
+	long := "OpenVPN client (connect this machine to a VPN elsewhere; your .ovpn in /etc/openvpn/client)"
+	tabs := []Tab{{ID: "net", Title: "Connectivity"}}
+	items := []*BoardItem{
+		{ID: "a", Label: "Tailscale", Tab: "net"},
+		{ID: "b", Label: long, Tab: "net", Picked: true, State: "drifted", Detail: "file /etc/x"},
+	}
+	b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items, nil, nil, nil)
+	b.Update(tea.WindowSizeMsg{Width: 200, Height: 26})
+	if v := b.View(); !strings.Contains(v, long) || !strings.Contains(v, "changed since yardo set it up: file /etc/x") {
+		t.Errorf("wide: label or note cut:\n%s", v)
+	}
+	b.Update(tea.WindowSizeMsg{Width: 90, Height: 26})
+	if v := b.View(); strings.Contains(v, long) || !strings.Contains(v, "changed since") {
+		t.Errorf("narrow: want the label shortened and the note kept:\n%s", v)
+	}
+}

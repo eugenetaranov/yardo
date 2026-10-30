@@ -482,7 +482,7 @@ func TestAppliedDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := loadApplied(state, "ada")
-	if m["tmuxcfg"] != "2026-10-28T12:00:00Z" || len(m) != 1 {
+	if m["tmuxcfg"] != "2026-10-28T12:00:00Z "+version || len(m) != 1 {
 		t.Fatalf("applied = %v", m)
 	}
 	env := &steps.Env{User: "ada", Home: "/home/ada", Root: t.TempDir(), Exec: steps.OSExec{}}
@@ -497,6 +497,14 @@ func TestAppliedDrift(t *testing.T) {
 	}
 	if got["tmuxcfg"] != "drifted" || got["vimcfg"] != "missing" || us.Items[0].ID != "tmuxcfg" {
 		t.Errorf("states = %v (order %v)", got, us.Items)
+	}
+	// Applied by another yardo version: outdated, not changed by hand. A
+	// record from before versions were kept still reads as drifted.
+	for applied, want := range map[string]string{"2026-10-28T12:00:00Z v0.0.1": "outdated", "2026-10-28T12:00:00Z": "drifted"} {
+		us = userStatusOf(context.Background(), env, "ada", items[:1], nil, map[string]string{"tmuxcfg": applied}, false)
+		if us.Items[0].State != want {
+			t.Errorf("applied %q: state %s, want %s", applied, us.Items[0].State, want)
+		}
 	}
 }
 

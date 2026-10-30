@@ -77,7 +77,7 @@ func SetAccent(hex string) {
 // Fixable reports whether fixing (applying it again) is what a state
 // needs.
 func Fixable(state string) bool {
-	return state == "down" || state == "partial" || state == "missing" || state == "drifted"
+	return state == "down" || state == "partial" || state == "missing" || state == "drifted" || state == "outdated"
 }
 
 // BoardItem is one catalog item (or extra mise tool) on the board.
@@ -276,6 +276,19 @@ type row struct {
 }
 
 func (r row) selectable() bool { return r.head == "" && r.text == "" }
+
+// label is what a selectable row says.
+func (r row) label() string {
+	switch {
+	case r.item != nil:
+		return r.item.Label
+	case r.setting != nil:
+		return r.setting.Label
+	case r.action != nil:
+		return r.action.Label
+	}
+	return ""
+}
 
 // sectionsOf are a tab's sections: its own, or itself.
 func sectionsOf(t Tab) []Tab {
@@ -748,7 +761,9 @@ func stateWord(s string) string {
 	case "partial":
 		return "half set up"
 	case "drifted":
-		return "changed by hand"
+		return "changed since yardo set it up"
+	case "outdated":
+		return "this yardo has a newer version"
 	case "missing":
 		return "not installed"
 	case "secret":
@@ -767,7 +782,7 @@ func mark(i *BoardItem) (string, lipgloss.Style) {
 	switch {
 	case i.State == "down" || i.State == "missing":
 		return "✗", red
-	case i.State == "partial" || i.State == "drifted":
+	case i.State == "partial" || i.State == "drifted" || i.State == "outdated":
 		return "~", yellow
 	case i.State == "secret":
 		return "?", accent
@@ -987,7 +1002,22 @@ func (b *Board) View() string {
 		pl = append(pl, " "+accentBd.Render("└"+strings.Repeat("─", max(0, w-4))))
 	}
 	listH := max(1, h-5-len(pl))
-	labelW := min(44, max(20, w*2/5))
+	// Labels as wide as the longest one, leaving the notes beside them
+	// room (up to 2/5 of the screen) when any row has one.
+	longest, noteMax := 0, 0
+	for _, x := range rs {
+		if x.head != "" || x.text != "" {
+			continue
+		}
+		longest = max(longest, runewidth.StringWidth(x.label()))
+		note, _ := b.note(x)
+		noteMax = max(noteMax, runewidth.StringWidth(note))
+	}
+	reserve := 0
+	if noteMax > 0 {
+		reserve = min(noteMax, max(30, w*2/5))
+	}
+	labelW := max(20, min(longest, w-14-reserve))
 	// The selected row's note wraps under itself: the lines it takes more.
 	more := 0
 	if cur >= 0 && cur < len(rs) && b.panel == nil && rs[cur].head == "" && rs[cur].text == "" {
@@ -1009,7 +1039,7 @@ func (b *Board) View() string {
 			out = append(out, "  "+muted.Render(x.text))
 			continue
 		}
-		box, mk, ms, label := "   ", " ", muted, ""
+		box, mk, ms, label := "   ", " ", muted, x.label()
 		switch {
 		case x.item != nil:
 			i := x.item
@@ -1023,11 +1053,10 @@ func (b *Board) View() string {
 				box = "[x]"
 			}
 			mk, ms = mark(i)
-			label = i.Label
 		case x.setting != nil:
-			mk, ms, label = "›", muted, x.setting.Label
+			mk, ms = "›", muted
 		case x.action != nil:
-			mk, ms, label = "›", accent, x.action.Label
+			mk, ms = "›", accent
 		}
 		note, ns := b.note(x)
 		pointer := " "
