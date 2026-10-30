@@ -362,7 +362,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	}
 	var buf strings.Builder
 	addrs := addresses()
-	printConnect(&buf, a, addrs)
+	printConnect(&buf, a, addrs, withNames(ctx, steps.OSExec{}, addrs))
 	host, _ := os.Hostname()
 	sub := osName()
 	if len(addrs) > 0 {

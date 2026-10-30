@@ -55,12 +55,12 @@ WireGuard and OpenVPN servers, then the clients.
   - Check skips when the client is already logged in (`tailscale status
     --json` BackendState `Running`, `netbird status` connected), whatever
     key was typed.
-  - `--hostname` is the VM's hostname.
+  - NetBird: `--hostname` is the VM's hostname (Tailscale already uses it).
   - Tailscale also gets `--accept-routes=false` (a VM on the LAN mustn't
     route its own LAN through a subnet router) and `--operator=<user>`
     (`tailscale serve` without sudo).
-  - Optional tags (`--advertise-tags`, asked with the key). On a joined
-    VM, changes go through `tailscale set`.
+  - Tags come from a tagged auth key (the prompt says so; no tags
+    prompt). On a joined VM, drifted settings go through `tailscale set`.
   - NetBird: after the login, if the peer waits for approval, say so and
     where to approve it.
 - **`yardo connect` by name:**

@@ -293,7 +293,7 @@ func (k *asker) askSecrets(c *choices, has func(string) bool) error {
 		}
 	}
 	if has("tailscale") && exec.Command("tailscale", "status").Run() != nil {
-		if c.secrets.TSAuthKey, err = ui.Password("Tailscale auth key (empty: run 'sudo tailscale up' later)", ""); err != nil {
+		if c.secrets.TSAuthKey, err = ui.Password("Tailscale auth key: a tagged one (Settings → Keys → Tags) never expires the VM (empty: 'sudo tailscale up' later)", "tskey-auth-…"); err != nil {
 			return err
 		}
 	}

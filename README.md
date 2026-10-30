@@ -429,6 +429,35 @@ public key and where to add it.
 must be pinned (`sha256`) or say why it can't be (`unverified = "…"`), or
 yardo refuses to load it.
 
+**Away from home, and back.** For a VM on your home network (Proxmox,
+say), run a mesh VPN on the VM itself (Tailscale, on This VM → Logins &
+keys) and on the laptop, and always use the VM's VPN name
+(`payzoff.<tailnet>.ts.net`), at home too. At home Tailscale finds the
+direct path over your LAN, so it's as fast as the LAN; away it goes
+through the tunnel. The name and address don't change when the laptop
+changes network, so ssh, known_hosts and VS Code Remote-SSH keep one host.
+`yardo connect` prints the name and a ready `~/.ssh/config` block (one
+`Host`, `HostKeyAlias`, keep-alives); tmux on the VM keeps sessions across
+sleep. Things to avoid:
+- The VM's LAN address: VPN-only services (the MCP gateway, container
+  ports) aren't open on it, and it's unreachable away from home.
+- A subnet router for the whole home LAN (192.168.0.0/24): traffic arrives
+  on the VM's LAN side, where those services are closed, and cafés and
+  hotels use the same range. If you need the Proxmox UI, advertise just its
+  /32 from a small LXC.
+- Port forwards on your router for ssh or the gateway.
+- Ephemeral auth keys for VMs (the node is removed once offline). Use a
+  tagged auth key: tagged nodes never expire, and a grant like
+  `{"src": ["autogroup:member"], "dst": ["tag:devvm"], "ip": ["tcp:22", "tcp:8081"]}`
+  limits who reaches them. An untagged VM's key expires after 180 days;
+  `yardo connect` says when.
+- Two mesh VPNs on the laptop at once (Tailscale and NetBird share
+  100.64.0.0/10).
+
+yardo sets Tailscale to accept no subnet routes on the VM and makes you
+its operator (`tailscale serve` without sudo), and doesn't log in again
+once the VM is on the tailnet.
+
 **Reaching this machine from a laptop.** `sudo yardo connect` (or This
 VM → Connect from a laptop, on the screen) prints it all, with this machine's addresses (VPNs
 first): Docker over SSH, which opens no port and needs no certificate

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,11 +12,12 @@ import (
 	"strings"
 
 	"github.com/eugenetaranov/yardo/internal/answers"
+	"github.com/eugenetaranov/yardo/internal/steps"
 )
 
 // address is one of this machine's IPv4 addresses, and which interface
-// (and VPN) it's on.
-type address struct{ ip, iface, vpn string }
+// (and VPN) it's on; name is the VPN's DNS name for it, when it has one.
+type address struct{ ip, iface, vpn, name string }
 
 // vpnNames name the VPN interfaces.
 var vpnNames = map[string]string{"tailscale0": "Tailscale", "wt0": "NetBird", "yardo-wg": "WireGuard (yardo's server)", "tun0": "OpenVPN", "wg0": "WireGuard"}
@@ -32,7 +35,7 @@ func addresses() []address {
 		addrs, _ := i.Addrs()
 		for _, a := range addrs {
 			if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil {
-				out = append(out, address{n.IP.String(), i.Name, vpnNames[i.Name]})
+				out = append(out, address{ip: n.IP.String(), iface: i.Name, vpn: vpnNames[i.Name]})
 			}
 		}
 	}
@@ -48,9 +51,26 @@ func addresses() []address {
 	return out
 }
 
+// withNames fills in the VPNs' DNS names for their addresses (Tailscale's
+// MagicDNS name), and returns Tailscale's status when it's up.
+func withNames(ctx context.Context, x steps.Execer, addrs []address) *steps.TSStatus {
+	for i := range addrs {
+		if addrs[i].iface != "tailscale0" {
+			continue
+		}
+		st, ok := steps.TailscaleStatus(ctx, x)
+		if !ok || st.BackendState != "Running" {
+			return nil
+		}
+		addrs[i].name = strings.TrimSuffix(st.Self.DNSName, ".")
+		return &st
+	}
+	return nil
+}
+
 // printConnect writes how to reach Docker and the MCP gateway from a
-// laptop, for user a.
-func printConnect(w io.Writer, a *answers.Answers, addrs []address) {
+// laptop, for user a; ts is Tailscale's status, when it's up.
+func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TSStatus) {
 	host, _ := os.Hostname()
 	ctxName := strings.SplitN(host, ".", 2)[0]
 	fmt.Fprintf(w, "Connecting to %s from your laptop (as %s)\n\n", host, a.User)
@@ -61,15 +81,36 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address) {
 		if x.vpn != "" {
 			where += " · " + x.vpn + " (bring it up on your laptop too)"
 		}
+		if x.name != "" {
+			where = x.name + " · " + where
+		}
 		fmt.Fprintf(w, "  %-15s %s\n", x.ip, where)
 		if i == 0 {
-			addr = x.ip
+			addr = cmp.Or(x.name, x.ip)
 		}
 	}
 	if len(addrs) == 0 {
 		fmt.Fprintln(w, "  (none found)")
 	}
-	fmt.Fprintf(w, "\nThe commands below use %s; use another address from the list if that's how your laptop reaches it.\n", addr)
+	if len(addrs) > 0 && addrs[0].vpn != "" {
+		fmt.Fprintf(w, "\nUse %s at home and away: at home %s takes the direct path over your\n", addr, addrs[0].vpn)
+		fmt.Fprintln(w, "network, and the name and address stay the same when your laptop changes network. Not the")
+		fmt.Fprintln(w, "local address: VPN-only services (the MCP gateway, container ports) aren't open there.")
+		fmt.Fprintln(w, "\nYour laptop's ~/.ssh/config (then: ssh "+ctxName+", and VS Code Remote-SSH to "+ctxName+"):")
+		fmt.Fprintf(w, "  Host %s\n    HostName %s\n    User %s\n    HostKeyAlias %s\n    ServerAliveInterval 15\n    ServerAliveCountMax 8\n",
+			ctxName, addr, a.User, ctxName)
+		if addrs[0].iface == "tailscale0" && addrs[0].name == "" {
+			fmt.Fprintln(w, "  (Tailscale gave no name: MagicDNS off? Its address works the same.)")
+		}
+	} else if len(addrs) > 0 {
+		fmt.Fprintf(w, "\nThe commands below use %s, which works only on its own network; a VPN (Tailscale:\n", addr)
+		fmt.Fprintln(w, "This VM → Logins & keys in 'sudo yardo') gives one name for home and away.")
+	}
+	if ts != nil && len(ts.Self.Tags) == 0 && ts.Self.KeyExpiry != nil {
+		fmt.Fprintf(w, "\nTailscale: this machine's key expires on %s, and then it drops off the tailnet. Turn that off in\n",
+			ts.Self.KeyExpiry.Format("2006-01-02"))
+		fmt.Fprintln(w, "the admin console (Machines → … → Disable key expiry), or join with a tagged auth key.")
+	}
 
 	fmt.Fprintln(w, "\nDocker, over SSH (no port to open; your SSH key is the login):")
 	fmt.Fprintf(w, "  docker context create %s --docker \"host=ssh://%s@%s\"\n", ctxName, a.User, addr)
@@ -123,7 +164,8 @@ func (o *options) connect(stdout io.Writer, st *answers.Store) error {
 		return err
 	}
 	a.User = u
-	printConnect(stdout, a, addresses())
+	addrs := addresses()
+	printConnect(stdout, a, addrs, withNames(context.Background(), steps.OSExec{}, addrs))
 	return nil
 }
 

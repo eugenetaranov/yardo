@@ -112,7 +112,7 @@ func TestTimezone(t *testing.T) {
 func TestTailscaleUpKeyFromFile(t *testing.T) {
 	var keyFile string
 	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
-		if c.Name == "tailscale" {
+		if c.Name == "tailscale" && c.Args[0] == "up" {
 			keyFile = strings.TrimPrefix(c.Args[1], "--auth-key=file:")
 			b, _ := os.ReadFile(keyFile)
 			if string(b) != "tskey-auth-1" {
@@ -138,6 +138,48 @@ func TestTailscaleUpKeyFromFile(t *testing.T) {
 	}
 	if got := answers.ReadCreated(e.State); len(got) != 1 || got[0].Kind != "tailscale" {
 		t.Errorf("created = %+v", got)
+	}
+	if got := x.commands(); !strings.HasSuffix(got[len(got)-1], " --accept-routes=false --operator=ada") {
+		t.Errorf("up = %q", got[len(got)-1])
+	}
+}
+
+// A joined VM isn't joined again (a key typed is noted, not used); its
+// settings are kept with `tailscale set`, only when they've drifted.
+func TestTailscaleJoined(t *testing.T) {
+	prefs := `{"RouteAll": true, "OperatorUser": ""}`
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		switch {
+		case c.Name == "tailscale" && c.Args[0] == "status":
+			return []byte(`{"BackendState": "Running", "Self": {"DNSName": "payzoff.tail1234.ts.net."}}`), nil
+		case c.Name == "tailscale" && c.Args[0] == "debug":
+			return []byte(prefs), nil
+		case c.Name == "tailscale" && c.Args[0] == "set":
+			prefs = `{"RouteAll": false, "OperatorUser": "ada"}`
+		}
+		return nil, nil
+	}}
+	e := testEnv(t, x)
+	e.State = t.TempDir()
+	var notes []string
+	e.Note = func(s string) { notes = append(notes, s) }
+	e.Secrets = creds.New()
+	e.Secrets.TSAuthKey = "tskey-auth-1"
+	st := step(t, catalog.Step{Type: "go:tailscale_up"})
+	if check(t, e, st) {
+		t.Fatal("drifted prefs: Check = true")
+	}
+	apply(t, e, st)
+	cmds := strings.Join(x.commands(), "\n")
+	if strings.Contains(cmds, "tailscale up") || !strings.Contains(cmds, "tailscale set --accept-routes=false --operator=ada") {
+		t.Errorf("ran %s", cmds)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "already on the tailnet as payzoff.tail1234.ts.net,") {
+		t.Errorf("notes = %q", notes)
+	}
+	e.Secrets.TSAuthKey = ""
+	if !check(t, e, st) {
+		t.Error("joined, prefs kept: Check = false")
 	}
 }
 

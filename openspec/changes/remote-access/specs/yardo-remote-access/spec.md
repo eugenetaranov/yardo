@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: VPN logins are idempotent and named
-The Tailscale and NetBird login steps SHALL treat a client that is already logged in as done, whatever key was typed. A first login SHALL set the client's hostname to the VM's hostname. Tailscale SHALL be set with `--accept-routes=false` and `--operator=<user>`, plus `--advertise-tags` when tags were given. On a joined VM, Tailscale's settings SHALL be applied with `tailscale set`, never by logging in again.
+The Tailscale and NetBird login steps SHALL treat a client that is already logged in as done, whatever key was typed. NetBird's first login SHALL set `--hostname` to the VM's hostname (Tailscale names the node after it already). Tailscale SHALL be set with `--accept-routes=false` and `--operator=<user>`; tags come from a tagged auth key, which the key prompt suggests. On a joined VM, Tailscale's settings SHALL be applied with `tailscale set` when they've drifted, never by logging in again.
 
 #### Scenario: Already on the tailnet
 - **WHEN** `tailscale status --json` reports BackendState `Running` and a new auth key was typed
@@ -9,7 +9,11 @@ The Tailscale and NetBird login steps SHALL treat a client that is already logge
 
 #### Scenario: First join
 - **WHEN** Tailscale isn't logged in and an auth key was typed on VM payzoff
-- **THEN** yardo runs `tailscale up` with the key from a file, `--hostname=payzoff`, `--accept-routes=false` and `--operator=<user>`
+- **THEN** yardo runs `tailscale up` with the key from a file, `--accept-routes=false` and `--operator=<user>`
+
+#### Scenario: Settings drifted on a joined VM
+- **WHEN** a joined VM accepts subnet routes, or has no operator
+- **THEN** yardo runs `tailscale set --accept-routes=false --operator=<user>`
 
 #### Scenario: NetBird awaiting approval
 - **WHEN** after `netbird up` the peer is waiting for approval

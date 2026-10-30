@@ -1,15 +1,15 @@
 ## 1. Tailscale (first)
 
-- [ ] 1.1 `tailscale_up`: Check = BackendState `Running`; first join `up --auth-key=file:… --hostname --accept-routes=false --operator=<user> [--advertise-tags]`; joined: `tailscale set` for the same settings; a key typed for a joined VM: note, not re-run
-- [ ] 1.3 Tailscale item: ask for tags (optional, empty default) with the key
-- [ ] 1.4 Tests with a fake `tailscale`/`netbird`: fresh, joined, joined with a key, tags, `set` on re-run
+- [x] 1.1 `tailscale_up`: Check = BackendState `Running` and prefs kept; first join `up --auth-key=file:… --accept-routes=false --operator=<user>`; joined: `tailscale set` when prefs drifted; a key typed for a joined VM: note, not re-run (no `--hostname`: the node is named after the OS hostname already)
+- [x] 1.3 Tags from a tagged auth key: the key prompt says so (no tags prompt)
+- [x] 1.4 Tests with a fake `tailscale`/`netbird`: fresh, joined, joined with a key, tags, `set` on re-run
 
 ## 2. `yardo connect`, Tailscale
 
-- [ ] 2.1 The VPN name: `Self.DNSName` (Tailscale), the fqdn (NetBird); the address when there's none
-- [ ] 2.2 Every printed command and URL by name; a `~/.ssh/config` block (Host, HostName, User, HostKeyAlias, ServerAliveInterval 15, ServerAliveCountMax 8)
-- [ ] 2.3 Notes: the same name at home and away; MCP isn't on the LAN; Tailscale node key expiry (untagged) and how to turn it off; MagicDNS off
-- [ ] 2.4 Tests: Tailscale, none
+- [x] 2.1 The VPN name: `Self.DNSName` (Tailscale); the address when there's none (NetBird: 3.2)
+- [x] 2.2 Every printed command and URL by name; a `~/.ssh/config` block (Host, HostName, User, HostKeyAlias, ServerAliveInterval 15, ServerAliveCountMax 8)
+- [x] 2.3 Notes: the same name at home and away; MCP isn't on the LAN; Tailscale node key expiry (untagged) and how to turn it off; MagicDNS off
+- [x] 2.4 Tests: Tailscale, none
 - [ ] 2.5 payzoff: test plan 1–6 with Tailscale
 
 ## 3. NetBird
@@ -35,6 +35,6 @@
 
 ## 6. Docs
 
-- [ ] 6.1 README "Reaching your VMs away from home": per-VM client, no port forwards or /24 routes, keys (tagged or reusable, not ephemeral), sample Tailscale grants and NetBird policy, one mesh client on the laptop, self-hosted NetBird on a VPS, tmux
+- [ ] 6.1 README "Away from home, and back" (Tailscale part written): per-VM client, no port forwards or /24 routes, keys (tagged or reusable, not ephemeral), sample Tailscale grants and NetBird policy, one mesh client on the laptop, self-hosted NetBird on a VPS, tmux
 
 - [ ] 6.2 README: WireGuard/OpenVPN servers at home: dynamic DNS, the port forward, NAT loopback or split DNS, on-demand rules as a fallback

@@ -401,9 +401,9 @@ func TestCachedStatus(t *testing.T) {
 // yardo connect: Docker over SSH always; the gateway with a token when it's
 // reachable, else through an SSH tunnel. The first address is a VPN's.
 func TestPrintConnect(t *testing.T) {
-	addrs := []address{{"100.64.1.7", "tailscale0", "Tailscale"}, {"10.0.0.5", "eth0", ""}}
+	addrs := []address{{"100.64.1.7", "tailscale0", "Tailscale", ""}, {"10.0.0.5", "eth0", "", ""}}
 	var out bytes.Buffer
-	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}, addrs)
+	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}, addrs, nil)
 	got := out.String()
 	for _, want := range []string{`docker context create`, `"host=ssh://ada@100.64.1.7"`, "reachable from this machine and the VPNs",
 		"mcp-sync client laptop", "http://100.64.1.7:8081/mcp --header \"Authorization: Bearer <token>\"", "tailscale0 · Tailscale"} {
@@ -412,9 +412,41 @@ func TestPrintConnect(t *testing.T) {
 		}
 	}
 	out.Reset()
-	printConnect(&out, &answers.Answers{User: "ada"}, addrs)
+	printConnect(&out, &answers.Answers{User: "ada"}, addrs, nil)
 	if got := out.String(); !strings.Contains(got, "ssh -N -L 8080:127.0.0.1:8080 ada@100.64.1.7") || strings.Contains(got, "Bearer") {
 		t.Errorf("local:\n%s", got)
+	}
+}
+
+// With Tailscale's name, everything uses it: the ssh block, Docker, the
+// gateway; an untagged node's key expiry is said. No VPN: the local
+// address, and why it's only for home.
+func TestPrintConnectNames(t *testing.T) {
+	host, _ := os.Hostname()
+	short := strings.SplitN(host, ".", 2)[0]
+	addrs := []address{{"100.64.1.7", "tailscale0", "Tailscale", "payzoff.tail1234.ts.net"}, {"192.168.0.185", "eth0", "", ""}}
+	exp := time.Date(2027, 4, 28, 0, 0, 0, 0, time.UTC)
+	ts := &steps.TSStatus{BackendState: "Running"}
+	ts.Self.KeyExpiry = &exp
+	var out bytes.Buffer
+	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081}, addrs, ts)
+	got := out.String()
+	for _, want := range []string{"Use payzoff.tail1234.ts.net at home and away", "Host " + short + "\n    HostName payzoff.tail1234.ts.net\n    User ada\n    HostKeyAlias " + short,
+		"ServerAliveInterval 15", `"host=ssh://ada@payzoff.tail1234.ts.net"`, "http://payzoff.tail1234.ts.net:8081/mcp", "expires on 2027-04-28"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("tailscale: lacks %q:\n%s", want, got)
+		}
+	}
+	ts.Self.Tags = []string{"tag:devvm"}
+	out.Reset()
+	printConnect(&out, &answers.Answers{User: "ada"}, addrs, ts)
+	if strings.Contains(out.String(), "expires") {
+		t.Error("tagged: expiry said")
+	}
+	out.Reset()
+	printConnect(&out, &answers.Answers{User: "ada"}, addrs[1:], nil)
+	if got := out.String(); !strings.Contains(got, "works only on its own network") || strings.Contains(got, "HostKeyAlias") {
+		t.Errorf("no vpn:\n%s", got)
 	}
 }
 

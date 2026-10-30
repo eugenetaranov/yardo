@@ -2,6 +2,7 @@ package steps
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/eugenetaranov/yardo/internal/catalog"
 )
@@ -99,7 +101,10 @@ func (timezoneStep) Apply(ctx context.Context, e *Env) error {
 // --- go:tailscale_up ---------------------------------------------------------
 
 // tailscaleUpStep joins the tailnet with the auth key typed this run (none:
-// the user runs `sudo tailscale up` later).
+// the user runs `sudo tailscale up` later), and keeps two settings on a
+// joined VM: no subnet routes accepted (a VM on the advertised LAN would
+// send its own LAN traffic through the router) and the user as operator
+// (`tailscale serve` without sudo). A joined VM isn't joined again.
 type tailscaleUpStep struct{}
 
 func authKey(e *Env) string {
@@ -109,16 +114,77 @@ func authKey(e *Env) string {
 	return e.Secrets.TSAuthKey
 }
 
-func (tailscaleUpStep) Plan(e *Env) []Action {
-	if authKey(e) == "" {
-		return nil
+// TSStatus is what `tailscale status --json` says of this machine.
+type TSStatus struct {
+	BackendState string
+	Self         struct {
+		DNSName   string
+		Tags      []string
+		KeyExpiry *time.Time
 	}
-	return []Action{{"run", "tailscale up --auth-key=file:… (the key typed)"}}
 }
 
-func (tailscaleUpStep) Check(_ context.Context, e *Env) (bool, error) { return authKey(e) == "", nil }
+// TailscaleStatus is this machine's Tailscale status; ok is false when
+// tailscale isn't there or says nothing readable.
+func TailscaleStatus(ctx context.Context, x Execer) (st TSStatus, ok bool) {
+	out, err := x.Run(ctx, Cmd{Name: "tailscale", Args: []string{"status", "--json"}})
+	if len(out) == 0 || json.Unmarshal(out, &st) != nil {
+		return st, false
+	}
+	_ = err // logged out: status exits non-zero, with the JSON
+	return st, true
+}
 
-func (tailscaleUpStep) Apply(ctx context.Context, e *Env) error {
+func (tailscaleUpStep) joined(ctx context.Context, e *Env) (TSStatus, bool) {
+	st, ok := TailscaleStatus(ctx, e.Exec)
+	return st, ok && st.BackendState == "Running"
+}
+
+// tsFlags are the settings yardo keeps, for `up` and `set` alike.
+func tsFlags(e *Env) []string {
+	return []string{"--accept-routes=false", "--operator=" + e.User}
+}
+
+// prefsOK reports whether tailscale's prefs have yardo's settings; true
+// when they can't be read (no loop of `set` every run).
+func (tailscaleUpStep) prefsOK(ctx context.Context, e *Env) bool {
+	out, err := e.Exec.Run(ctx, Cmd{Name: "tailscale", Args: []string{"debug", "prefs"}})
+	var p struct {
+		RouteAll     bool
+		OperatorUser string
+	}
+	if err != nil || json.Unmarshal(out, &p) != nil {
+		return true
+	}
+	return !p.RouteAll && p.OperatorUser == e.User
+}
+
+func (t tailscaleUpStep) Plan(e *Env) []Action {
+	if authKey(e) == "" {
+		return []Action{{"run", "tailscale set " + strings.Join(tsFlags(e), " ") + " (once joined)"}}
+	}
+	return []Action{{"run", "tailscale up --auth-key=file:… " + strings.Join(tsFlags(e), " ") + " (the key typed)"}}
+}
+
+func (t tailscaleUpStep) Check(ctx context.Context, e *Env) (bool, error) {
+	if _, ok := t.joined(ctx, e); ok {
+		return authKey(e) == "" && t.prefsOK(ctx, e), nil
+	}
+	return authKey(e) == "", nil
+}
+
+func (t tailscaleUpStep) Apply(ctx context.Context, e *Env) error {
+	if st, ok := t.joined(ctx, e); ok {
+		if authKey(e) != "" {
+			e.note(fmt.Sprintf("Tailscale: already on the tailnet as %s, so the auth key typed wasn't used (to join again: sudo tailscale logout, then sudo yardo).",
+				strings.TrimSuffix(st.Self.DNSName, ".")))
+		}
+		if t.prefsOK(ctx, e) {
+			return nil
+		}
+		_, err := e.run(ctx, Cmd{Name: "tailscale", Args: append([]string{"set"}, tsFlags(e)...)})
+		return err
+	}
 	if authKey(e) == "" {
 		return nil
 	}
@@ -132,7 +198,7 @@ func (tailscaleUpStep) Apply(ctx context.Context, e *Env) error {
 	if err := errors.Join(werr, f.Close()); err != nil {
 		return err
 	}
-	if _, err := e.run(ctx, Cmd{Name: "tailscale", Args: []string{"up", "--auth-key=file:" + f.Name()}}); err != nil {
+	if _, err := e.run(ctx, Cmd{Name: "tailscale", Args: append([]string{"up", "--auth-key=file:" + f.Name()}, tsFlags(e)...)}); err != nil {
 		return err
 	}
 	return e.record("tailscale", "")

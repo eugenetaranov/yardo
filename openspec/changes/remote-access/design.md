@@ -27,9 +27,10 @@ The team's three reviews (Tailscale, NetBird, security/ops) agree:
 - **`--accept-routes=false` explicitly.** The default is false on Linux,
   but an earlier `up --accept-routes` would stick. A VM on 192.168.0.0/24
   that accepts that route sends its own LAN traffic through the router.
-- **Tags are optional.** A tagged key needs the tag in the policy's
-  tagOwners, and many users have none. Untagged nodes' keys expire
-  (180 days by default), so `connect` warns and says how to turn it off.
+- **Tags from the key, not a prompt.** A tagged auth key tags the node, and
+  tagged nodes' keys don't expire; an untagged key needs nothing in the
+  policy. So the key prompt suggests a tagged key, and `connect` warns
+  when an untagged node's key will expire (180 days by default).
 - **Servers: one address, one endpoint name.** The VM's tunnel address
   (10.9.0.1, 10.8.0.1) is its name for every service. The endpoint is the
   only thing that differs between home and away, and it is a single DNS
