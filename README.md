@@ -187,7 +187,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    shell, oh-my-zsh with autosuggestions, syntax highlighting, fzf history
    search and completions, fzf-tab (Tab opens an fzf list with directory
    previews), the modern CLI tools (ripgrep, ag, fd, bat, eza, zoxide, fzf,
-   delta, direnv) turned on with keys and aliases (z, fzf keys, direnv
+   delta, direnv, glow) turned on with keys and aliases (z, fzf keys, direnv
    with a quiet `direnv.toml` that loads `.env` files too,
    eza/bat aliases, a shared Terraform/OpenTofu provider cache, kubecolor)
    through `~/.config/yardo/shell.sh` (sourced from `.zshrc` and `.bashrc`

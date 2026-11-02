@@ -10,7 +10,7 @@ tab = "shell"
 label = "zsh, ready to use (asks: Powerlevel10k or Starship prompt)"
 default = true
 needs = ["zshbin", "zshcfg", "prompt", "zshrc", "fzftab", "shellcfg", "cli", "docs"]
-source = "oh-my-zsh + autosuggestions, syntax highlighting, history search, fzf-tab · ripgrep ag fd bat eza fzf zoxide delta direnv · z, fzf keys, aliases · man pages, tldr"
+source = "oh-my-zsh + autosuggestions, syntax highlighting, history search, fzf-tab · ripgrep ag fd bat eza fzf zoxide delta direnv glow · z, fzf keys, aliases · man pages, tldr"
 
 # The one editor: Neovim with a curated config, comfortable without
 # knowing its plugins (which-key lists the keys).
@@ -231,8 +231,8 @@ if_exists = true
 [[item]]
 id = "cli"
 tab = "-"
-label = "CLI upgrades (ripgrep, ag, fd, bat, eza, fzf, zoxide, delta, direnv)"
-source = "apt install ripgrep silversearcher-ag fd-find bat eza zoxide fzf git-delta direnv tree (+ fd/bat links)"
+label = "CLI upgrades (ripgrep, ag, fd, bat, eza, fzf, zoxide, delta, direnv, glow)"
+source = "apt install ripgrep silversearcher-ag fd-find bat eza zoxide fzf git-delta direnv tree (+ fd/bat links) · mise use -g glow"
 
 [[item.step]]
 type = "apt"
@@ -248,6 +248,11 @@ to = "/usr/local/bin/fd"
 type = "link"
 src = "/usr/bin/batcat"
 to = "/usr/local/bin/bat"
+
+# glow renders Markdown in the terminal; Ubuntu doesn't package it.
+[[item.step]]
+type = "mise"
+tools = ["glow@latest"]
 
 [[item]]
 id = "docs"
