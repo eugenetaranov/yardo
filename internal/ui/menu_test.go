@@ -694,3 +694,28 @@ func TestMenuChecking(t *testing.T) {
 		t.Errorf("done:\n%s", v)
 	}
 }
+
+// The home's dashboard: what's installed, the containers, the services
+// and what listens beyond this machine; what doesn't fit is counted.
+func TestMenuDashboard(t *testing.T) {
+	m := testMenu(true)
+	m.info.Dash = Dashboard{Docker: true,
+		Containers: []Container{{Name: "mcpjungle", Ports: []string{"8080"}}},
+		Services:   []Service{{Name: "ssh", Up: true}, {Name: "fail2ban"}},
+		Listening:  []Listener{{"22", "tcp", "ssh", "all"}, {"41641", "udp", "tailscale", "all"}, {"8080", "tcp", "docker", "vpn"}, {"631", "tcp", "cupsd", "local"}}}
+	v := ansi.Strip(m.View())
+	for _, want := range []string{"Installed   3: Docker Engine + Compose · Agent API keys · Go", "Containers  mcpjungle :8080",
+		"Services    ssh ✓ · fail2ban ✗ failed", "Listening   22 ssh · 41641/udp tailscale · 8080 docker (VPN) · + 1 on this machine only"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("dashboard lacks %q:\n%s", want, v)
+		}
+	}
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "+ 2 more") {
+		t.Errorf("narrow:\n%s", v)
+	}
+	m.info.Dash = Dashboard{Docker: true}
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Containers  none running") || strings.Contains(v, "Listening") {
+		t.Errorf("nothing running:\n%s", v)
+	}
+}

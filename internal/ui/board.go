@@ -28,6 +28,8 @@ type HomeInfo struct {
 	MCP      []MCPServer
 	MCPSpecs []MCPSpec
 	MCPDown  bool
+	// Dash is the home's dashboard.
+	Dash Dashboard
 }
 
 // MCPServer is one MCP server on the menu's MCP servers screen.

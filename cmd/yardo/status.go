@@ -376,6 +376,9 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		sub += "  ·  " + addrs[0].ip
 	}
 	info := ui.HomeInfo{Host: host, User: a.User}
+	if !first {
+		info.Dash = dashboard(ctx)
+	}
 	if picked("mcpjungle") && !first {
 		specs := o.mcpSpecs(ctx)
 		// Watchful: servers changed (or never registered) register now.

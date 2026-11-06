@@ -622,6 +622,10 @@ func (m *Menu) View() string {
 	case "home":
 		add(m.status()...)
 		add("")
+		if dl := m.dashLines(w); len(dl) > 0 {
+			add(dl...)
+			add("")
+		}
 		todo, rs := len(m.todo()), m.rows()
 		col := labelCol(rs, w)
 		for n, r := range rs {
