@@ -90,6 +90,13 @@ unverified = "omp's own installer, which fetches its latest release"
 
 [[item]]
 id = "ollama"
+remove = """
+systemctl disable --now ollama 2>/dev/null || true
+rm -f /etc/systemd/system/ollama.service /usr/local/bin/ollama /usr/bin/ollama
+rm -rf /usr/local/lib/ollama /usr/lib/ollama
+systemctl daemon-reload
+"""
+remove_say = "stops Ollama and uninstalls it; the models in /usr/share/ollama stay"
 tab = "aiext"
 scope = "system"
 label = "Ollama (local models; large, CPU-only without GPU passthrough)"
@@ -245,6 +252,12 @@ if_exists = true
 
 [[item]]
 id = "mcpjungle-install"
+remove = """
+systemctl disable --now 'mcpjungle@{{user}}' 2>/dev/null || true
+# The binary goes once no one else's gateway runs.
+if ! systemctl list-units 'mcpjungle@*' --all --no-legend 2>/dev/null | grep -q active; then rm -f /usr/local/bin/mcpjungle; fi
+"""
+remove_say = "stops your MCP gateway and removes it; your servers' settings in ~/.mcp stay"
 tab = "aiext"
 label = "MCPJungle MCP gateway (runs in Docker; its servers: MCP servers, on the menu)"
 default = true

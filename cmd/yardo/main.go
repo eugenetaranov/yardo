@@ -576,6 +576,12 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				case ui.BoardApply:
 					board = &res
 					break loop
+				case ui.BoardRemove:
+					upd.wait(stdout)
+					if flash, err = o.removeItem(ctx, cat, st, a, res.ID, stdout); err != nil {
+						return err
+					}
+					d = nil // back to the board, checked again
 				}
 			}
 		}

@@ -301,3 +301,48 @@ func TestBoardTeam(t *testing.T) {
 		t.Errorf("no warning:\n%s", b.View())
 	}
 }
+
+// d asks before uninstalling: what it does, what stops working; y removes,
+// n keeps it. One yardo can't uninstall says so.
+func TestBoardRemove(t *testing.T) {
+	tabs := []Tab{{ID: "k8s", Title: "Containers"}}
+	mk := func() (*Board, []*BoardItem) {
+		items := []*BoardItem{
+			{ID: "docker", Label: "Docker Engine + Compose", Tab: "k8s", Picked: true, State: "ok", Removable: true,
+				RemoveSay: "stops Docker and uninstalls it", NeededBy: []string{"MCPJungle MCP gateway"}},
+			{ID: "openvpn-server", Label: "OpenVPN server", Tab: "k8s", Picked: true, State: "ok"},
+		}
+		b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items)
+		b.Update(tea.WindowSizeMsg{Width: 120, Height: 26})
+		return b, items
+	}
+	b, _ := mk()
+	if !strings.Contains(b.View(), "d remove") {
+		t.Errorf("footer lacks d:\n%s", b.View())
+	}
+	press2(b, "d")
+	v := b.View()
+	for _, want := range []string{"Remove Docker Engine + Compose?", "Removing it stops Docker and uninstalls it.",
+		"MCPJungle MCP gateway need it and will stop working", "Yes, remove it (y)", "No, keep it (n)"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("question lacks %q:\n%s", want, v)
+		}
+	}
+	press2(b, "n")
+	if b.panel != nil || b.result.Kind != BoardQuit {
+		t.Fatalf("n: panel %v result %+v", b.panel, b.result)
+	}
+	if press2(b, "d", "y"); b.result.Kind != BoardRemove || b.result.ID != "docker" {
+		t.Errorf("y: %+v", b.result)
+	}
+	b, _ = mk()
+	press2(b, "d", "enter") // No, keep it is chosen first
+	if b.result.Kind == BoardRemove {
+		t.Error("enter removed: keep it should be first")
+	}
+	b, _ = mk()
+	press2(b, "down", "d")
+	if b.panel != nil || !strings.Contains(b.View(), "yardo can't uninstall OpenVPN server") {
+		t.Errorf("not removable:\n%s", b.View())
+	}
+}

@@ -36,8 +36,9 @@ type Service struct {
 type Listener struct{ Port, Proto, Name, Scope string }
 
 // dashLines are the dashboard's lines, w wide: a label, then as much as
-// fits, and how many more when not all of it does.
-func (m *Menu) dashLines(w int) []string {
+// fits, and how many more when not all of it does. The tools installed
+// wrap onto as many as room lines, all of them when there's room.
+func (m *Menu) dashLines(w, room int) []string {
 	d := m.info.Dash
 	var out []string
 	line := func(label string, parts []string) {
@@ -59,8 +60,14 @@ func (m *Menu) dashLines(w int) []string {
 	}
 	if len(tools) > 0 {
 		tools[0] = fmt.Sprintf("%d: %s", len(tools), tools[0])
+		for n, l := range wrapList(tools, w-16, max(1, room)) {
+			label := "Installed"
+			if n > 0 {
+				label = ""
+			}
+			out = append(out, "  "+muted.Render(padTo(label, 12))+l)
+		}
 	}
-	line("Installed", tools)
 	if d.Docker {
 		var cs []string
 		for _, c := range d.Containers {
@@ -144,6 +151,30 @@ func services(d Dashboard) []string {
 	}
 	if local > 0 {
 		out = append(out, muted.Render(fmt.Sprintf("+ %d on this machine only", local)))
+	}
+	return out
+}
+
+// wrapList lays parts out joined with " · ", in lines at most w wide and
+// at most n of them, the last ending "+ N more" when they don't all fit.
+func wrapList(parts []string, w, n int) []string {
+	var out []string
+	for len(parts) > 0 {
+		if len(out) == n-1 {
+			return append(out, fit(parts, w))
+		}
+		line, used := "", 0
+		for _, p := range parts {
+			next := p
+			if line != "" {
+				next = line + muted.Render(" · ") + p
+			}
+			if line != "" && lipgloss.Width(next) > w {
+				break
+			}
+			line, used = next, used+1
+		}
+		out, parts = append(out, line), parts[used:]
 	}
 	return out
 }

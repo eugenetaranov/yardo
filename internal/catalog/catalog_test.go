@@ -333,3 +333,19 @@ func TestDefaults(t *testing.T) {
 		t.Errorf("an Always default: %s", err)
 	}
 }
+
+// What yardo can uninstall: an item with a remove script, or one whose
+// steps it undoes on its own (apt, apt repo, mise); not one set up by
+// scripts or its own steps.
+func TestRemovable(t *testing.T) {
+	c, err := Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]bool{"docker": true, "tailscale-install": true, "mcpjungle-install": true, "k3s": true,
+		"terraform": true, "podman": true, "claude": true, "neovim": false, "openvpn-server": false, "github": false} {
+		if got := c.Item(id).Removable(); got != want {
+			t.Errorf("%s: removable %v, want %v", id, got, want)
+		}
+	}
+}

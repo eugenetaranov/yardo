@@ -323,13 +323,20 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 				}
 			}
 		}
+		if bi.Picked {
+			bi.Removable, bi.RemoveSay = it.Removable(), it.RemoveSay
+			for _, n := range neededBy(cat, a.Picks, it.ID) {
+				bi.NeededBy = append(bi.NeededBy, ui.Short(cat.Item(n).Label))
+			}
+		}
 		if st, ok := status[it.ID]; ok && bi.Picked {
 			bi.State, bi.Detail, bi.Inputs = st.State, st.Detail, st.Inputs
 		}
 		items = append(items, bi)
 	}
 	for _, t := range a.MiseExtra {
-		bi := &ui.BoardItem{ID: "mise:" + t, Label: t + " (extra mise tool)", Tab: ui.ExtraTab, Picked: true, Source: "mise use -g " + t}
+		bi := &ui.BoardItem{ID: "mise:" + t, Label: t + " (extra mise tool)", Tab: ui.ExtraTab, Picked: true, Source: "mise use -g " + t,
+			Removable: true, RemoveSay: "uninstalls it (mise unuse -g " + t + ")"}
 		if st, ok := status["mise:"+steps.MiseName(t)]; ok {
 			bi.State, bi.Detail = st.State, st.Detail
 		}

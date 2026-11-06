@@ -50,6 +50,10 @@ action = "restart"
 
 [[item]]
 id = "docker"
+remove = """
+systemctl disable --now docker.socket docker.service containerd.service 2>/dev/null || true
+"""
+remove_say = "stops Docker and uninstalls it, with its tools; images, containers and volumes in /var/lib/docker stay"
 tab = "k8s"
 scope = "system"
 label = "Docker Engine + Compose, lazydocker, dive, hadolint, crane, cosign"
@@ -119,6 +123,13 @@ packages = ["podman", "uidmap", "slirp4netns", "passt", "skopeo", "buildah"]
 
 [[item]]
 id = "tailscale-install"
+remove = """
+tailscale logout 2>/dev/null || true
+systemctl disable --now tailscaled 2>/dev/null || true
+if dpkg-query -W tailscale >/dev/null 2>&1; then apt-get purge -y -q tailscale tailscale-archive-keyring || apt-get purge -y -q tailscale; fi
+rm -f /etc/apt/sources.list.d/tailscale.list /usr/share/keyrings/tailscale-archive-keyring.gpg
+"""
+remove_say = "logs this machine out of your tailnet and uninstalls Tailscale"
 tab = "net"
 scope = "system"
 label = "Tailscale (log in under This VM → VPN logins)"
@@ -145,6 +156,12 @@ type = "go:tailscale_up"
 
 [[item]]
 id = "netbird-install"
+remove = """
+netbird down 2>/dev/null || true
+netbird service stop 2>/dev/null || true
+netbird service uninstall 2>/dev/null || true
+"""
+remove_say = "disconnects from NetBird and uninstalls it"
 tab = "net"
 scope = "system"
 label = "NetBird (log in under This VM → VPN logins)"

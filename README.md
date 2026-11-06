@@ -72,7 +72,8 @@ account is created). Once something is set up, it opens on the home:
    Settings                       network access, git, prompt, look, laptop, updates
 ```
 
-How the machine is, in words; a dashboard (what's installed, the
+How the machine is, in words; a dashboard (everything installed, on as
+many lines as the screen has room for, the
 containers running and the ports they publish, and the services up or
 failed, each with the ports it listens on beyond this machine and who
 can reach them);
@@ -84,7 +85,7 @@ restoring puts back yardo's version) or **Finish setting up** something
 updates** (asks, then updates just those: `mise up` for the tools, apt
 for the packages). Below them, three rows that never move: **Tools**
 (the full screen, below), **MCP servers** (the gateway's list: add one,
-or another instance of one) and **Settings**: **Network access** (the
+or another instance of one; **d** deletes one, asking first) and **Settings**: **Network access** (the
 MCP gateway, containers' published ports and the Docker API, each a row
 of choices with a sentence saying what it means), the **Accent colour**,
 your **Git name and email**, **Shell prompt** and **Dotfiles repo**
@@ -105,9 +106,18 @@ or not installed, `~` half set up, edited by hand, or set up by an older
 yardo (this one ships newer files; Fix applies them), `○` needs a value,
 `↑` a newer version is out.
 
-- **space** queues adding (`[+]`) or removing (`[-]`) an item; the queue
-  shows on a line above the keys. Removing one means yardo stops
+- **space** queues adding (`[+]`) or taking off (`[-]`) an item; the
+  queue shows on a line above the keys. Taking one off means yardo stops
   managing it; it stays installed.
+- **d** uninstalls an installed item, asking first (**y** removes it,
+  **n** keeps it): its packages, its apt repo and its mise tools (the ones
+  nothing else set up uses), and, for Docker, Tailscale, NetBird, the MCP
+  gateway, k3s and Ollama, what their installers set up (the question says
+  what stays, such as Docker's images and volumes). What needs it stops
+  working, and the question names it: yardo stops managing that too, and
+  it stays installed. An item set up by its own installer or settings
+  (Neovim's config, the OpenVPN server) can't be removed this way: space
+  stops managing it.
 - **enter** acts on the row: fix what's broken (now), fill in a missing
   value (in your editor), change an answer (git name and email, the
   prompt, the dotfiles repo, the MCP servers), or show an item's details,

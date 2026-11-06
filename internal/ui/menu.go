@@ -97,6 +97,7 @@ type Menu struct {
 	name           []rune
 	nameFor        string
 	renaming       bool
+	delList        bool // deleting from the list (d): esc goes back to it
 	nameErr        string
 	fromBoard      bool
 	btn            int
@@ -624,11 +625,15 @@ func (m *Menu) View() string {
 	case "home":
 		add(m.status()...)
 		add("")
-		if dl := m.dashLines(w); len(dl) > 0 {
+		// The tools installed get the lines the rest leaves: the header and
+		// status, the other dashboard lines, the rows, the keys.
+		rs := m.rows()
+		room := h - len(b) - 2 - 4 - len(rs) - 1 - 3
+		if dl := m.dashLines(w, room); len(dl) > 0 {
 			add(dl...)
 			add("")
 		}
-		todo, rs := len(m.todo()), m.rows()
+		todo := len(m.todo())
 		col := labelCol(rs, w)
 		for n, r := range rs {
 			if n == todo && todo > 0 {

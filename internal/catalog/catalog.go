@@ -82,11 +82,39 @@ type Item struct {
 	// Phase sets a hidden item's phase (a visible one takes its tab's).
 	Phase string `toml:"phase"`
 	Steps []Step `toml:"step"`
+	// Remove is a shell script, run as root ({{user}}, {{group}}, {{home}}
+	// and {{arch}} filled in), that uninstalls what the item's apt, apt
+	// repo and mise steps don't undo on their own: a service, what an
+	// installer script put down. RemoveSay says what removing it does,
+	// for the question first. See Removable.
+	Remove    string `toml:"remove"`
+	RemoveSay string `toml:"remove_say"`
 
 	// From is the file the item came from (for error messages).
 	From string `toml:"-"`
 	// configure: the item is in the configure phase (set by validate).
 	configure bool
+}
+
+// undone are the step types removing an item undoes on its own: its
+// packages, its apt repo, its mise tools (notes have nothing to undo).
+var undone = map[string]bool{"apt": true, "apt_repo": true, "mise": true, "note": true}
+
+// Removable reports whether yardo can uninstall the item: it has a Remove
+// script, or each of its steps is one removing undoes on its own.
+func (it *Item) Removable() bool {
+	if it.Remove != "" {
+		return true
+	}
+	if len(it.Steps) == 0 {
+		return false
+	}
+	for _, s := range it.Steps {
+		if !undone[s.Type] {
+			return false
+		}
+	}
+	return true
 }
 
 // Configure reports whether the item is in the configure phase.
@@ -284,6 +312,8 @@ func (c *Catalog) validate() error {
 			fail(it, "phase comes from the tab (only a hidden item sets its own)")
 		case it.Phase != "" && it.Phase != PhaseInstall && it.Phase != PhaseConfigure:
 			fail(it, "phase %q: want install or configure", it.Phase)
+		case it.Remove != "" && it.RemoveSay == "":
+			fail(it, "remove without remove_say (what removing it does)")
 		}
 		for _, n := range it.Needs {
 			if c.byID[n] == nil {

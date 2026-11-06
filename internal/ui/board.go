@@ -104,6 +104,11 @@ type BoardItem struct {
 	// Team is the team profile that picked it ("" for one picked by hand):
 	// applying that profile again adds it back.
 	Team string
+	// Removable: yardo can uninstall it (d), saying RemoveSay first, and
+	// that NeededBy (the installed items that need it) stop working.
+	Removable bool
+	RemoveSay string
+	NeededBy  []string
 }
 
 // BoardSetting is one of the menu's settings: who can reach a service
@@ -143,6 +148,8 @@ const (
 	// BoardChange asks Result.ID's Result.Change question again, then
 	// re-applies it.
 	BoardChange
+	// BoardRemove uninstalls Result.ID (and stops managing what needs it).
+	BoardRemove
 )
 
 // BoardResult is what the board was left with, and the queue.
@@ -184,9 +191,11 @@ type Board struct {
 type panel struct {
 	title string
 	lines []string
-	// opts are the choices (label, value); sel the selected one.
+	// opts are the choices (label, value); sel the selected one; yn: y
+	// and n choose "yes" and "no" too.
 	opts [][2]string
 	sel  int
+	yn   bool
 	// on is what a choice does.
 	on func(value string) tea.Cmd
 }
@@ -453,6 +462,10 @@ func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 		}
 	case "enter":
 		return b.act(r)
+	case "d":
+		if r != nil && r.item != nil {
+			b.askRemove(r.item)
+		}
 	case "a":
 		if b.queued() == 0 {
 			b.flash = "Nothing queued: space on a row adds or removes it."
@@ -523,6 +536,14 @@ func (b *Board) searchKey(m tea.KeyMsg) tea.Cmd {
 
 func (b *Board) panelKey(m tea.KeyMsg) tea.Cmd {
 	p := b.panel
+	switch k := m.String(); {
+	case p.yn && (k == "y" || k == "n"):
+		b.panel = nil
+		if k == "y" && p.on != nil {
+			return p.on("yes")
+		}
+		return nil
+	}
 	switch m.String() {
 	case "esc", "q":
 		b.panel = nil
@@ -626,6 +647,39 @@ func (b *Board) change(i *BoardItem, v string) tea.Cmd {
 	cmd := b.done(BoardChange, i.ID)
 	b.result.Change = key
 	return cmd
+}
+
+// askRemove asks before uninstalling i: what removing it does, and what
+// stops working with it. One yardo can't uninstall, or not installed, it
+// says so.
+func (b *Board) askRemove(i *BoardItem) {
+	switch {
+	case !i.Picked:
+		b.flash = short(i.Label) + " isn't installed."
+		return
+	case b.queued() > 0:
+		b.flash = "Changes are queued: a applies them, space takes them off; then d removes."
+		return
+	case !i.Removable:
+		b.flash = "yardo can't uninstall " + short(i.Label) + " (its own installer or settings set it up): space stops managing it, and it stays installed."
+		return
+	}
+	say := i.RemoveSay
+	if say == "" {
+		say = "uninstalls it"
+	}
+	lines := []string{"Removing it " + say + "."}
+	if len(i.NeededBy) > 0 {
+		lines = append(lines, "⚠ "+strings.Join(i.NeededBy, ", ")+" need it and will stop working; yardo stops managing them too (they stay installed).")
+	}
+	b.panel = &panel{title: "Remove " + short(i.Label) + "?", lines: lines, yn: true, sel: 1,
+		opts: [][2]string{{"Yes, remove it (y)", "yes"}, {"No, keep it (n)", "no"}},
+		on: func(v string) tea.Cmd {
+			if v == "yes" {
+				return b.done(BoardRemove, i.ID)
+			}
+			return nil
+		}}
 }
 
 // confirm asks before applying the queue.
@@ -859,7 +913,7 @@ func (b *Board) footer(r *row) string {
 		}
 		keys = append(keys, first)
 		if r != nil && r.item != nil && r.item.Picked && r.item.Pending == "" {
-			keys = append(keys, k("space", "remove"))
+			keys = append(keys, k("space", "stop managing"), k("d", "remove"))
 		}
 		if n := b.queued(); n > 0 {
 			keys = append(keys, accentBd.Render("a")+" "+accentBd.Render(fmt.Sprintf("APPLY %d", n)))

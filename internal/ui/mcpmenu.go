@@ -175,6 +175,14 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 		case k == "e" && m.sel < n:
 			s := m.mcpServers()[m.sel]
 			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "edit", Entry: s.Entry}})
+		case k == "d" && m.sel < n:
+			// Delete, asked first (Keep it chosen); esc comes back here.
+			if !slices.ContainsFunc(m.mcpActions(m.mcpServers()[m.sel]), func(a mcpAction) bool { return a.id == "delete" }) {
+				m.toast = "The gateway is stopped: start it first (Fix), then delete."
+				return nil
+			}
+			m.mcpSel = m.sel
+			m.screen, m.btn, m.delList = "mcp:delete", 1, true
 		case k == "a" || (k == "enter" && m.sel == n):
 			m.mcpSel = n
 			m.screen, m.sel = "mcp:add", m.addSel
@@ -203,24 +211,30 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 			case "rename":
 				m.screen, m.nameFor, m.renaming, m.name, m.nameErr = "mcp:name", s.Entry, true, []rune(s.Name), ""
 			case "delete":
-				m.screen, m.btn = "mcp:delete", 1 // Keep it, first
+				m.screen, m.btn, m.delList = "mcp:delete", 1, false // Keep it, first
 			default:
 				return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: as[m.sel].id, Entry: s.Entry}})
 			}
 		}
 	case "mcp:delete":
 		s := m.mcpServer()
-		switch {
-		case k == "esc" || k == "q":
+		keep := func() {
 			m.screen = "mcp:server"
+			if m.delList {
+				m.screen, m.sel = "mcp", m.mcpSel
+			}
+		}
+		switch {
+		case k == "esc" || k == "q" || k == "n":
+			keep()
 		case left:
 			m.btn = 0
 		case right:
 			m.btn = 1
-		case k == "enter" && m.btn == 0 && s != nil:
+		case (k == "y" || k == "enter" && m.btn == 0) && s != nil:
 			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "delete", Entry: s.Entry}})
 		case k == "enter":
-			m.screen = "mcp:server"
+			keep()
 		}
 	case "mcp:add":
 		specs := m.info.MCPSpecs
@@ -356,7 +370,7 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		}
 		add(window(lines, selLine, room-len(b)-2)...)
 		add("", "  "+muted.Render("Agents reach their tools through the gateway as <name>__<tool>."))
-		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("e", "edit its settings"), k("a", "add"), k("esc", "back")}, "   ")
+		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("e", "edit its settings"), k("d", "delete"), k("a", "add"), k("esc", "back")}, "   ")
 	case "mcp:server", "mcp:delete":
 		s := m.mcpServer()
 		if s == nil { // normalize goes back to the list first
@@ -394,8 +408,8 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			add("  "+bold.Render("Delete "+s.Name+"?"),
 				"  It leaves the gateway, and ~/.mcp/"+s.Name+" (its settings and keys) is deleted.",
 				"  This can't be undone.", "",
-				"  "+btn(0, "Delete")+"   "+btn(1, "Keep it"))
-			return title, b, strings.Join([]string{k("←→", "choose"), k("enter", "do it"), k("esc", "back")}, "   ")
+				"  "+btn(0, "Delete (y)")+"   "+btn(1, "Keep it (n)"))
+			return title, b, strings.Join([]string{k("y", "delete"), k("n", "keep it"), k("←→", "choose"), k("enter", "do it")}, "   ")
 		}
 		as := m.mcpActions(s)
 		for n, a := range as {

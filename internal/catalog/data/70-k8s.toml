@@ -59,6 +59,10 @@ check = 'l=$(PATH="$HOME/.krew/bin:$PATH" kubectl krew list) && for p in neat tr
 
 [[item]]
 id = "k3s"
+remove = """
+if [ -x /usr/local/bin/k3s-uninstall.sh ]; then /usr/local/bin/k3s-uninstall.sh; fi
+"""
+remove_say = "uninstalls k3s: the cluster and everything in it goes"
 tab = "k8s"
 scope = "system"
 label = "k3s cluster on this VM (systemd)"

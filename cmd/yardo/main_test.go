@@ -625,3 +625,18 @@ func TestRanSays(t *testing.T) {
 		t.Errorf("cancelled: %q", got)
 	}
 }
+
+// What needs an item: the picks whose plan has it, not the item itself.
+func TestNeededBy(t *testing.T) {
+	cat, err := catalog.Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := neededBy(cat, []string{"docker", "mcpjungle-install", "mcpjungle", "go"}, "docker")
+	if strings.Join(got, " ") != "mcpjungle-install mcpjungle" {
+		t.Errorf("docker: %v", got)
+	}
+	if got := neededBy(cat, []string{"docker", "go"}, "go"); len(got) != 0 {
+		t.Errorf("go: %v", got)
+	}
+}

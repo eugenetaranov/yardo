@@ -717,7 +717,8 @@ func TestMenuDashboard(t *testing.T) {
 		t.Errorf("listening apart from the services:\n%s", v)
 	}
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "+ 2 more") {
+	// Narrow: every tool, on as many lines as it takes; the services cut.
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Installed   3: Docker Engine + Compose · Agent API keys\n              Go\n") || !strings.Contains(v, "+ 3 more") {
 		t.Errorf("narrow:\n%s", v)
 	}
 	m.info.Dash = Dashboard{Docker: true}
@@ -732,5 +733,36 @@ func TestMenuTeam(t *testing.T) {
 	m.items[0].Team, m.items[2].Team = "platform", "platform"
 	if v := m.View(); !strings.Contains(v, "3 tools working · 2 from the team profile platform · updates not checked") {
 		t.Errorf("home:\n%s", v)
+	}
+}
+
+// The tools installed take the lines there are, the last saying how many
+// more when they don't all fit.
+func TestWrapList(t *testing.T) {
+	parts := []string{"zsh", "Neovim", "tmux", "Go", "Python", "Node", "Docker", "Kubernetes"}
+	if got := ansi.Strip(strings.Join(wrapList(parts, 20, 10), "|")); got != "zsh · Neovim · tmux|Go · Python · Node|Docker · Kubernetes" {
+		t.Errorf("all: %q", got)
+	}
+	if got := ansi.Strip(strings.Join(wrapList(parts, 20, 2), "|")); got != "zsh · Neovim · tmux|Go · Python + 3 more" {
+		t.Errorf("two lines: %q", got)
+	}
+}
+
+// d on the MCP servers list asks to delete the one under the cursor; y
+// deletes, n goes back to the list.
+func TestMenuMCPDelete(t *testing.T) {
+	m := mcpMenu()
+	onRow(m, "mcp")
+	mk(m, "enter", "down", "down", "d") // jira-work
+	if v := m.View(); !strings.Contains(v, "Delete jira-work?") || !strings.Contains(v, "Keep it (n)") {
+		t.Fatalf("question:\n%s", v)
+	}
+	mk(m, "n")
+	if m.screen != "mcp" || m.sel != 2 {
+		t.Errorf("n: on %s, row %d", m.screen, m.sel)
+	}
+	mk(m, "d", "y")
+	if r := m.result; r.Kind != MenuMCP || r.MCP != (MCPAct{Do: "delete", Entry: "jira:work"}) {
+		t.Errorf("y: %+v", r)
 	}
 }
