@@ -101,6 +101,9 @@ type BoardItem struct {
 	// Changes are the answers enter can change (label and key), such as
 	// the git identity: a picked item's questions, asked again.
 	Changes [][2]string
+	// Team is the team profile that picked it ("" for one picked by hand):
+	// applying that profile again adds it back.
+	Team string
 }
 
 // BoardSetting is one of the menu's settings: who can reach a service
@@ -418,6 +421,9 @@ func (b *Board) toggle(i *BoardItem) {
 		i.Pending = ""
 	case i.Picked:
 		i.Pending = "remove"
+		if i.Team != "" {
+			b.flash = fmt.Sprintf("%s is on the team profile %s: applying that profile again adds it back.", short(i.Label), i.Team)
+		}
 	default:
 		i.Pending = "add"
 	}
@@ -708,6 +714,8 @@ func (b *Board) note(r row) (string, lipgloss.Style) {
 		return pre + strings.Join(i.Updates, ", ") + " available", yellow
 	case i.State == "unchecked":
 		return pre + stateWord(i.State), muted
+	case i.Team != "":
+		return pre + "from the team profile " + i.Team, muted
 	}
 	return strings.TrimSuffix(pre, " · "), muted
 }

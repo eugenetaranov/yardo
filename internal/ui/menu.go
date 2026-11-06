@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -799,6 +801,18 @@ func (m *Menu) status() []string {
 		head = yellow.Render("Needs you: " + strings.Join(need, ", "))
 	}
 	sub := []string{plural(ready, "tool", "tools") + " working"}
+	// A machine set up from a team profile says so, and how much is the
+	// team's.
+	team, teams := 0, map[string]bool{}
+	for _, i := range m.items {
+		if i.Picked && i.Team != "" {
+			team++
+			teams[i.Team] = true
+		}
+	}
+	if team > 0 {
+		sub = append(sub, fmt.Sprintf("%d from the team profile %s", team, strings.Join(slices.Sorted(maps.Keys(teams)), ", ")))
+	}
 	switch us := len(m.filter(newer)); {
 	case m.wait != nil:
 		sub = append(sub, "checking for updates…")

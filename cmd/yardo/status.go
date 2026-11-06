@@ -313,6 +313,16 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		if c, ok := changes[it.ID]; ok && bi.Picked {
 			bi.Changes = [][2]string{c}
 		}
+		if bi.Picked && !slices.Contains(a.Hand, it.ID) {
+			// The team profile that picked it, by name: the first, when
+			// more than one did.
+			for _, n := range slices.Sorted(maps.Keys(a.Layers)) {
+				if slices.Contains(a.Layers[n], it.ID) {
+					bi.Team = n
+					break
+				}
+			}
+		}
 		if st, ok := status[it.ID]; ok && bi.Picked {
 			bi.State, bi.Detail, bi.Inputs = st.State, st.Detail, st.Inputs
 		}

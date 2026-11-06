@@ -285,3 +285,19 @@ func TestBoardSearchOpen(t *testing.T) {
 		t.Errorf("search:\n%s", v)
 	}
 }
+
+// A team profile's pick says so; removing it warns that the profile adds
+// it back.
+func TestBoardTeam(t *testing.T) {
+	tabs := []Tab{{ID: "shell", Title: "Shell & CLI"}}
+	items := []*BoardItem{{ID: "zsh", Label: "zsh (oh-my-zsh, plugins)", Tab: "shell", Picked: true, State: "ok", Team: "platform"}}
+	b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items)
+	b.Update(tea.WindowSizeMsg{Width: 110, Height: 26})
+	if !strings.Contains(b.View(), "from the team profile platform") {
+		t.Errorf("no team note:\n%s", b.View())
+	}
+	press2(b, "space")
+	if items[0].Pending != "remove" || !strings.Contains(b.View(), "zsh is on the team profile platform: applying that profile again adds it back") {
+		t.Errorf("no warning:\n%s", b.View())
+	}
+}

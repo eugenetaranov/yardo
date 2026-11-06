@@ -719,3 +719,12 @@ func TestMenuDashboard(t *testing.T) {
 		t.Errorf("nothing running:\n%s", v)
 	}
 }
+
+// A machine set up from a team profile says how much is the team's.
+func TestMenuTeam(t *testing.T) {
+	m := testMenu(true)
+	m.items[0].Team, m.items[2].Team = "platform", "platform"
+	if v := m.View(); !strings.Contains(v, "3 tools working · 2 from the team profile platform · updates not checked") {
+		t.Errorf("home:\n%s", v)
+	}
+}
