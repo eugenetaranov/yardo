@@ -100,7 +100,8 @@ the run's output is under the screen when you quit. Esc or q goes back
 from any screen; on the home, q quits.
 
 **Tools**, and the first run, open the full screen: tabs by area
-(**Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
+(**Installed** first, once anything is: every tool installed, from all
+the tabs, to fix or remove one; then **Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
 SSH**) above a checklist, where a ticked box means installed and a mark
 beside it how it is, said in a word beside it: `✓` working, `✗` stopped
 or not installed, `~` half set up, edited by hand, or set up by an older

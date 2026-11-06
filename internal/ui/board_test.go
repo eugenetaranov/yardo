@@ -86,7 +86,7 @@ func TestBoardNeedsYou(t *testing.T) {
 		t.Errorf("result %+v", b.result)
 	}
 	b = testBoard(false)
-	press2(b, "right", "down", "enter") // System, VPN logins: Agent API keys: fill in first, or change
+	press2(b, "right", "right", "down", "enter") // System, VPN logins: Agent API keys: fill in first, or change
 	if b.panel == nil || !strings.Contains(b.View(), "Fill in 1 value") || !strings.Contains(b.View(), "Change the keys") {
 		t.Fatalf("no fill-in panel:\n%s", b.View())
 	}
@@ -96,9 +96,35 @@ func TestBoardNeedsYou(t *testing.T) {
 	}
 	// A value left empty doesn't hide the item's answers (the MCP servers).
 	b = testBoard(false)
-	press2(b, "right", "down", "enter", "down", "enter")
+	press2(b, "right", "right", "down", "enter", "down", "enter")
 	if b.result.Kind != BoardChange || b.result.ID != "keys" || b.result.Change != "keys" {
 		t.Errorf("change: result %+v", b.result)
+	}
+}
+
+// Installed, the first tab, lists every tool installed, from all the
+// tabs, each with its tab; d removes one from there. The first run has
+// none.
+func TestBoardInstalled(t *testing.T) {
+	b := testBoard(false)
+	v := b.View()
+	for _, want := range []string{"Installed ✗", "Docker Engine", "Terraform", "Agent API keys", "DevOps · ", "System · "} {
+		if !strings.Contains(v, want) {
+			t.Errorf("view lacks %q:\n%s", want, v)
+		}
+	}
+	for _, gone := range []string{"Ansible", "WireGuard server"} {
+		if strings.Contains(v, gone) {
+			t.Errorf("Installed lists %q:\n%s", gone, v)
+		}
+	}
+	b.items[1].Removable = true
+	press2(b, "down", "d")
+	if b.panel == nil || !strings.Contains(b.View(), "Remove Terraform?") {
+		t.Fatalf("no remove panel:\n%s", b.View())
+	}
+	if strings.Contains(testBoard(true).View(), "Installed") {
+		t.Errorf("first run has Installed:\n%s", testBoard(true).View())
 	}
 }
 
@@ -106,7 +132,7 @@ func TestBoardNeedsYou(t *testing.T) {
 // asks, then applies.
 func TestBoardQueueAndApply(t *testing.T) {
 	b := testBoard(false)
-	press2(b, "right") // System
+	press2(b, "right", "right") // System
 	if !strings.Contains(b.View(), "WireGuard server") {
 		t.Fatalf("not on System:\n%s", b.View())
 	}

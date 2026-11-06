@@ -203,6 +203,10 @@ type panel struct {
 // LookSection is the look's settings' Section (the accent colour).
 const LookSection = "__look__"
 
+// InstalledTab is the board's first tab, once anything is installed: every
+// tool installed, from all the tabs, to find one to fix or remove.
+const InstalledTab = "__installed__"
+
 // NewBoard builds the board: tabs (each with sections, or none) and the
 // items. first: nothing is installed yet (no marks; the defaults come
 // queued).
@@ -211,6 +215,9 @@ func NewBoard(info HomeInfo, first bool, tabs []Tab, items []*BoardItem) *Board 
 		cursor: map[string]int{}, width: 100, height: 30}
 	if slices.ContainsFunc(items, func(i *BoardItem) bool { return i.Tab == ExtraTab }) {
 		tabs = append(slices.Clone(tabs), Tab{ID: ExtraTab, Title: "Extra"})
+	}
+	if !first && slices.ContainsFunc(items, func(i *BoardItem) bool { return i.Picked }) {
+		tabs = append([]Tab{{ID: InstalledTab, Title: "Installed"}}, tabs...)
 	}
 	b.tabs = tabs
 	return b
@@ -329,6 +336,14 @@ func (b *Board) rows() []row {
 	}
 	tabs := b.visibleTabs()
 	t := tabs[b.current(tabs)]
+	if t.ID == InstalledTab {
+		for _, i := range b.items {
+			if i.Picked {
+				out = append(out, row{item: i, where: b.tabTitle(i.Tab)})
+			}
+		}
+		return out
+	}
 	heads := len(t.Sections) > 0
 	for _, s := range sectionsOf(t) {
 		var rs []row
@@ -868,6 +883,9 @@ func (b *Board) tabBar(w int) string {
 		}
 		if t, ok := tabOf[i.Tab]; ok && lvl > worst[t] {
 			worst[t] = lvl
+		}
+		if lvl > worst[InstalledTab] {
+			worst[InstalledTab] = lvl
 		}
 	}
 	tabs := b.visibleTabs()
