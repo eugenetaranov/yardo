@@ -62,55 +62,89 @@ func (m *Menu) dashLines(w int) []string {
 	}
 	line("Installed", tools)
 	if d.Docker {
-		cs := []string{"none running"}
-		if len(d.Containers) > 0 {
-			cs = nil
-			for _, c := range d.Containers {
-				s := c.Name
-				if len(c.Ports) > 0 {
-					s += " :" + strings.Join(c.Ports, ",")
-				}
-				cs = append(cs, s)
+		var cs []string
+		for _, c := range d.Containers {
+			s := c.Name
+			if len(c.Ports) > 0 {
+				s += " :" + strings.Join(c.Ports, ",")
 			}
+			cs = append(cs, s)
+		}
+		if len(cs) == 0 {
+			cs = []string{"0"}
+		} else {
+			cs[0] = fmt.Sprintf("%d: %s", len(cs), cs[0])
 		}
 		line("Containers", cs)
 	}
-	var ss []string
-	for _, s := range d.Services {
-		if s.Up {
-			ss = append(ss, s.Name+" "+green.Render("✓"))
-		} else {
-			ss = append(ss, s.Name+" "+red.Render("✗ failed"))
-		}
+	line("Services", services(d))
+	return out
+}
+
+// services are the dashboard's services: each with its state and the
+// ports it listens on beyond this machine ("tailscale ✓ 80/tcp,
+// 41641/udp"), then what else listens, by name (or port); the ports open
+// to this machine only are counted.
+func services(d Dashboard) []string {
+	type group struct {
+		name, state string
+		ports       []string
 	}
-	line("Services", ss)
-	var ls []string
+	var gs []*group
+	find := func(name string) *group {
+		for _, g := range gs {
+			if g.name == name {
+				return g
+			}
+		}
+		return nil
+	}
+	for _, s := range d.Services {
+		st := green.Render("✓")
+		if !s.Up {
+			st = red.Render("✗ failed")
+		}
+		gs = append(gs, &group{name: s.Name, state: st})
+	}
 	local := 0
 	for _, l := range d.Listening {
 		if l.Scope == "local" {
 			local++
 			continue
 		}
-		s := l.Port
-		if l.Proto == "udp" {
-			s += "/udp"
-		}
-		if l.Name != "" {
-			s += " " + l.Name
-		}
+		p := l.Port + "/" + l.Proto
 		switch l.Scope {
 		case "all":
 		case "vpn":
-			s += muted.Render(" (VPN)")
+			p += muted.Render(" (VPN)")
 		default:
-			s += muted.Render(" (" + l.Scope + ")")
+			p += muted.Render(" (" + l.Scope + ")")
 		}
-		ls = append(ls, s)
+		name := l.Name
+		if name == "" {
+			name = "port"
+		}
+		g := find(name)
+		if g == nil {
+			g = &group{name: name}
+			gs = append(gs, g)
+		}
+		g.ports = append(g.ports, p)
+	}
+	var out []string
+	for _, g := range gs {
+		s := g.name
+		if g.state != "" {
+			s += " " + g.state
+		}
+		if len(g.ports) > 0 {
+			s += " " + strings.Join(g.ports, ", ")
+		}
+		out = append(out, s)
 	}
 	if local > 0 {
-		ls = append(ls, muted.Render(fmt.Sprintf("+ %d on this machine only", local)))
+		out = append(out, muted.Render(fmt.Sprintf("+ %d on this machine only", local)))
 	}
-	line("Listening", ls)
 	return out
 }
 

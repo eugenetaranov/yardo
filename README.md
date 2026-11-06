@@ -60,9 +60,8 @@ account is created). Once something is set up, it opens on the home:
   41 tools working · 3 updates · checked 09:12
 
   Installed   43: zsh · Neovim · tmux · Go · Python · Docker Engine + Compose + 37 more
-  Containers  mcpjungle :8080 · postgres :5432
-  Services    ssh ✓ · docker ✓ · tailscale ✓ · fail2ban ✓
-  Listening   22 ssh · 41641/udp tailscale · 8080 docker (VPN) + 2 on this machine only
+  Containers  2: mcpjungle :8080 · postgres :5432
+  Services    ssh ✓ 22/tcp · docker ✓ 8080/tcp (VPN) · tailscale ✓ 443/tcp, 41641/udp · fail2ban ✓ + 2 more
 
  › Start Docker Engine + Compose  stopped: docker isn't running
    Fill in OPENAI_API_KEY         Agent API keys needs it · opens its file
@@ -74,8 +73,9 @@ account is created). Once something is set up, it opens on the home:
 ```
 
 How the machine is, in words; a dashboard (what's installed, the
-containers running and the ports they publish, the services up or
-failed, and what listens beyond this machine, with who can reach it);
+containers running and the ports they publish, and the services up or
+failed, each with the ports it listens on beyond this machine and who
+can reach them);
 then a row for each thing that needs doing, named by what it does, one
 key each: **Start**, **Install**, **Restore** (a file edited by hand:
 restoring puts back yardo's version) or **Finish setting up** something

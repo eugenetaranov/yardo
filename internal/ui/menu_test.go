@@ -673,7 +673,10 @@ func TestMenuUpgrade(t *testing.T) {
 func TestMenuChecking(t *testing.T) {
 	m := testMenu(true)
 	done := make(chan struct{})
-	m.Checking(func() UpdatesMsg { <-done; return UpdatesMsg{ByID: map[string][]string{"go": {"go 1.25.1 → 1.25.2"}}, At: "09:05"} })
+	m.Checking(func() UpdatesMsg {
+		<-done
+		return UpdatesMsg{ByID: map[string][]string{"go": {"go 1.25.1 → 1.25.2"}}, At: "09:05"}
+	})
 	if m.Init() == nil || !strings.Contains(m.View(), "checking for updates…") {
 		t.Fatalf("checking:\n%s", m.View())
 	}
@@ -704,18 +707,21 @@ func TestMenuDashboard(t *testing.T) {
 		Services:   []Service{{Name: "ssh", Up: true}, {Name: "fail2ban"}},
 		Listening:  []Listener{{"22", "tcp", "ssh", "all"}, {"41641", "udp", "tailscale", "all"}, {"8080", "tcp", "docker", "vpn"}, {"631", "tcp", "cupsd", "local"}}}
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"Installed   3: Docker Engine + Compose · Agent API keys · Go", "Containers  mcpjungle :8080",
-		"Services    ssh ✓ · fail2ban ✗ failed", "Listening   22 ssh · 41641/udp tailscale · 8080 docker (VPN) · + 1 on this machine only"} {
+	for _, want := range []string{"Installed   3: Docker Engine + Compose · Agent API keys · Go", "Containers  1: mcpjungle :8080",
+		"Services    ssh ✓ 22/tcp · fail2ban ✗ failed · tailscale 41641/udp · docker 8080/tcp (VPN)"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("dashboard lacks %q:\n%s", want, v)
 		}
+	}
+	if strings.Contains(v, "Listening") {
+		t.Errorf("listening apart from the services:\n%s", v)
 	}
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "+ 2 more") {
 		t.Errorf("narrow:\n%s", v)
 	}
 	m.info.Dash = Dashboard{Docker: true}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "Containers  none running") || strings.Contains(v, "Listening") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Containers  0\n") || strings.Contains(v, "Services") {
 		t.Errorf("nothing running:\n%s", v)
 	}
 }
