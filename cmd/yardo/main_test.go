@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -601,5 +602,26 @@ func TestGHLogin(t *testing.T) {
 		if got := ghLogin(c.items, c.before, c.fix); got != c.want {
 			t.Errorf("%s: ghLogin = %v, want %v", name, got, c.want)
 		}
+	}
+}
+
+// After a run, the menu says how it went: what was fixed, or what failed,
+// and that the run's output is under the screen.
+func TestRanSays(t *testing.T) {
+	cat, err := catalog.Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ranSays(cat, []string{"docker"}, nil); !strings.HasPrefix(got, "✓ Done: Docker") || !strings.Contains(got, "q quits") {
+		t.Errorf("fixed: %q", got)
+	}
+	if got := ranSays(cat, nil, nil); !strings.HasPrefix(got, "✓ Done ·") {
+		t.Errorf("applied: %q", got)
+	}
+	if got := ranSays(cat, nil, errors.New("failed: docker — fix and re-run yardo")); !strings.HasPrefix(got, "✗ Failed: docker ·") {
+		t.Errorf("failed: %q", got)
+	}
+	if got := ranSays(cat, nil, errCancelled); got != "Cancelled: nothing changed." {
+		t.Errorf("cancelled: %q", got)
 	}
 }

@@ -197,8 +197,10 @@ func (m *Menu) rows() []menuRow {
 	return out
 }
 
-// short is a label without its details: what's in parentheses, or after
+// Short is a label without its details: what's in parentheses, or after
 // the first comma.
+func Short(label string) string { return short(label) }
+
 func short(label string) string {
 	s, _, _ := strings.Cut(label, " (")
 	s, _, _ = strings.Cut(s, ", ")

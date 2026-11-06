@@ -233,6 +233,9 @@ func (b *Board) Open(tabID string) {
 	}
 }
 
+// Flash shows s on the footer's line until the next key.
+func (b *Board) Flash(s string) { b.flash = s }
+
 // SetFromMenu says the board was opened from the menu: esc goes back to
 // it, rather than quitting.
 func (b *Board) SetFromMenu(on bool) { b.fromMenu = on }

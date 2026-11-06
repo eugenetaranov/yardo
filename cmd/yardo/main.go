@@ -374,382 +374,445 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	// A later profile (or the same one, unnamed) may have kept it.
 	dropped = slices.DeleteFunc(dropped, func(id string) bool { return slices.Contains(a.Picks, id) })
 	changed := len(profs) > 0
-	var items []*catalog.Item
-	extra := a.MiseExtra
-	sec := creds.New()
-	// fix: the items the board re-applies now (a fix, or after filling in
-	// a value); board: what it queued, when that's applied.
-	var fix []string
-	var board *ui.BoardResult
-	// mcpEdit: the MCP servers picked new, to fill in once the run has
-	// made their env files.
-	var mcpEdit []string
 	first := len(a.Picks) == 0
 	ui.SetAccent(steps.AccentHex(a.Accent))
-	if interactive && len(profs) == 0 {
-		// The menu first (the board on a first run, or with --ui board);
-		// the board from the menu's "Add or remove tools".
-		menu := o.ui != "board" && !first
-		onBoard := !menu
-		updates := false
-		var d *screen
-		// reopen: the menu screen to come back to (the MCP servers, after
-		// deleting one, or from the board), with toast.
-		var reopen, toast string
-		fromBoard := false
-		// tab: the board's tab to open on (This VM, for Change settings);
-		// checking: updates were just looked for.
-		var tab string
-		checking := false
-		if o.startMCP && !first {
-			menu, onBoard, reopen = true, false, "mcp"
-		}
-	loop:
-		for {
-			if d == nil {
-				if d, err = o.screenData(ctx, cat, a, first, updates); err != nil {
-					return err
+	// stay: the menu (or the board) comes back after each run, until q;
+	// lastErr is the last run's, returned then.
+	stay := interactive && len(profs) == 0
+	var lastErr error
+	// The menu first (the board on a first run, or with --ui board); the
+	// board from the menu's "Add or remove tools".
+	menu := o.ui != "board" && !first
+	onBoard := !menu
+	updates := false
+	var d *screen
+	// reopen: the menu screen to come back to (the MCP servers, after
+	// deleting one, or from the board), with toast.
+	var reopen, toast string
+	fromBoard := false
+	// tab: the board's tab to open on (This VM, for Change settings);
+	// checking: updates were just looked for.
+	var tab string
+	checking := false
+	// flash: the board's line after a run, when it's the board that comes
+	// back.
+	var flash string
+	if stay && o.startMCP && !first {
+		menu, onBoard, reopen = true, false, "mcp"
+	}
+	for {
+		var items []*catalog.Item
+		extra := a.MiseExtra
+		sec := creds.New()
+		// fix: the items the board re-applies now (a fix, or after filling
+		// in a value); board: what it queued, when that's applied.
+		var fix []string
+		var board *ui.BoardResult
+		// mcpEdit: the MCP servers picked new, to fill in once the run has
+		// made their env files.
+		var mcpEdit []string
+		if stay {
+		loop:
+			for {
+				if d == nil {
+					if d, err = o.screenData(ctx, cat, a, first, updates); err != nil {
+						return err
+					}
+					updates = false
 				}
-				updates = false
-			}
-			if checking && !onBoard && reopen == "" {
-				// Nothing newer: say so, rather than just a row gone.
-				if !slices.ContainsFunc(d.items, func(i *ui.BoardItem) bool { return i.Picked && len(i.Updates) > 0 }) {
-					reopen, toast = "home", "✓ No updates: everything is current."
+				if checking && !onBoard && reopen == "" {
+					// Nothing newer: say so, rather than just a row gone.
+					if !slices.ContainsFunc(d.items, func(i *ui.BoardItem) bool { return i.Picked && len(i.Updates) > 0 }) {
+						reopen, toast = "home", "✓ No updates: everything is current."
+					}
 				}
-			}
-			checking = false
-			if !onBoard {
-				m := ui.NewMenu(d.info, d.sub, d.items, d.settings, d.connect, d.updates)
-				wasFromBoard := fromBoard
-				if reopen != "" {
-					m.Open(reopen, toast, fromBoard)
-					reopen, toast, fromBoard = "", "", false
+				checking = false
+				if !onBoard {
+					m := ui.NewMenu(d.info, d.sub, d.items, d.settings, d.connect, d.updates)
+					wasFromBoard := fromBoard
+					if reopen != "" {
+						m.Open(reopen, toast, fromBoard)
+						reopen, toast, fromBoard = "", "", false
+					}
+					res, err := m.Run()
+					if err != nil {
+						return err
+					}
+					switch res.Kind {
+					case ui.MenuQuit:
+						return lastErr
+					case ui.MenuTools:
+						onBoard = true
+					case ui.MenuSettings:
+						onBoard, tab = true, "__vm__"
+					case ui.MenuUpdates:
+						d, updates, checking = nil, true, true
+					case ui.MenuUpgrade:
+						said, err := o.upgrade(ctx, cat, a)
+						if err != nil {
+							return err
+						}
+						d, reopen, toast = nil, "home", said
+					case ui.MenuFix:
+						// Fix all: every problem, in one run.
+						fix = res.IDs
+						if len(fix) == 0 {
+							fix = []string{res.ID}
+						}
+						break loop
+					case ui.MenuEdit:
+						var said string
+						if fix, said, err = o.fillIn(ctx, a, res.Inputs); err != nil {
+							return err
+						}
+						if fix != nil {
+							break loop
+						}
+						d = nil
+						if said != "" {
+							reopen, toast = "home", said
+						}
+					case ui.MenuApply:
+						board = &ui.BoardResult{Kind: ui.BoardApply, Settings: res.Settings}
+						break loop
+					case ui.MenuMCP:
+						k := &asker{cat: cat, a: a, share: o.share(), out: io.Discard, installed: func(t string) bool { return userHas(a.User, t) },
+							port: func() int { p, _ := st.Port(user); return p }}
+						out, err := k.mcpDo(ctx, res.MCP, o.mcpSpecs(ctx))
+						if err != nil {
+							reopen, toast, fromBoard, d = "mcp", "✗ "+err.Error(), wasFromBoard, nil
+							continue
+						}
+						if out.sync != "" {
+							if err := st.Save(a); err != nil {
+								return err
+							}
+							fmt.Fprintf(stdout, "Registering %s…\n", out.sync)
+							_ = o.mcpSyncNow(ctx, a, io.Discard)
+							s, _ := o.mcpStatus(ctx, a)
+							v, ok := s[out.sync]
+							reopen, toast, fromBoard, d = "mcp", mcpSays(out.sync, v, ok), wasFromBoard, nil
+							continue
+						}
+						if out.apply {
+							// The gateway's install too: this version's catalog
+							// and mcp-sync, and the gateway started.
+							fix, changed, mcpEdit = []string{"mcpjungle-install", "mcpjungle"}, true, out.edit
+							break loop
+						}
+						if err := st.Save(a); err != nil {
+							return err
+						}
+						reopen, toast, fromBoard, d = "mcp", out.toast, wasFromBoard, nil
+					}
+					continue
 				}
-				res, err := m.Run()
+				b := ui.NewBoard(d.info, first, d.tabs, d.items, d.settings, d.actions, d.connect)
+				// From the menu: esc goes back to it.
+				b.SetFromMenu(menu)
+				b.Flash(flash)
+				flash = ""
+				if tab != "" {
+					b.Open(tab)
+					tab = ""
+				}
+				res, err := b.Run()
 				if err != nil {
 					return err
 				}
 				switch res.Kind {
-				case ui.MenuQuit:
-					return nil
-				case ui.MenuTools:
-					onBoard = true
-				case ui.MenuSettings:
-					onBoard, tab = true, "__vm__"
-				case ui.MenuUpdates:
-					d, updates, checking = nil, true, true
-				case ui.MenuUpgrade:
-					said, err := o.upgrade(ctx, cat, a)
-					if err != nil {
-						return err
+				case ui.BoardQuit:
+					if !menu {
+						return lastErr
 					}
-					d, reopen, toast = nil, "home", said
-				case ui.MenuFix:
-					// Fix all: every problem, in one run.
-					fix = res.IDs
-					if len(fix) == 0 {
-						fix = []string{res.ID}
-					}
+					d.forget()
+					onBoard = false
+				case ui.BoardRefresh:
+					d = nil
+				case ui.BoardUpdates:
+					d, updates = nil, true
+				case ui.BoardFix:
+					fix = []string{res.ID}
 					break loop
-				case ui.MenuEdit:
-					var said string
-					if fix, said, err = o.fillIn(ctx, a, res.Inputs); err != nil {
+				case ui.BoardEdit:
+					if fix, _, err = o.fillIn(ctx, a, res.Inputs); err != nil {
 						return err
 					}
 					if fix != nil {
 						break loop
 					}
 					d = nil
-					if said != "" {
-						reopen, toast = "home", said
-					}
-				case ui.MenuApply:
-					board = &ui.BoardResult{Kind: ui.BoardApply, Settings: res.Settings}
-					break loop
-				case ui.MenuMCP:
-					k := &asker{cat: cat, a: a, share: o.share(), out: io.Discard, installed: func(t string) bool { return userHas(a.User, t) },
-						port: func() int { p, _ := st.Port(user); return p }}
-					out, err := k.mcpDo(ctx, res.MCP, o.mcpSpecs(ctx))
-					if err != nil {
-						reopen, toast, fromBoard, d = "mcp", "✗ "+err.Error(), wasFromBoard, nil
+				case ui.BoardChange:
+					if res.Change == "mcp" {
+						// The MCP servers are the menu's screen; esc there comes back.
+						onBoard, reopen, fromBoard = false, "mcp", true
 						continue
 					}
-					if out.sync != "" {
-						if err := st.Save(a); err != nil {
-							return err
-						}
-						fmt.Fprintf(stdout, "Registering %s…\n", out.sync)
-						_ = o.mcpSyncNow(ctx, a, io.Discard)
-						s, _ := o.mcpStatus(ctx, a)
-						v, ok := s[out.sync]
-						reopen, toast, fromBoard, d = "mcp", mcpSays(out.sync, v, ok), wasFromBoard, nil
-						continue
-					}
-					if out.apply {
-						// The gateway's install too: this version's catalog
-						// and mcp-sync, and the gateway started.
-						fix, changed, mcpEdit = []string{"mcpjungle-install", "mcpjungle"}, true, out.edit
-						break loop
-					}
-					if err := st.Save(a); err != nil {
+					k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) }}
+					before := *a
+					if sec, err = k.change(ctx, res.Change); errors.Is(err, ui.ErrQuit) {
+						*a, sec = before, creds.New()
+						continue // back to the board, nothing changed
+					} else if err != nil {
 						return err
 					}
-					reopen, toast, fromBoard, d = "mcp", out.toast, wasFromBoard, nil
+					fix, changed = []string{res.ID}, true
+					break loop
+				case ui.BoardApply:
+					board = &res
+					break loop
 				}
-				continue
 			}
-			b := ui.NewBoard(d.info, first, d.tabs, d.items, d.settings, d.actions, d.connect)
-			// From the menu: esc goes back to it.
-			b.SetFromMenu(menu)
-			if tab != "" {
-				b.Open(tab)
-				tab = ""
+		}
+		err := func() error {
+			if interactive && fix == nil {
+				k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) },
+					profile: len(profs) > 0, dropped: dropped, port: func() int { p, _ := st.Port(user); return p }}
+				var c *choices
+				var err error
+				if board != nil {
+					c, err = k.fromBoard(ctx, *board, first)
+				} else {
+					c, err = k.ask(ctx)
+				}
+				if errors.Is(err, ui.ErrQuit) {
+					fmt.Fprintln(stdout, "Cancelled.")
+					return errCancelled
+				}
+				if err != nil || c == nil {
+					return err
+				}
+				a.Unpick(c.dropped)
+				if slices.Contains(c.dropped, "docker-ports") {
+					a.DockerPorts = "" // unticked: published ports reachable everywhere again
+				}
+				if slices.Contains(c.dropped, "docker-api") {
+					a.DockerAPI = "" // unticked: the Docker API over TLS is off again
+				}
+				a.Pick(c.picks)
+				a.MiseExtra = c.miseExtra
+				ui.SetAccent(steps.AccentHex(a.Accent)) // a new one shows from now on
+				items, extra, sec = c.items, c.miseExtra, c.secrets
+				changed = true
+			} else {
+				if o.only != "" {
+					a.Pick(a.SendKeyTo(o.gitHosts))
+					sec.GitKey = o.gitKey
+					changed = true
+				}
+				if len(a.Picks) == 0 {
+					return errors.New("no saved choices yet; run yardo without --yes first")
+				}
+				if items, err = plan.Resolve(cat, a.Picks, len(a.MiseExtra) > 0); err != nil {
+					return err
+				}
+				if o.only != "" {
+					items = slices.DeleteFunc(items, func(it *catalog.Item) bool { return it.ID != o.only })
+				}
+				if fix != nil {
+					// What the board re-applies, and the helpers (mise) it
+					// needs; extra mise tools only when one of them is listed.
+					items = slices.DeleteFunc(items, func(it *catalog.Item) bool { return !it.Hidden() && !slices.Contains(fix, it.ID) })
+					if !slices.ContainsFunc(fix, func(id string) bool { return strings.HasPrefix(id, "mise:") }) {
+						extra = nil
+					}
+				}
+				listDropped(stdout, cat, dropped)
 			}
-			res, err := b.Run()
+			if a.MCPPort == 0 && slices.ContainsFunc(items, func(it *catalog.Item) bool { return it.ID == "mcpjungle-install" }) {
+				if a.MCPPort, err = st.Port(a.User); err != nil {
+					return err
+				}
+				changed = true
+			}
+			created, err := o.ensureUser(ctx, a.User, stdout)
 			if err != nil {
 				return err
 			}
-			switch res.Kind {
-			case ui.BoardQuit:
-				if !menu {
+			if !o.dryRun && !o.verify {
+				save := st.Save
+				if !changed {
+					// Only answers.json, which the bash steps read for this user.
+					save = func(a *answers.Answers) error { return answers.Write(o.state, a) }
+				}
+				if err := save(a); err != nil {
+					return err
+				}
+			}
+			if o.dryRun || o.verify {
+				env, err := o.env(a, sec, nil)
+				if err != nil {
+					return err
+				}
+				if o.dryRun {
+					return run.DryRun(stdout, env, items, extra)
+				}
+				if o.status {
+					us := userStatusOf(ctx, env, a.User, items, extra, loadApplied(o.state, a.User), o.updates)
+					if err := saveStatus(ctx, env, o.state, us, time.Now()); err != nil {
+						fmt.Fprintf(stderr, "yardo: saving the status: %v\n", err)
+					}
+					o.statuses = append(o.statuses, us)
+					if !o.json {
+						printStatus(stdout, us)
+					}
 					return nil
 				}
-				d.forget()
-				onBoard = false
-			case ui.BoardRefresh:
-				d = nil
-			case ui.BoardUpdates:
-				d, updates = nil, true
-			case ui.BoardFix:
-				fix = []string{res.ID}
-				break loop
-			case ui.BoardEdit:
-				if fix, _, err = o.fillIn(ctx, a, res.Inputs); err != nil {
+				return verify(ctx, stdout, env, items)
+			}
+			logf, err := os.OpenFile(o.log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+			if err != nil {
+				return err
+			}
+			defer logf.Close()
+			fmt.Fprintf(logf, "=== yardo %s, %s, user %s\n", version, time.Now().Format(time.RFC3339), a.User)
+			env, err := o.env(a, sec, logf)
+			if err != nil {
+				return err
+			}
+			// Fixed or applied again on purpose: git-sourced tools are fetched again.
+			env.Reinstall = fix != nil
+			if created {
+				env.Note(fmt.Sprintf("Created user %s (passwordless sudo, no password or SSH key): add a key to %s/.ssh/authorized_keys, or use 'sudo -iu %s'.", a.User, env.Home, a.User))
+			}
+			prog := progressFor(stdout)
+			bash := legacyRunner(env, o.legacy, o.state)
+			if bash != nil {
+				stdin := sec.Encode()
+				env.Legacy = func(ctx context.Context, id string) error {
+					// The GitHub steps may open the browser login: they get the
+					// terminal when one of them is new or being fixed, not on
+					// every apply (else gh waits for a login nobody asked for).
+					if interactive && (id == "github" || id == "gitsign") && ghLogin(items, before, fix) {
+						if l, ok := prog.(*run.Live); ok {
+							l.Pause()
+						}
+						c := exec.CommandContext(ctx, "bash", o.legacy, "--only", id, "--secrets")
+						c.Env = append(os.Environ(), legacyCmd(o.legacy, o.state).Env...)
+						c.Stdin, c.Stdout, c.Stderr = bytes.NewReader(stdin), os.Stdout, os.Stderr
+						return c.Run()
+					}
+					cmd := legacyCmd(o.legacy, o.state, "--only", id, "--secrets")
+					cmd.Stdin = stdin
+					_, err := env.RunLogged(ctx, cmd)
 					return err
 				}
-				if fix != nil {
-					break loop
-				}
-				d = nil
-			case ui.BoardChange:
-				if res.Change == "mcp" {
-					// The MCP servers are the menu's screen; esc there comes back.
-					onBoard, reopen, fromBoard = false, "mcp", true
-					continue
-				}
-				k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) }}
-				before := *a
-				if sec, err = k.change(ctx, res.Change); errors.Is(err, ui.ErrQuit) {
-					*a, sec = before, creds.New()
-					continue // back to the board, nothing changed
-				} else if err != nil {
+				prog.Start("Getting ready")
+				if err := bash(ctx, "--begin"); err != nil {
+					prog.Done("fail", "Getting ready")
 					return err
 				}
-				fix, changed = []string{res.ID}, true
-				break loop
-			case ui.BoardApply:
-				board = &res
-				break loop
+				prog.Done("ok", "Ready to install")
 			}
-		}
-	}
-	if interactive && fix == nil {
-		k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) },
-			profile: len(profs) > 0, dropped: dropped, port: func() int { p, _ := st.Port(user); return p }}
-		var c *choices
-		var err error
-		if board != nil {
-			c, err = k.fromBoard(ctx, *board, first)
-		} else {
-			c, err = k.ask(ctx)
-		}
-		if errors.Is(err, ui.ErrQuit) {
-			fmt.Fprintln(stdout, "Cancelled.")
-			return nil
-		}
-		if err != nil || c == nil {
-			return err
-		}
-		a.Unpick(c.dropped)
-		if slices.Contains(c.dropped, "docker-ports") {
-			a.DockerPorts = "" // unticked: published ports reachable everywhere again
-		}
-		if slices.Contains(c.dropped, "docker-api") {
-			a.DockerAPI = "" // unticked: the Docker API over TLS is off again
-		}
-		a.Pick(c.picks)
-		a.MiseExtra = c.miseExtra
-		ui.SetAccent(steps.AccentHex(a.Accent)) // a new one shows from now on
-		items, extra, sec = c.items, c.miseExtra, c.secrets
-		changed = true
-	} else {
-		if o.only != "" {
-			a.Pick(a.SendKeyTo(o.gitHosts))
-			sec.GitKey = o.gitKey
-			changed = true
-		}
-		if len(a.Picks) == 0 {
-			return errors.New("no saved choices yet; run yardo without --yes first")
-		}
-		if items, err = plan.Resolve(cat, a.Picks, len(a.MiseExtra) > 0); err != nil {
-			return err
-		}
-		if o.only != "" {
-			items = slices.DeleteFunc(items, func(it *catalog.Item) bool { return it.ID != o.only })
-		}
-		if fix != nil {
-			// What the board re-applies, and the helpers (mise) it
-			// needs; extra mise tools only when one of them is listed.
-			items = slices.DeleteFunc(items, func(it *catalog.Item) bool { return !it.Hidden() && !slices.Contains(fix, it.ID) })
-			if !slices.ContainsFunc(fix, func(id string) bool { return strings.HasPrefix(id, "mise:") }) {
-				extra = nil
+			notesFile := filepath.Join(o.state, ".notes")
+			if bash == nil {
+				_ = os.Remove(notesFile) // bash's --begin does this when it runs
+				_ = os.Remove(filepath.Join(o.state, keysFile))
 			}
-		}
-		listDropped(stdout, cat, dropped)
-	}
-	if a.MCPPort == 0 && slices.ContainsFunc(items, func(it *catalog.Item) bool { return it.ID == "mcpjungle-install" }) {
-		if a.MCPPort, err = st.Port(a.User); err != nil {
-			return err
-		}
-		changed = true
-	}
-	created, err := o.ensureUser(ctx, a.User, stdout)
-	if err != nil {
-		return err
-	}
-	if !o.dryRun && !o.verify {
-		save := st.Save
-		if !changed {
-			// Only answers.json, which the bash steps read for this user.
-			save = func(a *answers.Answers) error { return answers.Write(o.state, a) }
-		}
-		if err := save(a); err != nil {
-			return err
-		}
-	}
-	if o.dryRun || o.verify {
-		env, err := o.env(a, sec, nil)
-		if err != nil {
-			return err
-		}
-		if o.dryRun {
-			return run.DryRun(stdout, env, items, extra)
-		}
-		if o.status {
-			us := userStatusOf(ctx, env, a.User, items, extra, loadApplied(o.state, a.User), o.updates)
-			if err := saveStatus(ctx, env, o.state, us, time.Now()); err != nil {
-				fmt.Fprintf(stderr, "yardo: saving the status: %v\n", err)
+			r := &run.Runner{Env: env, Progress: prog, TailLines: 25}
+			res := r.Run(ctx, items, extra)
+			if err := markApplied(o.state, a.User, slices.Concat(res.Changed, res.Unchanged), time.Now()); err != nil {
+				fmt.Fprintf(stderr, "yardo: %v\n", err)
 			}
-			o.statuses = append(o.statuses, us)
-			if !o.json {
-				printStatus(stdout, us)
+			if err := primeZshCompletions(ctx, env, r.Progress); err != nil {
+				res.Failed = append(res.Failed, "zshcomp")
+				res.Errors["zshcomp"] = err.Error()
 			}
-			return nil
-		}
-		return verify(ctx, stdout, env, items)
-	}
-	logf, err := os.OpenFile(o.log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return err
-	}
-	defer logf.Close()
-	fmt.Fprintf(logf, "=== yardo %s, %s, user %s\n", version, time.Now().Format(time.RFC3339), a.User)
-	env, err := o.env(a, sec, logf)
-	if err != nil {
-		return err
-	}
-	// Fixed or applied again on purpose: git-sourced tools are fetched again.
-	env.Reinstall = fix != nil
-	if created {
-		env.Note(fmt.Sprintf("Created user %s (passwordless sudo, no password or SSH key): add a key to %s/.ssh/authorized_keys, or use 'sudo -iu %s'.", a.User, env.Home, a.User))
-	}
-	prog := progressFor(stdout)
-	bash := legacyRunner(env, o.legacy, o.state)
-	if bash != nil {
-		stdin := sec.Encode()
-		env.Legacy = func(ctx context.Context, id string) error {
-			// The GitHub steps may open the browser login: they get the
-			// terminal when one of them is new or being fixed, not on
-			// every apply (else gh waits for a login nobody asked for).
-			if interactive && (id == "github" || id == "gitsign") && ghLogin(items, before, fix) {
-				if l, ok := prog.(*run.Live); ok {
-					l.Pause()
+			// While bash runs steps, its notes (with "Secrets to fill in") are the
+			// fuller ~/yardo.txt.
+			if bash != nil {
+				if out, err := bashOut(ctx, env, o.legacy, o.state, "--finish"); err != nil {
+					fmt.Fprintf(stderr, "yardo: notes: %v\n", err)
+				} else {
+					_, _ = stdout.Write(out)
+					if err := appendUnverified(env, items); err != nil {
+						fmt.Fprintf(stderr, "yardo: %s/yardo.txt: %v\n", env.Home, err)
+					}
 				}
-				c := exec.CommandContext(ctx, "bash", o.legacy, "--only", id, "--secrets")
-				c.Env = append(os.Environ(), legacyCmd(o.legacy, o.state).Env...)
-				c.Stdin, c.Stdout, c.Stderr = bytes.NewReader(stdin), os.Stdout, os.Stderr
-				return c.Run()
+			} else {
+				if b, err := os.ReadFile(notesFile); err == nil && len(b) > 0 {
+					for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+						fmt.Fprintf(stdout, "! %s\n", l)
+					}
+				}
+				if o.only != "" {
+					// One item: the summary of everything stays as it is.
+				} else if err := writeSummary(env, items, extra); err != nil {
+					fmt.Fprintf(stderr, "yardo: %s/yardo.txt: %v\n", env.Home, err)
+				}
 			}
-			cmd := legacyCmd(o.legacy, o.state, "--only", id, "--secrets")
-			cmd.Stdin = stdin
-			_, err := env.RunLogged(ctx, cmd)
+			if len(mcpEdit) > 0 && !slices.Contains(res.Failed, "mcpjungle") {
+				if err := o.fillMCP(ctx, r, a, items, mcpEdit, stdout); err != nil {
+					fmt.Fprintf(stderr, "yardo: %v\n", err)
+				}
+			}
+			fmt.Fprintf(stdout, "How each tool was installed and how to update it: %s/yardo.txt\nLog: %s\n", env.Home, o.log)
+			printKeys(stdout, o.state, env.Home)
+			if planHas(items)("mcpjungle") && !before("mcpjungle") && len(a.MCPServers) == 0 {
+				fmt.Fprintln(stdout, "MCP servers: add GitHub, Jira, Grafana and more from 'sudo yardo' → MCP servers.")
+			}
+			if h := newShellHint(res.Changed); h != "" {
+				fmt.Fprintln(stdout, h)
+			}
+			if !res.OK() {
+				for _, id := range res.Failed {
+					fmt.Fprintf(stderr, "✗ %s: %s\n", id, res.Errors[id])
+				}
+				return fmt.Errorf("failed: %s — fix and re-run yardo", strings.Join(res.Failed, " "))
+			}
+			return nil
+		}()
+		if !stay || o.dryRun || o.verify {
+			if errors.Is(err, errCancelled) {
+				return nil
+			}
 			return err
 		}
-		prog.Start("Getting ready")
-		if err := bash(ctx, "--begin"); err != nil {
-			prog.Done("fail", "Getting ready")
-			return err
+		// Back to the menu (or the board), saying how it went; what's set up
+		// now is checked again.
+		toast, lastErr = ranSays(cat, fix, err), err
+		if errors.Is(err, errCancelled) {
+			lastErr = nil
 		}
-		prog.Done("ok", "Ready to install")
-	}
-	notesFile := filepath.Join(o.state, ".notes")
-	if bash == nil {
-		_ = os.Remove(notesFile) // bash's --begin does this when it runs
-		_ = os.Remove(filepath.Join(o.state, keysFile))
-	}
-	r := &run.Runner{Env: env, Progress: prog, TailLines: 25}
-	res := r.Run(ctx, items, extra)
-	if err := markApplied(o.state, a.User, slices.Concat(res.Changed, res.Unchanged), time.Now()); err != nil {
-		fmt.Fprintf(stderr, "yardo: %v\n", err)
-	}
-	if err := primeZshCompletions(ctx, env, r.Progress); err != nil {
-		res.Failed = append(res.Failed, "zshcomp")
-		res.Errors["zshcomp"] = err.Error()
-	}
-	// While bash runs steps, its notes (with "Secrets to fill in") are the
-	// fuller ~/yardo.txt.
-	if bash != nil {
-		if out, err := bashOut(ctx, env, o.legacy, o.state, "--finish"); err != nil {
-			fmt.Fprintf(stderr, "yardo: notes: %v\n", err)
+		if had, err := plan.Resolve(cat, a.Picks, false); err == nil {
+			before = planHas(had)
+		}
+		changed, dropped, d = false, nil, nil
+		first = len(a.Picks) == 0
+		menu = o.ui != "board" && !first
+		onBoard, reopen = !menu, ""
+		if menu {
+			reopen = "home"
 		} else {
-			_, _ = stdout.Write(out)
-			if err := appendUnverified(env, items); err != nil {
-				fmt.Fprintf(stderr, "yardo: %s/yardo.txt: %v\n", env.Home, err)
-			}
-		}
-	} else {
-		if b, err := os.ReadFile(notesFile); err == nil && len(b) > 0 {
-			for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-				fmt.Fprintf(stdout, "! %s\n", l)
-			}
-		}
-		if o.only != "" {
-			// One item: the summary of everything stays as it is.
-		} else if err := writeSummary(env, items, extra); err != nil {
-			fmt.Fprintf(stderr, "yardo: %s/yardo.txt: %v\n", env.Home, err)
+			flash = toast
 		}
 	}
-	if len(mcpEdit) > 0 && !slices.Contains(res.Failed, "mcpjungle") {
-		if err := o.fillMCP(ctx, r, a, items, mcpEdit, stdout); err != nil {
-			fmt.Fprintf(stderr, "yardo: %v\n", err)
+}
+
+// errCancelled is a run left at its questions: nothing changed.
+var errCancelled = errors.New("cancelled")
+
+// ranSays is the menu's line after a run of fix (or of what was queued),
+// which ended in err.
+func ranSays(cat *catalog.Catalog, fix []string, err error) string {
+	const out = " · q quits and shows the run's output"
+	switch {
+	case errors.Is(err, errCancelled):
+		return "Cancelled: nothing changed."
+	case err != nil:
+		msg := strings.TrimSuffix(err.Error(), " — fix and re-run yardo")
+		return "✗ " + strings.ToUpper(msg[:1]) + msg[1:] + out
+	}
+	var names []string
+	for _, id := range fix {
+		if it := cat.Item(id); it != nil && !it.Hidden() {
+			names = append(names, ui.Short(it.Label))
 		}
 	}
-	fmt.Fprintf(stdout, "How each tool was installed and how to update it: %s/yardo.txt\nLog: %s\n", env.Home, o.log)
-	printKeys(stdout, o.state, env.Home)
-	if planHas(items)("mcpjungle") && !before("mcpjungle") && len(a.MCPServers) == 0 {
-		fmt.Fprintln(stdout, "MCP servers: add GitHub, Jira, Grafana and more from 'sudo yardo' → MCP servers.")
+	if len(names) == 0 {
+		return "✓ Done" + out
 	}
-	if h := newShellHint(res.Changed); h != "" {
-		fmt.Fprintln(stdout, h)
-	}
-	if !res.OK() {
-		for _, id := range res.Failed {
-			fmt.Fprintf(stderr, "✗ %s: %s\n", id, res.Errors[id])
-		}
-		return fmt.Errorf("failed: %s — fix and re-run yardo", strings.Join(res.Failed, " "))
-	}
-	return nil
+	return "✓ Done: " + strings.Join(names, ", ") + out
 }
 
 // gitKeyArgs reads `yardo gitkey [--host h]...`: the private key
