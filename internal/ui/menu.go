@@ -175,7 +175,7 @@ func (m *Menu) rows() []menuRow {
 		for _, s := range as {
 			now = append(now, s.Label+": "+s.label(s.Value))
 		}
-		out = append(out, menuRow{"access", "Who can connect", strings.Join(now, " · ")})
+		out = append(out, menuRow{"access", "Network access", strings.Join(now, " · ")})
 	}
 	out = append(out, menuRow{"settings", "Change settings", "git, prompt, dotfiles, accent colour…"})
 	out = append(out, menuRow{"connect", "Connect from a laptop", "Docker over SSH, the MCP gateway"})
@@ -499,7 +499,7 @@ func (m *Menu) View() string {
 				}
 				return muted.Render("[ ") + s + muted.Render(" ]")
 			}
-			add("     " + btn(0, "Fix it") + "   " + btn(1, "Show how it's set up"))
+			add("     " + btn(0, "Fix it") + "   " + btn(1, "Details"))
 			if m.shown[i.ID] && i.Source != "" {
 				for _, l := range wrap(i.Source, w-10) {
 					add("       " + muted.Render(l))
@@ -532,7 +532,7 @@ func (m *Menu) View() string {
 		add("  " + muted.Render("Enter opens the file in your editor; yardo never stores the value."))
 		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "fill in"), k("esc", "back")}, "   ")
 	case "access":
-		title = "Who can connect"
+		title = "Network access"
 		as := m.access()
 		for n, s := range as {
 			on := n == m.sel

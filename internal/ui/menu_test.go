@@ -58,7 +58,7 @@ func TestMenuHome(t *testing.T) {
 	m := testMenu(false)
 	v := m.View()
 	for _, want := range []string{"What would you like to do?", "Fix 1 problem", "Docker Engine + Compose stopped", "Fill in 1 secret", "OPENAI_API_KEY",
-		"Add or remove tools", "Who can connect", "MCP gateway: this machine only", "Change settings", "git, prompt, dotfiles, accent colour…",
+		"Add or remove tools", "Network access", "MCP gateway: this machine only", "Change settings", "git, prompt, dotfiles, accent colour…",
 		"Connect from a laptop", "Check for updates", "1 needs attention"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("home lacks %q:\n%s", want, v)
@@ -109,7 +109,7 @@ func TestMenuSecretsAndTools(t *testing.T) {
 func TestMenuAccess(t *testing.T) {
 	m := testMenu(false)
 	mk(m, "down", "down", "down", "enter")
-	if v := m.View(); !strings.Contains(v, "Home  ›  Who can connect") || !strings.Contains(v, "(•) this machine only") || strings.Contains(v, "Accent colour") {
+	if v := m.View(); !strings.Contains(v, "Home  ›  Network access") || !strings.Contains(v, "(•) this machine only") || strings.Contains(v, "Accent colour") {
 		t.Fatalf("access:\n%s", v)
 	}
 	mk(m, "down", "down", "down", "down")

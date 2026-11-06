@@ -651,7 +651,7 @@ func (b *Board) act(r *row) tea.Cmd {
 		}
 		p := &panel{title: s.Label, swatches: s.Swatches}
 		if s.Section == "" || s.Section == accessSection {
-			p.title = "Who can connect to the " + s.Label
+			p.title = "Who can reach the " + s.Label
 			p.say = accessSay[s.Key]
 		}
 		for n, c := range s.Choices {
@@ -687,7 +687,7 @@ func (b *Board) act(r *row) tea.Cmd {
 		case i.Pending != "" || !i.Picked:
 			b.toggle(i)
 		case fixable(i):
-			b.panel = b.itemPanel(i, []string{i.Detail}, [2]string{"Fix it now (apply it again)", "fix"}, func() tea.Cmd {
+			b.panel = b.itemPanel(i, []string{i.Detail}, [2]string{fixLabel(i.State), "fix"}, func() tea.Cmd {
 				return b.done(BoardFix, i.ID)
 			})
 		case secret(i):
@@ -709,7 +709,7 @@ func (b *Board) act(r *row) tea.Cmd {
 			if i.State == "unchecked" {
 				lines = append(lines, "yardo can't check this one yet (the bash installer runs it).")
 			}
-			b.panel = b.itemPanel(i, lines, [2]string{"Apply it again (rewrites its files, installs what's missing)", "fix"}, func() tea.Cmd {
+			b.panel = b.itemPanel(i, lines, [2]string{"Reinstall (rewrites its files, installs what's missing)", "fix"}, func() tea.Cmd {
 				return b.done(BoardFix, i.ID)
 			})
 		}
@@ -722,7 +722,7 @@ func (b *Board) act(r *row) tea.Cmd {
 // nothing.
 func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func() tea.Cmd) *panel {
 	opts := append([][2]string{first}, changeOpts(i)...)
-	opts = append(opts, [2]string{"Remove it (stays installed; yardo stops looking after it)", "remove"})
+	opts = append(opts, [2]string{"Stop managing it (it stays installed)", "remove"})
 	return &panel{title: i.Label + ": " + stateWord(i.State), lines: lines, opts: opts,
 		on: func(v string) tea.Cmd {
 			switch v {
@@ -770,7 +770,7 @@ func (b *Board) confirm() {
 		case "add":
 			lines = append(lines, "+ "+i.Label)
 		case "remove":
-			lines = append(lines, "- "+i.Label+" (stays installed; yardo stops looking after it)")
+			lines = append(lines, "- "+i.Label+" (yardo stops managing it; it stays installed)")
 		}
 	}
 	for _, s := range b.settings {
@@ -792,21 +792,21 @@ func (b *Board) confirm() {
 func stateWord(s string) string {
 	switch s {
 	case "ok":
-		return "ready"
+		return "working"
 	case "down":
 		return "stopped"
 	case "partial":
 		return "half set up"
 	case "drifted":
-		return "changed since yardo set it up"
+		return "edited by hand"
 	case "outdated":
-		return "this yardo has a newer version"
+		return "set up by an older yardo"
 	case "missing":
 		return "not installed"
 	case "secret":
 		return "needs a value"
 	case "unchecked":
-		return "not checked"
+		return "not checked yet"
 	}
 	return s
 }
@@ -822,7 +822,7 @@ func mark(i *BoardItem) (string, lipgloss.Style) {
 	case i.State == "partial" || i.State == "drifted" || i.State == "outdated":
 		return "~", yellow
 	case i.State == "secret":
-		return "?", accent
+		return "○", accent
 	case i.State == "unchecked":
 		return "·", muted
 	case len(i.Updates) > 0:
@@ -852,7 +852,7 @@ func (b *Board) note(r row) (string, lipgloss.Style) {
 	case i.Pending == "add":
 		return pre + "will install", green
 	case i.Pending == "remove":
-		return pre + "will stop looking after it", red
+		return pre + "will stop managing it (stays installed)", red
 	case !i.Picked || i.State == "":
 		return strings.TrimSuffix(pre, " · "), muted
 	case i.State == "secret":
@@ -861,8 +861,23 @@ func (b *Board) note(r row) (string, lipgloss.Style) {
 		return pre + stateWord(i.State) + ": " + i.Detail, red
 	case len(i.Updates) > 0:
 		return pre + strings.Join(i.Updates, ", ") + " available", yellow
+	case i.State == "unchecked":
+		return pre + stateWord(i.State), muted
 	}
 	return strings.TrimSuffix(pre, " · "), muted
+}
+
+// fixLabel is what fixing an item in state does, said as a choice.
+func fixLabel(state string) string {
+	switch state {
+	case "down":
+		return "Fix it (start it again)"
+	case "drifted":
+		return "Fix it (puts back yardo's version: your edits go)"
+	case "outdated":
+		return "Fix it (sets it up with this yardo's files)"
+	}
+	return "Fix it (sets it up again)"
 }
 
 // beside lays a selected row out: head (rendered, at col cells wide), then
@@ -909,7 +924,7 @@ func (b *Board) header(w int) string {
 			right = append(right, red.Render(fmt.Sprintf("✗ %d to fix", n)))
 		}
 		if n := b.count(secret); n > 0 {
-			right = append(right, accent.Render(fmt.Sprintf("? %d to fill in", n)))
+			right = append(right, accent.Render(fmt.Sprintf("○ %d to fill in", n)))
 		}
 		if n := b.count(newer); n > 0 {
 			right = append(right, yellow.Render(fmt.Sprintf("↑ %d with updates", n)))
@@ -959,7 +974,7 @@ func (b *Board) tabBar(w int) string {
 				badge = fmt.Sprintf(" %d", q)
 			}
 		default:
-			badge = [...]string{"", " ↑", " ?", " ✗"}[worst[t.ID]]
+			badge = [...]string{"", " ↑", " ○", " ✗"}[worst[t.ID]]
 		}
 		label := " " + t.Title + badge + " "
 		switch {

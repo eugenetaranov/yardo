@@ -69,13 +69,13 @@ func press2(b *Board, keys ...string) tea.Cmd {
 func TestBoardNeedsYou(t *testing.T) {
 	b := testBoard(false)
 	v := b.View()
-	for _, want := range []string{"Needs you 3", "Broken", "Needs a value", "Updates", "✗ 1 to fix", "? 1 to fill in", "stopped: docker isn't running", "enter fix"} {
+	for _, want := range []string{"Needs you 3", "Broken", "Needs a value", "Updates", "✗ 1 to fix", "○ 1 to fill in", "stopped: docker isn't running", "enter fix"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("view lacks %q:\n%s", want, v)
 		}
 	}
 	press2(b, "enter") // Docker: the fix panel
-	if b.panel == nil || !strings.Contains(b.View(), "Fix it now") {
+	if b.panel == nil || !strings.Contains(b.View(), "Fix it (start it again)") {
 		t.Fatalf("no fix panel:\n%s", b.View())
 	}
 	press2(b, "enter")
@@ -220,7 +220,7 @@ func TestBoardChange(t *testing.T) {
 	if b.panel == nil || !strings.Contains(b.View(), "Change git name and email") {
 		t.Fatalf("no change option:\n%s", b.View())
 	}
-	press2(b, "down") // past Apply it again
+	press2(b, "down") // past Reinstall
 	press2(b, "enter")
 	if r := b.result; r.Kind != BoardChange || r.ID != "gitid" || r.Change != "git" {
 		t.Errorf("result %+v", r)
@@ -238,11 +238,11 @@ func TestBoardLabelWidth(t *testing.T) {
 	}
 	b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items, nil, nil, nil)
 	b.Update(tea.WindowSizeMsg{Width: 200, Height: 26})
-	if v := b.View(); !strings.Contains(v, long) || !strings.Contains(v, "changed since yardo set it up: file /etc/x") {
+	if v := b.View(); !strings.Contains(v, long) || !strings.Contains(v, "edited by hand: file /etc/x") {
 		t.Errorf("wide: label or note cut:\n%s", v)
 	}
 	b.Update(tea.WindowSizeMsg{Width: 90, Height: 26})
-	if v := b.View(); strings.Contains(v, long) || !strings.Contains(v, "changed since") {
+	if v := b.View(); strings.Contains(v, long) || !strings.Contains(v, "edited by hand") {
 		t.Errorf("narrow: want the label shortened and the note kept:\n%s", v)
 	}
 }
@@ -259,7 +259,7 @@ func TestBoardReadyItemActions(t *testing.T) {
 	}
 	b := mk()
 	press2(b, "enter")
-	if v := b.View(); !strings.Contains(v, "Apply it again") || !strings.Contains(v, "Remove it") {
+	if v := b.View(); !strings.Contains(v, "Reinstall") || !strings.Contains(v, "Stop managing it") {
 		t.Fatalf("panel lacks the actions:\n%s", v)
 	}
 	press2(b, "enter")
@@ -326,7 +326,7 @@ func TestBoardAccessSay(t *testing.T) {
 	b.Open("__vm__")
 	press2(b, "down", "enter")
 	v := b.View()
-	if !strings.Contains(v, "Who can connect to the MCP gateway") || !strings.Contains(v, accessSay["mcp"]["127.0.0.1"]) {
+	if !strings.Contains(v, "Who can reach the MCP gateway") || !strings.Contains(v, accessSay["mcp"]["127.0.0.1"]) {
 		t.Fatalf("access panel:\n%s", v)
 	}
 	press2(b, "down")
