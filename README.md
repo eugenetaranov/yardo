@@ -53,49 +53,80 @@ apply|verify|gitkey`).
 ## Using it
 
 `sudo yardo` sets up the user who ran it (`--user ada` for another; a missing
-account is created). Once something is set up, it opens on a short menu:
-how the machine is, in three lines, then what you can do, in plain
-words, changing with the machine: **Fix 2 problems** (one card each:
-fix it, or see how it's set up; with two or more, **Fix all** fixes them
-in one run), **Fill in 1 secret** (opens its file in
-your editor), **Add or remove tools**, **MCP servers** (the gateway's
-list: add one, or another instance of one), **Who can connect** (the MCP
-gateway, containers' published ports and the Docker API, each a row of
-choices with a sentence saying what it means), **Change settings** (the
-full screen's This VM tab: git, prompt, dotfiles, accent colour),
-**Connect from a laptop** and **Check for updates** (when nothing is
-newer it says so, and offers **Check again**; when something is, **Update
-all** asks, then updates just those: `mise up` for the tools, apt for the
-packages). Esc or q goes back from
-any screen; on the menu itself, q quits. **Add or remove
-tools**, and the first run, open the full screen: tabs by area (**Dev**, **DevOps**,
-**AI**, **Shell & CLI**, **System**, then **This VM**) above a checklist,
-where a ticked box means installed and a mark beside it how it is: `✓`
-ready, `✗` stopped or not installed, `~` half set up, changed since
-yardo set it up, or set up by an older yardo (this one ships newer
-files; Fix applies them), `?` needs a value, `↑` a newer version is out.
+account is created). Once something is set up, it opens on the home:
 
-- **space** queues adding (`[+]`) or removing (`[-]`) an item; removing one
-  stops yardo looking after it, and it stays installed.
-- **enter** acts on the row: fix what's broken (apply it again, now), fill
-  in a missing value (in your editor), change a setting or an answer (git
-  name and email, the prompt, the dotfiles repo, the MCP servers), or show
-  an item's details, with Apply it again (after `yardo version up`, to
-  take a newer yardo's files; tools installed from a git repo, such as
-  rds-mysql, are fetched again too) and Remove it. On a row not installed,
-  enter queues adding it, as space does.
-- **a** applies the queue: it asks what the new items need (git name,
-  prompt, MCP servers, keys), then installs. **Review**, the last tab,
-  lists the queue.
+```
+  Needs you: 1 thing to fix, 1 value to fill in
+  41 tools working · 3 updates · checked 09:12
+
+  Installed   43: zsh · Neovim · tmux · Go · Python · Docker Engine + Compose + 37 more
+  Containers  mcpjungle :8080 · postgres :5432
+  Services    ssh ✓ · docker ✓ · tailscale ✓ · fail2ban ✓
+  Listening   22 ssh · 41641/udp tailscale · 8080 docker (VPN) + 2 on this machine only
+
+ › Start Docker Engine + Compose  stopped: docker isn't running
+   Fill in OPENAI_API_KEY         Agent API keys needs it · opens its file
+   Install 3 updates              node 22.12 → 24.11 · gh 2.80 → 2.83 · uv 0.5.9 → 0.9.1
+  ──────────────────────────────────────────────
+   Tools                          add or remove: languages, AI, cloud… or just start typing
+   MCP servers                    github, jira-work
+   Settings                       network access, git, prompt, look, laptop, updates
+```
+
+How the machine is, in words; a dashboard (what's installed, the
+containers running and the ports they publish, the services up or
+failed, and what listens beyond this machine, with who can reach it);
+then a row for each thing that needs doing, named by what it does, one
+key each: **Start**, **Install**, **Restore** (a file edited by hand:
+restoring puts back yardo's version) or **Finish setting up** something
+(three or more problems are one **Fix 3 things** row, with **Fix all**),
+**Fill in** a value (opens its file in your editor), **Install 3
+updates** (asks, then updates just those: `mise up` for the tools, apt
+for the packages). Below them, three rows that never move: **Tools**
+(the full screen, below), **MCP servers** (the gateway's list: add one,
+or another instance of one) and **Settings**: **Network access** (the
+MCP gateway, containers' published ports and the Docker API, each a row
+of choices with a sentence saying what it means), the **Accent colour**,
+your **Git name and email**, **Shell prompt** and **Dotfiles repo**
+(asked again, then applied), **Connect from a laptop** and **Check for
+updates**. Typing on the home searches the tools.
+
+yardo looks for newer versions (apt and mise) in the background while
+the home is up, once a day; a run waits for it, as both use apt. After a
+fix or an install, yardo comes back to the home and says how it went;
+the run's output is under the screen when you quit. Esc or q goes back
+from any screen; on the home, q quits.
+
+**Tools**, and the first run, open the full screen: tabs by area
+(**Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
+SSH**) above a checklist, where a ticked box means installed and a mark
+beside it how it is, said in a word beside it: `✓` working, `✗` stopped
+or not installed, `~` half set up, edited by hand, or set up by an older
+yardo (this one ships newer files; Fix applies them), `○` needs a value,
+`↑` a newer version is out.
+
+- **space** queues adding (`[+]`) or removing (`[-]`) an item; the queue
+  shows on a line above the keys. Removing one means yardo stops
+  managing it; it stays installed.
+- **enter** acts on the row: fix what's broken (now), fill in a missing
+  value (in your editor), change an answer (git name and email, the
+  prompt, the dotfiles repo, the MCP servers), or show an item's details,
+  with Reinstall (after `yardo version up`, to take a newer yardo's
+  files; tools installed from a git repo, such as rds-mysql, are fetched
+  again too) and Stop managing it. On a row not installed, enter queues
+  adding it, as space does.
+- **a** applies the queue: it lists it, asks what the new items need (git
+  name, prompt, MCP servers, keys), then installs.
 - **/** searches every tab; for a tool the catalog doesn't have, ctrl-a
   adds it as an extra mise tool.
-- **Needs you** comes first while something does: what's broken, what
-  needs a value, what has updates. **This VM** holds Who can connect
-  (the MCP gateway, containers' published ports, the Docker API), Git &
-  SSH, Agents, VPN logins, Look (the accent colour), and Status & updates
-  (how to connect from a laptop, checking for updates or checking again).
+- **AI** has Agent setup (agent notes, safety settings, skills) and
+  **System** has VPN logins, under their own headings.
 
-**Accent colour.** This VM → Look → Accent colour: Coral (the default),
+**Team profiles.** On a machine set up from a named team profile, the
+home says how many tools came from it, the Tools screen notes each, and
+unticking one warns that applying the profile again adds it back.
+
+**Accent colour.** Settings → Accent colour: Coral (the default),
 Lagoon (aqua blue), Pistachio, Lavender, Amber or Rose. yardo's screen
 takes it, and so does your shell, so each machine's terminals can be
 told apart at a glance: the prompt (Powerlevel10k's OS icon, directory
@@ -111,7 +142,7 @@ MCPJungle gateway, git (name and email, defaults, lazygit, GitHub) and
 the two agent items. Space takes off what you don't want; a installs.
 Later runs show what's installed ticked and checked, and ask only about
 what's new. `sudo yardo --ui board` opens on this screen instead of the
-menu.
+home (esc goes to the home).
 
 The run follows the same order: everything is installed first (the extra
 mise tools at the end of that), then configured, with your dotfiles last.
@@ -223,7 +254,7 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 9. **System → System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
    iperf3, nmap, strace, htop, btop, ncdu, …), NFS/SMB clients.
 10. **System → Connectivity (root):** Tailscale and NetBird (log in under
-   This VM → VPN logins), the OpenVPN client, and an OpenVPN server:
+   System → VPN logins), the OpenVPN client, and an OpenVPN server:
    its own CA (easy-rsa), UDP 1194, clients on 10.8.0.0/24 with all their
    traffic sent through the machine (NAT, through Docker's DOCKER-USER
    chain when Docker is there), and a profile for you in
@@ -236,9 +267,9 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
    The OpenVPN and WireGuard clients are for the other way round:
    connecting this machine to a VPN elsewhere.
 
-### This VM: configuring it
+### Configuring it
 
-1. **Who can connect:** who can reach the MCP gateway, containers'
+1. **Network access** (Settings): who can reach the MCP gateway, containers'
    published ports (everywhere, Docker's way; this machine and your VPNs;
    or this machine only) and the Docker API (off: Docker over SSH only;
    over TLS from the local network and your VPNs, or your VPNs only), each
@@ -466,7 +497,7 @@ must be pinned (`sha256`) or say why it can't be (`unverified = "…"`), or
 yardo refuses to load it.
 
 **Away from home, and back.** For a VM on your home network (Proxmox,
-say), run a mesh VPN on the VM itself (Tailscale, on This VM → VPN
+say), run a mesh VPN on the VM itself (Tailscale, on Tools → System → VPN
 logins) and on the laptop, and always use the VM's VPN name
 (`payzoff.<tailnet>.ts.net`), at home too. At home Tailscale finds the
 direct path over your LAN, so it's as fast as the LAN; away it goes
@@ -502,7 +533,7 @@ this machine's paths, `-p` ports open here); and the MCP gateway's URL,
 how to make a laptop's token (`mcp-sync client laptop`) and the
 `claude mcp add` and Codex lines that use it, or, when the gateway is for
 this machine only, an SSH tunnel to it. For tools that can't use SSH,
-This VM → Who can reach it → "Docker API" opens port 2376,
+Settings → Network access → "Docker API" opens port 2376,
 client certificates only, from the local network (10/8, 172.16/12,
 192.168/16, Tailscale's 100.64/10) and the VPNs, or the VPNs only; never
 the internet. yardo makes a CA (`/etc/docker/tls`) and Docker gets the
@@ -510,8 +541,8 @@ port from a systemd drop-in, with `--live-restore`, so its restart leaves
 the containers running. `sudo yardo-docker client laptop` makes a
 laptop's certificate and says how to use it; Docker can't revoke one, so
 `sudo yardo-docker revoke-all` makes a new CA instead. Containers' published ports are
-reachable from everywhere, as Docker does it, unless This VM → Who can
-reach it → "Container ports" keeps them to the VPNs or this machine.
+reachable from everywhere, as Docker does it, unless Settings → Network
+access → "Container ports" keeps them to the VPNs or this machine.
 yardo's firewall rules are nftables tables of its own in
 `/etc/yardo/firewall` (loaded at boot by `yardo-firewall.service`): they
 only keep these ports out, and leave Docker's, the VPNs' and anyone
@@ -526,8 +557,8 @@ which key), then `ok`. `--json` prints it for scripts (`"schema": 1`, every
 user set up), and each run keeps the latest in
 `/var/lib/yardo/status/<user>.json`. `--updates` also asks apt and mise
 what's newer (slow: it refreshes apt's lists) and lists it per item; it
-never upgrades (`mise up`, `sudo apt upgrade` do; on the screen: This VM →
-Check for updates).
+never upgrades (`mise up`, `sudo apt upgrade` do; the home looks once a day,
+in the background, and its Install updates row asks, then updates).
 Each run leaves a copy for you in
 `~/.cache/yardo/status.json`: `yardo status` without sudo shows that one,
 and how old it is. `sudo yardo` shows the same marks on its screen. `sudo yardo --verify` is the same

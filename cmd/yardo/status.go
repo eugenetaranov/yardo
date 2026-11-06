@@ -302,7 +302,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	picked := func(id string) bool { return slices.Contains(a.Picks, id) }
 	var items []*ui.BoardItem
 	for _, it := range cat.Items {
-		// Access settings are This VM's rows, not items.
+		// Access settings are Settings' rows, not items.
 		if it.Hidden() || it.Always || it.ID == "docker-ports" || it.ID == "docker-api" {
 			continue
 		}

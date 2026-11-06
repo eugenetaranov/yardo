@@ -143,7 +143,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		}
 	} else if len(addrs) > 0 {
 		fmt.Fprintf(w, "\nThe commands below use %s, which works only on its own network; a VPN (Tailscale:\n", addr)
-		fmt.Fprintln(w, "This VM → VPN logins in 'sudo yardo') gives one name for home and away.")
+		fmt.Fprintln(w, "Tools → System → VPN logins in 'sudo yardo') gives one name for home and away.")
 	}
 	if ts != nil && len(ts.Self.Tags) == 0 && ts.Self.KeyExpiry != nil {
 		fmt.Fprintf(w, "\nTailscale: this machine's key expires on %s, and then it drops off the tailnet. Turn that off in\n",
@@ -184,7 +184,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		fmt.Fprintf(w, "    claude mcp add --transport http %s %s --header \"Authorization: Bearer <token>\"\n", ctxName, url)
 		fmt.Fprintf(w, "    Codex, in ~/.codex/config.toml:\n      [mcp_servers.%s]\n      url = %q\n      http_headers = { \"Authorization\" = \"Bearer <token>\" }\n", ctxName, url)
 	default:
-		fmt.Fprintln(w, "  this machine only: in 'sudo yardo', This VM → MCP gateway opens it to your VPNs or")
+		fmt.Fprintln(w, "  this machine only: in 'sudo yardo', Settings → Network access opens it to your VPNs or")
 		fmt.Fprintln(w, "  the internet. Or, with nothing to change, through SSH:")
 		fmt.Fprintf(w, "    ssh -N -L %d:127.0.0.1:%d %s@%s\n", port, port, a.User, addr)
 		fmt.Fprintf(w, "    claude mcp add --transport http %s http://127.0.0.1:%d/mcp\n", ctxName, port)

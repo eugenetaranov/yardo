@@ -157,7 +157,7 @@ func cli(args []string, stdout, stderr io.Writer) error {
 	fs.StringVar(&o.log, "log", envOr("YARDO_LOG", defaultLog), "log file (every command and its output)")
 	fs.Var(&o.profiles, "profile", "apply a profile (file or https URL; repeatable, later ones win)")
 	fs.StringVar(&o.user, "user", "", "the account to set up, created if missing (wins over profiles)")
-	fs.StringVar(&o.ui, "ui", "menu", "the screen sudo yardo opens on: menu (a short menu of actions) or board (the tabbed checklist)")
+	fs.StringVar(&o.ui, "ui", "menu", "the screen sudo yardo opens on: menu (the home) or board (Tools, the tabbed checklist)")
 	o.legacy = envOr("YARDO_LEGACY", defaultLegacy)
 	fs.Usage = func() { fmt.Fprintln(stderr, "Run 'yardo --help' for the commands and flags.") }
 	if err := fs.Parse(args); err != nil {
