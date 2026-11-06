@@ -384,16 +384,21 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	// on it going to the menu); the board from the menu's Tools.
 	menu := !first
 	onBoard := o.ui == "board" || first
-	updates := false
+	// upd: the check for newer versions, the last one's while it holds,
+	// else one run in the background while the menu is up.
+	var upd *updateCheck
+	if stay && !first {
+		if upd = loadUpdates(o.state, a.User, time.Now()); upd == nil {
+			upd = o.checkUpdates(ctx, cat, a)
+		}
+	}
 	var d *screen
 	// reopen: the menu screen to come back to (the MCP servers, after
 	// deleting one, or from the board), with toast.
 	var reopen, toast string
 	fromBoard := false
-	// search: what the board opens searching for (typed on the menu);
-	// checking: updates were just looked for.
+	// search: what the board opens searching for (typed on the menu).
 	var search *string
-	checking := false
 	// flash: the board's line after a run, when it's the board that comes
 	// back.
 	var flash string
@@ -415,20 +420,16 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		loop:
 			for {
 				if d == nil {
-					if d, err = o.screenData(ctx, cat, a, first, updates); err != nil {
+					if d, err = o.screenData(ctx, cat, a, first); err != nil {
 						return err
 					}
-					updates = false
 				}
-				if checking && !onBoard && reopen == "" {
-					// Nothing newer: say so, rather than just a row gone.
-					if !slices.ContainsFunc(d.items, func(i *ui.BoardItem) bool { return i.Picked && len(i.Updates) > 0 }) {
-						reopen, toast = "home", "✓ No updates: everything is current."
-					}
-				}
-				checking = false
+				d.withUpdates(upd)
 				if !onBoard {
 					m := ui.NewMenu(d.info, d.sub, d.items, d.settings, d.connect, d.updates)
+					if upd != nil && !upd.ready() {
+						m.Checking(upd.msg)
+					}
 					wasFromBoard := fromBoard
 					if reopen != "" {
 						m.Open(reopen, toast, fromBoard)
@@ -459,12 +460,17 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						fix, changed = []string{res.ID}, true
 						break loop
 					case ui.MenuUpdates:
-						d, updates, checking = nil, true, true
+						upd = o.checkUpdates(ctx, cat, a)
+						reopen, toast = "settings", "Checking for updates in the background: what it finds shows on the home."
 					case ui.MenuUpgrade:
+						upd.wait(stdout)
 						said, err := o.upgrade(ctx, cat, a)
 						if err != nil {
 							return err
 						}
+						// What was newer is installed now.
+						upd = (&updateCheck{At: time.Now(), ByID: map[string][]string{}}).finished()
+						_ = upd.save(o.state, a.User)
 						d, reopen, toast = nil, "home", said
 					case ui.MenuFix:
 						// Fix all: every problem, in one run.
@@ -573,6 +579,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				}
 			}
 		}
+		upd.wait(stdout)
 		err := func() error {
 			if interactive && fix == nil {
 				k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) },

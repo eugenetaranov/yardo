@@ -263,16 +263,13 @@ type screen struct {
 var configureInto = map[string]string{"agents": "group:AI", "logins": "group:System"}
 
 // screenData checks the user's items (not on a first run: nothing's there
-// yet) and gathers what the screens show. With updates, it also checks for
-// newer versions (slow).
-func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, first, updates bool) (*screen, error) {
+// yet) and gathers what the screens show. Newer versions come from the
+// check for updates (withUpdates).
+func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, first bool) (*screen, error) {
 	status := map[string]itemStatus{}
 	now := time.Now()
 	if !first {
 		fmt.Printf("Checking what's set up for %s…\n", a.User)
-		if updates {
-			fmt.Println("And for newer versions (apt and mise): this takes a while…")
-		}
 		items, err := plan.Resolve(cat, a.Picks, len(a.MiseExtra) > 0)
 		if err != nil {
 			return nil, err
@@ -281,7 +278,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		if err != nil {
 			return nil, err
 		}
-		us := userStatusOf(ctx, env, a.User, items, a.MiseExtra, loadApplied(o.state, a.User), updates)
+		us := userStatusOf(ctx, env, a.User, items, a.MiseExtra, loadApplied(o.state, a.User), false)
 		_ = saveStatus(ctx, env, o.state, us, now)
 		for _, it := range us.Items {
 			status[it.ID] = it
@@ -317,14 +314,14 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			bi.Changes = [][2]string{c}
 		}
 		if st, ok := status[it.ID]; ok && bi.Picked {
-			bi.State, bi.Detail, bi.Inputs, bi.Updates = st.State, st.Detail, st.Inputs, st.Updates
+			bi.State, bi.Detail, bi.Inputs = st.State, st.Detail, st.Inputs
 		}
 		items = append(items, bi)
 	}
 	for _, t := range a.MiseExtra {
 		bi := &ui.BoardItem{ID: "mise:" + t, Label: t + " (extra mise tool)", Tab: ui.ExtraTab, Picked: true, Source: "mise use -g " + t}
 		if st, ok := status["mise:"+steps.MiseName(t)]; ok {
-			bi.State, bi.Detail, bi.Updates = st.State, st.Detail, st.Updates
+			bi.State, bi.Detail = st.State, st.Detail
 		}
 		items = append(items, bi)
 	}
@@ -378,7 +375,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	if len(addrs) > 0 {
 		sub += "  ·  " + addrs[0].ip
 	}
-	info := ui.HomeInfo{Host: host, User: a.User, Checked: now.Format("15:04")}
+	info := ui.HomeInfo{Host: host, User: a.User}
 	if picked("mcpjungle") && !first {
 		specs := o.mcpSpecs(ctx)
 		// Watchful: servers changed (or never registered) register now.
@@ -413,8 +410,21 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		st := status["mcpjungle-install"].State
 		info.MCPDown = down || st == "down" || st == "missing"
 	}
-	return &screen{info: info, sub: sub, first: first, updates: updates,
+	return &screen{info: info, sub: sub, first: first,
 		tabs: tabs, items: items, settings: settings, connect: strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")}, nil
+}
+
+// withUpdates gives the items the newer versions u found, once it's done.
+func (d *screen) withUpdates(u *updateCheck) {
+	if !u.ready() {
+		return
+	}
+	for _, i := range d.items {
+		if i.Picked {
+			i.Updates = u.ByID[i.ID]
+		}
+	}
+	d.updates, d.info.Checked = true, clock(u.At, time.Now())
 }
 
 // osName is the OS's name and version (/etc/os-release).

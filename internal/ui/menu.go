@@ -30,7 +30,7 @@ const (
 	MenuEdit
 	// MenuApply applies Result.Settings (network access, the look).
 	MenuApply
-	// MenuUpdates checks for newer versions (slow).
+	// MenuUpdates checks for newer versions again, in the background.
 	MenuUpdates
 	// MenuMCP does Result.MCP to an MCP server: add, edit, on, rename or
 	// delete it.
@@ -67,6 +67,13 @@ type menuRow struct {
 	input           string
 }
 
+// UpdatesMsg is a check for newer versions, done: each item's (by ID),
+// and when.
+type UpdatesMsg struct {
+	ByID map[string][]string
+	At   string
+}
+
 // Menu is the screen; see NewMenu.
 type Menu struct {
 	info     HomeInfo
@@ -75,6 +82,9 @@ type Menu struct {
 	settings []*BoardSetting
 	connect  []string
 	checked  bool // updates were checked
+	// wait waits for a check for updates running in the background (nil
+	// for none).
+	wait func() UpdatesMsg
 
 	screen string // home, fix, secrets, updates, settings, access, look, connect, mcp, mcp:server, mcp:delete, mcp:add, mcp:name
 	sel    int
@@ -277,8 +287,11 @@ func (m *Menu) settingsRows() []menuRow {
 		}
 	}
 	out = append(out, menuRow{id: "connect", label: "Connect from a laptop", note: "Docker over SSH, the MCP gateway"})
-	check := menuRow{id: "check", label: "Check for updates", note: "apt and mise; takes a while"}
-	if m.checked {
+	check := menuRow{id: "check", label: "Check for updates", note: "apt and mise, in the background"}
+	switch {
+	case m.wait != nil:
+		check.note = "checking now…"
+	case m.checked:
 		check.label, check.note = "Check again", "none found"
 		if n := len(m.filter(newer)); n > 0 {
 			check.note = plural(n, "update", "updates") + " found"
@@ -300,12 +313,32 @@ func short(label string) string {
 	return s
 }
 
-func (m *Menu) Init() tea.Cmd { return nil }
+// Checking says a check for updates is running: wait waits for it, and
+// the menu shows what it found.
+func (m *Menu) Checking(wait func() UpdatesMsg) *Menu {
+	m.wait = wait
+	return m
+}
+
+func (m *Menu) Init() tea.Cmd {
+	if m.wait == nil {
+		return nil
+	}
+	return func() tea.Msg { return m.wait() }
+}
 
 func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
+	case UpdatesMsg:
+		for _, i := range m.items {
+			if i.Picked {
+				i.Updates = v.ByID[i.ID]
+			}
+		}
+		m.wait, m.checked, m.info.Checked = nil, true, v.At
+		m.normalize()
 	case tea.KeyMsg:
 		m.toast = ""
 		m.normalize()
@@ -458,6 +491,8 @@ func (m *Menu) key(k string) tea.Cmd {
 			m.sel++
 		case k == "enter" && strings.HasPrefix(r.id, "change:"):
 			return m.quit(MenuResult{Kind: MenuChange, ID: r.item.ID, Change: strings.TrimPrefix(r.id, "change:")})
+		case k == "enter" && r.id == "check" && m.wait != nil:
+			m.toast = "Checking already: what it finds shows on the home."
 		case k == "enter" && r.id == "check":
 			return m.quit(MenuResult{Kind: MenuUpdates})
 		case k == "enter":
@@ -761,6 +796,8 @@ func (m *Menu) status() []string {
 	}
 	sub := []string{plural(ready, "tool", "tools") + " working"}
 	switch us := len(m.filter(newer)); {
+	case m.wait != nil:
+		sub = append(sub, "checking for updates…")
 	case us > 0:
 		sub = append(sub, plural(us, "update", "updates"))
 	case m.checked:
@@ -768,7 +805,7 @@ func (m *Menu) status() []string {
 	default:
 		sub = append(sub, "updates not checked")
 	}
-	if m.info.Checked != "" {
+	if m.info.Checked != "" && m.wait == nil {
 		sub = append(sub, "checked "+m.info.Checked)
 	}
 	return []string{"  " + head, "  " + muted.Render(strings.Join(sub, " · "))}

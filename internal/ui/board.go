@@ -775,7 +775,9 @@ func (b *Board) header(w int) string {
 		if len(right) == 0 {
 			right = append(right, green.Render("✓ all well"))
 		}
-		right = append(right, muted.Render("checked "+b.info.Checked))
+		if b.info.Checked != "" {
+			right = append(right, muted.Render("updates checked "+b.info.Checked))
+		}
 	}
 	r := strings.Join(right, muted.Render(" · ")) + " "
 	return left + strings.Repeat(" ", max(1, w-lipgloss.Width(left)-lipgloss.Width(r))) + r

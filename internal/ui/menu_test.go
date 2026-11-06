@@ -667,3 +667,30 @@ func TestMenuUpgrade(t *testing.T) {
 		t.Errorf("result %+v, want MenuUpgrade", m.result)
 	}
 }
+
+// A check running in the background: the home says so, Settings won't
+// start another; when it's done, its updates show.
+func TestMenuChecking(t *testing.T) {
+	m := testMenu(true)
+	done := make(chan struct{})
+	m.Checking(func() UpdatesMsg { <-done; return UpdatesMsg{ByID: map[string][]string{"go": {"go 1.25.1 → 1.25.2"}}, At: "09:05"} })
+	if m.Init() == nil || !strings.Contains(m.View(), "checking for updates…") {
+		t.Fatalf("checking:\n%s", m.View())
+	}
+	onRow(m, "settings")
+	mk(m, "enter")
+	onSetting(m, "check")
+	if !strings.Contains(m.View(), "checking now…") {
+		t.Errorf("settings:\n%s", m.View())
+	}
+	mk(m, "enter")
+	if m.result.Kind != MenuQuit || !strings.Contains(m.View(), "Checking already") {
+		t.Errorf("check again while checking: %+v", m.result)
+	}
+	close(done)
+	m.Update(m.wait())
+	mk(m, "esc")
+	if v := m.View(); !strings.Contains(v, "Install 1 update") || !strings.Contains(v, "1 update · checked 09:05") {
+		t.Errorf("done:\n%s", v)
+	}
+}
