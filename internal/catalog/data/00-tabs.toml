@@ -71,7 +71,7 @@ phase = "configure"
 
 [[tab]]
 id = "agents"
-title = "Agents"
+title = "Agent setup"
 phase = "configure"
 
 [[tab]]

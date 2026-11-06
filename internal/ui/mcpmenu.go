@@ -167,7 +167,7 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 			if m.fromBoard {
 				return m.quit(MenuResult{Kind: MenuTools})
 			}
-			m.home()
+			m.back()
 		case up:
 			m.sel = max(0, m.sel-1)
 		case down:

@@ -10,8 +10,7 @@ import (
 func testBoard(first bool) *Board {
 	tabs := []Tab{
 		{ID: "group:DevOps", Title: "DevOps", Sections: []Tab{{ID: "k8s", Title: "Containers & Kubernetes"}, {ID: "iac", Title: "IaC"}}},
-		{ID: "system", Title: "System"},
-		{ID: "__vm__", Title: "This VM", Sections: []Tab{{ID: "logins", Title: "Logins & keys"}, {ID: accessSection, Title: "Who can reach it"}, {ID: machineSection, Title: "This machine"}}},
+		{ID: "group:System", Title: "System", Sections: []Tab{{ID: "system", Title: "System"}, {ID: "logins", Title: "VPN logins"}}},
 	}
 	items := []*BoardItem{
 		{ID: "docker", Label: "Docker Engine", Tab: "k8s", Picked: !first, State: "down", Detail: "docker isn't running"},
@@ -26,9 +25,7 @@ func testBoard(first bool) *Board {
 		}
 		items[0].Pending = "add"
 	}
-	settings := []*BoardSetting{{Key: "mcp", Label: "MCP gateway", Value: "127.0.0.1", Choices: [][2]string{{"127.0.0.1", "this machine only"}, {"vpn", "this machine and your VPNs"}}}}
-	actions := []BoardAction{{ID: "connect", Label: "Connect from a laptop"}, {ID: "refresh", Label: "Check again"}}
-	b := NewBoard(HomeInfo{Host: "vm", User: "ada", Checked: "10:00"}, first, tabs, items, settings, actions, []string{"docker context create vm …"})
+	b := NewBoard(HomeInfo{Host: "vm", User: "ada", Checked: "10:00"}, first, tabs, items)
 	b.Update(tea.WindowSizeMsg{Width: 110, Height: 26})
 	return b
 }
@@ -64,14 +61,20 @@ func press2(b *Board, keys ...string) tea.Cmd {
 	return cmd
 }
 
-// Something needs attention: the board opens on Needs you, with the broken,
-// the values to fill in and the updates; enter fixes, or fills in.
+// What needs attention shows on its own rows, the tabs' marks and the
+// header (the home lists it too; the board has no tab for it); enter fixes,
+// or fills in.
 func TestBoardNeedsYou(t *testing.T) {
 	b := testBoard(false)
 	v := b.View()
-	for _, want := range []string{"Needs you 3", "Broken", "Needs a value", "Updates", "✗ 1 to fix", "○ 1 to fill in", "stopped: docker isn't running", "enter fix"} {
+	for _, want := range []string{"DevOps ✗", "System ○", "✗ 1 to fix", "○ 1 to fill in", "stopped: docker isn't running", "enter fix"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("view lacks %q:\n%s", want, v)
+		}
+	}
+	for _, gone := range []string{"Needs you", "Review", "This VM"} {
+		if strings.Contains(v, gone) {
+			t.Errorf("view has %q:\n%s", gone, v)
 		}
 	}
 	press2(b, "enter") // Docker: the fix panel
@@ -83,7 +86,7 @@ func TestBoardNeedsYou(t *testing.T) {
 		t.Errorf("result %+v", b.result)
 	}
 	b = testBoard(false)
-	press2(b, "down", "enter") // Agent API keys: fill in first, or change
+	press2(b, "right", "down", "enter") // System, VPN logins: Agent API keys: fill in first, or change
 	if b.panel == nil || !strings.Contains(b.View(), "Fill in 1 value") || !strings.Contains(b.View(), "Change the keys") {
 		t.Fatalf("no fill-in panel:\n%s", b.View())
 	}
@@ -93,39 +96,32 @@ func TestBoardNeedsYou(t *testing.T) {
 	}
 	// A value left empty doesn't hide the item's answers (the MCP servers).
 	b = testBoard(false)
-	press2(b, "down", "enter", "down", "enter")
+	press2(b, "right", "down", "enter", "down", "enter")
 	if b.result.Kind != BoardChange || b.result.ID != "keys" || b.result.Change != "keys" {
 		t.Errorf("change: result %+v", b.result)
 	}
 }
 
-// Space queues adding (and removing); a setting changes through enter;
-// Review lists the queue; a asks, then applies.
+// Space queues adding (and removing); the queue shows on its own line; a
+// asks, then applies.
 func TestBoardQueueAndApply(t *testing.T) {
 	b := testBoard(false)
-	press2(b, "right", "right") // System
+	press2(b, "right") // System
 	if !strings.Contains(b.View(), "WireGuard server") {
 		t.Fatalf("not on System:\n%s", b.View())
 	}
 	press2(b, "space")
-	press2(b, "right", "down", "enter") // This VM: Who can reach it, MCP gateway
-	if b.panel == nil {
-		t.Fatalf("no setting panel:\n%s", b.View())
-	}
-	press2(b, "down", "enter")
-	if b.queued() != 2 || !strings.Contains(b.View(), "2 change(s) queued") || !strings.Contains(b.View(), "APPLY 2") {
-		t.Errorf("queue:\n%s", b.View())
-	}
-	press2(b, "right") // Review
-	if v := b.View(); !strings.Contains(v, "[+]") || !strings.Contains(v, "this machine only → this machine and your VPNs") {
-		t.Errorf("review:\n%s", v)
+	press2(b, "left", "down", "down", "space") // DevOps: Ansible
+	if v := b.View(); b.queued() != 2 || !strings.Contains(v, "2 change(s) queued") || !strings.Contains(v, "APPLY 2") ||
+		!strings.Contains(v, "Queued: + Ansible, + WireGuard server") {
+		t.Errorf("queue:\n%s", v)
 	}
 	press2(b, "a")
-	if b.panel == nil || !strings.Contains(b.View(), "+ WireGuard server") {
+	if b.panel == nil || !strings.Contains(b.View(), "+ WireGuard server") || strings.Contains(b.View(), "Queued:") {
 		t.Fatalf("no confirm:\n%s", b.View())
 	}
 	press2(b, "enter")
-	if r := b.result; r.Kind != BoardApply || strings.Join(r.Adds, " ") != "wg" || r.Settings["mcp"] != "vpn" {
+	if r := b.result; r.Kind != BoardApply || strings.Join(r.Adds, " ") != "ansible wg" {
 		t.Errorf("result %+v", r)
 	}
 }
@@ -169,49 +165,12 @@ func TestBoardSearch(t *testing.T) {
 	}
 }
 
-// This VM's actions: connect shows how, in a panel.
-func TestBoardConnect(t *testing.T) {
-	b := testBoard(false)
-	b.Open("__vm__")
-	press2(b, "down", "down", "enter")
-	if b.panel == nil || !strings.Contains(b.View(), "docker context create vm") {
-		t.Errorf("connect:\n%s", b.View())
-	}
-	press2(b, "esc")
-	if b.panel != nil {
-		t.Error("esc didn't close the panel")
-	}
-}
-
-// A setting of another section (Look): listed there, its own panel title,
-// queued like the rest.
-func TestBoardLook(t *testing.T) {
-	b := testBoard(false)
-	secs := b.tabs[2].Sections // Look goes before This machine, as yardo puts it
-	b.tabs[2].Sections = append(secs[:len(secs)-1:len(secs)-1], Tab{ID: "__look__", Title: "Look"}, secs[len(secs)-1])
-	b.settings = append(b.settings, &BoardSetting{Key: "accent", Label: "Accent colour", Section: "__look__", Value: "coral",
-		Choices: [][2]string{{"coral", "Coral"}, {"lagoon", "Lagoon (aqua blue)"}}})
-	b.Open("__vm__")
-	v := b.View()
-	if !strings.Contains(v, "Look") || !strings.Contains(v, "Accent colour") || strings.Index(v, "Accent colour") < strings.Index(v, "MCP gateway") {
-		t.Fatalf("This VM:\n%s", v)
-	}
-	press2(b, "down", "down", "enter")
-	if b.panel == nil || b.panel.title != "Accent colour" {
-		t.Fatalf("panel %+v", b.panel)
-	}
-	press2(b, "down", "enter", "a", "enter")
-	if b.result.Kind != BoardApply || b.result.Settings["accent"] != "lagoon" {
-		t.Errorf("result %+v", b.result)
-	}
-}
-
 // Enter on a picked item with answers offers to change them; choosing it
 // leaves the board with the item and the answer's key.
 func TestBoardChange(t *testing.T) {
 	tabs := []Tab{{ID: "git", Title: "Git & SSH"}}
 	items := []*BoardItem{{ID: "gitid", Label: "Git identity", Tab: "git", Picked: true, State: "ok", Changes: [][2]string{{"git name and email", "git"}}}}
-	b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items, nil, nil, nil)
+	b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items)
 	b.Update(tea.WindowSizeMsg{Width: 110, Height: 26})
 	if !strings.Contains(b.View(), "enter change") {
 		t.Errorf("footer lacks enter change:\n%s", b.View())
@@ -236,7 +195,7 @@ func TestBoardLabelWidth(t *testing.T) {
 		{ID: "a", Label: "Tailscale", Tab: "net"},
 		{ID: "b", Label: long, Tab: "net", Picked: true, State: "drifted", Detail: "file /etc/x"},
 	}
-	b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items, nil, nil, nil)
+	b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items)
 	b.Update(tea.WindowSizeMsg{Width: 200, Height: 26})
 	if v := b.View(); !strings.Contains(v, long) || !strings.Contains(v, "edited by hand: file /etc/x") {
 		t.Errorf("wide: label or note cut:\n%s", v)
@@ -253,7 +212,7 @@ func TestBoardReadyItemActions(t *testing.T) {
 	tabs := []Tab{{ID: "shell", Title: "Shell & CLI"}}
 	mk := func() *Board {
 		items := []*BoardItem{{ID: "helpers", Label: "Shell helpers", Tab: "shell", Picked: true, State: "ok"}}
-		b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items, nil, nil, nil)
+		b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items)
 		b.Update(tea.WindowSizeMsg{Width: 110, Height: 26})
 		return b
 	}
@@ -278,12 +237,12 @@ func TestBoardReadyItemActions(t *testing.T) {
 // Open goes to a tab by its id; an unknown id leaves the tab as it was.
 func TestBoardOpen(t *testing.T) {
 	b := testBoard(false)
-	b.Open("__vm__")
-	if b.key() != "__vm__" || !strings.Contains(b.View(), "MCP gateway") {
-		t.Fatalf("Open(__vm__): on %q", b.key())
+	b.Open("group:System")
+	if b.key() != "group:System" || !strings.Contains(b.View(), "WireGuard server") {
+		t.Fatalf("Open(group:System): on %q", b.key())
 	}
 	b.Open("nope")
-	if b.key() != "__vm__" {
+	if b.key() != "group:System" {
 		t.Errorf("Open(nope) moved to %q", b.key())
 	}
 }
@@ -291,46 +250,38 @@ func TestBoardOpen(t *testing.T) {
 // From the menu, the footer and the queue's warning say esc goes back.
 func TestBoardFromMenu(t *testing.T) {
 	b := testBoard(false)
-	if f := b.footer(nil); !strings.Contains(f, "quit") || strings.Contains(f, "menu") {
+	if f := b.footer(nil); !strings.Contains(f, "quit") || strings.Contains(f, "home") {
 		t.Errorf("standalone footer: %s", f)
 	}
 	b.SetFromMenu(true)
-	if f := b.footer(nil); !strings.Contains(f, "menu") || strings.Contains(f, "quit") {
+	if f := b.footer(nil); !strings.Contains(f, "esc home") || strings.Contains(f, "quit") {
 		t.Errorf("from the menu footer: %s", f)
 	}
-	b.Open("system")
+	b.Open("group:System")
 	press2(b, "space", "esc")
 	if !strings.Contains(b.flash, "esc again goes back without them") {
 		t.Errorf("flash %q", b.flash)
 	}
 }
 
-// ctrl-a adds the Extra tab; the tab shown stays the one it was (Review,
-// past which Extra goes).
+// ctrl-a adds the Extra tab; the tab shown stays the one it was.
 func TestBoardExtraKeepsTab(t *testing.T) {
 	b := testBoard(false)
-	b.Open(boardReview)
+	b.Open("group:System")
 	press2(b, "/", "p", "u", "l", "u", "m", "i", "ctrl+a")
-	if b.key() != boardReview {
-		t.Fatalf("on %q, want Review", b.key())
+	if b.key() != "group:System" {
+		t.Fatalf("on %q, want System", b.key())
 	}
-	if v := b.View(); !strings.Contains(v, "pulumi (extra mise tool)") {
-		t.Errorf("Review lacks the extra:\n%s", v)
+	if v := b.View(); !strings.Contains(v, "Queued: + pulumi") {
+		t.Errorf("the queue lacks the extra:\n%s", v)
 	}
 }
 
-// Enter on an access setting: titled like the menu's screen, with what the
-// highlighted choice means.
-func TestBoardAccessSay(t *testing.T) {
+// Search opens the board searching, as typing / does.
+func TestBoardSearchOpen(t *testing.T) {
 	b := testBoard(false)
-	b.Open("__vm__")
-	press2(b, "down", "enter")
-	v := b.View()
-	if !strings.Contains(v, "Who can reach the MCP gateway") || !strings.Contains(v, accessSay["mcp"]["127.0.0.1"]) {
-		t.Fatalf("access panel:\n%s", v)
-	}
-	press2(b, "down")
-	if v := b.View(); !strings.Contains(v, accessSay["mcp"]["vpn"]) || strings.Contains(v, accessSay["mcp"]["127.0.0.1"]) {
-		t.Errorf("after down:\n%s", v)
+	b.Search("wire")
+	if v := b.View(); !strings.Contains(v, "WireGuard server") || !strings.Contains(v, "/wire_") {
+		t.Errorf("search:\n%s", v)
 	}
 }

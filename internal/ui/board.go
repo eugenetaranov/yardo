@@ -12,12 +12,12 @@ import (
 	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
-// The board is yardo's one screen: the picker's tabs and checklist, where
-// a ticked box means picked (installed) and a mark beside it its health.
+// The board is the Tools screen: the picker's tabs and checklist, where a
+// ticked box means picked (installed) and a mark beside it its health.
 // Space queues adding or removing an item, enter acts on the row (fix it,
-// fill in its value, change a setting, show how to connect), a applies the
-// queue. A "Needs you" tab comes first while something does; "This VM"
-// holds the machine's settings and actions; "Review" lists the queue.
+// fill in its value, change an answer, reinstall it), a applies the queue,
+// which shows on a line above the keys. The machine's settings are the
+// menu's (Settings).
 
 // HomeInfo is what the board's header says.
 type HomeInfo struct {
@@ -101,16 +101,16 @@ type BoardItem struct {
 	Changes [][2]string
 }
 
-// BoardSetting is one of This VM's settings: who can reach a service, or
-// how things look.
+// BoardSetting is one of the menu's settings: who can reach a service
+// (Network access), or how things look.
 type BoardSetting struct {
 	Key, Label string
-	// Section is This VM's section it's listed in ("": who can reach it).
+	// Section is LookSection for the look ("": who can reach it).
 	Section string
 	// Choices are value and label pairs, in order.
 	Choices [][2]string
-	// Value is the saved choice; Pending the one queued ("" for none).
-	Value, Pending string
+	// Value is the saved choice.
+	Value string
 	// Swatches are a colour per choice, shown beside it (the accent).
 	Swatches map[string]string
 }
@@ -123,10 +123,6 @@ func (s *BoardSetting) label(v string) string {
 	}
 	return v
 }
-
-// BoardAction is a row that does something (This VM): connect, check
-// for updates, check again.
-type BoardAction struct{ ID, Label, Note string }
 
 // BoardKind is what the board was left with.
 type BoardKind int
@@ -142,10 +138,6 @@ const (
 	// BoardChange asks Result.ID's Result.Change question again, then
 	// re-applies it.
 	BoardChange
-	// BoardRefresh checks everything again; BoardUpdates checks for newer
-	// versions too.
-	BoardRefresh
-	BoardUpdates
 )
 
 // BoardResult is what the board was left with, and the queue.
@@ -157,22 +149,18 @@ type BoardResult struct {
 	// Change is BoardChange's answer to change (a BoardItem.Changes key).
 	Change        string
 	Adds, Removes []string
-	// Settings are the queued settings, key to value.
+	// Settings are settings to change, key to value (the menu's).
 	Settings map[string]string
 }
 
 // Board is the screen; see NewBoard.
 type Board struct {
-	info     HomeInfo
-	first    bool
-	tabs     []Tab
-	items    []*BoardItem
-	settings []*BoardSetting
-	actions  []BoardAction
-	connect  []string
+	info  HomeInfo
+	first bool
+	tabs  []Tab
+	items []*BoardItem
 
-	// tabID is the current tab; tab its index when last found, for when
-	// the tab goes (Needs you, once nothing does).
+	// tabID is the current tab; tab its index when last found.
 	tabID     string
 	tab       int
 	fromMenu  bool
@@ -191,31 +179,21 @@ type Board struct {
 type panel struct {
 	title string
 	lines []string
-	// opts are the choices (label, value); sel the selected one; swatches
-	// a colour per value, shown beside its choice.
-	opts     [][2]string
-	sel      int
-	swatches map[string]string
-	// say is a sentence per value, shown for the selected choice.
-	say map[string]string
+	// opts are the choices (label, value); sel the selected one.
+	opts [][2]string
+	sel  int
 	// on is what a choice does.
 	on func(value string) tea.Cmd
 }
 
-// Section ids the board adds to This VM.
-const (
-	accessSection  = "__access__"
-	machineSection = "__machine__"
-	needsTab       = "__needs__"
-	boardReview    = "__review__"
-)
+// LookSection is the look's settings' Section (the accent colour).
+const LookSection = "__look__"
 
-// NewBoard builds the board: tabs (each with sections, or none), the
-// items, This VM's settings and actions, and connect (how to reach the
-// machine from a laptop, shown by its action). first: nothing is
-// installed yet (no marks; the defaults come queued).
-func NewBoard(info HomeInfo, first bool, tabs []Tab, items []*BoardItem, settings []*BoardSetting, actions []BoardAction, connect []string) *Board {
-	b := &Board{info: info, first: first, items: items, settings: settings, actions: actions, connect: connect,
+// NewBoard builds the board: tabs (each with sections, or none) and the
+// items. first: nothing is installed yet (no marks; the defaults come
+// queued).
+func NewBoard(info HomeInfo, first bool, tabs []Tab, items []*BoardItem) *Board {
+	b := &Board{info: info, first: first, items: items,
 		cursor: map[string]int{}, width: 100, height: 30}
 	if slices.ContainsFunc(items, func(i *BoardItem) bool { return i.Tab == ExtraTab }) {
 		tabs = append(slices.Clone(tabs), Tab{ID: ExtraTab, Title: "Extra"})
@@ -224,8 +202,10 @@ func NewBoard(info HomeInfo, first bool, tabs []Tab, items []*BoardItem, setting
 	return b
 }
 
-// Open shows the tab with id (This VM is "__vm__"); nothing when there's
-// no such tab.
+// Search opens the board searching for q, as typing does.
+func (b *Board) Search(q string) { b.search = &q }
+
+// Open shows the tab with id; nothing when there's no such tab.
 func (b *Board) Open(tabID string) {
 	tabs := b.visibleTabs()
 	if n := slices.IndexFunc(tabs, func(t Tab) bool { return t.ID == tabID }); n >= 0 {
@@ -252,31 +232,12 @@ func (b *Board) current(tabs []Tab) int {
 	return b.tab
 }
 
-// visibleTabs are the tabs as shown: Needs you first while something
-// does, then the board's, then Review.
-func (b *Board) visibleTabs() []Tab {
-	var out []Tab
-	if len(b.needs()) > 0 {
-		out = append(out, Tab{ID: needsTab, Title: "Needs you"})
-	}
-	out = append(out, b.tabs...)
-	return append(out, Tab{ID: boardReview, Title: "Review"})
-}
+// visibleTabs are the tabs as shown.
+func (b *Board) visibleTabs() []Tab { return b.tabs }
 
 func fixable(i *BoardItem) bool { return i.Picked && Fixable(i.State) }
 func secret(i *BoardItem) bool  { return i.Picked && i.State == "secret" }
 func newer(i *BoardItem) bool   { return i.Picked && len(i.Updates) > 0 }
-
-// needs are the items Needs you lists.
-func (b *Board) needs() []*BoardItem {
-	var out []*BoardItem
-	for _, i := range b.items {
-		if fixable(i) || secret(i) || newer(i) {
-			out = append(out, i)
-		}
-	}
-	return out
-}
 
 func (b *Board) count(f func(*BoardItem) bool) int {
 	n := 0
@@ -288,38 +249,25 @@ func (b *Board) count(f func(*BoardItem) bool) int {
 	return n
 }
 
-// queued counts the queue: items and settings.
+// queued counts the queue.
 func (b *Board) queued() int {
-	n := b.count(func(i *BoardItem) bool { return i.Pending != "" })
-	for _, s := range b.settings {
-		if s.Pending != "" {
-			n++
-		}
-	}
-	return n
+	return b.count(func(i *BoardItem) bool { return i.Pending != "" })
 }
 
 // row is one line of the list: a heading, or something to act on.
 type row struct {
-	head    string
-	text    string
-	item    *BoardItem
-	setting *BoardSetting
-	action  *BoardAction
-	where   string // search results: the item's tab
+	head  string
+	text  string
+	item  *BoardItem
+	where string // search results: the item's tab
 }
 
 func (r row) selectable() bool { return r.head == "" && r.text == "" }
 
 // label is what a selectable row says.
 func (r row) label() string {
-	switch {
-	case r.item != nil:
+	if r.item != nil {
 		return r.item.Label
-	case r.setting != nil:
-		return r.setting.Label
-	case r.action != nil:
-		return r.action.Label
 	}
 	return ""
 }
@@ -367,59 +315,12 @@ func (b *Board) rows() []row {
 	}
 	tabs := b.visibleTabs()
 	t := tabs[b.current(tabs)]
-	switch t.ID {
-	case needsTab:
-		add := func(head string, f func(*BoardItem) bool) {
-			first := true
-			for _, i := range b.items {
-				if f(i) {
-					if first {
-						out = append(out, row{head: head})
-						first = false
-					}
-					out = append(out, row{item: i})
-				}
-			}
-		}
-		add("Broken", fixable)
-		add("Needs a value", secret)
-		add("Updates", newer)
-		return out
-	case boardReview:
-		for _, i := range b.items {
-			if i.Pending != "" {
-				out = append(out, row{item: i})
-			}
-		}
-		for _, s := range b.settings {
-			if s.Pending != "" {
-				out = append(out, row{setting: s})
-			}
-		}
-		if len(out) == 0 {
-			out = append(out, row{text: "Nothing queued: space on a row adds or removes it, enter on a setting changes it."})
-		}
-		return out
-	}
 	heads := len(t.Sections) > 0
 	for _, s := range sectionsOf(t) {
 		var rs []row
-		for _, st := range b.settings {
-			if st.Section == s.ID || (st.Section == "" && s.ID == accessSection) {
-				rs = append(rs, row{setting: st})
-			}
-		}
-		switch s.ID {
-		case accessSection:
-		case machineSection:
-			for i := range b.actions {
-				rs = append(rs, row{action: &b.actions[i]})
-			}
-		default:
-			for _, i := range b.items {
-				if i.Tab == s.ID {
-					rs = append(rs, row{item: i})
-				}
+		for _, i := range b.items {
+			if i.Tab == s.ID {
+				rs = append(rs, row{item: i})
 			}
 		}
 		if len(rs) == 0 {
@@ -505,11 +406,6 @@ func (b *Board) done(k BoardKind, id string) tea.Cmd {
 			b.result.Removes = append(b.result.Removes, i.ID)
 		}
 	}
-	for _, s := range b.settings {
-		if s.Pending != "" {
-			b.result.Settings[s.Key] = s.Pending
-		}
-	}
 	return tea.Quit
 }
 
@@ -544,11 +440,8 @@ func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 	case "right", "l", "tab":
 		b.tabID = tabs[(cur+1)%len(tabs)].ID
 	case " ":
-		switch {
-		case r != nil && r.item != nil:
+		if r != nil && r.item != nil {
 			b.toggle(r.item)
-		case r != nil && r.setting != nil:
-			r.setting.Pending = ""
 		}
 	case "enter":
 		return b.act(r)
@@ -646,44 +539,6 @@ func (b *Board) act(r *row) tea.Cmd {
 		return nil
 	}
 	switch {
-	case r.setting != nil:
-		s := r.setting
-		cur := s.Value
-		if s.Pending != "" {
-			cur = s.Pending
-		}
-		p := &panel{title: s.Label, swatches: s.Swatches}
-		if s.Section == "" || s.Section == accessSection {
-			p.title = "Who can reach the " + s.Label
-			p.say = accessSay[s.Key]
-		}
-		for n, c := range s.Choices {
-			mark := "( ) "
-			if c[0] == s.Value {
-				mark = "(•) "
-			}
-			p.opts = append(p.opts, [2]string{mark + c[1], c[0]})
-			if c[0] == cur {
-				p.sel = n
-			}
-		}
-		p.on = func(v string) tea.Cmd {
-			s.Pending = ""
-			if v != s.Value {
-				s.Pending = v
-			}
-			return nil
-		}
-		b.panel = p
-	case r.action != nil:
-		switch r.action.ID {
-		case "connect":
-			b.panel = &panel{title: "Connect from a laptop", lines: b.connect}
-		case "updates":
-			return b.done(BoardUpdates, "")
-		case "refresh":
-			return b.done(BoardRefresh, "")
-		}
 	case r.item != nil:
 		i := r.item
 		switch {
@@ -776,11 +631,6 @@ func (b *Board) confirm() {
 			lines = append(lines, "- "+i.Label+" (yardo stops managing it; it stays installed)")
 		}
 	}
-	for _, s := range b.settings {
-		if s.Pending != "" {
-			lines = append(lines, "~ "+s.Label+": "+s.label(s.Pending))
-		}
-	}
 	b.panel = &panel{title: fmt.Sprintf("Apply %d change(s)?", b.queued()), lines: lines,
 		opts: [][2]string{{"Apply (asks what new items need, then installs)", "apply"}, {"Not yet", "no"}},
 		on: func(v string) tea.Cmd {
@@ -836,16 +686,6 @@ func mark(i *BoardItem) (string, lipgloss.Style) {
 
 // note is what a row says after its label, and its style.
 func (b *Board) note(r row) (string, lipgloss.Style) {
-	switch {
-	case r.setting != nil:
-		s := r.setting
-		if s.Pending != "" {
-			return s.label(s.Value) + " → " + s.label(s.Pending), accentBd
-		}
-		return s.label(s.Value), muted
-	case r.action != nil:
-		return r.action.Note, muted
-	}
 	i := r.item
 	pre := ""
 	if r.where != "" {
@@ -968,24 +808,10 @@ func (b *Board) tabBar(w int) string {
 	cur := b.current(tabs)
 	var parts []string
 	for n, t := range tabs {
-		badge := ""
-		switch t.ID {
-		case needsTab:
-			badge = fmt.Sprintf(" %d", len(b.needs()))
-		case boardReview:
-			if q := b.queued(); q > 0 {
-				badge = fmt.Sprintf(" %d", q)
-			}
-		default:
-			badge = [...]string{"", " ↑", " ○", " ✗"}[worst[t.ID]]
-		}
-		label := " " + t.Title + badge + " "
-		switch {
-		case n == cur && b.search == nil:
+		label := " " + t.Title + [...]string{"", " ↑", " ○", " ✗"}[worst[t.ID]] + " "
+		if n == cur && b.search == nil {
 			parts = append(parts, tabOn.Render(label))
-		case t.ID == needsTab:
-			parts = append(parts, red.Render(label))
-		default:
+		} else {
 			parts = append(parts, muted.Render(label))
 		}
 	}
@@ -1008,10 +834,6 @@ func (b *Board) footer(r *row) string {
 		first := k("enter", "details")
 		switch {
 		case r == nil:
-		case r.setting != nil:
-			first = k("enter", "change")
-		case r.action != nil:
-			first = k("enter", "open")
 		case r.item.Pending != "":
 			first = k("space", "cancel")
 		case !r.item.Picked:
@@ -1032,7 +854,7 @@ func (b *Board) footer(r *row) string {
 		}
 		leave := k("q", "quit")
 		if b.fromMenu {
-			leave = k("esc", "menu")
+			leave = k("esc", "home")
 		}
 		keys = append(keys, k("←→", "tabs"), k("/", "search"), leave)
 	}
@@ -1062,24 +884,29 @@ func (b *Board) View() string {
 			}
 		}
 		for n, o := range p.opts {
-			sw := ""
-			if hex, ok := p.swatches[o[1]]; ok {
-				sw = lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Render("███") + " "
-			}
-			line := "  " + sw + o[0]
+			line := "  " + o[0]
 			if n == p.sel {
-				line = "› " + sw + rowOn.Render(padTo(o[0], w-14))
+				line = "› " + rowOn.Render(padTo(o[0], w-14))
 			}
 			pl = append(pl, " "+accentBd.Render("│")+" "+line)
 		}
-		if p.sel < len(p.opts) && p.say[p.opts[p.sel][1]] != "" {
-			for _, wl := range wrap(p.say[p.opts[p.sel][1]], w-8) {
-				pl = append(pl, " "+accentBd.Render("│")+"  "+muted.Render(wl))
-			}
-		}
 		pl = append(pl, " "+accentBd.Render("└"+strings.Repeat("─", max(0, w-4))))
 	}
-	listH := max(1, h-5-len(pl))
+	// The queue, on a line of its own above the keys.
+	var ql []string
+	if b.queued() > 0 && b.panel == nil {
+		var q []string
+		for _, i := range b.items {
+			switch i.Pending {
+			case "add":
+				q = append(q, "+ "+short(i.Label))
+			case "remove":
+				q = append(q, "- "+short(i.Label))
+			}
+		}
+		ql = append(ql, " "+accentBd.Render("Queued: ")+runewidth.Truncate(strings.Join(q, ", "), max(10, w-24), "…")+muted.Render("   a applies"))
+	}
+	listH := max(1, h-5-len(pl)-len(ql))
 	// Labels as wide as the longest one, leaving the notes beside them
 	// room (up to 2/5 of the screen) when any row has one.
 	// Each row's note, worked out once.
@@ -1123,25 +950,17 @@ func (b *Board) View() string {
 			out = append(out, "  "+muted.Render(x.text))
 			continue
 		}
-		box, mk, ms, label := "   ", " ", muted, x.label()
+		i, label := x.item, x.label()
+		box := "[ ]"
 		switch {
-		case x.item != nil:
-			i := x.item
-			box = "[ ]"
-			switch {
-			case i.Pending == "add":
-				box = "[+]"
-			case i.Pending == "remove":
-				box = "[-]"
-			case i.Picked:
-				box = "[x]"
-			}
-			mk, ms = mark(i)
-		case x.setting != nil:
-			mk, ms = "›", muted
-		case x.action != nil:
-			mk, ms = "›", accent
+		case i.Pending == "add":
+			box = "[+]"
+		case i.Pending == "remove":
+			box = "[-]"
+		case i.Picked:
+			box = "[x]"
 		}
+		mk, ms := mark(i)
 		note, ns := notes[n].text, notes[n].style
 		pointer := " "
 		if n == cur && b.panel == nil {
@@ -1173,6 +992,7 @@ func (b *Board) View() string {
 		out = append(out, "")
 	}
 	out = append(out, pl...)
+	out = append(out, ql...)
 	out = append(out, rule, b.footer(r))
 	return strings.Join(out, "\n")
 }

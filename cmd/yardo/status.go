@@ -245,8 +245,8 @@ var changes = map[string][2]string{
 }
 
 // screen is what the menu and the board show: every item, ticked when
-// picked, with its health; the access settings; This VM's actions; how to
-// connect from a laptop.
+// picked, with its health; the settings (who can reach what, the look);
+// how to connect from a laptop.
 type screen struct {
 	info     ui.HomeInfo
 	sub      string
@@ -255,9 +255,12 @@ type screen struct {
 	tabs     []ui.Tab
 	items    []*ui.BoardItem
 	settings []*ui.BoardSetting
-	actions  []ui.BoardAction
 	connect  []string
 }
+
+// configureInto is the board tab each configure tab is listed under (a
+// group's tab), when not a tab of its own.
+var configureInto = map[string]string{"agents": "group:AI", "logins": "group:System"}
 
 // screenData checks the user's items (not on a first run: nothing's there
 // yet) and gathers what the screens show. With updates, it also checks for
@@ -284,16 +287,20 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			status[it.ID] = it
 		}
 	}
-	// The install tabs, then This VM: the configure tabs, who can reach
-	// what, and the machine's actions.
+	// The install tabs, with the configure tabs joined to them: Agent
+	// setup under AI, VPN logins under System, Git & SSH a tab of its own.
+	// Who can reach what (sysconf's visible items) is the menu's.
 	tabs := uiTabs(cat.PhaseTabs(catalog.PhaseInstall))
-	vm := ui.Tab{ID: "__vm__", Title: "This VM"}
 	for _, t := range cat.PhaseTabs(catalog.PhaseConfigure) {
-		vm.Sections = append(vm.Sections, ui.Tab{ID: t.ID, Title: t.Title})
+		if t.ID == "sysconf" {
+			continue
+		}
+		if n := slices.IndexFunc(tabs, func(u ui.Tab) bool { return u.ID == configureInto[t.ID] }); n >= 0 {
+			tabs[n].Sections = append(tabs[n].Sections, ui.Tab{ID: t.ID, Title: t.Title})
+		} else {
+			tabs = append(tabs, ui.Tab{ID: t.ID, Title: t.Title})
+		}
 	}
-	vm.Sections = append(vm.Sections, ui.Tab{ID: "__access__", Title: "Network access"}, ui.Tab{ID: "__look__", Title: "Look"},
-		ui.Tab{ID: "__machine__", Title: "Status & updates"})
-	tabs = append(tabs, vm)
 
 	picked := func(id string) bool { return slices.Contains(a.Picks, id) }
 	var items []*ui.BoardItem
@@ -354,7 +361,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			{"off", "off: Docker over SSH only"}, {"lan", "over TLS, from the local network and your VPNs"}, {"vpn", "over TLS, from your VPNs only"}}})
 	}
 	// The accent colour: yardo's, the prompt's, tmux's.
-	look := &ui.BoardSetting{Key: "accent", Label: "Accent colour", Section: "__look__", Value: a.Accent, Swatches: map[string]string{}}
+	look := &ui.BoardSetting{Key: "accent", Label: "Accent colour", Section: ui.LookSection, Value: a.Accent, Swatches: map[string]string{}}
 	if look.Value == "" {
 		look.Value = steps.Accents[0].Key
 	}
@@ -363,11 +370,6 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		look.Swatches[c.Key] = c.Hex
 	}
 	settings = append(settings, look)
-	actions := []ui.BoardAction{
-		{ID: "connect", Label: "Connect from a laptop", Note: "Docker over SSH, the MCP gateway"},
-		{ID: "updates", Label: "Check for updates", Note: "apt and mise; takes a while"},
-		{ID: "refresh", Label: "Check again", Note: "checked " + now.Format("15:04")},
-	}
 	var buf strings.Builder
 	addrs := addresses()
 	printConnect(&buf, a, addrs, withNames(ctx, steps.OSExec{}, addrs))
@@ -412,7 +414,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		info.MCPDown = down || st == "down" || st == "missing"
 	}
 	return &screen{info: info, sub: sub, first: first, updates: updates,
-		tabs: tabs, items: items, settings: settings, actions: actions, connect: strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")}, nil
+		tabs: tabs, items: items, settings: settings, connect: strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")}, nil
 }
 
 // osName is the OS's name and version (/etc/os-release).
@@ -433,9 +435,6 @@ func osName() string {
 func (d *screen) forget() {
 	for _, i := range d.items {
 		i.Pending = ""
-	}
-	for _, s := range d.settings {
-		s.Pending = ""
 	}
 }
 

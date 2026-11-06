@@ -380,19 +380,19 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	// lastErr is the last run's, returned then.
 	stay := interactive && len(profs) == 0
 	var lastErr error
-	// The menu first (the board on a first run, or with --ui board); the
-	// board from the menu's "Add or remove tools".
-	menu := o.ui != "board" && !first
-	onBoard := !menu
+	// The menu first (the board on a first run, or with --ui board, esc
+	// on it going to the menu); the board from the menu's Tools.
+	menu := !first
+	onBoard := o.ui == "board" || first
 	updates := false
 	var d *screen
 	// reopen: the menu screen to come back to (the MCP servers, after
 	// deleting one, or from the board), with toast.
 	var reopen, toast string
 	fromBoard := false
-	// tab: the board's tab to open on (This VM, for Change settings);
+	// search: what the board opens searching for (typed on the menu);
 	// checking: updates were just looked for.
-	var tab string
+	var search *string
 	checking := false
 	// flash: the board's line after a run, when it's the board that comes
 	// back.
@@ -443,8 +443,21 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						return lastErr
 					case ui.MenuTools:
 						onBoard = true
-					case ui.MenuSettings:
-						onBoard, tab = true, "__vm__"
+						if res.Search != "" {
+							search = &res.Search
+						}
+					case ui.MenuChange:
+						k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) }}
+						before := *a
+						if sec, err = k.change(ctx, res.Change); errors.Is(err, ui.ErrQuit) {
+							*a, sec = before, creds.New()
+							reopen = "settings"
+							continue // back to Settings, nothing changed
+						} else if err != nil {
+							return err
+						}
+						fix, changed = []string{res.ID}, true
+						break loop
 					case ui.MenuUpdates:
 						d, updates, checking = nil, true, true
 					case ui.MenuUpgrade:
@@ -507,14 +520,14 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					}
 					continue
 				}
-				b := ui.NewBoard(d.info, first, d.tabs, d.items, d.settings, d.actions, d.connect)
+				b := ui.NewBoard(d.info, first, d.tabs, d.items)
 				// From the menu: esc goes back to it.
 				b.SetFromMenu(menu)
 				b.Flash(flash)
 				flash = ""
-				if tab != "" {
-					b.Open(tab)
-					tab = ""
+				if search != nil {
+					b.Search(*search)
+					search = nil
 				}
 				res, err := b.Run()
 				if err != nil {
@@ -527,10 +540,6 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					}
 					d.forget()
 					onBoard = false
-				case ui.BoardRefresh:
-					d = nil
-				case ui.BoardUpdates:
-					d, updates = nil, true
 				case ui.BoardFix:
 					fix = []string{res.ID}
 					break loop
@@ -779,12 +788,12 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		}
 		changed, dropped, d = false, nil, nil
 		first = len(a.Picks) == 0
-		menu = o.ui != "board" && !first
-		onBoard, reopen = !menu, ""
-		if menu {
-			reopen = "home"
-		} else {
+		menu = !first
+		onBoard, reopen = o.ui == "board" || first, ""
+		if onBoard {
 			flash = toast
+		} else {
+			reopen = "home"
 		}
 	}
 }

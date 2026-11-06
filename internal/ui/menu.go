@@ -9,34 +9,35 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// The menu is yardo's calm home: three lines of how the machine is, then a
-// short menu of plain actions that changes with it ("Fix 2 problems",
-// "Fill in 1 secret", "Add or remove tools", "Who can connect", "Change
-// settings", "Connect from a laptop", updates). Each opens one focused
-// screen; esc (or q) comes back. On the home, q quits. Adding and removing
-// tools, and changing settings, open the board.
+// The menu is yardo's calm home: two lines of how the machine is, a row
+// for each thing that needs doing, named by what it does ("Start Docker",
+// "Fill in OPENAI_API_KEY", "Install 3 updates"), then three rows that
+// never move: Tools (the board), MCP servers and Settings. Typing on the
+// home searches the tools. Each row opens one focused screen, or does its
+// thing at once; esc (or q) comes back. On the home, q quits.
 
 // MenuKind is what the menu was left with.
 type MenuKind int
 
 const (
 	MenuQuit MenuKind = iota
-	// MenuTools opens the board, to add or remove tools.
+	// MenuTools opens the board, to add or remove tools (searching for
+	// Result.Search, when it's set).
 	MenuTools
 	// MenuFix re-applies Result.IDs now (Fix all: every problem; ID is
 	// the first); MenuEdit opens its values to fill in (Result.Inputs).
 	MenuFix
 	MenuEdit
-	// MenuApply applies Result.Settings (who can connect).
+	// MenuApply applies Result.Settings (network access, the look).
 	MenuApply
 	// MenuUpdates checks for newer versions (slow).
 	MenuUpdates
 	// MenuMCP does Result.MCP to an MCP server: add, edit, on, rename or
 	// delete it.
 	MenuMCP
-	// MenuSettings opens the board on This VM: git, prompt, dotfiles,
-	// the accent colour.
-	MenuSettings
+	// MenuChange asks Result.ID's Result.Change question again (the git
+	// name, the prompt, the dotfiles repo), then re-applies it.
+	MenuChange
 	// MenuUpgrade installs the newer versions the Updates screen lists
 	// (mise up, apt's only-upgrade), once confirmed.
 	MenuUpgrade
@@ -50,14 +51,21 @@ type MCPAct struct{ Do, Entry, To string }
 type MenuResult struct {
 	Kind     MenuKind
 	ID       string
+	Change   string
+	Search   string
 	IDs      []string
 	Inputs   []string
 	Settings map[string]string
 	MCP      MCPAct
 }
 
-// menuRow is one of the home's actions.
-type menuRow struct{ id, label, note string }
+// menuRow is one of the home's (or Settings') rows: item and input are
+// what a fix or fill-in row acts on.
+type menuRow struct {
+	id, label, note string
+	item            *BoardItem
+	input           string
+}
 
 // Menu is the screen; see NewMenu.
 type Menu struct {
@@ -68,7 +76,7 @@ type Menu struct {
 	connect  []string
 	checked  bool // updates were checked
 
-	screen string // home, fix, secrets, access, connect, updates, mcp, mcp:server, mcp:delete, mcp:add, mcp:name
+	screen string // home, fix, secrets, updates, settings, access, look, connect, mcp, mcp:server, mcp:delete, mcp:add, mcp:name
 	sel    int
 	// The MCP screens: the server and catalog row chosen, the name typed
 	// (for nameFor: a spec to add, or an entry to rename), its error;
@@ -100,16 +108,26 @@ func NewMenu(info HomeInfo, sub string, items []*BoardItem, settings []*BoardSet
 	return m
 }
 
-// access are the settings Who can connect shows: who can reach what,
-// not the look (the accent colour).
-func (m *Menu) access() []*BoardSetting {
+// access are the settings Network access shows: who can reach what.
+func (m *Menu) access() []*BoardSetting { return m.section("") }
+
+// section are the settings in section (LookSection: the accent colour).
+func (m *Menu) section(sec string) []*BoardSetting {
 	var out []*BoardSetting
 	for _, s := range m.settings {
-		if s.Section == "" {
+		if s.Section == sec {
 			out = append(out, s)
 		}
 	}
 	return out
+}
+
+// choices are the settings the access or look screen shows.
+func (m *Menu) choices() []*BoardSetting {
+	if m.screen == "look" {
+		return m.section(LookSection)
+	}
+	return m.access()
 }
 
 func (m *Menu) filter(f func(*BoardItem) bool) []*BoardItem {
@@ -129,27 +147,85 @@ func plural(n int, one, many string) string {
 	return fmt.Sprintf("%d %s", n, many)
 }
 
-// rows are the home's actions, as the machine is now.
-func (m *Menu) rows() []menuRow {
+// fixVerb is a fix row's label: what fixing i does.
+func fixVerb(i *BoardItem) string {
+	n := short(i.Label)
+	switch i.State {
+	case "down":
+		return "Start " + n
+	case "missing":
+		return "Install " + n
+	case "partial":
+		return "Finish setting up " + n
+	case "drifted":
+		return "Restore " + n
+	case "outdated":
+		return "Update " + n + "'s setup"
+	}
+	return "Fix " + n
+}
+
+// fixNote is what a fix row says beside it.
+func fixNote(i *BoardItem) string {
+	switch i.State {
+	case "drifted":
+		return "edited by hand: restoring puts back yardo's version · " + i.Detail
+	case "outdated":
+		return "set up by an older yardo: this one ships newer files"
+	}
+	if i.Detail == "" {
+		return stateWord(i.State)
+	}
+	return stateWord(i.State) + ": " + i.Detail
+}
+
+// todo are the home's rows for what needs doing: each problem (or, with
+// three or more, one row for them all), each value to fill in (or one row
+// for three or more), and the updates.
+func (m *Menu) todo() []menuRow {
 	var out []menuRow
-	if ps := m.filter(fixable); len(ps) > 0 {
+	if ps := m.filter(fixable); len(ps) <= 2 {
+		for _, i := range ps {
+			out = append(out, menuRow{id: "fix:" + i.ID, label: fixVerb(i), note: fixNote(i), item: i})
+		}
+	} else {
 		var why []string
 		for _, i := range ps {
 			why = append(why, short(i.Label)+" "+stateWord(i.State))
 		}
-		out = append(out, menuRow{"fix", "Fix " + plural(len(ps), "problem", "problems"), strings.Join(why, " · ")})
+		out = append(out, menuRow{id: "fix", label: "Fix " + plural(len(ps), "thing", "things"), note: strings.Join(why, " · ")})
 	}
-	if ss := m.filter(secret); len(ss) > 0 {
-		var keys []string
-		for _, i := range ss {
-			for _, in := range i.Inputs {
-				_, k, _ := strings.Cut(in, ": ")
-				keys = append(keys, k)
-			}
+	var ins []menuRow
+	for _, i := range m.filter(secret) {
+		for _, in := range i.Inputs {
+			_, k, _ := strings.Cut(in, ": ")
+			ins = append(ins, menuRow{id: "key:" + i.ID + ":" + k, label: "Fill in " + k, note: short(i.Label) + " needs it · opens its file", item: i, input: in})
 		}
-		out = append(out, menuRow{"secrets", "Fill in " + plural(len(ss), "secret", "secrets"), strings.Join(keys, ", ")})
 	}
-	out = append(out, menuRow{"tools", "Add or remove tools", "VPNs, languages, AI tools, databases and more"})
+	if len(ins) <= 2 {
+		out = append(out, ins...)
+	} else {
+		var keys []string
+		for _, r := range ins {
+			keys = append(keys, strings.TrimPrefix(r.label, "Fill in "))
+		}
+		out = append(out, menuRow{id: "secrets", label: "Fill in " + plural(len(ins), "value", "values"), note: strings.Join(keys, ", ")})
+	}
+	if us := m.filter(newer); len(us) > 0 {
+		var v []string
+		for _, i := range us {
+			v = append(v, strings.Join(i.Updates, ", "))
+		}
+		out = append(out, menuRow{id: "updates", label: "Install " + plural(len(us), "update", "updates"), note: strings.Join(v, " · ")})
+	}
+	return out
+}
+
+// rows are the home's rows, as the machine is now: what needs doing, then
+// Tools, MCP servers (with the gateway) and Settings.
+func (m *Menu) rows() []menuRow {
+	out := m.todo()
+	out = append(out, menuRow{id: "tools", label: "Tools", note: "add or remove: languages, AI, cloud… or just start typing"})
 	if m.hasMCP() {
 		var names []string
 		problems := 0
@@ -168,33 +244,50 @@ func (m *Menu) rows() []menuRow {
 				note += " · " + plural(problems, "needs you", "need you")
 			}
 		}
-		out = append(out, menuRow{"mcp", "MCP servers", note})
+		out = append(out, menuRow{id: "mcp", label: "MCP servers", note: note})
 	}
+	return append(out, menuRow{id: "settings", label: "Settings", note: "network access, git, prompt, look, laptop, updates"})
+}
+
+// changeLabels name the answers Settings can change (BoardItem.Changes'
+// keys); the MCP servers have their own row.
+var changeLabels = map[string]string{"git": "Git name and email", "prompt": "Shell prompt", "dotfiles": "Dotfiles repo"}
+
+// settingsRows are Settings' rows.
+func (m *Menu) settingsRows() []menuRow {
+	var out []menuRow
 	if as := m.access(); len(as) > 0 {
 		var now []string
 		for _, s := range as {
 			now = append(now, s.Label+": "+s.label(s.Value))
 		}
-		out = append(out, menuRow{"access", "Network access", strings.Join(now, " · ")})
+		out = append(out, menuRow{id: "access", label: "Network access", note: strings.Join(now, " · ")})
 	}
-	out = append(out, menuRow{"settings", "Change settings", "git, prompt, dotfiles, accent colour…"})
-	out = append(out, menuRow{"connect", "Connect from a laptop", "Docker over SSH, the MCP gateway"})
-	if us := m.filter(newer); len(us) > 0 {
-		var v []string
-		for _, i := range us {
-			v = append(v, strings.Join(i.Updates, ", "))
+	for _, s := range m.section(LookSection) {
+		out = append(out, menuRow{id: "look", label: s.Label, note: s.label(s.Value) + " · yardo, your prompt and tmux"})
+	}
+	for _, i := range m.items {
+		if !i.Picked {
+			continue
 		}
-		out = append(out, menuRow{"updates", "See " + plural(len(us), "update", "updates"), strings.Join(v, " · ")})
-	} else if !m.checked {
-		out = append(out, menuRow{"check", "Check for updates", "apt and mise; takes a while"})
-	} else {
-		note := "none found"
+		for _, c := range i.Changes {
+			if l, ok := changeLabels[c[1]]; ok {
+				out = append(out, menuRow{id: "change:" + c[1], label: l, note: "asks, then applies it again", item: i})
+			}
+		}
+	}
+	out = append(out, menuRow{id: "connect", label: "Connect from a laptop", note: "Docker over SSH, the MCP gateway"})
+	check := menuRow{id: "check", label: "Check for updates", note: "apt and mise; takes a while"}
+	if m.checked {
+		check.label, check.note = "Check again", "none found"
+		if n := len(m.filter(newer)); n > 0 {
+			check.note = plural(n, "update", "updates") + " found"
+		}
 		if m.info.Checked != "" {
-			note += " at " + m.info.Checked
+			check.note += " at " + m.info.Checked
 		}
-		out = append(out, menuRow{"check", "Check again", note + "; takes a while"})
 	}
-	return out
+	return append(out, check)
 }
 
 // Short is a label without its details: what's in parentheses, or after
@@ -215,10 +308,15 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = v.Width, v.Height
 	case tea.KeyMsg:
 		m.toast = ""
+		m.normalize()
 		var cmd tea.Cmd
-		if m.screen == "mcp:name" {
+		switch {
+		case m.screen == "mcp:name":
 			cmd = m.nameKey(v)
-		} else {
+		case m.screen == "home" && (v.Type == tea.KeyRunes && string(v.Runes) != "q" || v.String() == "/"):
+			// Typing searches the tools.
+			cmd = m.quit(MenuResult{Kind: MenuTools, Search: strings.TrimPrefix(string(v.Runes), "/")})
+		default:
 			cmd = m.key(v.String())
 		}
 		m.normalize()
@@ -240,11 +338,15 @@ func (m *Menu) normalize() {
 	switch m.screen {
 	case "fix":
 		if len(m.filter(fixable)) == 0 {
-			m.home()
+			m.back()
 		}
 	case "secrets":
 		if len(m.filter(secret)) == 0 {
-			m.home()
+			m.back()
+		}
+	case "updates":
+		if len(m.filter(newer)) == 0 {
+			m.back()
 		}
 	case "mcp:server", "mcp:delete":
 		if m.mcpServer() == nil {
@@ -258,8 +360,10 @@ func (m *Menu) normalize() {
 		m.sel = clamp(m.sel, 0, m.fixRows()-1)
 	case "secrets":
 		m.sel = clamp(m.sel, 0, len(m.filter(secret))-1)
-	case "access":
-		m.sel = clamp(m.sel, 0, len(m.access())) // Apply is the last
+	case "settings":
+		m.sel = clamp(m.sel, 0, len(m.settingsRows())-1)
+	case "access", "look":
+		m.sel = clamp(m.sel, 0, len(m.choices())) // Apply is the last
 	case "mcp":
 		m.sel = clamp(m.sel, 0, len(m.mcpServers())) // Add a server is the last
 	case "mcp:server":
@@ -288,18 +392,24 @@ func (m *Menu) quit(r MenuResult) tea.Cmd {
 func (m *Menu) open(screen string) {
 	m.screen, m.sel, m.btn, m.sure = screen, 0, 0, false
 	switch screen {
-	case "access":
+	case "access", "look":
 		m.pick = map[string]string{}
 	case "mcp":
 		m.sortMCP()
 	}
 }
 
-// home goes back, onto the row of the screen it came from.
-func (m *Menu) home() {
+// back goes up a screen (Settings' own go back to it, the rest home),
+// onto the row of the screen it came from.
+func (m *Menu) back() {
 	from := m.screen
 	m.screen, m.sel, m.btn, m.sure = "home", 0, 0, false
-	for n, r := range m.rows() {
+	rows := m.rows
+	switch from {
+	case "access", "look", "connect":
+		m.screen, rows = "settings", m.settingsRows
+	}
+	for n, r := range rows() {
 		if r.id == from {
 			m.sel = n
 		}
@@ -318,7 +428,7 @@ func (m *Menu) key(k string) tea.Cmd {
 	back := k == "esc" || k == "q"
 	switch m.screen {
 	case "home":
-		rs := m.rows()
+		r := m.rows()[m.sel]
 		switch {
 		case up:
 			m.sel--
@@ -328,23 +438,36 @@ func (m *Menu) key(k string) tea.Cmd {
 			return m.quit(MenuResult{Kind: MenuQuit})
 		case k == "esc":
 			m.toast = "q quits"
+		case k == "enter" && strings.HasPrefix(r.id, "fix:"):
+			return m.quit(MenuResult{Kind: MenuFix, ID: r.item.ID, IDs: []string{r.item.ID}})
+		case k == "enter" && strings.HasPrefix(r.id, "key:"):
+			return m.quit(MenuResult{Kind: MenuEdit, ID: r.item.ID, Inputs: []string{r.input}})
+		case k == "enter" && r.id == "tools":
+			return m.quit(MenuResult{Kind: MenuTools})
 		case k == "enter":
-			switch id := rs[m.sel].id; id {
-			case "tools":
-				return m.quit(MenuResult{Kind: MenuTools})
-			case "settings":
-				return m.quit(MenuResult{Kind: MenuSettings})
-			case "check":
-				return m.quit(MenuResult{Kind: MenuUpdates})
-			default:
-				m.open(id)
-			}
+			m.open(r.id)
+		}
+	case "settings":
+		r := m.settingsRows()[m.sel]
+		switch {
+		case back:
+			m.back()
+		case up:
+			m.sel--
+		case down:
+			m.sel++
+		case k == "enter" && strings.HasPrefix(r.id, "change:"):
+			return m.quit(MenuResult{Kind: MenuChange, ID: r.item.ID, Change: strings.TrimPrefix(r.id, "change:")})
+		case k == "enter" && r.id == "check":
+			return m.quit(MenuResult{Kind: MenuUpdates})
+		case k == "enter":
+			m.open(r.id)
 		}
 	case "fix":
 		ps := m.filter(fixable)
 		switch {
 		case back:
-			m.home()
+			m.back()
 		case up:
 			m.sel, m.btn = m.sel-1, 0
 		case down:
@@ -371,7 +494,7 @@ func (m *Menu) key(k string) tea.Cmd {
 		ss := m.filter(secret)
 		switch {
 		case back:
-			m.home()
+			m.back()
 		case up:
 			m.sel--
 		case down:
@@ -379,12 +502,12 @@ func (m *Menu) key(k string) tea.Cmd {
 		case k == "enter" && m.sel < len(ss):
 			return m.quit(MenuResult{Kind: MenuEdit, ID: ss[m.sel].ID, Inputs: ss[m.sel].Inputs})
 		}
-	case "access":
-		as := m.access()
+	case "access", "look":
+		as := m.choices()
 		n := len(as)
 		switch {
 		case back:
-			m.home()
+			m.back()
 		case up:
 			m.sel--
 		case down:
@@ -414,7 +537,7 @@ func (m *Menu) key(k string) tea.Cmd {
 				}
 			}
 			if len(set) == 0 {
-				m.home()
+				m.back()
 				return nil
 			}
 			return m.quit(MenuResult{Kind: MenuApply, Settings: set})
@@ -423,7 +546,7 @@ func (m *Menu) key(k string) tea.Cmd {
 		return m.mcpKey(k, up, down, left, right)
 	case "connect":
 		if back || k == "enter" {
-			m.home()
+			m.back()
 		}
 	case "updates":
 		// enter asks, enter again updates; esc takes the question back.
@@ -431,7 +554,7 @@ func (m *Menu) key(k string) tea.Cmd {
 		case back && m.sure:
 			m.sure = false
 		case back:
-			m.home()
+			m.back()
 		case k == "enter" && m.sure:
 			return m.quit(MenuResult{Kind: MenuUpgrade})
 		case k == "enter" && len(m.filter(newer)) > 0:
@@ -462,36 +585,28 @@ func (m *Menu) View() string {
 
 	switch m.screen {
 	case "home":
-		ps, ss, us := len(m.filter(fixable)), len(m.filter(secret)), len(m.filter(newer))
-		ready := len(m.filter(func(i *BoardItem) bool { return i.Picked && i.State == "ok" }))
-		var sum []string
-		if ps+ss == 0 {
-			sum = append(sum, green.Render("●  Everything is healthy. "+plural(ready, "tool", "tools")+" ready."))
-		} else {
-			sum = append(sum, green.Render("●  "+plural(ready, "tool", "tools")+" ready"))
-			if ps > 0 {
-				sum = append(sum, yellow.Render("▲  "+plural(ps, "needs attention", "need attention")))
+		add(m.status()...)
+		add("")
+		todo, rs := len(m.todo()), m.rows()
+		col := labelCol(rs, w)
+		for n, r := range rs {
+			if n == todo && todo > 0 {
+				add("  " + muted.Render(strings.Repeat("─", min(60, w-6))))
 			}
-			if ss > 0 {
-				sum = append(sum, accent.Render("○  "+plural(ss, "needs a value", "need a value")))
-			}
+			add(m.row(n == m.sel, r, col, w)...)
 		}
-		if us > 0 {
-			sum = append(sum, keyOn.Render("↑  "+plural(us, "update", "updates")))
+		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("type", "search tools"), k("q", "quit")}, "   ")
+	case "settings":
+		title = "Settings"
+		rs := m.settingsRows()
+		col := labelCol(rs, w)
+		for n, r := range rs {
+			add(m.row(n == m.sel, r, col, w)...)
 		}
-		add("  "+strings.Join(sum, "      "), "", "", "  "+bold.Render("What would you like to do?"), "")
-		for n, r := range m.rows() {
-			note := muted.Render(runewidth.Truncate(r.note, max(4, w-36), "…"))
-			if n == m.sel {
-				add(beside("  "+rowOn.Render(padTo(" › "+r.label, 28))+"  ", 32, w-2, muted, r.note)...)
-			} else {
-				add("     " + padTo(r.label, 25) + "  " + note)
-			}
-		}
-		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("q", "quit")}, "   ")
+		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("esc", "back")}, "   ")
 	case "fix":
 		ps := m.filter(fixable)
-		title = "Fix " + plural(len(ps), "problem", "problems")
+		title = "Fix " + plural(len(ps), "thing", "things")
 		for n, i := range ps {
 			add("  " + yellow.Render("▲  ") + bold.Render(padTo(short(i.Label), 56)) + "  " + yellow.Render(stateWord(i.State)))
 			add("     " + muted.Render(runewidth.Truncate(i.Detail, w-8, "…")))
@@ -501,7 +616,7 @@ func (m *Menu) View() string {
 				}
 				return muted.Render("[ ") + s + muted.Render(" ]")
 			}
-			add("     " + btn(0, "Fix it") + "   " + btn(1, "Details"))
+			add("     " + btn(0, fixVerb(i)) + "   " + btn(1, "Details"))
 			if m.shown[i.ID] && i.Source != "" {
 				for _, l := range wrap(i.Source, w-10) {
 					add("       " + muted.Render(l))
@@ -521,7 +636,7 @@ func (m *Menu) View() string {
 		keys = strings.Join([]string{k("↑↓ ←→", "choose"), k("enter", "do it"), k("esc", "back")}, "   ")
 	case "secrets":
 		ss := m.filter(secret)
-		title = "Fill in " + plural(len(ss), "secret", "secrets")
+		title = "Fill in " + plural(len(ss), "value", "values")
 		for n, i := range ss {
 			label := padTo(short(i.Label), 40)
 			if n == m.sel {
@@ -533,9 +648,12 @@ func (m *Menu) View() string {
 		}
 		add("  " + muted.Render("Enter opens the file in your editor; yardo never stores the value."))
 		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "fill in"), k("esc", "back")}, "   ")
-	case "access":
-		title = "Network access"
-		as := m.access()
+	case "access", "look":
+		title = "Settings  ›  Network access"
+		if m.screen == "look" {
+			title = "Settings  ›  Look"
+		}
+		as := m.choices()
 		for n, s := range as {
 			on := n == m.sel
 			name := bold.Render("  " + s.Label)
@@ -546,20 +664,27 @@ func (m *Menu) View() string {
 			var cs []string
 			cur := m.value(s)
 			for _, c := range s.Choices {
+				sw := ""
+				if hex, ok := s.Swatches[c[0]]; ok {
+					sw = lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Render("██") + " "
+				}
 				if c[0] == cur {
 					st := bold
 					if on {
 						st = accentBd
 					}
-					cs = append(cs, st.Render("(•) "+c[1]))
+					cs = append(cs, sw+st.Render("(•) "+c[1]))
 				} else {
-					cs = append(cs, muted.Render("( ) "+c[1]))
+					cs = append(cs, sw+muted.Render("( ) "+c[1]))
 				}
 			}
 			for _, l := range wrapStyled(cs, w-8) {
 				add("     " + l)
 			}
-			add("     "+muted.Render(accessSay[s.Key][cur]), "")
+			if say := accessSay[s.Key][cur]; say != "" {
+				add("     " + muted.Render(say))
+			}
+			add("")
 		}
 		apply := muted.Render("[ ") + "Apply" + muted.Render(" ]")
 		if m.sel == len(as) {
@@ -568,7 +693,7 @@ func (m *Menu) View() string {
 		add("  " + apply + "   " + muted.Render("esc leaves without changing anything"))
 		keys = strings.Join([]string{k("↑↓", "setting"), k("←→", "choose"), k("enter", "apply"), k("esc", "back")}, "   ")
 	case "connect":
-		title = "Connect from a laptop"
+		title = "Settings  ›  Connect from a laptop"
 		for _, l := range m.connect {
 			if strings.HasPrefix(l, "  ") {
 				add("  " + keyOn.Render(l))
@@ -613,6 +738,60 @@ func (m *Menu) View() string {
 	}
 	b = append(b, "  "+keys)
 	return strings.Join(b, "\n")
+}
+
+// status are the home's first lines: how the machine is, in words, then
+// what's working and when updates were looked for.
+func (m *Menu) status() []string {
+	ps, ss := len(m.filter(fixable)), 0
+	for _, i := range m.filter(secret) {
+		ss += len(i.Inputs)
+	}
+	ready := len(m.filter(func(i *BoardItem) bool { return i.Picked && i.State == "ok" }))
+	head := green.Render("All good.")
+	if ps+ss > 0 {
+		var need []string
+		if ps > 0 {
+			need = append(need, plural(ps, "thing", "things")+" to fix")
+		}
+		if ss > 0 {
+			need = append(need, plural(ss, "value", "values")+" to fill in")
+		}
+		head = yellow.Render("Needs you: " + strings.Join(need, ", "))
+	}
+	sub := []string{plural(ready, "tool", "tools") + " working"}
+	switch us := len(m.filter(newer)); {
+	case us > 0:
+		sub = append(sub, plural(us, "update", "updates"))
+	case m.checked:
+		sub = append(sub, "nothing newer")
+	default:
+		sub = append(sub, "updates not checked")
+	}
+	if m.info.Checked != "" {
+		sub = append(sub, "checked "+m.info.Checked)
+	}
+	return []string{"  " + head, "  " + muted.Render(strings.Join(sub, " · "))}
+}
+
+// labelCol is how wide rs' labels are laid out: the longest, at least 25
+// cells and at most half the screen.
+func labelCol(rs []menuRow, w int) int {
+	col := 25
+	for _, r := range rs {
+		col = max(col, runewidth.StringWidth(r.label))
+	}
+	return min(col, w/2)
+}
+
+// row is one of the home's (or Settings') rows, its label col cells wide:
+// the selected one with its note wrapped beside it, the others with theirs
+// cut to the line.
+func (m *Menu) row(on bool, r menuRow, col, w int) []string {
+	if on {
+		return beside("  "+rowOn.Render(padTo(" › "+r.label, col+3))+"  ", col+7, w-2, muted, r.note)
+	}
+	return []string{"     " + padTo(r.label, col) + "  " + muted.Render(runewidth.Truncate(r.note, max(4, w-col-9), "…"))}
 }
 
 // wrapStyled lays rendered pieces out in lines at most w wide.
