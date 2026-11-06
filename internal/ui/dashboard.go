@@ -19,10 +19,11 @@ type Dashboard struct {
 	Listening  []Listener
 }
 
-// Container is a running container and the host ports it publishes.
+// Container is a running container: its image, its name when it has one
+// of its own, and the host ports it publishes.
 type Container struct {
-	Name  string
-	Ports []string
+	Image, Name string
+	Ports       []string
 }
 
 // Service is a service that runs (Up), or failed.
@@ -71,7 +72,10 @@ func (m *Menu) dashLines(w, room int) []string {
 	if d.Docker {
 		var cs []string
 		for _, c := range d.Containers {
-			s := c.Name
+			s := c.Image
+			if c.Name != "" {
+				s += muted.Render(" (" + c.Name + ")")
+			}
 			if len(c.Ports) > 0 {
 				s += " :" + strings.Join(c.Ports, ",")
 			}
@@ -107,9 +111,9 @@ func services(d Dashboard) []string {
 		return nil
 	}
 	for _, s := range d.Services {
-		st := green.Render("✓")
+		st := ""
 		if !s.Up {
-			st = red.Render("✗ failed")
+			st = red.Render("failed")
 		}
 		gs = append(gs, &group{name: s.Name, state: st})
 	}
@@ -123,9 +127,9 @@ func services(d Dashboard) []string {
 		switch l.Scope {
 		case "all":
 		case "vpn":
-			p += muted.Render(" (VPN)")
+			p += " VPN only"
 		default:
-			p += muted.Render(" (" + l.Scope + ")")
+			p += " on " + l.Scope
 		}
 		name := l.Name
 		if name == "" {
@@ -140,12 +144,13 @@ func services(d Dashboard) []string {
 	}
 	var out []string
 	for _, g := range gs {
-		s := g.name
+		in := g.ports
 		if g.state != "" {
-			s += " " + g.state
+			in = append([]string{g.state}, in...)
 		}
-		if len(g.ports) > 0 {
-			s += " " + strings.Join(g.ports, ", ")
+		s := g.name
+		if len(in) > 0 {
+			s += muted.Render(" (") + strings.Join(in, muted.Render(", ")) + muted.Render(")")
 		}
 		out = append(out, s)
 	}

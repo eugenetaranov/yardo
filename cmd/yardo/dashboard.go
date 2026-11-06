@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -18,7 +19,7 @@ import (
 // dashboard gathers the home's dashboard.
 func dashboard(ctx context.Context) ui.Dashboard {
 	var d ui.Dashboard
-	if out, ok := quick(ctx, "docker", "ps", "--format", "{{.Names}}\t{{.Ports}}"); ok {
+	if out, ok := quick(ctx, "docker", "ps", "--format", "{{.Names}}\t{{.Image}}\t{{.Ports}}"); ok {
 		d.Docker, d.Containers = true, parseContainers(out)
 	}
 	if out, ok := quick(ctx, "systemctl", "list-units", "--type=service", "--all", "--no-legend", "--plain"); ok {
@@ -39,16 +40,25 @@ func quick(ctx context.Context, name string, args ...string) (string, bool) {
 	return string(out), err == nil
 }
 
-// parseContainers reads docker ps' names and ports: each container, with
-// the host ports it publishes.
+// parseContainers reads docker ps' names, images and ports: each
+// container, called by its image, with its name when it has one of its own
+// (not one docker made up: clever_franklin), and the host ports it
+// publishes.
 func parseContainers(out string) []ui.Container {
 	var cs []ui.Container
 	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
-		name, ports, _ := strings.Cut(l, "\t")
-		if name == "" {
+		f := strings.SplitN(l, "\t", 3)
+		if len(f) < 2 || f[0] == "" {
 			continue
 		}
-		c := ui.Container{Name: name}
+		name, image, ports := f[0], shortImage(f[1]), ""
+		if len(f) == 3 {
+			ports = f[2]
+		}
+		c := ui.Container{Image: image}
+		if !madeUp.MatchString(name) && name != image && !strings.HasPrefix(image, name+":") {
+			c.Name = name
+		}
 		// 0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
 		for _, p := range strings.Split(ports, ", ") {
 			host, _, ok := strings.Cut(p, "->")
@@ -62,6 +72,22 @@ func parseContainers(out string) []ui.Container {
 		cs = append(cs, c)
 	}
 	return cs
+}
+
+// madeUp is a name docker made up for a container: adjective_surname.
+var madeUp = regexp.MustCompile(`^[a-z]+_[a-z]+$`)
+
+// shortImage is an image without its registry and path: postgres:16 for
+// docker.io/library/postgres:16, mcpjungle for ghcr.io/mcpjungle/mcpjungle;
+// a digest is cut to its start.
+func shortImage(image string) string {
+	if i := strings.LastIndex(image, "/"); i >= 0 {
+		image = image[i+1:]
+	}
+	if name, d, ok := strings.Cut(image, "@sha256:"); ok {
+		image = name + "@" + d[:min(7, len(d))]
+	}
+	return image
 }
 
 // services are the services the dashboard shows, by unit (a template's

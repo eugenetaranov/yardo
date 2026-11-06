@@ -60,8 +60,8 @@ account is created). Once something is set up, it opens on the home:
   41 tools working · 3 updates · checked 09:12
 
   Installed   43: zsh · Neovim · tmux · Go · Python · Docker Engine + Compose + 37 more
-  Containers  2: mcpjungle :8080 · postgres :5432
-  Services    ssh ✓ 22/tcp · docker ✓ 8080/tcp (VPN) · tailscale ✓ 443/tcp, 41641/udp · fail2ban ✓ + 2 more
+  Containers  2: postgres:16 (myapp-db-1) :5432 · redis:7
+  Services    ssh (22/tcp) · docker (8080/tcp VPN only) · tailscale (443/tcp, 41641/udp) · fail2ban + 2 more
 
  › Start Docker Engine + Compose  stopped: docker isn't running
    Fill in OPENAI_API_KEY         Agent API keys needs it · opens its file
@@ -74,7 +74,8 @@ account is created). Once something is set up, it opens on the home:
 
 How the machine is, in words; a dashboard (everything installed, on as
 many lines as the screen has room for, the
-containers running and the ports they publish, and the services up or
+containers running, by image (and name, when it isn't one docker made
+up), and the ports they publish, and the services up or
 failed, each with the ports it listens on beyond this machine and who
 can reach them);
 then a row for each thing that needs doing, named by what it does, one

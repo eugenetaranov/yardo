@@ -703,12 +703,12 @@ func TestMenuChecking(t *testing.T) {
 func TestMenuDashboard(t *testing.T) {
 	m := testMenu(true)
 	m.info.Dash = Dashboard{Docker: true,
-		Containers: []Container{{Name: "mcpjungle", Ports: []string{"8080"}}},
+		Containers: []Container{{Image: "postgres:16", Name: "myapp-db-1", Ports: []string{"5432"}}},
 		Services:   []Service{{Name: "ssh", Up: true}, {Name: "fail2ban"}},
 		Listening:  []Listener{{"22", "tcp", "ssh", "all"}, {"41641", "udp", "tailscale", "all"}, {"8080", "tcp", "docker", "vpn"}, {"631", "tcp", "cupsd", "local"}}}
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"Installed   3: Docker Engine + Compose · Agent API keys · Go", "Containers  1: mcpjungle :8080",
-		"Services    ssh ✓ 22/tcp · fail2ban ✗ failed · tailscale 41641/udp · docker 8080/tcp (VPN)"} {
+	for _, want := range []string{"Installed   3: Docker Engine + Compose · Agent API keys · Go", "Containers  1: postgres:16 (myapp-db-1) :5432",
+		"Services    ssh (22/tcp) · fail2ban (failed) · tailscale (41641/udp) · docker (8080/tcp VPN only)"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("dashboard lacks %q:\n%s", want, v)
 		}

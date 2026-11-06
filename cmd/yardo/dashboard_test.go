@@ -6,9 +6,13 @@ import (
 )
 
 func TestParseContainers(t *testing.T) {
-	out := "mcpjungle\t127.0.0.1:8080->8080/tcp\npostgres\t0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp\nworker\t\n"
+	// By image; a name of its own is kept, one docker made up isn't.
+	out := "mcpjungle\tghcr.io/mcpjungle/mcpjungle:0.4.6\t127.0.0.1:8080->8080/tcp\n" +
+		"myapp-db-1\tdocker.io/library/postgres:16\t0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp\n" +
+		"clever_franklin\tredis\t\n" +
+		"relaxed_brahmagupta\tbusybox@sha256:0123456789abcdef\t\n"
 	got := fmt.Sprint(parseContainers(out))
-	if want := "[{mcpjungle [8080]} {postgres [5432]} {worker []}]"; got != want {
+	if want := "[{mcpjungle:0.4.6  [8080]} {postgres:16 myapp-db-1 [5432]} {redis  []} {busybox@0123456  []}]"; got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
 	if cs := parseContainers(""); len(cs) != 0 {
