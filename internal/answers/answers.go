@@ -72,6 +72,9 @@ type Answers struct {
 	// layer also lists: no layer drops them. A pick in no layer is a hand
 	// pick too, so this stays short.
 	Hand []string `json:"hand,omitempty"`
+	// Declined are items the user uninstalled that a named profile lists:
+	// applying it again skips them, until they're added by hand.
+	Declined []string `json:"declined,omitempty"`
 	// MCPPort is the user's MCPJungle port (kept in system.json).
 	MCPPort int `json:"-"`
 }
@@ -396,6 +399,16 @@ func (a *Answers) Pick(ids []string) {
 		}
 	}
 	a.Picks = Merge(a.Picks, ids)
+	a.Declined = slices.DeleteFunc(a.Declined, func(id string) bool { return slices.Contains(ids, id) })
+}
+
+// Uninstalled drops id from the picks, as Unpick, after it was
+// uninstalled; when a named profile lists it, it's declined.
+func (a *Answers) Uninstalled(id string) {
+	a.Unpick([]string{id})
+	if a.inLayer(id, "") {
+		a.Declined = Merge(a.Declined, []string{id})
+	}
 }
 
 // Unpick drops ids from the picks, so they stop being re-applied; what

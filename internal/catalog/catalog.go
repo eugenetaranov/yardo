@@ -94,9 +94,13 @@ type Item struct {
 	// would defeat it, or nothing can): every item the picker offers is
 	// removable or says why not.
 	KeepSay string `toml:"keep_say"`
-	// RemoveWith is the item removing this one means (a VPN login: its
-	// client); removing that takes this one off too.
-	RemoveWith string `toml:"remove_with"`
+	// Protected: yardo never uninstalls or forgets it (the shell you log
+	// in with); KeepSay says why.
+	Protected bool `toml:"protected"`
+	// PartOf is the item this one is part of (a VPN login: its client):
+	// the picker shows it in that item's row, and removing that removes
+	// this one too. It must need it.
+	PartOf string `toml:"part_of"`
 
 	// From is the file the item came from (for error messages).
 	From string `toml:"-"`
@@ -106,22 +110,24 @@ type Item struct {
 
 // undone are the step types removing an item undoes on its own: its
 // packages, its apt repo, its mise tools, the files, rc lines, blocks,
-// links, clones, sysctl settings and services yardo set up (notes have
-// nothing to undo).
-var undone = map[string]bool{"apt": true, "apt_repo": true, "mise": true, "note": true,
+// links, clones, sysctl settings, services and git settings yardo set
+// up; a cred file stays (it holds the user's keys) and says so; notes
+// have nothing to undo. Go steps: GoUndone.
+var undone = map[string]bool{"apt": true, "apt_repo": true, "mise": true, "note": true, "cred": true, "git_config": true,
 	"file": true, "template": true, "line": true, "block": true, "link": true, "git_clone": true, "sysctl": true, "systemctl": true}
 
 // Removable reports whether yardo can uninstall the item: it has a Remove
-// script, or each of its steps is one removing undoes on its own.
+// script, or each of its steps is one removing undoes on its own (an
+// item of only what it needs has none). Never a protected one.
 func (it *Item) Removable() bool {
+	if it.Protected {
+		return false
+	}
 	if it.Remove != "" {
 		return true
 	}
-	if len(it.Steps) == 0 {
-		return false
-	}
 	for _, s := range it.Steps {
-		if !undone[s.Type] {
+		if !undone[s.Type] && !GoUndone[strings.TrimPrefix(s.Type, "go:")] {
 			return false
 		}
 	}
@@ -327,11 +333,12 @@ func (c *Catalog) validate() error {
 			fail(it, "remove without remove_say (what removing it does)")
 		case it.Removable() && it.KeepSay != "":
 			fail(it, "keep_say on an item yardo can remove")
-		case it.RemoveWith != "" && !slices.Contains(it.Needs, it.RemoveWith):
-			fail(it, "remove_with %q, which it doesn't need", it.RemoveWith)
-		case it.RemoveWith != "" && c.byID[it.RemoveWith] != nil && !c.byID[it.RemoveWith].Removable():
-			fail(it, "remove_with %q, which yardo can't remove", it.RemoveWith)
-		case !strings.HasPrefix(it.From, LocalDir+"/") && !it.Hidden() && !it.Always && !it.Removable() && it.KeepSay == "" && it.RemoveWith == "":
+		case it.PartOf != "" && !slices.Contains(it.Needs, it.PartOf):
+			fail(it, "part_of %q, which it doesn't need", it.PartOf)
+		case it.Protected && it.KeepSay == "":
+			fail(it, "protected without keep_say (why)")
+		// Which Go steps undo themselves is known once they're registered.
+		case len(GoSteps) > 0 && !strings.HasPrefix(it.From, LocalDir+"/") && !it.Hidden() && !it.Always && !it.Removable() && it.KeepSay == "":
 			fail(it, "can't be removed: give it remove (and remove_say), or keep_say (why not)")
 		}
 		for _, n := range it.Needs {

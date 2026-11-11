@@ -121,7 +121,7 @@ func TestBoardInstalled(t *testing.T) {
 	}
 	b.items[1].Removable = true
 	press2(b, "down", "d")
-	if b.items[1].Pending != "uninstall" || !strings.Contains(b.View(), "✗ Terraform") {
+	if b.items[1].Pending != "uninstall" || !strings.Contains(b.View(), "Uninstall 1 tool?") {
 		t.Fatalf("d didn't queue the uninstall:\n%s", b.View())
 	}
 	if strings.Contains(testBoard(true).View(), "Installed") {
@@ -139,8 +139,8 @@ func TestBoardQueueAndApply(t *testing.T) {
 	}
 	press2(b, "space")
 	press2(b, "left", "down", "down", "space") // DevOps: Ansible
-	if v := b.View(); b.queued() != 2 || !strings.Contains(v, "2 change(s) queued") || !strings.Contains(v, "APPLY 2") ||
-		!strings.Contains(v, "Queued: + Ansible, + WireGuard server") {
+	if v := b.View(); b.queued() != 2 || !strings.Contains(v, "2 changes queued") || !strings.Contains(v, "APPLY 2") ||
+		!strings.Contains(v, "Queued: install Ansible · install WireGuard server") {
 		t.Errorf("queue:\n%s", v)
 	}
 	press2(b, "a")
@@ -162,7 +162,7 @@ func TestBoardFirstRun(t *testing.T) {
 		t.Errorf("first run:\n%s", v)
 	}
 	press2(b, "q")
-	if b.result.Kind != BoardQuit || b.out || !strings.Contains(b.View(), "queued and not applied") {
+	if b.result.Kind != BoardQuit || b.out || !strings.Contains(b.View(), "not applied yet") {
 		t.Errorf("q with a queue quit at once:\n%s", b.View())
 	}
 	if cmd := press2(b, "q"); cmd == nil || b.result.Kind != BoardQuit {
@@ -245,7 +245,7 @@ func TestBoardReadyItemActions(t *testing.T) {
 	}
 	b := mk()
 	press2(b, "enter")
-	if v := b.View(); !strings.Contains(v, "Reinstall") || !strings.Contains(v, "Stop managing it") {
+	if v := b.View(); !strings.Contains(v, "Reinstall") || !strings.Contains(v, "Forget it") {
 		t.Fatalf("panel lacks the actions:\n%s", v)
 	}
 	press2(b, "enter")
@@ -256,8 +256,8 @@ func TestBoardReadyItemActions(t *testing.T) {
 	press2(b, "enter")
 	press2(b, "down")
 	press2(b, "enter")
-	if b.items[0].Pending != "remove" {
-		t.Errorf("remove: pending %q", b.items[0].Pending)
+	if b.items[0].Pending != "forget" {
+		t.Errorf("forget: pending %q", b.items[0].Pending)
 	}
 }
 
@@ -299,7 +299,7 @@ func TestBoardExtraKeepsTab(t *testing.T) {
 	if b.key() != "group:System" {
 		t.Fatalf("on %q, want System", b.key())
 	}
-	if v := b.View(); !strings.Contains(v, "Queued: + pulumi") {
+	if v := b.View(); !strings.Contains(v, "Queued: install pulumi") {
 		t.Errorf("the queue lacks the extra:\n%s", v)
 	}
 }
@@ -313,86 +313,159 @@ func TestBoardSearchOpen(t *testing.T) {
 	}
 }
 
-// A team profile's pick says so; removing it warns that the profile adds
-// it back.
+// A team profile's pick says so; uninstalling it says the profile then
+// skips it.
 func TestBoardTeam(t *testing.T) {
 	tabs := []Tab{{ID: "shell", Title: "Shell & CLI"}}
-	items := []*BoardItem{{ID: "zsh", Label: "zsh (oh-my-zsh, plugins)", Tab: "shell", Picked: true, State: "ok", Team: "platform"}}
+	items := []*BoardItem{{ID: "zsh", Label: "zsh (oh-my-zsh, plugins)", Tab: "shell", Picked: true, State: "ok", Team: "platform", Removable: true}}
 	b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items)
 	b.Update(tea.WindowSizeMsg{Width: 110, Height: 26})
 	if !strings.Contains(b.View(), "from the team profile platform") {
 		t.Errorf("no team note:\n%s", b.View())
 	}
 	press2(b, "space")
-	if items[0].Pending != "remove" || !strings.Contains(b.View(), "zsh is on the team profile platform: applying that profile again adds it back") {
+	if items[0].Pending != "uninstall" || !strings.Contains(b.View(), "zsh is on the team profile platform: once uninstalled, applying the profile again skips it") {
 		t.Errorf("no warning:\n%s", b.View())
 	}
 }
 
-// d queues uninstalling, as space queues a change: several at once,
-// with what's queued already; d again takes it off. a asks, saying what
-// each takes off, keeps and stops (the planner's lines). One yardo can't
-// uninstall says why; a login's d means its client.
+// Space unticks an installed tool: it's queued to uninstall; a asks,
+// titled by what it does, with what goes, stays and goes with it; y
+// applies. d asks at once. One yardo can't uninstall offers to forget
+// it; a protected one only says why. A login is part of its tool's row:
+// its details log out. After, the result stays until dismissed and
+// offers a retry.
 func TestBoardUninstall(t *testing.T) {
 	tabs := []Tab{{ID: "net", Title: "Network"}}
 	mk := func() (*Board, []*BoardItem) {
 		items := []*BoardItem{
-			{ID: "netbird-install", Label: "NetBird (log in under This VM → VPN logins)", Tab: "net", Picked: true, State: "ok", Removable: true,
+			{ID: "netbird-install", Label: "NetBird (mesh VPN)", Tab: "net", Picked: true, State: "ok", Removable: true,
 				RemoveSay: "disconnects from NetBird and uninstalls it"},
-			{ID: "netbird", Label: "NetBird login", Tab: "net", Picked: true, State: "ok", RemoveWith: "netbird-install"},
-			{ID: "aws", Label: "AWS tools (aws CLI)", Tab: "net", Picked: true, State: "ok", Removable: true,
-				NeededBy: []string{"Thing"}},
-			{ID: "sshharden", Label: "SSH hardening", Tab: "net", Picked: true, State: "ok", KeepSay: "undoing it reopens password logins"},
+			{ID: "netbird", Label: "NetBird login", Tab: "net", Picked: true, State: "ok", PartOf: "netbird-install", Removable: true},
+			{ID: "aws", Label: "AWS tools (aws CLI)", Tab: "net", Picked: true, State: "ok", Removable: true},
+			{ID: "ecc", Label: "ECC for Claude Code", Tab: "net", Picked: true, State: "ok", KeepSay: "its files sit among yours"},
+			{ID: "zsh", Label: "zsh, ready to use", Tab: "net", Picked: true, State: "ok", Protected: true, KeepSay: "it's the shell you log in with"},
 			{ID: "terraform", Label: "Terraform", Tab: "net"},
 		}
 		b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items)
-		b.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+		b.Update(tea.WindowSizeMsg{Width: 140, Height: 44})
 		return b, items
 	}
 	b, items := mk()
-	if v := b.View(); !strings.Contains(v, "d uninstall") || !strings.Contains(v, "space stop managing") {
-		t.Errorf("footer lacks d and space:\n%s", v)
+	v := b.View()
+	if !strings.Contains(v, "space uninstall") || strings.Contains(v, "stop managing") {
+		t.Errorf("footer:\n%s", v)
 	}
-	// Installed: the login under its client.
-	if v := b.View(); !strings.Contains(v, "└ NetBird login") {
-		t.Errorf("login not under its client:\n%s", v)
+	if strings.Contains(v, "NetBird login") {
+		t.Errorf("the login is a row of its own:\n%s", v)
 	}
-	press2(b, "right", "down", "down", "down", "down", " ") // Network; Terraform: add
-	press2(b, "up", "up", "up", "d")                        // the login: its client
-	if items[0].Pending != "uninstall" || items[1].Pending != "" || !strings.Contains(b.View(), "goes with NetBird") {
-		t.Errorf("login's d: %q %q\n%s", items[0].Pending, items[1].Pending, b.View())
+	press2(b, "right") // Network: netbird-install, aws, ecc, zsh, terraform
+	press2(b, "space", "down", "space")
+	if items[0].Pending != "uninstall" || items[2].Pending != "uninstall" {
+		t.Fatalf("space didn't untick: %q %q", items[0].Pending, items[2].Pending)
 	}
-	press2(b, "down", "d") // aws, with a change queued already
-	if items[2].Pending != "uninstall" {
-		t.Errorf("aws not queued: %q\n%s", items[2].Pending, b.View())
+	if v := b.View(); !strings.Contains(v, "[−]") || !strings.Contains(v, "will uninstall") || !strings.Contains(v, "Queued: uninstall NetBird · uninstall AWS tools") {
+		t.Errorf("marks:\n%s", v)
 	}
-	press2(b, "down", "d") // sshharden: says why not
-	if items[3].Pending != "" || !strings.Contains(b.View(), "undoing it reopens password logins") {
-		t.Errorf("not removable:\n%s", b.View())
+	press2(b, "down", "space") // ECC: can't; forget instead?
+	if v := b.View(); b.panel == nil || !strings.Contains(v, "yardo can't uninstall ECC for Claude Code") || !strings.Contains(v, "Its files sit among yours.") {
+		t.Fatalf("no forget offer:\n%s", v)
+	}
+	press2(b, "y")
+	if items[3].Pending != "forget" || !strings.Contains(b.View(), "will forget it: stays installed") {
+		t.Errorf("ecc: %q\n%s", items[3].Pending, b.View())
+	}
+	press2(b, "down", "space") // zsh: says why, nothing queued
+	if items[4].Pending != "" || b.panel != nil || !strings.Contains(b.View(), "it's the shell you log in with") {
+		t.Errorf("zsh: %q\n%s", items[4].Pending, b.View())
 	}
 	var asked []string
-	b.SetPlanner(func(ids, adds []string) map[string][]string {
+	b.SetPlanner(func(ids, adds []string) map[string]UninstallPlan {
 		asked = ids
-		return map[string][]string{"aws": {"Takes off: aws-cli", "Keeps: fzf (Shell helpers uses it)"}}
+		return map[string]UninstallPlan{
+			"netbird-install": {Say: "disconnects from NetBird and uninstalls it", Off: []string{"netbird"}, Also: []string{"NetBird login"}},
+			"aws":             {Off: []string{"aws-cli", "mariadb-client"}, Stays: []string{"fzf (Shell helpers uses it)"}},
+		}
 	})
 	press2(b, "a")
-	v := b.View()
-	for _, want := range []string{"✗ Uninstall NetBird", "It disconnects from NetBird and uninstalls it.", "✗ Uninstall AWS tools", "Takes off: aws-cli", "Keeps: fzf (Shell helpers uses it)"} {
+	v = b.View()
+	for _, want := range []string{"Apply 3 changes?", "− Uninstall NetBird", "    Disconnects from NetBird and uninstalls it.", "    Also uninstalls NetBird login: they need it.",
+		"− Uninstall AWS tools", "    Goes: aws-cli, mariadb-client", "    Stays: fzf (Shell helpers uses it)", "Forget ECC for Claude Code: it stays installed", "List everything that goes (3)"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("question lacks %q:\n%s", want, v)
 		}
 	}
+	if strings.Contains(v, "Goes: netbird") {
+		t.Errorf("the full list shows before it's asked for:\n%s", v)
+	}
+	press2(b, "down", "enter") // List everything
+	if !strings.Contains(b.View(), "Goes: netbird") {
+		t.Errorf("no full list:\n%s", b.View())
+	}
 	if !slices.Equal(asked, []string{"netbird-install", "aws"}) {
 		t.Errorf("planner asked %q", asked)
 	}
-	press2(b, "enter")
-	if b.result.Kind != BoardApply || !slices.Equal(b.result.Uninstalls, []string{"netbird-install", "aws"}) {
-		t.Errorf("result %+v", b.result)
+	press2(b, "y")
+	if r := b.result; r.Kind != BoardApply || !slices.Equal(r.Uninstalls, []string{"netbird-install", "aws"}) || !slices.Equal(r.Forgets, []string{"ecc"}) {
+		t.Errorf("result %+v", r)
 	}
-	// d again: off the queue.
+
+	// d: asks at once; only uninstalls: titled so.
 	b, items = mk()
-	press2(b, "right", "down", "down", "d", "d")
-	if items[2].Pending != "" {
-		t.Errorf("d twice: %q", items[2].Pending)
+	press2(b, "right", "down", "d")
+	if v := b.View(); items[2].Pending != "uninstall" || !strings.Contains(v, "Uninstall 1 tool?") || !strings.Contains(v, "Uninstall (y)") {
+		t.Errorf("d:\n%s", v)
+	}
+	press2(b, "n")
+	if b.panel != nil || b.result.Kind == BoardApply {
+		t.Error("n applied")
+	}
+
+	// The login: logged out from its tool's details.
+	b, items = mk()
+	press2(b, "right", "enter")
+	if !strings.Contains(b.View(), "Log out (NetBird stays)") {
+		t.Fatalf("no log out:\n%s", b.View())
+	}
+	for b.panel.opts[b.panel.sel][0] != "Log out (NetBird stays)" {
+		press2(b, "down")
+	}
+	press2(b, "enter")
+	if items[1].Pending != "uninstall" || items[0].Pending != "" {
+		t.Errorf("log out: %q %q", items[1].Pending, items[0].Pending)
+	}
+
+	// After: the result stays, and retries what failed.
+	b, items = mk()
+	b.ShowResult("Done: 1 uninstalled, 1 failed", []string{"✓ AWS tools uninstalled.", "✗ NetBird: the uninstall stopped (exit 1)."}, []string{"netbird-install"})
+	if v := b.View(); !strings.Contains(v, "Done: 1 uninstalled, 1 failed") || !strings.Contains(v, "Retry NetBird") {
+		t.Fatalf("result:\n%s", v)
+	}
+	press2(b, "right") // a key outside the panel's doesn't close it
+	if b.panel == nil {
+		t.Fatal("the result went on a key")
+	}
+	press2(b, "down", "enter")
+	if items[0].Pending != "uninstall" || !strings.Contains(b.View(), "Uninstall 1 tool?") {
+		t.Errorf("retry:\n%s", b.View())
+	}
+}
+
+// Typing filters; enter goes into the rows keeping the filter, where
+// space and a work; esc clears the filter.
+func TestBoardFilter(t *testing.T) {
+	b := testBoard(false)
+	b.Search("ansi")
+	press2(b, "enter")
+	if b.typing || b.search == nil || !strings.Contains(b.View(), "Ansible") {
+		t.Fatalf("enter left the filter:\n%s", b.View())
+	}
+	press2(b, "space")
+	if n := b.queued(); n != 1 {
+		t.Errorf("space in the filtered list queued %d", n)
+	}
+	press2(b, "esc")
+	if b.search != nil || b.out {
+		t.Errorf("esc didn't clear the filter")
 	}
 }

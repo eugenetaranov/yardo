@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
+	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/catalog"
 )
 
@@ -224,5 +226,81 @@ func TestWithoutLine(t *testing.T) {
 		if got := string(WithoutLine([]byte(in), "L")); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
 		}
+	}
+}
+
+// With the Go steps registered: every item the picker offers is
+// removable or says why not, and the agent skills undo themselves.
+func TestShippedRemovable(t *testing.T) {
+	c, err := catalog.Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range c.Items {
+		if !it.Hidden() && !it.Always && !it.Removable() && it.KeepSay == "" {
+			t.Errorf("%s: can't be removed and doesn't say why", it.ID)
+		}
+	}
+	for _, id := range []string{"agentskills", "communityskills"} {
+		if !c.Item(id).Removable() {
+			t.Errorf("%s isn't removable", id)
+		}
+	}
+}
+
+// A skill folder yardo wrote goes; one edited stays; one of the user's
+// own isn't mentioned.
+func TestSkillsUndo(t *testing.T) {
+	e := testEnv(t, &fakeExec{})
+	e.Files = fstest.MapFS{"skills/tdd/SKILL.md": {Data: []byte("tdd\n")}, "skills/grill/SKILL.md": {Data: []byte("grill\n")}}
+	st := skillsStep{catalog.Step{Skills: []string{"tdd", "grill"}}}
+	if err := st.Apply(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	writeAt(t, e, "~/.claude/skills/grill/SKILL.md", "mine now\n")
+	writeAt(t, e, "~/.claude/skills/own/SKILL.md", "own\n")
+	p := &RemovePlan{Item: &catalog.Item{ID: "x"}}
+	if err := st.PlanUndo(context.Background(), e, p); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(p.Keep, "|"); got != "~/.claude/skills/grill (edited by hand)" {
+		t.Errorf("kept %q", got)
+	}
+	if _, err := p.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for d, want := range map[string]bool{"~/.claude/skills/tdd": false, "~/.agents/skills/tdd": false, "~/.agents/skills/grill": false,
+		"~/.claude/skills/grill": true, "~/.claude/skills/own": true} {
+		if exists(e.Path(d)) != want {
+			t.Errorf("%s there: %v, want %v", d, !want, want)
+		}
+	}
+}
+
+// Git settings go only while they're still yardo's; a cred file stays,
+// said.
+func TestGitConfigAndCredUndo(t *testing.T) {
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		if c.Name == "git" && len(c.Args) > 3 && c.Args[2] == "--get" {
+			return map[string][]byte{"pull.rebase": []byte("true\n"), "user.name": []byte("Someone Else\n")}[c.Args[3]], nil
+		}
+		return nil, nil
+	}}
+	e := testEnv(t, x)
+	e.Answers = &answers.Answers{Git: answers.Git{Name: "Ada"}}
+	writeAt(t, e, "~/.config/yardo/agent.env", "KEY=1\n")
+	it := &catalog.Item{ID: "gitid", Steps: []catalog.Step{
+		{Type: "git_config", Values: map[string]string{"pull.rebase": "true", "user.name": "{{git_name}}"}},
+		{Type: "cred", To: "~/.config/yardo/agent.env"},
+	}}
+	p, err := PlanRemove(context.Background(), e, it, KeptBy(e, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(p.Off, "|"); got != "git pull.rebase" {
+		t.Errorf("off %q", got)
+	}
+	if got := strings.Join(p.Keep, "|"); !strings.Contains(got, "git user.name (changed by hand)") || !strings.Contains(got, "agent.env (holds your keys") {
+		t.Errorf("kept %q", got)
 	}
 }

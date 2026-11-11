@@ -2,6 +2,7 @@ package profile
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -214,5 +215,19 @@ func TestMCPInstancesInProfile(t *testing.T) {
 	}
 	if _, err := Parse("p.toml", []byte("[mcp]\nservers = [\"grafana:Prod Box\"]\n")); err == nil || !strings.Contains(err.Error(), "mcp.servers") {
 		t.Errorf("bad instance: err = %v", err)
+	}
+}
+
+// A tool the user uninstalled stays off when a profile lists it again,
+// with a warning naming it.
+func TestApplySkipsDeclined(t *testing.T) {
+	p, err := Parse("p.toml", []byte("name = \"team\"\npicks = [\"aws\", \"terraform\"]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &answers.Answers{Declined: []string{"aws"}}
+	_, w := p.Apply(a, cat(t))
+	if !slices.Equal(a.Picks, []string{"terraform"}) || len(w) != 1 || !strings.Contains(w[0], "aws skipped: you uninstalled it") {
+		t.Errorf("picks %q warnings %q", a.Picks, w)
 	}
 }

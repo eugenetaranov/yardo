@@ -230,3 +230,18 @@ func TestUnpick(t *testing.T) {
 		t.Errorf("a profile's layer is its own: %v", a.Layers)
 	}
 }
+
+// An uninstalled item a named profile lists is declined; adding it by
+// hand clears that.
+func TestUninstalledDeclined(t *testing.T) {
+	a := &Answers{Picks: []string{"aws", "go"}, Layers: map[string][]string{"team": {"aws"}}}
+	a.Uninstalled("aws")
+	a.Uninstalled("go")
+	if !slices.Equal(a.Declined, []string{"aws"}) || len(a.Picks) != 0 {
+		t.Fatalf("declined %q picks %q", a.Declined, a.Picks)
+	}
+	a.Pick([]string{"aws"})
+	if len(a.Declined) != 0 {
+		t.Errorf("still declined: %q", a.Declined)
+	}
+}

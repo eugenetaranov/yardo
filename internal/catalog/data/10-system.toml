@@ -133,8 +133,8 @@ rm -rf /var/lib/tailscale
 remove_say = "logs this machine out of your tailnet, uninstalls Tailscale and deletes its state; the machine stays in your Tailscale admin console until you remove it there"
 tab = "net"
 scope = "system"
-label = "Tailscale (log in under This VM → VPN logins)"
-source = "curl tailscale.com/install.sh · log in under This VM → VPN logins"
+label = "Tailscale (mesh VPN; log in from its details)"
+source = "curl tailscale.com/install.sh · log in from its details (enter)"
 
 [[item.step]]
 type = "run"
@@ -146,7 +146,9 @@ unverified = "Tailscale's own installer, which adds its signed apt repository"
 # Keeps the old id, so an old pick still means install + log in.
 [[item]]
 id = "tailscale"
-remove_with = "tailscale-install"
+part_of = "tailscale-install"
+remove = "tailscale logout 2>/dev/null || true"
+remove_say = "logs this machine out of your tailnet; Tailscale stays installed"
 tab = "logins"
 scope = "system"
 label = "Tailscale login (auth key; or 'sudo tailscale up' later)"
@@ -167,8 +169,8 @@ rm -rf /etc/netbird /var/lib/netbird
 remove_say = "disconnects from NetBird, uninstalls it and deletes its keys; the peer stays in your NetBird dashboard until you delete it there"
 tab = "net"
 scope = "system"
-label = "NetBird (log in under This VM → VPN logins)"
-source = "apt netbird (pkgs.netbird.io repo) · log in under This VM → VPN logins"
+label = "NetBird (mesh VPN; log in from its details)"
+source = "apt netbird (pkgs.netbird.io repo) · log in from its details (enter)"
 
 [[item.step]]
 type = "apt_repo"
@@ -197,7 +199,9 @@ check = "systemctl is-active --quiet netbird"
 # With the setup key typed this run; without one, `sudo netbird up` later.
 [[item]]
 id = "netbird"
-remove_with = "netbird-install"
+part_of = "netbird-install"
+remove = "netbird down 2>/dev/null || true"
+remove_say = "logs this machine out of NetBird; NetBird stays installed"
 tab = "logins"
 scope = "system"
 label = "NetBird login (setup key, NetBird cloud or your own; or 'sudo netbird up' later)"

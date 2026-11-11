@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path"
 	"slices"
 	"strings"
 
@@ -36,28 +37,68 @@ func neededBy(cat *catalog.Catalog, picks []string, id string) []string {
 	return out
 }
 
-// leaving is what uninstalling ids takes out of the picks: ids, and each
-// one's dependents (they stop working, so yardo stops managing them),
-// by id.
-func leaving(cat *catalog.Catalog, picks, ids []string) map[string][]string {
-	deps := map[string][]string{}
+// removal is what uninstalling some items takes: Order is every item to
+// uninstall, each after what needs it (extra mise tools first); Also, by
+// the item asked for, the ones that go with it (they need it), and
+// Forget the ones that need it but yardo can't uninstall: they're
+// forgotten, staying installed.
+type removal struct {
+	Order        []string
+	Also, Forget map[string][]string
+}
+
+// planRemoval works out what uninstalling ids (from picks) takes.
+func planRemoval(cat *catalog.Catalog, picks, ids []string) removal {
+	r := removal{Also: map[string][]string{}, Forget: map[string][]string{}}
+	seen := map[string]bool{}
+	var items []string
 	for _, id := range ids {
+		if strings.HasPrefix(id, "mise:") {
+			r.Order = append(r.Order, id)
+			continue
+		}
+		seen[id] = true
+		items = append(items, id)
+	}
+	for _, id := range ids {
+		if strings.HasPrefix(id, "mise:") {
+			continue
+		}
 		for _, d := range neededBy(cat, picks, id) {
-			if !slices.Contains(ids, d) {
-				deps[id] = append(deps[id], d)
+			if seen[d] {
+				continue
+			}
+			seen[d] = true
+			if it := cat.Item(d); it != nil && it.Removable() {
+				r.Also[id] = append(r.Also[id], d)
+				items = append(items, d)
+			} else {
+				r.Forget[id] = append(r.Forget[id], d)
 			}
 		}
 	}
-	return deps
+	// What needs another goes first: it has fewer that need it.
+	count := map[string]int{}
+	for _, id := range items {
+		count[id] = len(neededBy(cat, picks, id))
+	}
+	slices.SortStableFunc(items, func(x, y string) int { return count[x] - count[y] })
+	r.Order = append(r.Order, items...)
+	return r
 }
 
-// keptAfter is what stays in use once ids and their dependents leave
-// the picks: the items left, and the extra mise tools.
-func keptAfter(cat *catalog.Catalog, env *steps.Env, a *answers.Answers, ids []string, deps map[string][]string) (steps.Kept, error) {
-	gone := slices.Clone(ids)
-	for _, d := range deps {
-		gone = append(gone, d...)
+// forgotten are all the items r forgets.
+func (r removal) forgotten() []string {
+	var out []string
+	for _, f := range r.Forget {
+		out = append(out, f...)
 	}
+	return out
+}
+
+// keptAfter is what stays in use once gone leave the picks: the items
+// left, and the extra mise tools.
+func keptAfter(cat *catalog.Catalog, env *steps.Env, a *answers.Answers, gone []string) (steps.Kept, error) {
 	stay := slices.DeleteFunc(slices.Clone(a.Picks), func(p string) bool { return slices.Contains(gone, p) })
 	items, err := plan.Resolve(cat, stay, len(a.MiseExtra) > 0)
 	if err != nil {
@@ -65,64 +106,77 @@ func keptAfter(cat *catalog.Catalog, env *steps.Env, a *answers.Answers, ids []s
 	}
 	k := steps.KeptBy(env, items)
 	for _, t := range a.MiseExtra {
-		if !slices.Contains(ids, "mise:"+t) {
+		if !slices.Contains(gone, "mise:"+t) {
 			k.Tools[steps.MiseName(t)] = "your extra mise tools"
 		}
 	}
 	return k, nil
 }
 
-// planLines say what uninstalling ids does, each as lines for the
-// question (the board's, yardo remove's): what it does, takes off and
-// keeps, what stops being managed, and an add (adds) that puts it back.
-// It changes nothing.
-func (o *options) planLines(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, ids, adds []string) map[string][]string {
-	out := map[string][]string{}
+// shortTool is a mise tool's name as people say it:
+// github:eugenetaranov/ssmsearch is ssmsearch, pipx:git+https://…/rds-mysql.git
+// is rds-mysql.
+func shortTool(n string) string {
+	if strings.HasPrefix(n, "/") || strings.HasPrefix(n, "~") || !strings.Contains(n, ":") {
+		return n
+	}
+	return strings.TrimSuffix(path.Base(n), ".git")
+}
+
+// plans say what uninstalling ids does, for the question (the board's,
+// yardo remove's): what goes and stays, what goes with each and is
+// forgotten, and a queued add (adds) that brings it back. It changes
+// nothing.
+func (o *options) plans(ctx context.Context, cat *catalog.Catalog, a *answers.Answers, ids, adds []string) map[string]ui.UninstallPlan {
+	out := map[string]ui.UninstallPlan{}
 	env, err := o.env(a, nil, nil)
 	if err != nil {
 		for _, id := range ids {
-			out[id] = []string{"Can't work out what goes: " + err.Error()}
+			out[id] = ui.UninstallPlan{Err: err.Error()}
 		}
 		return out
 	}
-	deps := leaving(cat, a.Picks, ids)
-	keep, err := keptAfter(cat, env, a, ids, deps)
+	r := planRemoval(cat, a.Picks, ids)
+	keep, err := keptAfter(cat, env, a, append(slices.Clone(r.Order), r.forgotten()...))
 	for _, id := range ids {
 		if t, ok := strings.CutPrefix(id, "mise:"); ok {
-			out[id] = []string{"Takes off: " + t + " (mise unuse -g " + t + ")"}
+			out[id] = ui.UninstallPlan{Off: []string{t + " (a mise tool)"}}
 			continue
-		}
-		var ls []string
-		var p *steps.RemovePlan
-		if err == nil {
-			p, err = steps.PlanRemove(ctx, env, cat.Item(id), keep)
 		}
 		if err != nil {
-			out[id] = []string{"Can't work out what goes: " + err.Error()}
-			err = nil
+			out[id] = ui.UninstallPlan{Err: err.Error()}
 			continue
 		}
-		if p.Say != "" {
-			ls = append(ls, "It "+p.Say+".")
+		// What goes with it: its own and theirs.
+		var u ui.UninstallPlan
+		for _, x := range append([]string{id}, r.Also[id]...) {
+			p, err := steps.PlanRemove(ctx, env, cat.Item(x), keep)
+			if err != nil {
+				u.Err = err.Error()
+				break
+			}
+			if x == id {
+				u.Say = p.Say
+			}
+			for _, off := range p.Off {
+				if off = shortTool(off); !slices.Contains(u.Off, off) {
+					u.Off = append(u.Off, off)
+				}
+			}
+			for _, k := range p.Keep {
+				if !slices.Contains(u.Stays, k) {
+					u.Stays = append(u.Stays, k)
+				}
+			}
 		}
-		if len(p.Off) > 0 {
-			ls = append(ls, "Takes off: "+strings.Join(p.Off, ", "))
-		} else if p.Say == "" {
-			ls = append(ls, "Nothing of it is left to take off.")
-		}
-		if len(p.Keep) > 0 {
-			ls = append(ls, "Keeps: "+strings.Join(p.Keep, ", "))
-		}
-		if d := deps[id]; len(d) > 0 {
-			ls = append(ls, "⚠ "+strings.Join(labels(cat, d), ", ")+" need it and will stop working; yardo stops managing them too (they stay installed).")
-		}
+		u.Also, u.Forgets = labels(cat, r.Also[id]), labels(cat, r.Forget[id])
 		for _, n := range adds {
 			if items, err := plan.Resolve(cat, []string{n}, false); err == nil &&
 				slices.ContainsFunc(items, func(it *catalog.Item) bool { return it.ID == id }) {
-				ls = append(ls, "↺ "+ui.Short(cat.Item(n).Label)+", queued to install, needs it: it's installed again.")
+				u.Back = append(u.Back, ui.Short(cat.Item(n).Label))
 			}
 		}
-		out[id] = ls
+		out[id] = u
 	}
 	return out
 }
@@ -133,87 +187,107 @@ func labels(cat *catalog.Catalog, ids []string) []string {
 		if it := cat.Item(id); it != nil {
 			out = append(out, ui.Short(it.Label))
 		} else {
-			out = append(out, id)
+			out = append(out, strings.TrimPrefix(id, "mise:"))
 		}
 	}
 	return out
 }
 
-// uninstall removes ids (the board's d, yardo remove), one after another:
-// what needs one stops being managed too, staying installed. It returns a
-// line per item saying how it went, and whether any failed; a failed
-// item stays picked, and the others still run.
-func (o *options) uninstall(ctx context.Context, cat *catalog.Catalog, st *answers.Store, a *answers.Answers, ids []string, stdout io.Writer) ([]string, bool, error) {
+// uninstalled is how an uninstall went: a line per item, and the ids
+// that went and that failed.
+type uninstalled struct {
+	Lines        []string
+	Done, Failed []string
+}
+
+// Title says it in a few words: "Done: 2 uninstalled, 1 failed".
+func (u uninstalled) Title() string {
+	s := fmt.Sprintf("Done: %d uninstalled", len(u.Done))
+	if len(u.Failed) > 0 {
+		s += fmt.Sprintf(", %d failed", len(u.Failed))
+	}
+	return s
+}
+
+// uninstall removes ids (the board's, yardo remove's), and what needs
+// them, each after what needs it; what needs them that yardo can't
+// uninstall is forgotten. A failed item stays installed, and the others
+// still run.
+func (o *options) uninstall(ctx context.Context, cat *catalog.Catalog, st *answers.Store, a *answers.Answers, ids []string, stdout io.Writer) (uninstalled, error) {
+	var res uninstalled
 	logf, err := os.OpenFile(o.log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
-		return nil, false, err
+		return res, err
 	}
 	defer logf.Close()
 	env, err := o.env(a, nil, logf)
 	if err != nil {
-		return nil, false, err
+		return res, err
 	}
-	var said []string
-	failed, purged := false, false
-	for n, id := range ids {
+	r := planRemoval(cat, a.Picks, ids)
+	fail := func(id, name string, err error) {
+		res.Lines = append(res.Lines, "✗ "+name+": the uninstall stopped ("+err.Error()+"). Retry picks up where it stopped. Log: "+o.log)
+		res.Failed = append(res.Failed, id)
+	}
+	purged := false
+	for n, id := range r.Order {
 		fmt.Fprintf(logf, "=== yardo %s, uninstall %s, user %s\n", version, id, a.User)
 		if t, ok := strings.CutPrefix(id, "mise:"); ok {
 			fmt.Fprintf(stdout, "Uninstalling %s…\n", t)
 			if _, err := env.RunLogged(ctx, steps.Cmd{Name: "mise", Args: []string{"unuse", "-g", t}, AsUser: true}); err != nil {
-				said, failed = append(said, "✗ Uninstalling "+t+" failed: "+err.Error()+" (see "+o.log+")"), true
+				fail(id, t, err)
 				continue
 			}
 			a.MiseExtra = slices.DeleteFunc(a.MiseExtra, func(x string) bool { return x == t })
-			said = append(said, "✓ Uninstalled "+t+".")
+			res.Lines, res.Done = append(res.Lines, "✓ "+t+" uninstalled."), append(res.Done, id)
 			if err := st.Save(a); err != nil {
-				return said, failed, err
+				return res, err
 			}
 			continue
 		}
 		it := cat.Item(id)
 		if it == nil {
-			return said, failed, fmt.Errorf("%q is not in the catalog", id)
+			return res, fmt.Errorf("%q is not in the catalog", id)
 		}
 		name := ui.Short(it.Label)
 		fmt.Fprintf(stdout, "Uninstalling %s…\n", name)
 		// What's still to go stays out of what's kept: two items that share
 		// a package, both going, take it off.
-		rest := ids[n:]
-		deps := leaving(cat, a.Picks, rest)
-		keep, err := keptAfter(cat, env, a, rest, deps)
+		keep, err := keptAfter(cat, env, a, append(slices.Clone(r.Order[n:]), r.forgotten()...))
 		if err != nil {
-			return said, failed, err
+			return res, err
 		}
 		p, err := steps.PlanRemove(ctx, env, it, keep)
 		if err == nil {
 			_, err = p.Run(ctx)
 		}
 		if err != nil {
-			said, failed = append(said, "✗ Uninstalling "+name+" failed: "+err.Error()+" (see "+o.log+")"), true
+			fail(id, name, err)
 			continue
 		}
-		purged = purged || slices.ContainsFunc(p.Off, func(x string) bool { return !strings.Contains(x, "/") && !strings.Contains(x, " ") })
-		a.Unpick(append([]string{id}, deps[id]...))
-		if err := st.Save(a); err != nil {
-			return said, failed, err
-		}
-		line := "✓ Uninstalled " + name + "."
+		purged = purged || slices.ContainsFunc(p.Off, func(x string) bool { return !strings.ContainsAny(x, "/ ") })
+		a.Uninstalled(id)
+		line := "✓ " + name + " uninstalled."
 		if kept := slices.DeleteFunc(slices.Clone(p.Keep), func(k string) bool {
-			return !strings.HasSuffix(k, "(edited by hand)") && !strings.HasSuffix(k, "(has local changes)")
+			return !strings.Contains(k, "by hand") && !strings.Contains(k, "local changes") && !strings.Contains(k, "your keys")
 		}); len(kept) > 0 {
 			line += " Kept " + strings.Join(kept, ", ") + "."
 		}
-		if d := deps[id]; len(d) > 0 {
-			line += " yardo stopped managing " + strings.Join(labels(cat, d), ", ") + " (they needed it)."
+		if f := r.Forget[id]; len(f) > 0 {
+			a.Unpick(f)
+			line += " Forgot " + strings.Join(labels(cat, f), ", ") + ": they needed it, and stay installed."
 		}
-		said = append(said, line)
+		res.Lines, res.Done = append(res.Lines, line), append(res.Done, id)
+		if err := st.Save(a); err != nil {
+			return res, err
+		}
 	}
 	if purged {
 		if n := autoremovable(ctx, env); n > 0 {
-			said = append(said, fmt.Sprintf("sudo apt autoremove frees %d more package(s) nothing needs now.", n))
+			res.Lines = append(res.Lines, fmt.Sprintf("%d packages nothing needs now: sudo apt autoremove frees them.", n))
 		}
 	}
-	return said, failed, nil
+	return res, nil
 }
 
 // autoremovable is how many packages apt would autoremove.
@@ -232,6 +306,17 @@ func autoremovable(ctx context.Context, env *steps.Env) int {
 	return n
 }
 
+// partsOf are the picked items that are part of id (its login).
+func partsOf(cat *catalog.Catalog, picks []string, id string) []string {
+	var out []string
+	for _, p := range picks {
+		if it := cat.Item(p); it != nil && it.PartOf == id {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // exitErr is an error with its own exit code.
 type exitErr struct {
 	code int
@@ -241,9 +326,10 @@ type exitErr struct {
 func (e *exitErr) Error() string { return e.err.Error() }
 func (e *exitErr) Unwrap() error { return e.err }
 
-// resolve finds what name means for yardo remove: an item by id or by
-// its label's short name (any case), an extra mise tool, or a login's
-// client (remove_with). It says why when it can't be removed.
+// resolve finds what name means for yardo remove: an extra mise tool, or
+// an item by its label's short name or id (any case), a tool before its
+// parts (netbird is NetBird, not its login). It says why when it can't
+// be uninstalled.
 func resolve(cat *catalog.Catalog, a *answers.Answers, name string) (string, error) {
 	n := strings.ToLower(strings.TrimPrefix(name, "mise:"))
 	for _, t := range a.MiseExtra {
@@ -252,9 +338,14 @@ func resolve(cat *catalog.Catalog, a *answers.Answers, name string) (string, err
 		}
 	}
 	var it *catalog.Item
-	for _, x := range cat.Items {
-		if !x.Hidden() && (strings.ToLower(x.ID) == n || strings.ToLower(ui.Short(x.Label)) == n) {
-			it = x
+	for _, parts := range []bool{false, true} {
+		for _, x := range cat.Items {
+			if !x.Hidden() && (x.PartOf != "") == parts && (strings.ToLower(x.ID) == n || strings.ToLower(ui.Short(x.Label)) == n) {
+				it = x
+				break
+			}
+		}
+		if it != nil {
 			break
 		}
 	}
@@ -263,21 +354,19 @@ func resolve(cat *catalog.Catalog, a *answers.Answers, name string) (string, err
 		return "", fmt.Errorf("%s: no such item (yardo --list lists them)", name)
 	case !slices.Contains(a.Picks, it.ID):
 		return "", fmt.Errorf("%s isn't installed", name)
-	case it.RemoveWith != "":
-		return resolve(cat, a, it.RemoveWith)
 	case !it.Removable():
 		why := it.KeepSay
 		if why == "" {
 			why = "its own installer or settings set it up"
 		}
-		return "", fmt.Errorf("yardo won't uninstall %s: %s", ui.Short(it.Label), why)
+		return "", fmt.Errorf("yardo can't uninstall %s: %s", ui.Short(it.Label), why)
 	}
 	return it.ID, nil
 }
 
 // removeCmd is yardo remove ITEM…: it says what each would take off,
-// keep and stop, asks, then uninstalls them. Exit 2: a name it can't
-// remove (nothing is done); 1: an uninstall failed.
+// keep and take with it, asks, then uninstalls them. Exit 2: a name it
+// can't uninstall (nothing is done); 1: an uninstall failed.
 func (o *options) removeCmd(cat *catalog.Catalog, st *answers.Store, args []string, stdout, stderr io.Writer) error {
 	sfs := flag.NewFlagSet("yardo remove", flag.ContinueOnError)
 	sfs.SetOutput(stderr)
@@ -319,18 +408,14 @@ func (o *options) removeCmd(cat *catalog.Catalog, st *answers.Store, args []stri
 		}
 	}
 	if len(bad) > 0 {
-		return &exitErr{2, fmt.Errorf("%w; nothing removed", errors.Join(bad...))}
+		return &exitErr{2, fmt.Errorf("%w; nothing uninstalled", errors.Join(bad...))}
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	plans := o.planLines(ctx, cat, a, ids, nil)
+	plans := o.plans(ctx, cat, a, ids, nil)
 	for _, id := range ids {
-		name := strings.TrimPrefix(id, "mise:")
-		if it := cat.Item(id); it != nil {
-			name = ui.Short(it.Label)
-		}
-		fmt.Fprintf(stdout, "✗ Uninstall %s\n", name)
-		for _, l := range plans[id] {
+		fmt.Fprintf(stdout, "Uninstall %s\n", labels(cat, []string{id})[0])
+		for _, l := range plans[id].Lines(true) {
 			fmt.Fprintf(stdout, "    %s\n", l)
 		}
 	}
@@ -345,18 +430,18 @@ func (o *options) removeCmd(cat *catalog.Catalog, st *answers.Store, args []stri
 		}
 		l, _ := bufio.NewReader(in).ReadString('\n')
 		if s := strings.ToLower(strings.TrimSpace(l)); s != "y" && s != "yes" {
-			fmt.Fprintln(stdout, "Nothing removed.")
+			fmt.Fprintln(stdout, "Nothing uninstalled.")
 			return nil
 		}
 	}
-	said, failed, err := o.uninstall(ctx, cat, st, a, ids, stdout)
-	for _, l := range said {
+	res, err := o.uninstall(ctx, cat, st, a, ids, stdout)
+	for _, l := range res.Lines {
 		fmt.Fprintln(stdout, l)
 	}
 	if err != nil {
 		return err
 	}
-	if failed {
+	if len(res.Failed) > 0 {
 		return &exitErr{1, errors.New("not everything was uninstalled")}
 	}
 	return nil

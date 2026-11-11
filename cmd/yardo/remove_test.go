@@ -60,15 +60,15 @@ func removeSetup(t *testing.T, picks ...string) (*options, *catalog.Catalog, *an
 }
 
 // yardo remove --dry-run says what each item takes off and changes
-// nothing; a login's name means its client.
+// nothing; netbird is NetBird, whose login goes with it.
 func TestRemoveDryRun(t *testing.T) {
 	o, cat, st, x := removeSetup(t, "aws", "netbird-install", "netbird")
 	var out, errb bytes.Buffer
 	if err := o.removeCmd(cat, st, []string{"aws", "NetBird", "--dry-run"}, &out, &errb); err != nil {
 		t.Fatalf("%v\n%s", err, errb.String())
 	}
-	for _, want := range []string{"✗ Uninstall AWS tools", "your ~/.aws (profiles, keys) stays", "Takes off: ", "aws-cli",
-		"✗ Uninstall NetBird", "the peer stays in your NetBird dashboard"} {
+	for _, want := range []string{"Uninstall AWS tools", "your ~/.aws (profiles, keys) stays", "Goes: ", "aws-cli",
+		"Uninstall NetBird", "the peer stays in your NetBird dashboard", "Also uninstalls NetBird login: they need it."} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("lacks %q:\n%s", want, out.String())
 		}
@@ -78,14 +78,14 @@ func TestRemoveDryRun(t *testing.T) {
 	}
 }
 
-// One yardo won't remove (or isn't installed): exit 2, saying why, and
-// nothing removed, not even the others.
+// One yardo can't uninstall (or isn't installed): exit 2, saying why,
+// and nothing removed, not even the others.
 func TestRemoveRefuses(t *testing.T) {
-	o, cat, st, x := removeSetup(t, "aws", "gitid")
+	o, cat, st, x := removeSetup(t, "aws", "github")
 	var out, errb bytes.Buffer
-	err := o.removeCmd(cat, st, []string{"gitid", "aws", "terraform", "--yes"}, &out, &errb)
+	err := o.removeCmd(cat, st, []string{"github", "aws", "terraform", "--yes"}, &out, &errb)
 	var e *exitErr
-	if !errors.As(err, &e) || e.code != 2 || !strings.Contains(err.Error(), "~/.gitconfig") || !strings.Contains(err.Error(), "terraform isn't installed") {
+	if !errors.As(err, &e) || e.code != 2 || !strings.Contains(err.Error(), "gh auth logout") || !strings.Contains(err.Error(), "terraform isn't installed") {
 		t.Fatalf("err %v", err)
 	}
 	if c := x.changed(); len(c) > 0 {
@@ -93,11 +93,12 @@ func TestRemoveRefuses(t *testing.T) {
 	}
 }
 
-// One fails, the other still goes: the failed one stays picked, exit 1.
+// One fails, the others still go: the failed one stays picked, exit 1.
+// The login goes first: it needs NetBird.
 func TestRemoveOneFails(t *testing.T) {
 	o, cat, st, x := removeSetup(t, "aws", "netbird-install", "netbird")
 	x.fail = func(c steps.Cmd) bool {
-		return c.Name == "bash" && strings.Contains(strings.Join(c.Args, " "), "netbird down")
+		return c.Name == "bash" && strings.Contains(strings.Join(c.Args, " "), "netbird service uninstall")
 	}
 	var out, errb bytes.Buffer
 	err := o.removeCmd(cat, st, []string{"netbird", "aws", "--yes"}, &out, &errb)
@@ -105,14 +106,15 @@ func TestRemoveOneFails(t *testing.T) {
 	if !errors.As(err, &e) || e.code != 1 {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "✗ Uninstalling NetBird failed") || !strings.Contains(out.String(), "✓ Uninstalled AWS tools.") {
+	if !strings.Contains(out.String(), "✗ NetBird: the uninstall stopped") || !strings.Contains(out.String(), "✓ AWS tools uninstalled.") ||
+		!strings.Contains(out.String(), "✓ NetBird login uninstalled.") {
 		t.Errorf("said:\n%s", out.String())
 	}
 	a, _, err := st.Load(o.user)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(a.Picks, []string{"netbird-install", "netbird"}) {
+	if !slices.Equal(a.Picks, []string{"netbird-install"}) {
 		t.Errorf("picks %q", a.Picks)
 	}
 	if !slices.ContainsFunc(x.ran, func(c string) bool { return strings.Contains(c, "mise unuse -g aws-cli") }) {
@@ -120,15 +122,31 @@ func TestRemoveOneFails(t *testing.T) {
 	}
 }
 
-// Uninstalling an item stops managing what needs it; the board's plan
-// says so, and that an add queued with it installs it again.
-func TestPlanLines(t *testing.T) {
+// What needs an item goes first; one yardo can't uninstall is forgotten.
+func TestPlanRemoval(t *testing.T) {
+	cat, err := catalog.Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := planRemoval(cat, []string{"netbird-install", "netbird", "mcpjungle-install", "mcpjungle"}, []string{"netbird-install", "mcpjungle-install"})
+	if !slices.Equal(r.Order, []string{"netbird", "netbird-install", "mcpjungle-install"}) {
+		t.Errorf("order %q", r.Order)
+	}
+	if !slices.Equal(r.Also["netbird-install"], []string{"netbird"}) || !slices.Equal(r.Forget["mcpjungle-install"], []string{"mcpjungle"}) {
+		t.Errorf("also %v forget %v", r.Also, r.Forget)
+	}
+}
+
+// The plan says what goes with it, and that an add queued with it
+// brings it back.
+func TestPlans(t *testing.T) {
 	o, cat, _, _ := removeSetup(t, "netbird-install", "netbird")
 	a := &answers.Answers{User: o.user, Picks: []string{"netbird-install", "netbird"}}
-	ls := strings.Join(o.planLines(context.Background(), cat, a, []string{"netbird-install"}, []string{"netbird"})["netbird-install"], "\n")
-	for _, want := range []string{"It disconnects from NetBird", "NetBird login need it and will stop working", "↺ NetBird login, queued to install, needs it"} {
-		if !strings.Contains(ls, want) {
-			t.Errorf("lacks %q:\n%s", want, ls)
-		}
+	p := o.plans(context.Background(), cat, a, []string{"netbird-install"}, []string{"netbird"})["netbird-install"]
+	if !strings.Contains(p.Say, "disconnects from NetBird") || !slices.Equal(p.Also, []string{"NetBird login"}) || !slices.Equal(p.Back, []string{"NetBird login"}) {
+		t.Errorf("plan %+v", p)
+	}
+	if shortTool("pipx:git+https://github.com/eugenetaranov/rds-mysql.git") != "rds-mysql" || shortTool("github:eugenetaranov/ssmsearch") != "ssmsearch" || shortTool("~/.zshrc") != "~/.zshrc" {
+		t.Error("shortTool")
 	}
 }

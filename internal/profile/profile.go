@@ -162,6 +162,10 @@ func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnin
 			warnings = append(warnings, fmt.Sprintf("profile: %q is not a yardo item; skipped", id))
 			continue
 		}
+		if slices.Contains(a.Declined, id) {
+			warnings = append(warnings, fmt.Sprintf("profile: %s skipped: you uninstalled it (add it on Tools to have it again)", id))
+			continue
+		}
 		keep = append(keep, id)
 	}
 	if p.Name != "" {

@@ -6,7 +6,8 @@
 # prompt is asked (Powerlevel10k or Starship).
 [[item]]
 id = "zsh"
-keep_say = "it's the shell you log in with, and its config; untick to stop managing, and change your shell with chsh"
+protected = true
+keep_say = "it's the shell you log in with: change it with chsh first"
 tab = "shell"
 label = "zsh, ready to use (asks: Powerlevel10k or Starship prompt)"
 default = true

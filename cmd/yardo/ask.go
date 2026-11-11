@@ -70,10 +70,10 @@ func (k *asker) ask(ctx context.Context) (*choices, error) {
 // the new items need.
 func (k *asker) fromBoard(ctx context.Context, res ui.BoardResult, first bool) (*choices, error) {
 	saved := slices.Clone(k.a.Picks)
-	picks := slices.DeleteFunc(slices.Clone(saved), func(id string) bool { return slices.Contains(res.Removes, id) })
-	extras := slices.DeleteFunc(slices.Clone(k.a.MiseExtra), func(t string) bool { return slices.Contains(res.Removes, "mise:"+t) })
+	picks := slices.DeleteFunc(slices.Clone(saved), func(id string) bool { return slices.Contains(res.Forgets, id) })
+	extras := slices.DeleteFunc(slices.Clone(k.a.MiseExtra), func(t string) bool { return slices.Contains(res.Forgets, "mise:"+t) })
 	var dropped []string
-	for _, id := range res.Removes {
+	for _, id := range res.Forgets {
 		if !strings.HasPrefix(id, "mise:") {
 			dropped = append(dropped, id)
 		}

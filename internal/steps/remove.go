@@ -83,6 +83,12 @@ type RemovePlan struct {
 	acts      []removeAct
 }
 
+// Undoer is a Go step that plans its own undo, for removing its item:
+// what it takes off and keeps go in p (see RemovePlan.off and keep).
+type Undoer interface {
+	PlanUndo(ctx context.Context, e *Env, p *RemovePlan) error
+}
+
 // removeAct is one thing a removal does; what is how the log names it.
 type removeAct struct {
 	what string
@@ -109,10 +115,9 @@ func PlanRemove(ctx context.Context, e *Env, it *catalog.Item, keep Kept) (*Remo
 	if !it.Removable() {
 		return nil, fmt.Errorf("%s can't be removed by yardo", it.ID)
 	}
-	p := &RemovePlan{Item: it}
+	p := &RemovePlan{Item: it, Say: it.RemoveSay}
 	if it.Remove != "" {
 		script := strings.NewReplacer("{{user}}", e.User, "{{group}}", e.Group, "{{home}}", e.Home, "{{arch}}", e.Arch).Replace(it.Remove)
-		p.Say = it.RemoveSay
 		p.acts = append(p.acts, removeAct{"its removal script", func(ctx context.Context) error {
 			_, err := e.run(ctx, Cmd{Name: "bash", Args: []string{"-c", script}, Env: AptEnv})
 			return err
@@ -122,7 +127,7 @@ func PlanRemove(ctx context.Context, e *Env, it *catalog.Item, keep Kept) (*Remo
 	// package go.
 	var reload bool
 	for _, s := range slices.Backward(it.Steps) {
-		if err := planUndo(ctx, e, p, s, keep); err != nil {
+		if err := planUndo(ctx, e, p, it.ID, s, keep); err != nil {
 			return nil, err
 		}
 		reload = reload || s.Type == "systemctl"
@@ -222,8 +227,28 @@ func planMise(ctx context.Context, e *Env, p *RemovePlan, it *catalog.Item, keep
 
 // planUndo plans undoing one of yardo's own steps (the ones Removable
 // counts as undone; the others are the remove script's).
-func planUndo(ctx context.Context, e *Env, p *RemovePlan, s catalog.Step, keep Kept) error {
+func planUndo(ctx context.Context, e *Env, p *RemovePlan, id string, s catalog.Step, keep Kept) error {
+	if strings.HasPrefix(s.Type, "go:") {
+		st, err := New(id, s)
+		if err != nil {
+			return err
+		}
+		if u, ok := st.(Undoer); ok {
+			return u.PlanUndo(ctx, e, p)
+		}
+		return nil
+	}
 	switch s.Type {
+	case "cred":
+		if exists(e.Path(s.To)) {
+			p.Keep = append(p.Keep, s.To+" (holds your keys: delete it yourself)")
+		}
+	case "git_config":
+		g := gitConfigStep{s}
+		for _, kv := range g.values(e) {
+			k, v := kv[0], kv[1]
+			planGitUnset(ctx, e, p, k, v)
+		}
 	case "file", "template", "sysctl":
 		if who, ok := keep.Files[s.To]; ok {
 			if exists(e.Path(s.To)) {
@@ -312,6 +337,23 @@ func planUndo(ctx context.Context, e *Env, p *RemovePlan, s catalog.Step, keep K
 		})
 	}
 	return nil
+}
+
+// planGitUnset plans unsetting the global git setting k, when it's still
+// v (what yardo set); one the user changed stays.
+func planGitUnset(ctx context.Context, e *Env, p *RemovePlan, k, v string) {
+	out, err := e.Exec.Run(ctx, Cmd{Name: "git", Args: []string{"config", "--global", "--get", k}, AsUser: true})
+	switch cur := string(bytes.TrimSpace(out)); {
+	case err != nil:
+		return
+	case cur != v:
+		p.Keep = append(p.Keep, "git "+k+" (changed by hand)")
+		return
+	}
+	p.off("git "+k, func(ctx context.Context) error {
+		_, err := e.run(ctx, Cmd{Name: "git", Args: []string{"config", "--global", "--unset-all", k}, AsUser: true})
+		return err
+	})
 }
 
 // planFile plans deleting a file yardo wrote: only when it's what yardo

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -96,6 +97,29 @@ func (g gitAttribStep) Check(ctx context.Context, e *Env) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// PlanUndo plans taking the hook off: its git settings while they're
+// still yardo's, and its script while it's unchanged. git stays.
+func (g gitAttribStep) PlanUndo(ctx context.Context, e *Env, p *RemovePlan) error {
+	for _, k := range slices.Sorted(maps.Keys(g.config(e))) {
+		planGitUnset(ctx, e, p, k, g.config(e)[k])
+	}
+	want, err := g.script(e)
+	if err != nil {
+		return err
+	}
+	if cur, err := os.ReadFile(e.Path(attribFile)); err == nil {
+		if !bytes.Equal(cur, want) {
+			p.Keep = append(p.Keep, attribFile+" (edited by hand)")
+		} else {
+			p.off(attribFile, func(context.Context) error { return rmIfThere(e.Path(attribFile)) })
+		}
+	}
+	if exists(e.Path(attribSaid)) {
+		p.acts = append(p.acts, removeAct{attribSaid, func(context.Context) error { return rmIfThere(e.Path(attribSaid)) }})
+	}
+	return nil
 }
 
 func (gitAttribStep) config(e *Env) map[string]string {

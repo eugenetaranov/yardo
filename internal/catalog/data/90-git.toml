@@ -4,7 +4,7 @@
 
 [[item]]
 id = "gitid"
-keep_say = "your git name, email and settings are in ~/.gitconfig with your own"
+remove_say = "unsets the git settings yardo made, where they're still its own, and removes lazygit"
 tab = "git"
 label = "Git: name, email and defaults (rebase pulls, auto upstream, delta diffs, aliases), lazygit"
 default = true
@@ -85,7 +85,7 @@ type = "go:gitkey"
 
 [[item]]
 id = "github"
-keep_say = "it's your GitHub access: log out with gh auth logout, and remove the SSH key on GitHub"
+keep_say = "it's your GitHub access: gh auth logout, and delete the SSH key on GitHub"
 tab = "git"
 label = "GitHub: gh login + SSH key for git, act (run Actions locally)"
 default = true
@@ -112,7 +112,6 @@ tools = ["glab@latest"]
 
 [[item]]
 id = "bitbucket"
-keep_say = "it's your Bitbucket access: remove the SSH key on Bitbucket"
 tab = "git"
 label = "Bitbucket: SSH key for git"
 needs = ["gitkey"]

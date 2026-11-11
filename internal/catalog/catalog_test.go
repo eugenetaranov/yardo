@@ -336,8 +336,8 @@ func TestDefaults(t *testing.T) {
 
 // What yardo can uninstall: an item with a remove script, or one whose
 // steps it undoes on its own (apt, apt repo, mise, its files, lines,
-// links, clones, services); not one set up by its own Go steps or
-// scripts. Every item the picker offers is removable or says why not.
+// links, clones, services, git settings); not one set up by scripts.
+// (Go steps that undo themselves: the steps package's test.)
 func TestRemovable(t *testing.T) {
 	c, err := Load(nil, nil)
 	if err != nil {
@@ -345,24 +345,22 @@ func TestRemovable(t *testing.T) {
 	}
 	for id, want := range map[string]bool{"docker": true, "tailscale-install": true, "mcpjungle-install": true, "k3s": true,
 		"terraform": true, "podman": true, "claude": true, "neovim": true, "openvpn-server": true, "aws": true, "helpers": true,
-		"github": false, "netbird": false, "gitid": false} {
+		"gitid": true, "bitbucket": true, "agentkeys": true, "netbird": true,
+		"github": false, "zsh": false, "ecc": false} {
 		if got := c.Item(id).Removable(); got != want {
 			t.Errorf("%s: removable %v, want %v", id, got, want)
 		}
 	}
-	for _, it := range c.Items {
-		if !it.Hidden() && !it.Always && !it.Removable() && it.KeepSay == "" && it.RemoveWith == "" {
-			t.Errorf("%s: can't be removed and doesn't say why", it.ID)
-		}
-	}
-	if w := c.Item("netbird").RemoveWith; w != "netbird-install" {
-		t.Errorf("netbird: removed with %q", w)
+	if p := c.Item("netbird").PartOf; p != "netbird-install" {
+		t.Errorf("netbird: part of %q", p)
 	}
 }
 
 // An item the picker offers that yardo can't remove says why; a local
 // one is let off (its catalog.d file predates the rule).
 func TestRemovableOrSays(t *testing.T) {
+	GoSteps["x-test"] = true // as once the steps are registered
+	t.Cleanup(func() { delete(GoSteps, "x-test") })
 	bad := `[[item]]
 id = "x"
 tab = "cloud"

@@ -285,7 +285,8 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		}
 	}
 	// The install tabs, with the configure tabs joined to them: Agent
-	// setup under AI, VPN logins under System, Git & SSH a tab of its own.
+	// setup under AI, Git & SSH a tab of its own (VPN logins are in their
+	// tools' rows).
 	// Who can reach what (sysconf's visible items) is the menu's.
 	tabs := uiTabs(cat.PhaseTabs(catalog.PhaseInstall))
 	for _, t := range cat.PhaseTabs(catalog.PhaseConfigure) {
@@ -306,7 +307,8 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		if it.Hidden() || it.Always || it.ID == "docker-ports" || it.ID == "docker-api" {
 			continue
 		}
-		bi := &ui.BoardItem{ID: it.ID, Label: it.Label, Tab: it.Tab, Picked: picked(it.ID), Source: it.Describe()}
+		bi := &ui.BoardItem{ID: it.ID, Label: it.Label, Tab: it.Tab, Picked: picked(it.ID), Source: it.Describe(),
+			PartOf: it.PartOf, Removable: it.Removable(), RemoveSay: it.RemoveSay, KeepSay: it.KeepSay, Protected: it.Protected}
 		if first && it.Default {
 			bi.Pending = "add"
 		}
@@ -324,7 +326,6 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			}
 		}
 		if bi.Picked {
-			bi.Removable, bi.RemoveSay, bi.KeepSay, bi.RemoveWith = it.Removable(), it.RemoveSay, it.KeepSay, it.RemoveWith
 			for _, n := range neededBy(cat, a.Picks, it.ID) {
 				bi.NeededBy = append(bi.NeededBy, ui.Short(cat.Item(n).Label))
 			}
@@ -334,6 +335,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		}
 		items = append(items, bi)
 	}
+	foldParts(items)
 	for _, t := range a.MiseExtra {
 		bi := &ui.BoardItem{ID: "mise:" + t, Label: t + " (extra mise tool)", Tab: ui.ExtraTab, Picked: true, Source: "mise use -g " + t,
 			Removable: true, RemoveSay: "uninstalls it (mise unuse -g " + t + ")"}
@@ -679,4 +681,28 @@ func (o *options) upgrade(ctx context.Context, cat *catalog.Catalog, a *answers.
 		return "✗ Update failed: " + err.Error() + " (see " + o.log + ")", nil
 	}
 	return fmt.Sprintf("✓ Updated %d: %s.", len(tools)+len(pkgs), strings.Join(append(slices.Clone(tools), pkgs...), ", ")), nil
+}
+
+// stateRank orders states by how much they need the user: a row shows
+// the worst of its tool's and its parts'.
+var stateRank = map[string]int{"": 0, "ok": 0, "unchecked": 1, "outdated": 2, "drifted": 3, "partial": 4, "secret": 5, "missing": 6, "down": 7}
+
+// foldParts shows each picked part (a VPN login) in its tool's row: its
+// state when it's worse, the values it waits for, its answers to change.
+func foldParts(items []*ui.BoardItem) {
+	for _, p := range items {
+		if p.PartOf == "" || !p.Picked {
+			continue
+		}
+		n := slices.IndexFunc(items, func(i *ui.BoardItem) bool { return i.ID == p.PartOf })
+		if n < 0 || !items[n].Picked {
+			continue
+		}
+		t := items[n]
+		if stateRank[p.State] > stateRank[t.State] {
+			t.State, t.Detail = p.State, ui.Short(p.Label)+": "+p.Detail
+		}
+		t.Inputs = append(t.Inputs, p.Inputs...)
+		t.Changes = append(t.Changes, p.Changes...)
+	}
 }

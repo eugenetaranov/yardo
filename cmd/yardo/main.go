@@ -413,6 +413,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	// flash: the board's line after a run, when it's the board that comes
 	// back.
 	var flash string
+	// done: how the last uninstall went, shown on the board until
+	// dismissed.
+	var done *uninstalled
 	if stay && o.startMCP && !first {
 		menu, onBoard, reopen = true, false, "mcp"
 	}
@@ -540,9 +543,13 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				b := ui.NewBoard(d.info, first, d.tabs, d.items)
 				// From the menu: esc goes back to it.
 				b.SetFromMenu(menu)
-				b.SetPlanner(func(ids, adds []string) map[string][]string { return o.planLines(ctx, cat, a, ids, adds) })
+				b.SetPlanner(func(ids, adds []string) map[string]ui.UninstallPlan { return o.plans(ctx, cat, a, ids, adds) })
 				b.Flash(flash)
 				flash = ""
+				if done != nil {
+					b.ShowResult(done.Title(), done.Lines, done.Failed)
+					done = nil
+				}
 				if search != nil {
 					b.Search(*search)
 					search = nil
@@ -559,7 +566,8 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					d.forget()
 					onBoard = false
 				case ui.BoardFix:
-					fix = []string{res.ID}
+					// A tool's parts (its login) are fixed with it.
+					fix = append([]string{res.ID}, partsOf(cat, a.Picks, res.ID)...)
 					break loop
 				case ui.BoardEdit:
 					if fix, _, err = o.fillIn(ctx, a, res.Inputs); err != nil {
@@ -583,21 +591,24 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					} else if err != nil {
 						return err
 					}
-					fix, changed = []string{res.ID}, true
+					fix, changed = append([]string{res.ID}, partsOf(cat, a.Picks, res.ID)...), true
 					break loop
 				case ui.BoardApply:
 					// Uninstalls first; then the rest of the queue, if any.
 					if len(res.Uninstalls) > 0 {
-						upd.wait(stdout)
-						said, _, err := o.uninstall(ctx, cat, st, a, res.Uninstalls, stdout)
+						if upd != nil && !upd.ready() {
+							fmt.Fprintln(stdout, "Waiting for the check for updates to finish (it holds apt)…")
+						}
+						upd.wait(io.Discard)
+						r, err := o.uninstall(ctx, cat, st, a, res.Uninstalls, stdout)
 						if err != nil {
 							return err
 						}
-						if len(res.Adds) == 0 && len(res.Removes) == 0 && len(res.Settings) == 0 {
-							flash, d = strings.Join(said, "  "), nil // back to the board, checked again
+						if len(res.Adds) == 0 && len(res.Forgets) == 0 && len(res.Settings) == 0 {
+							done, d = &r, nil // back to the board, checked again
 							continue
 						}
-						for _, l := range said {
+						for _, l := range r.Lines {
 							fmt.Fprintln(stdout, l)
 						}
 					}

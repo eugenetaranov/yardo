@@ -120,6 +120,9 @@ var (
 	// GoSteps are the registered `go:<name>` step names; the steps package
 	// fills it in (catalog doesn't import it).
 	GoSteps = map[string]bool{}
+	// GoUndone are the Go steps that plan their own undo: removing their
+	// item undoes them (see Removable).
+	GoUndone = map[string]bool{}
 )
 
 func (s *Step) validate(files fs.FS) error {

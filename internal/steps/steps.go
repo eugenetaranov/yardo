@@ -289,6 +289,9 @@ var goSteps = map[string]GoStep{}
 func RegisterGo(name string, f GoStep) {
 	goSteps[name] = f
 	catalog.GoSteps[name] = true
+	if _, ok := f(catalog.Step{}).(Undoer); ok {
+		catalog.GoUndone[name] = true
+	}
 }
 
 // New makes the runnable step for s, for item id.

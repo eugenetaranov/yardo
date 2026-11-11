@@ -101,35 +101,35 @@ from any screen; on the home, q quits.
 
 **Tools**, and the first run, open the full screen: tabs by area
 (**Installed** first, once anything is: every tool installed, from all
-the tabs, to fix or uninstall one, a VPN login under its client; then **Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
+the tabs, to fix or uninstall one; then **Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
 SSH**) above a checklist, where a ticked box means installed and a mark
 beside it how it is, said in a word beside it: `✓` working, `✗` stopped
 or not installed, `~` half set up, edited by hand, or set up by an older
 yardo (this one ships newer files; Fix applies them), `○` needs a value,
 `↑` a newer version is out.
 
-- **space** queues adding (`[+]`) an item, or no longer managing
-  (`[−]`) one: yardo stops managing it, and it stays installed. The queue
-  shows on a line above the keys.
-- **d** queues uninstalling (`[✗]`) an installed item; **d** again takes
-  it off the queue. Queue several (NetBird and the AWS tools, say), along
-  with other changes; **a** uninstalls them first, then does the rest.
-  Before it does, it lists for each what goes, what stays and why, and
-  what stops working (see [Removing tools](#removing-tools)).
+- **space** ticks a tool to install (`[+]`), or unticks an installed one
+  to uninstall it (`[−]`); space again takes it off the queue. The queue
+  shows on a line above the keys, in words.
+- **d** asks to uninstall the row now (with anything else queued to
+  uninstall).
 - **enter** acts on the row: fix what's broken (now), fill in a missing
   value (in your editor), change an answer (git name and email, the
-  prompt, the dotfiles repo, the MCP servers), or show an item's details,
-  with Reinstall (after `yardo version up`, to take a newer yardo's
-  files; tools installed from a git repo, such as rds-mysql, are fetched
-  again too) and Stop managing it. On a row not installed, enter queues
-  adding it, as space does. An installed item's details also offer
-  Uninstall.
-- **a** applies the queue: it lists it, asks what the new items need (git
-  name, prompt, MCP servers, keys), then installs.
-- **/** searches every tab; for a tool the catalog doesn't have, ctrl-a
-  adds it as an extra mise tool.
-- **AI** has Agent setup (agent notes, safety settings, skills) and
-  **System** has VPN logins, under their own headings.
+  prompt, the dotfiles repo, the MCP servers), log in or out (a VPN), or
+  show an item's details, with Reinstall (after `yardo version up`, to
+  take a newer yardo's files; tools installed from a git repo, such as
+  rds-mysql, are fetched again too), Uninstall, and Forget it (it stays
+  installed, and yardo stops checking it). On a row not installed, enter
+  queues adding it, as space does.
+- **a** applies the queue: it asks first (see [Removing
+  tools](#removing-tools)), uninstalls, then asks what the new items
+  need (git name, prompt, MCP servers, keys) and installs.
+- **Typing**, here or on the home, filters every tab; **enter** goes into
+  the list with the filter kept, **esc** clears it. For a tool the catalog
+  doesn't have, ctrl-a adds it as an extra mise tool.
+- **AI** has Agent setup (agent notes, safety settings, skills), under
+  its own heading. A VPN's login is part of its row: enter on Tailscale
+  or NetBird logs in or out.
 
 **Team profiles.** On a machine set up from a named team profile, the
 home says how many tools came from it, the Tools screen notes each, and
@@ -184,42 +184,50 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 
 ### Removing tools
 
-On Tools, **d** on a row, then **a**; or from a shell:
+On Tools, untick a tool (**space**) and press **a**, or press **d** on it;
+or from a shell:
 
 ```sh
 sudo yardo remove aws netbird --dry-run   # what would go, and what stays
 sudo yardo remove aws netbird             # asks, then uninstalls
 ```
 
-An item goes by its id or name (`yardo --list` lists them); `--yes`
-doesn't ask. For each item yardo says, before it changes anything:
+An item goes by its name or id (`yardo --list` lists them); `--yes`
+doesn't ask. Before it changes anything, yardo asks, saying for each tool:
 
-- **what goes**: its packages, apt repo and mise tools, and what yardo
-  set up for it: its files, the lines it added to `.bashrc` and
-  `.zshrc`, its block in a config, its links, clones, services and
-  sysctl settings; and, for the items whose installer did more (Docker,
-  the VPNs, the MCP gateway, k3s, Ollama, Neovim's plugins, the AWS
-  Session Manager plugin), what its removal script does.
-- **what stays, and why**: what another installed item uses ("fzf
-  (Shell helpers uses it)"), a file you edited ("edited by hand"), a
-  clone with local changes. Your own data never goes: `~/.aws`, `~/.kube`,
-  `~/.ssh`, shell history, Docker's volumes.
-- **what stops working**: the installed items that need it. yardo stops
-  managing them too; they stay installed.
+- **what its removal does**, in a line: "Disconnects from NetBird,
+  uninstalls it and deletes its keys". **List everything that goes**
+  shows every package, mise tool, file and line it takes off: its
+  packages, apt repo and mise tools, and what yardo set up for it (its
+  files, the lines it added to `.bashrc` and `.zshrc`, its config block,
+  links, clones, services, sysctl and git settings, agent skills).
+- **what stays, and why**: what another installed tool uses ("fzf
+  (Shell helpers uses it)"), a file or git setting you changed ("edited
+  by hand"), a clone with local changes, the file with your agent keys.
+  Your own data never goes: `~/.aws`, `~/.kube`, `~/.ssh`, shell history,
+  Docker's volumes.
+- **what goes with it**: the installed tools that need it are
+  uninstalled too, first (uninstalling Node takes Gemini CLI with it);
+  one yardo can't uninstall is forgotten (it stays installed).
 
-A VPN login goes with its client: removing NetBird logs out, uninstalls
+A VPN's login is part of its row: uninstalling NetBird logs out, uninstalls
 it and deletes its keys; the peer stays in your NetBird dashboard (or the
-machine in your Tailscale admin console) until you delete it there.
+machine in your Tailscale admin console) until you delete it there. To
+log out and keep NetBird, enter on its row → Log out.
 
-Each item says how it went. One that fails stays installed (it shows as
-half set up) and the others still go; removing it again picks up where
-it stopped. `yardo remove` exits 1 then, and 2, removing nothing, when an
-item isn't installed or can't be removed.
+After, a box says how it went, a line per tool, until you close it. A
+tool that fails stays installed (it shows as half set up); the box offers
+**Retry**, which picks up where it stopped, and the others still go.
+`yardo remove` exits 1 then, and 2, removing nothing, when a tool isn't
+installed or can't be removed.
 
-Some items yardo won't uninstall, and **d** says why: your git identity
-and logins (GitHub, Bitbucket, commit signing), the agent API keys file,
-your dotfiles, the shell you log in with, agent skills and settings that
-sit with your own. Space stops managing them instead.
+A tool you uninstall that your team profile lists stays off: applying the
+profile again skips it and says so. Adding it on Tools clears that.
+
+A few tools yardo won't uninstall, and says why: ECC, your GitHub login,
+commit signing, your dotfiles and the agents' settings (they sit among
+your own), and zsh (the shell you log in with). For all but zsh it offers
+to forget them instead.
 
 When apt has dependencies left that nothing needs, yardo says so; it
 doesn't run `apt autoremove` itself, which could take packages you
@@ -305,8 +313,8 @@ installed by hand.
    `ec2ctl`; `openssl_connect`, `openssl_info_text`.
 9. **System → System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
    iperf3, nmap, strace, htop, btop, ncdu, …), NFS/SMB clients.
-10. **System → Connectivity (root):** Tailscale and NetBird (log in under
-   System → VPN logins), the OpenVPN client, and an OpenVPN server:
+10. **System → Connectivity (root):** Tailscale and NetBird (log in from
+   their details: enter on the row), the OpenVPN client, and an OpenVPN server:
    its own CA (easy-rsa), UDP 1194, clients on 10.8.0.0/24 with all their
    traffic sent through the machine (NAT, through Docker's DOCKER-USER
    chain when Docker is there), and a profile for you in
@@ -406,7 +414,7 @@ installed by hand.
    Sentry's `find-bugs`, `humanizer`, and Anthropic's `skill-creator` and
    `webapp-testing`. Nothing is fetched on the VM; `scripts/update-skills`
    re-vendors them (`internal/assets/skills.lock.toml`).
-4. **VPN logins:** the Tailscale login (an auth key, or `sudo tailscale
+4. **VPN logins** (in Tailscale's and NetBird's rows): the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later).
 

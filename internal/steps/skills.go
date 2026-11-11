@@ -157,6 +157,28 @@ func (k skillsStep) Apply(_ context.Context, e *Env) error {
 	return nil
 }
 
+// PlanUndo plans deleting the skill folders yardo wrote that still are
+// as it wrote them; an edited one stays, and a folder of the user's own
+// (no mark) isn't yardo's to mention.
+func (k skillsStep) PlanUndo(_ context.Context, e *Env, p *RemovePlan) error {
+	for _, n := range k.s.Skills {
+		for _, d := range SkillDirs {
+			dir := e.Path(path.Join(d, n))
+			cur, mark, err := onDisk(dir)
+			switch {
+			case err != nil:
+				return err
+			case cur == nil || mark == "":
+			case treeHash(cur) != mark:
+				p.Keep = append(p.Keep, path.Join(d, n)+" (edited by hand)")
+			default:
+				p.off(path.Join(d, n), func(context.Context) error { return os.RemoveAll(dir) })
+			}
+		}
+	}
+	return nil
+}
+
 // write puts the skill's files in d/name, marked, owned by the user.
 func (skillsStep) write(e *Env, d, name string, files map[string][]byte) error {
 	dir := e.Path(path.Join(d, name))

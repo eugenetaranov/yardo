@@ -22,7 +22,7 @@ func TestFromBoard(t *testing.T) {
 	k := &asker{cat: cat, a: a, out: io.Discard, installed: func(string) bool { return false }}
 	c, err := k.fromBoard(context.Background(), ui.BoardResult{Kind: ui.BoardApply,
 		Adds:     []string{"terraform", "mise:pulumi"},
-		Removes:  []string{"tmux", "mise:starship"},
+		Forgets:  []string{"tmux", "mise:starship"},
 		Settings: map[string]string{"mcp": "vpn", "ports": "all", "api": "lan", "accent": "pistachio"}}, false)
 	if err != nil {
 		t.Fatal(err)

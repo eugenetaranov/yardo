@@ -67,17 +67,17 @@ check's copy (~/.cache/yardo/status.json).
 `,
 	"remove": `Usage: sudo yardo remove ITEM… [--dry-run] [--yes]
 
-Uninstalls the items, by id or name (aws, netbird; yardo --list lists
-them), and an extra mise tool by its name. For each it says what goes
-(packages, mise tools, yardo's files and rc lines), what stays and why
-(used by another item, edited by hand), and what stops being managed
-because it needs it; then asks. Your own data (~/.aws, ~/.ssh, …) stays.
-On Tools, d does the same.
+Uninstalls the tools, by name or id (aws, netbird; yardo --list lists
+them), and an extra mise tool by its name, with the installed tools that
+need them. For each it says what its removal does, what stays and why
+(used by another tool, edited by hand), and what goes with it; then asks.
+Your own data (~/.aws, ~/.ssh, …) stays. On Tools, untick it (space) and
+press a, or press d.
 
-  --dry-run  say what it would do; change nothing
+  --dry-run  say what it would do, with everything that goes; change nothing
   --yes      don't ask
 
-Exits 2, removing nothing, when an item isn't installed or yardo won't
+Exits 2, uninstalling nothing, when a tool isn't installed or yardo can't
 uninstall it (it says why); 1 when an uninstall failed (the others run).
 `,
 	"export": `Usage: sudo yardo export [--name NAME] [--lock] [FILE]
