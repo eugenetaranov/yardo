@@ -335,17 +335,59 @@ func TestDefaults(t *testing.T) {
 }
 
 // What yardo can uninstall: an item with a remove script, or one whose
-// steps it undoes on its own (apt, apt repo, mise); not one set up by
-// scripts or its own steps.
+// steps it undoes on its own (apt, apt repo, mise, its files, lines,
+// links, clones, services); not one set up by its own Go steps or
+// scripts. Every item the picker offers is removable or says why not.
 func TestRemovable(t *testing.T) {
 	c, err := Load(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for id, want := range map[string]bool{"docker": true, "tailscale-install": true, "mcpjungle-install": true, "k3s": true,
-		"terraform": true, "podman": true, "claude": true, "neovim": false, "openvpn-server": false, "github": false} {
+		"terraform": true, "podman": true, "claude": true, "neovim": true, "openvpn-server": true, "aws": true, "helpers": true,
+		"github": false, "netbird": false, "gitid": false} {
 		if got := c.Item(id).Removable(); got != want {
 			t.Errorf("%s: removable %v, want %v", id, got, want)
 		}
+	}
+	for _, it := range c.Items {
+		if !it.Hidden() && !it.Always && !it.Removable() && it.KeepSay == "" && it.RemoveWith == "" {
+			t.Errorf("%s: can't be removed and doesn't say why", it.ID)
+		}
+	}
+	if w := c.Item("netbird").RemoveWith; w != "netbird-install" {
+		t.Errorf("netbird: removed with %q", w)
+	}
+}
+
+// An item the picker offers that yardo can't remove says why; a local
+// one is let off (its catalog.d file predates the rule).
+func TestRemovableOrSays(t *testing.T) {
+	bad := `[[item]]
+id = "x"
+tab = "cloud"
+label = "X"
+[[item.step]]
+type = "run"
+cmd = "true"
+creates = "/x"
+`
+	c := &Catalog{byID: map[string]*Item{}}
+	if err := c.addFile("data/x.toml", []byte(`[[tab]]
+id = "cloud"
+title = "Cloud"
+`+bad), false); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "can't be removed") {
+		t.Errorf("no error for an item that can't be removed: %v", err)
+	}
+	c.Items[0].KeepSay = "it's a test"
+	if err := c.validate(); err != nil {
+		t.Errorf("keep_say didn't do: %v", err)
+	}
+	c.Items[0].KeepSay, c.Items[0].From = "", LocalDir+"/x.toml"
+	if err := c.validate(); err != nil {
+		t.Errorf("a local item failed: %v", err)
 	}
 }

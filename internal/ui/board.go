@@ -14,9 +14,10 @@ import (
 
 // The board is the Tools screen: the picker's tabs and checklist, where a
 // ticked box means picked (installed) and a mark beside it its health.
-// Space queues adding or removing an item, enter acts on the row (fix it,
-// fill in its value, change an answer, reinstall it), a applies the queue,
-// which shows on a line above the keys. The machine's settings are the
+// Space queues adding an item or no longer managing it, d uninstalling
+// it, enter acts on the row (fix it, fill in its value, change an answer,
+// reinstall it), a applies the queue, which shows on a line above the
+// keys. The machine's settings are the
 // menu's (Settings).
 
 // HomeInfo is what the board's header says.
@@ -87,8 +88,9 @@ type BoardItem struct {
 	ID, Label string
 	// Tab is the section it's listed in (a catalog tab id, or ExtraTab).
 	Tab string
-	// Picked: it's among the saved picks (installed). Pending is "add" or
-	// "remove" when a change to it is queued.
+	// Picked: it's among the saved picks (installed). Pending is "add",
+	// "remove" (stop managing it) or "uninstall" when a change to it is
+	// queued.
 	Picked  bool
 	Pending string
 	// State is its status when picked (ok, down, drifted, partial,
@@ -105,10 +107,14 @@ type BoardItem struct {
 	// applying that profile again adds it back.
 	Team string
 	// Removable: yardo can uninstall it (d), saying RemoveSay first, and
-	// that NeededBy (the installed items that need it) stop working.
-	Removable bool
-	RemoveSay string
-	NeededBy  []string
+	// that NeededBy (the installed items that need it) stop working. One
+	// it can't says why: KeepSay. RemoveWith is the item d on it uninstalls
+	// instead (a VPN login's client).
+	Removable  bool
+	RemoveSay  string
+	NeededBy   []string
+	KeepSay    string
+	RemoveWith string
 }
 
 // BoardSetting is one of the menu's settings: who can reach a service
@@ -139,7 +145,8 @@ type BoardKind int
 
 const (
 	BoardQuit BoardKind = iota
-	// BoardApply applies the queue (Result's Adds, Removes, Settings).
+	// BoardApply applies the queue (Result's Uninstalls, Removes, Adds,
+	// Settings).
 	BoardApply
 	// BoardFix re-applies Result.ID now.
 	BoardFix
@@ -148,8 +155,6 @@ const (
 	// BoardChange asks Result.ID's Result.Change question again, then
 	// re-applies it.
 	BoardChange
-	// BoardRemove uninstalls Result.ID (and stops managing what needs it).
-	BoardRemove
 )
 
 // BoardResult is what the board was left with, and the queue.
@@ -161,6 +166,9 @@ type BoardResult struct {
 	// Change is BoardChange's answer to change (a BoardItem.Changes key).
 	Change        string
 	Adds, Removes []string
+	// Uninstalls are the items to uninstall (d), and stop managing what
+	// needs them.
+	Uninstalls []string
 	// Settings are settings to change, key to value (the menu's).
 	Settings map[string]string
 }
@@ -185,7 +193,19 @@ type Board struct {
 	result    BoardResult
 	out       bool
 	quitAsked bool
+	// plan says what the queued uninstalls do (see SetPlanner).
+	plan Planner
 }
+
+// Planner says, for each item to uninstall, what uninstalling it does,
+// as lines for the question: what goes, stays and why, what stops
+// working. adds are the items queued to install, which may need one of
+// them back.
+type Planner func(uninstalls, adds []string) map[string][]string
+
+// SetPlanner sets what the question before applying says about each
+// uninstall; without one it says the item's RemoveSay.
+func (b *Board) SetPlanner(p Planner) { b.plan = p }
 
 // panel is the box under the list for a row's choices or text.
 type panel struct {
@@ -204,7 +224,7 @@ type panel struct {
 const LookSection = "__look__"
 
 // InstalledTab is the board's first tab, once anything is installed: every
-// tool installed, from all the tabs, to find one to fix or remove.
+// tool installed, from all the tabs, to find one to fix or uninstall.
 const InstalledTab = "__installed__"
 
 // NewBoard builds the board: tabs (each with sections, or none) and the
@@ -281,12 +301,16 @@ type row struct {
 	text  string
 	item  *BoardItem
 	where string // search results: the item's tab
+	under bool   // Installed: a login, under its client
 }
 
 func (r row) selectable() bool { return r.head == "" && r.text == "" }
 
 // label is what a selectable row says.
 func (r row) label() string {
+	if r.item != nil && r.under {
+		return "└ " + r.item.Label
+	}
 	if r.item != nil {
 		return r.item.Label
 	}
@@ -337,9 +361,19 @@ func (b *Board) rows() []row {
 	tabs := b.visibleTabs()
 	t := tabs[b.current(tabs)]
 	if t.ID == InstalledTab {
+		// A login goes under its client (when that's installed too).
+		under := func(i *BoardItem) bool {
+			return i.RemoveWith != "" && slices.ContainsFunc(b.items, func(c *BoardItem) bool { return c.ID == i.RemoveWith && c.Picked })
+		}
 		for _, i := range b.items {
-			if i.Picked {
-				out = append(out, row{item: i, where: b.tabTitle(i.Tab)})
+			if !i.Picked || under(i) {
+				continue
+			}
+			out = append(out, row{item: i, where: b.tabTitle(i.Tab)})
+			for _, l := range b.items {
+				if l.Picked && l.RemoveWith == i.ID {
+					out = append(out, row{item: l, where: b.tabTitle(l.Tab), under: true})
+				}
 			}
 		}
 		return out
@@ -433,6 +467,8 @@ func (b *Board) done(k BoardKind, id string) tea.Cmd {
 			b.result.Adds = append(b.result.Adds, i.ID)
 		case "remove":
 			b.result.Removes = append(b.result.Removes, i.ID)
+		case "uninstall":
+			b.result.Uninstalls = append(b.result.Uninstalls, i.ID)
 		}
 	}
 	return tea.Quit
@@ -479,11 +515,11 @@ func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 		return b.act(r)
 	case "d":
 		if r != nil && r.item != nil {
-			b.askRemove(r.item)
+			b.uninstall(r.item)
 		}
 	case "a":
 		if b.queued() == 0 {
-			b.flash = "Nothing queued: space on a row adds or removes it."
+			b.flash = "Nothing queued: space on a row adds it, d uninstalls it."
 			return nil
 		}
 		b.confirm()
@@ -624,6 +660,9 @@ func (b *Board) act(r *row) tea.Cmd {
 // nothing.
 func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func() tea.Cmd) *panel {
 	opts := append([][2]string{first}, changeOpts(i)...)
+	if i.Removable || i.RemoveWith != "" {
+		opts = append(opts, [2]string{"Uninstall (d)", "uninstall"})
+	}
 	opts = append(opts, [2]string{"Stop managing it (it stays installed)", "remove"})
 	return &panel{title: i.Label + ": " + stateWord(i.State), lines: lines, opts: opts,
 		on: func(v string) tea.Cmd {
@@ -632,6 +671,9 @@ func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func
 				return do()
 			case "remove":
 				i.Pending = "remove"
+				return nil
+			case "uninstall":
+				b.uninstall(i)
 				return nil
 			}
 			return b.change(i, v)
@@ -664,52 +706,91 @@ func (b *Board) change(i *BoardItem, v string) tea.Cmd {
 	return cmd
 }
 
-// askRemove asks before uninstalling i: what removing it does, and what
-// stops working with it. One yardo can't uninstall, or not installed, it
-// says so.
-func (b *Board) askRemove(i *BoardItem) {
-	switch {
-	case !i.Picked:
+// uninstall queues uninstalling i, or takes it off the queue: the item
+// it's removed with (a login: its client) instead, when it has one. One
+// yardo can't uninstall, or not installed, it says so.
+func (b *Board) uninstall(i *BoardItem) {
+	if i.Pending == "uninstall" {
+		i.Pending = ""
+		return
+	}
+	if !i.Picked {
 		b.flash = short(i.Label) + " isn't installed."
 		return
-	case b.queued() > 0:
-		b.flash = "Changes are queued: a applies them, space takes them off; then d removes."
+	}
+	if i.RemoveWith != "" {
+		n := slices.IndexFunc(b.items, func(x *BoardItem) bool { return x.ID == i.RemoveWith })
+		if n < 0 || !b.items[n].Picked {
+			b.flash = "yardo can't uninstall " + short(i.Label) + " on its own: space stops managing it."
+			return
+		}
+		c := b.items[n]
+		if c.Pending != "uninstall" {
+			b.uninstall(c)
+		}
+		if c.Pending == "uninstall" {
+			b.flash = short(i.Label) + " goes with " + short(c.Label) + ": uninstalling " + short(c.Label) + " (d on it takes it off the queue)."
+		}
 		return
-	case !i.Removable:
-		b.flash = "yardo can't uninstall " + short(i.Label) + " (its own installer or settings set it up): space stops managing it, and it stays installed."
+	}
+	if !i.Removable {
+		why := i.KeepSay
+		if why == "" {
+			why = "its own installer or settings set it up"
+		}
+		b.flash = "yardo won't uninstall " + short(i.Label) + ": " + why + ". Space stops managing it; it stays installed."
 		return
 	}
-	say := i.RemoveSay
-	if say == "" {
-		say = "uninstalls it"
+	i.Pending = "uninstall"
+	if i.Team != "" {
+		b.flash = fmt.Sprintf("%s is on the team profile %s: applying that profile again installs it again.", short(i.Label), i.Team)
 	}
-	lines := []string{"Removing it " + say + "."}
-	if len(i.NeededBy) > 0 {
-		lines = append(lines, "⚠ "+strings.Join(i.NeededBy, ", ")+" need it and will stop working; yardo stops managing them too (they stay installed).")
-	}
-	b.panel = &panel{title: "Remove " + short(i.Label) + "?", lines: lines, yn: true, sel: 1,
-		opts: [][2]string{{"Yes, remove it (y)", "yes"}, {"No, keep it (n)", "no"}},
-		on: func(v string) tea.Cmd {
-			if v == "yes" {
-				return b.done(BoardRemove, i.ID)
-			}
-			return nil
-		}}
 }
 
-// confirm asks before applying the queue.
+// confirm asks before applying the queue: each uninstall with what it
+// takes off, keeps and stops (from the planner), then the rest.
 func (b *Board) confirm() {
-	var lines []string
+	var lines, uninstalls, adds []string
 	for _, i := range b.items {
 		switch i.Pending {
+		case "uninstall":
+			uninstalls = append(uninstalls, i.ID)
 		case "add":
-			lines = append(lines, "+ "+i.Label)
+			adds = append(adds, i.ID)
+		}
+	}
+	var plans map[string][]string
+	if b.plan != nil && len(uninstalls) > 0 {
+		plans = b.plan(uninstalls, adds)
+	}
+	for _, i := range b.items {
+		if i.Pending != "uninstall" {
+			continue
+		}
+		lines = append(lines, "✗ Uninstall "+i.Label)
+		ls, ok := plans[i.ID]
+		if !ok {
+			if i.RemoveSay != "" {
+				ls = append(ls, "It "+i.RemoveSay+".")
+			}
+			if len(i.NeededBy) > 0 {
+				ls = append(ls, "⚠ "+strings.Join(i.NeededBy, ", ")+" need it and will stop working; yardo stops managing them too.")
+			}
+		}
+		for _, l := range ls {
+			lines = append(lines, "    "+l)
+		}
+	}
+	for _, i := range b.items {
+		switch i.Pending {
 		case "remove":
-			lines = append(lines, "- "+i.Label+" (yardo stops managing it; it stays installed)")
+			lines = append(lines, "− Stop managing "+i.Label+" (it stays installed)")
+		case "add":
+			lines = append(lines, "+ Install "+i.Label)
 		}
 	}
 	b.panel = &panel{title: fmt.Sprintf("Apply %d change(s)?", b.queued()), lines: lines,
-		opts: [][2]string{{"Apply (asks what new items need, then installs)", "apply"}, {"Not yet", "no"}},
+		opts: [][2]string{{"Apply (uninstalls first, then asks what new items need and installs)", "apply"}, {"Not yet", "no"}},
 		on: func(v string) tea.Cmd {
 			if v == "apply" {
 				return b.done(BoardApply, "")
@@ -773,6 +854,8 @@ func (b *Board) note(r row) (string, lipgloss.Style) {
 		return pre + "will install", green
 	case i.Pending == "remove":
 		return pre + "will stop managing it (stays installed)", red
+	case i.Pending == "uninstall":
+		return pre + "will uninstall", red
 	case !i.Picked || i.State == "":
 		return strings.TrimSuffix(pre, " · "), muted
 	case i.State == "secret":
@@ -918,6 +1001,8 @@ func (b *Board) footer(r *row) string {
 		first := k("enter", "details")
 		switch {
 		case r == nil:
+		case r.item.Pending == "uninstall":
+			first = k("d", "cancel")
 		case r.item.Pending != "":
 			first = k("space", "cancel")
 		case !r.item.Picked:
@@ -931,7 +1016,7 @@ func (b *Board) footer(r *row) string {
 		}
 		keys = append(keys, first)
 		if r != nil && r.item != nil && r.item.Picked && r.item.Pending == "" {
-			keys = append(keys, k("space", "stop managing"), k("d", "remove"))
+			keys = append(keys, k("d", "uninstall"), k("space", "stop managing"))
 		}
 		if n := b.queued(); n > 0 {
 			keys = append(keys, accentBd.Render("a")+" "+accentBd.Render(fmt.Sprintf("APPLY %d", n)))
@@ -985,7 +1070,9 @@ func (b *Board) View() string {
 			case "add":
 				q = append(q, "+ "+short(i.Label))
 			case "remove":
-				q = append(q, "- "+short(i.Label))
+				q = append(q, "− "+short(i.Label))
+			case "uninstall":
+				q = append(q, "✗ "+short(i.Label))
 			}
 		}
 		ql = append(ql, " "+accentBd.Render("Queued: ")+runewidth.Truncate(strings.Join(q, ", "), max(10, w-24), "…")+muted.Render("   a applies"))
@@ -1040,7 +1127,9 @@ func (b *Board) View() string {
 		case i.Pending == "add":
 			box = "[+]"
 		case i.Pending == "remove":
-			box = "[-]"
+			box = "[−]"
+		case i.Pending == "uninstall":
+			box = "[✗]"
 		case i.Picked:
 			box = "[x]"
 		}

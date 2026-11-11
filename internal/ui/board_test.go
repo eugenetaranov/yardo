@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -103,7 +104,7 @@ func TestBoardNeedsYou(t *testing.T) {
 }
 
 // Installed, the first tab, lists every tool installed, from all the
-// tabs, each with its tab; d removes one from there. The first run has
+// tabs, each with its tab; d uninstalls one from there. The first run has
 // none.
 func TestBoardInstalled(t *testing.T) {
 	b := testBoard(false)
@@ -120,8 +121,8 @@ func TestBoardInstalled(t *testing.T) {
 	}
 	b.items[1].Removable = true
 	press2(b, "down", "d")
-	if b.panel == nil || !strings.Contains(b.View(), "Remove Terraform?") {
-		t.Fatalf("no remove panel:\n%s", b.View())
+	if b.items[1].Pending != "uninstall" || !strings.Contains(b.View(), "✗ Terraform") {
+		t.Fatalf("d didn't queue the uninstall:\n%s", b.View())
 	}
 	if strings.Contains(testBoard(true).View(), "Installed") {
 		t.Errorf("first run has Installed:\n%s", testBoard(true).View())
@@ -143,7 +144,7 @@ func TestBoardQueueAndApply(t *testing.T) {
 		t.Errorf("queue:\n%s", v)
 	}
 	press2(b, "a")
-	if b.panel == nil || !strings.Contains(b.View(), "+ WireGuard server") || strings.Contains(b.View(), "Queued:") {
+	if b.panel == nil || !strings.Contains(b.View(), "+ Install WireGuard server") || strings.Contains(b.View(), "Queued:") {
 		t.Fatalf("no confirm:\n%s", b.View())
 	}
 	press2(b, "enter")
@@ -328,47 +329,70 @@ func TestBoardTeam(t *testing.T) {
 	}
 }
 
-// d asks before uninstalling: what it does, what stops working; y removes,
-// n keeps it. One yardo can't uninstall says so.
-func TestBoardRemove(t *testing.T) {
-	tabs := []Tab{{ID: "k8s", Title: "Containers"}}
+// d queues uninstalling, as space queues a change: several at once,
+// with what's queued already; d again takes it off. a asks, saying what
+// each takes off, keeps and stops (the planner's lines). One yardo can't
+// uninstall says why; a login's d means its client.
+func TestBoardUninstall(t *testing.T) {
+	tabs := []Tab{{ID: "net", Title: "Network"}}
 	mk := func() (*Board, []*BoardItem) {
 		items := []*BoardItem{
-			{ID: "docker", Label: "Docker Engine + Compose", Tab: "k8s", Picked: true, State: "ok", Removable: true,
-				RemoveSay: "stops Docker and uninstalls it", NeededBy: []string{"MCPJungle MCP gateway"}},
-			{ID: "openvpn-server", Label: "OpenVPN server", Tab: "k8s", Picked: true, State: "ok"},
+			{ID: "netbird-install", Label: "NetBird (log in under This VM → VPN logins)", Tab: "net", Picked: true, State: "ok", Removable: true,
+				RemoveSay: "disconnects from NetBird and uninstalls it"},
+			{ID: "netbird", Label: "NetBird login", Tab: "net", Picked: true, State: "ok", RemoveWith: "netbird-install"},
+			{ID: "aws", Label: "AWS tools (aws CLI)", Tab: "net", Picked: true, State: "ok", Removable: true,
+				NeededBy: []string{"Thing"}},
+			{ID: "sshharden", Label: "SSH hardening", Tab: "net", Picked: true, State: "ok", KeepSay: "undoing it reopens password logins"},
+			{ID: "terraform", Label: "Terraform", Tab: "net"},
 		}
 		b := NewBoard(HomeInfo{Host: "vm", User: "ada"}, false, tabs, items)
-		b.Update(tea.WindowSizeMsg{Width: 120, Height: 26})
+		b.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 		return b, items
 	}
-	b, _ := mk()
-	if !strings.Contains(b.View(), "d remove") {
-		t.Errorf("footer lacks d:\n%s", b.View())
+	b, items := mk()
+	if v := b.View(); !strings.Contains(v, "d uninstall") || !strings.Contains(v, "space stop managing") {
+		t.Errorf("footer lacks d and space:\n%s", v)
 	}
-	press2(b, "d")
+	// Installed: the login under its client.
+	if v := b.View(); !strings.Contains(v, "└ NetBird login") {
+		t.Errorf("login not under its client:\n%s", v)
+	}
+	press2(b, "right", "down", "down", "down", "down", " ") // Network; Terraform: add
+	press2(b, "up", "up", "up", "d")                        // the login: its client
+	if items[0].Pending != "uninstall" || items[1].Pending != "" || !strings.Contains(b.View(), "goes with NetBird") {
+		t.Errorf("login's d: %q %q\n%s", items[0].Pending, items[1].Pending, b.View())
+	}
+	press2(b, "down", "d") // aws, with a change queued already
+	if items[2].Pending != "uninstall" {
+		t.Errorf("aws not queued: %q\n%s", items[2].Pending, b.View())
+	}
+	press2(b, "down", "d") // sshharden: says why not
+	if items[3].Pending != "" || !strings.Contains(b.View(), "undoing it reopens password logins") {
+		t.Errorf("not removable:\n%s", b.View())
+	}
+	var asked []string
+	b.SetPlanner(func(ids, adds []string) map[string][]string {
+		asked = ids
+		return map[string][]string{"aws": {"Takes off: aws-cli", "Keeps: fzf (Shell helpers uses it)"}}
+	})
+	press2(b, "a")
 	v := b.View()
-	for _, want := range []string{"Remove Docker Engine + Compose?", "Removing it stops Docker and uninstalls it.",
-		"MCPJungle MCP gateway need it and will stop working", "Yes, remove it (y)", "No, keep it (n)"} {
+	for _, want := range []string{"✗ Uninstall NetBird", "It disconnects from NetBird and uninstalls it.", "✗ Uninstall AWS tools", "Takes off: aws-cli", "Keeps: fzf (Shell helpers uses it)"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("question lacks %q:\n%s", want, v)
 		}
 	}
-	press2(b, "n")
-	if b.panel != nil || b.result.Kind != BoardQuit {
-		t.Fatalf("n: panel %v result %+v", b.panel, b.result)
+	if !slices.Equal(asked, []string{"netbird-install", "aws"}) {
+		t.Errorf("planner asked %q", asked)
 	}
-	if press2(b, "d", "y"); b.result.Kind != BoardRemove || b.result.ID != "docker" {
-		t.Errorf("y: %+v", b.result)
+	press2(b, "enter")
+	if b.result.Kind != BoardApply || !slices.Equal(b.result.Uninstalls, []string{"netbird-install", "aws"}) {
+		t.Errorf("result %+v", b.result)
 	}
-	b, _ = mk()
-	press2(b, "d", "enter") // No, keep it is chosen first
-	if b.result.Kind == BoardRemove {
-		t.Error("enter removed: keep it should be first")
-	}
-	b, _ = mk()
-	press2(b, "down", "d")
-	if b.panel != nil || !strings.Contains(b.View(), "yardo can't uninstall OpenVPN server") {
-		t.Errorf("not removable:\n%s", b.View())
+	// d again: off the queue.
+	b, items = mk()
+	press2(b, "right", "down", "down", "d", "d")
+	if items[2].Pending != "" {
+		t.Errorf("d twice: %q", items[2].Pending)
 	}
 }

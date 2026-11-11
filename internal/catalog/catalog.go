@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 
@@ -89,6 +90,13 @@ type Item struct {
 	// for the question first. See Removable.
 	Remove    string `toml:"remove"`
 	RemoveSay string `toml:"remove_say"`
+	// KeepSay says why yardo won't uninstall an item it can't (undoing it
+	// would defeat it, or nothing can): every item the picker offers is
+	// removable or says why not.
+	KeepSay string `toml:"keep_say"`
+	// RemoveWith is the item removing this one means (a VPN login: its
+	// client); removing that takes this one off too.
+	RemoveWith string `toml:"remove_with"`
 
 	// From is the file the item came from (for error messages).
 	From string `toml:"-"`
@@ -97,8 +105,11 @@ type Item struct {
 }
 
 // undone are the step types removing an item undoes on its own: its
-// packages, its apt repo, its mise tools (notes have nothing to undo).
-var undone = map[string]bool{"apt": true, "apt_repo": true, "mise": true, "note": true}
+// packages, its apt repo, its mise tools, the files, rc lines, blocks,
+// links, clones, sysctl settings and services yardo set up (notes have
+// nothing to undo).
+var undone = map[string]bool{"apt": true, "apt_repo": true, "mise": true, "note": true,
+	"file": true, "template": true, "line": true, "block": true, "link": true, "git_clone": true, "sysctl": true, "systemctl": true}
 
 // Removable reports whether yardo can uninstall the item: it has a Remove
 // script, or each of its steps is one removing undoes on its own.
@@ -314,6 +325,14 @@ func (c *Catalog) validate() error {
 			fail(it, "phase %q: want install or configure", it.Phase)
 		case it.Remove != "" && it.RemoveSay == "":
 			fail(it, "remove without remove_say (what removing it does)")
+		case it.Removable() && it.KeepSay != "":
+			fail(it, "keep_say on an item yardo can remove")
+		case it.RemoveWith != "" && !slices.Contains(it.Needs, it.RemoveWith):
+			fail(it, "remove_with %q, which it doesn't need", it.RemoveWith)
+		case it.RemoveWith != "" && c.byID[it.RemoveWith] != nil && !c.byID[it.RemoveWith].Removable():
+			fail(it, "remove_with %q, which yardo can't remove", it.RemoveWith)
+		case !strings.HasPrefix(it.From, LocalDir+"/") && !it.Hidden() && !it.Always && !it.Removable() && it.KeepSay == "" && it.RemoveWith == "":
+			fail(it, "can't be removed: give it remove (and remove_say), or keep_say (why not)")
 		}
 		for _, n := range it.Needs {
 			if c.byID[n] == nil {

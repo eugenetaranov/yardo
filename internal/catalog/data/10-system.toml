@@ -128,8 +128,9 @@ tailscale logout 2>/dev/null || true
 systemctl disable --now tailscaled 2>/dev/null || true
 if dpkg-query -W tailscale >/dev/null 2>&1; then apt-get purge -y -q tailscale tailscale-archive-keyring || apt-get purge -y -q tailscale; fi
 rm -f /etc/apt/sources.list.d/tailscale.list /usr/share/keyrings/tailscale-archive-keyring.gpg
+rm -rf /var/lib/tailscale
 """
-remove_say = "logs this machine out of your tailnet and uninstalls Tailscale"
+remove_say = "logs this machine out of your tailnet, uninstalls Tailscale and deletes its state; the machine stays in your Tailscale admin console until you remove it there"
 tab = "net"
 scope = "system"
 label = "Tailscale (log in under This VM → VPN logins)"
@@ -145,6 +146,7 @@ unverified = "Tailscale's own installer, which adds its signed apt repository"
 # Keeps the old id, so an old pick still means install + log in.
 [[item]]
 id = "tailscale"
+remove_with = "tailscale-install"
 tab = "logins"
 scope = "system"
 label = "Tailscale login (auth key; or 'sudo tailscale up' later)"
@@ -160,8 +162,9 @@ remove = """
 netbird down 2>/dev/null || true
 netbird service stop 2>/dev/null || true
 netbird service uninstall 2>/dev/null || true
+rm -rf /etc/netbird /var/lib/netbird
 """
-remove_say = "disconnects from NetBird and uninstalls it"
+remove_say = "disconnects from NetBird, uninstalls it and deletes its keys; the peer stays in your NetBird dashboard until you delete it there"
 tab = "net"
 scope = "system"
 label = "NetBird (log in under This VM → VPN logins)"
@@ -194,6 +197,7 @@ check = "systemctl is-active --quiet netbird"
 # With the setup key typed this run; without one, `sudo netbird up` later.
 [[item]]
 id = "netbird"
+remove_with = "netbird-install"
 tab = "logins"
 scope = "system"
 label = "NetBird login (setup key, NetBird cloud or your own; or 'sudo netbird up' later)"
@@ -228,6 +232,11 @@ packages = ["openvpn"]
 # user in /srv/openvpn (root only: it holds the client's key).
 [[item]]
 id = "openvpn-server"
+remove = """
+systemctl disable --now openvpn-server@server yardo-vpn-nat 2>/dev/null || true
+rm -rf /etc/openvpn/server /srv/openvpn
+"""
+remove_say = "stops the OpenVPN server and deletes its keys and every client's profile (/srv/openvpn): clients can't connect again"
 tab = "net"
 scope = "system"
 label = "OpenVPN server (others connect to this machine; UDP 1194)"
@@ -303,6 +312,12 @@ packages = ["wireguard-tools"]
 # the user in /srv/wireguard (root only: it holds the client's key).
 [[item]]
 id = "wireguard-server"
+remove = """
+systemctl disable --now wg-quick@yardo-wg 2>/dev/null || true
+rm -f /etc/wireguard/yardo-wg.conf
+rm -rf /srv/wireguard
+"""
+remove_say = "stops the WireGuard server and deletes its keys and every client's config (/srv/wireguard): clients can't connect again"
 tab = "net"
 scope = "system"
 label = "WireGuard server (others connect to this machine; UDP 51820)"
@@ -371,6 +386,7 @@ on_change = true
 # them past a host firewall). Unticked: everywhere again.
 [[item]]
 id = "docker-ports"
+keep_say = "it's a setting: change it under Settings → Network access"
 tab = "sysconf"
 scope = "system"
 label = "Limit containers' published ports to this machine or your VPNs (asks)"
@@ -385,6 +401,7 @@ type = "go:docker_ports"
 # none of this. Unticked: off again.
 [[item]]
 id = "docker-api"
+keep_say = "it's a setting: change it under Settings → Network access"
 tab = "sysconf"
 scope = "system"
 label = "Docker API over TLS (port 2376, client certificates; local network or VPNs)"

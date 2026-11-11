@@ -20,6 +20,8 @@ Usage:
 
 Commands:
   status [--json] [--updates]  what's installed, down, partial or waiting for a value
+  remove ITEM… [--dry-run] [--yes]
+                               uninstall tools (say what goes and stays, then ask)
   mcp [edit NAME | sync | status]
                                the MCP servers: the screen; edit one's settings (then
                                it registers); register what changed; how each is
@@ -62,6 +64,21 @@ check's copy (~/.cache/yardo/status.json).
 
   --json     print JSON (schema 1) for scripts
   --updates  also check for newer versions (apt and mise; slow)
+`,
+	"remove": `Usage: sudo yardo remove ITEM… [--dry-run] [--yes]
+
+Uninstalls the items, by id or name (aws, netbird; yardo --list lists
+them), and an extra mise tool by its name. For each it says what goes
+(packages, mise tools, yardo's files and rc lines), what stays and why
+(used by another item, edited by hand), and what stops being managed
+because it needs it; then asks. Your own data (~/.aws, ~/.ssh, …) stays.
+On Tools, d does the same.
+
+  --dry-run  say what it would do; change nothing
+  --yes      don't ask
+
+Exits 2, removing nothing, when an item isn't installed or yardo won't
+uninstall it (it says why); 1 when an uninstall failed (the others run).
 `,
 	"export": `Usage: sudo yardo export [--name NAME] [--lock] [FILE]
 

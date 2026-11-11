@@ -67,7 +67,7 @@ account is created). Once something is set up, it opens on the home:
    Fill in OPENAI_API_KEY         Agent API keys needs it · opens its file
    Install 3 updates              node 22.12 → 24.11 · gh 2.80 → 2.83 · uv 0.5.9 → 0.9.1
   ──────────────────────────────────────────────
-   Tools                          add or remove: languages, AI, cloud… or just start typing
+   Tools                          add or uninstall: languages, AI, cloud… or just start typing
    MCP servers                    github, jira-work
    Settings                       network access, git, prompt, look, laptop, updates
 ```
@@ -101,32 +101,29 @@ from any screen; on the home, q quits.
 
 **Tools**, and the first run, open the full screen: tabs by area
 (**Installed** first, once anything is: every tool installed, from all
-the tabs, to fix or remove one; then **Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
+the tabs, to fix or uninstall one, a VPN login under its client; then **Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
 SSH**) above a checklist, where a ticked box means installed and a mark
 beside it how it is, said in a word beside it: `✓` working, `✗` stopped
 or not installed, `~` half set up, edited by hand, or set up by an older
 yardo (this one ships newer files; Fix applies them), `○` needs a value,
 `↑` a newer version is out.
 
-- **space** queues adding (`[+]`) or taking off (`[-]`) an item; the
-  queue shows on a line above the keys. Taking one off means yardo stops
-  managing it; it stays installed.
-- **d** uninstalls an installed item, asking first (**y** removes it,
-  **n** keeps it): its packages, its apt repo and its mise tools (the ones
-  nothing else set up uses), and, for Docker, Tailscale, NetBird, the MCP
-  gateway, k3s and Ollama, what their installers set up (the question says
-  what stays, such as Docker's images and volumes). What needs it stops
-  working, and the question names it: yardo stops managing that too, and
-  it stays installed. An item set up by its own installer or settings
-  (Neovim's config, the OpenVPN server) can't be removed this way: space
-  stops managing it.
+- **space** queues adding (`[+]`) an item, or no longer managing
+  (`[−]`) one: yardo stops managing it, and it stays installed. The queue
+  shows on a line above the keys.
+- **d** queues uninstalling (`[✗]`) an installed item; **d** again takes
+  it off the queue. Queue several (NetBird and the AWS tools, say), along
+  with other changes; **a** uninstalls them first, then does the rest.
+  Before it does, it lists for each what goes, what stays and why, and
+  what stops working (see [Removing tools](#removing-tools)).
 - **enter** acts on the row: fix what's broken (now), fill in a missing
   value (in your editor), change an answer (git name and email, the
   prompt, the dotfiles repo, the MCP servers), or show an item's details,
   with Reinstall (after `yardo version up`, to take a newer yardo's
   files; tools installed from a git repo, such as rds-mysql, are fetched
   again too) and Stop managing it. On a row not installed, enter queues
-  adding it, as space does.
+  adding it, as space does. An installed item's details also offer
+  Uninstall.
 - **a** applies the queue: it lists it, asks what the new items need (git
   name, prompt, MCP servers, keys), then installs.
 - **/** searches every tab; for a tool the catalog doesn't have, ctrl-a
@@ -184,6 +181,49 @@ on an interface (Tailscale addresses are never banned; a cloud VM behind
 1:1 NAT only sees its private address, so it gets none); dev limits
 (inotify, open files), zram swap, a journal size cap, timezone (asked once)
 + locale. Keeping the clock in sync is left to the machine's launcher.
+
+### Removing tools
+
+On Tools, **d** on a row, then **a**; or from a shell:
+
+```sh
+sudo yardo remove aws netbird --dry-run   # what would go, and what stays
+sudo yardo remove aws netbird             # asks, then uninstalls
+```
+
+An item goes by its id or name (`yardo --list` lists them); `--yes`
+doesn't ask. For each item yardo says, before it changes anything:
+
+- **what goes**: its packages, apt repo and mise tools, and what yardo
+  set up for it: its files, the lines it added to `.bashrc` and
+  `.zshrc`, its block in a config, its links, clones, services and
+  sysctl settings; and, for the items whose installer did more (Docker,
+  the VPNs, the MCP gateway, k3s, Ollama, Neovim's plugins, the AWS
+  Session Manager plugin), what its removal script does.
+- **what stays, and why**: what another installed item uses ("fzf
+  (Shell helpers uses it)"), a file you edited ("edited by hand"), a
+  clone with local changes. Your own data never goes: `~/.aws`, `~/.kube`,
+  `~/.ssh`, shell history, Docker's volumes.
+- **what stops working**: the installed items that need it. yardo stops
+  managing them too; they stay installed.
+
+A VPN login goes with its client: removing NetBird logs out, uninstalls
+it and deletes its keys; the peer stays in your NetBird dashboard (or the
+machine in your Tailscale admin console) until you delete it there.
+
+Each item says how it went. One that fails stays installed (it shows as
+half set up) and the others still go; removing it again picks up where
+it stopped. `yardo remove` exits 1 then, and 2, removing nothing, when an
+item isn't installed or can't be removed.
+
+Some items yardo won't uninstall, and **d** says why: your git identity
+and logins (GitHub, Bitbucket, commit signing), the agent API keys file,
+your dotfiles, the shell you log in with, agent skills and settings that
+sit with your own. Space stops managing them instead.
+
+When apt has dependencies left that nothing needs, yardo says so; it
+doesn't run `apt autoremove` itself, which could take packages you
+installed by hand.
 
 ### The tabs: what to install
 

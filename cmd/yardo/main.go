@@ -109,6 +109,9 @@ func main() {
 	}
 	if err := cli(os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintf(os.Stderr, "yardo: %v\n", err)
+		if e := (*exitErr)(nil); errors.As(err, &e) {
+			os.Exit(e.code)
+		}
 		os.Exit(1)
 	}
 }
@@ -134,6 +137,12 @@ type options struct {
 	only     string
 	gitKey   []byte
 	gitHosts []string
+	// in answers yardo remove's question (os.Stdin when nil); exec runs
+	// the commands instead of the system, and root prefixes every path
+	// (tests).
+	in   io.Reader
+	exec steps.Execer
+	root string
 }
 
 // list is a repeatable string flag.
@@ -197,6 +206,8 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			}
 		case "connect":
 			return o.connect(stdout, st)
+		case "remove", "uninstall":
+			return o.removeCmd(cat, st, fs.Args()[1:], stdout, stderr)
 		case "mcp":
 			if fs.NArg() > 1 {
 				ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -214,7 +225,7 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			}
 			o.status, o.verify = true, true
 		default:
-			return fmt.Errorf("unknown command %q (commands: status, mcp, export, connect, gitkey, version, forget; see yardo --help)", fs.Arg(0))
+			return fmt.Errorf("unknown command %q (commands: status, remove, mcp, export, connect, gitkey, version, forget; see yardo --help)", fs.Arg(0))
 		}
 	}
 	if !o.dryRun && !o.verify {
@@ -529,6 +540,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				b := ui.NewBoard(d.info, first, d.tabs, d.items)
 				// From the menu: esc goes back to it.
 				b.SetFromMenu(menu)
+				b.SetPlanner(func(ids, adds []string) map[string][]string { return o.planLines(ctx, cat, a, ids, adds) })
 				b.Flash(flash)
 				flash = ""
 				if search != nil {
@@ -574,14 +586,23 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					fix, changed = []string{res.ID}, true
 					break loop
 				case ui.BoardApply:
+					// Uninstalls first; then the rest of the queue, if any.
+					if len(res.Uninstalls) > 0 {
+						upd.wait(stdout)
+						said, _, err := o.uninstall(ctx, cat, st, a, res.Uninstalls, stdout)
+						if err != nil {
+							return err
+						}
+						if len(res.Adds) == 0 && len(res.Removes) == 0 && len(res.Settings) == 0 {
+							flash, d = strings.Join(said, "  "), nil // back to the board, checked again
+							continue
+						}
+						for _, l := range said {
+							fmt.Fprintln(stdout, l)
+						}
+					}
 					board = &res
 					break loop
-				case ui.BoardRemove:
-					upd.wait(stdout)
-					if flash, err = o.removeItem(ctx, cat, st, a, res.ID, stdout); err != nil {
-						return err
-					}
-					d = nil // back to the board, checked again
 				}
 			}
 		}
@@ -936,6 +957,9 @@ func (o *options) env(a *answers.Answers, sec *creds.Secrets, log io.Writer) (*s
 		return nil, err
 	}
 	env.Share, env.State, env.Answers, env.Secrets, env.Lock = o.share(), o.state, a, sec, o.lock
+	if o.exec != nil {
+		env.Exec, env.Root = o.exec, o.root
+	}
 	env.Note = func(text string) {
 		if log != nil {
 			fmt.Fprintf(log, "NOTE: %s\n", text)

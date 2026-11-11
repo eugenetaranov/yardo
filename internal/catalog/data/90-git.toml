@@ -4,6 +4,7 @@
 
 [[item]]
 id = "gitid"
+keep_say = "your git name, email and settings are in ~/.gitconfig with your own"
 tab = "git"
 label = "Git: name, email and defaults (rebase pulls, auto upstream, delta diffs, aliases), lazygit"
 default = true
@@ -84,6 +85,7 @@ type = "go:gitkey"
 
 [[item]]
 id = "github"
+keep_say = "it's your GitHub access: log out with gh auth logout, and remove the SSH key on GitHub"
 tab = "git"
 label = "GitHub: gh login + SSH key for git, act (run Actions locally)"
 default = true
@@ -110,6 +112,7 @@ tools = ["glab@latest"]
 
 [[item]]
 id = "bitbucket"
+keep_say = "it's your Bitbucket access: remove the SSH key on Bitbucket"
 tab = "git"
 label = "Bitbucket: SSH key for git"
 needs = ["gitkey"]
@@ -117,6 +120,7 @@ source = "git over SSH: forwarded agent, a key made here or one you send (yardo 
 
 [[item]]
 id = "gitsign"
+keep_say = "signing is in your git config: git config --global --unset commit.gpgsign turns it off"
 tab = "git"
 label = "Sign commits with SSH"
 needs = ["github"]
@@ -129,6 +133,7 @@ type = "legacy"
 # run, then the repo's install script, or stow.
 [[item]]
 id = "dotfiles"
+keep_say = "it's your own repo, linked into your home; yardo doesn't unlink it"
 tab = "git"
 label = "Your dotfiles repo (~/.dotfiles: its install script, or stow)"
 last = true

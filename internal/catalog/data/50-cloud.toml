@@ -8,6 +8,8 @@
 # cluster with a password from SSM, through the mysql client.
 [[item]]
 id = "aws"
+remove = "dpkg -r session-manager-plugin 2>/dev/null || true"
+remove_say = "removes the aws CLI, Session Manager, ssmsearch, rds-mysql and aws_profile; your ~/.aws (profiles, keys) stays"
 tab = "cloud"
 label = "AWS tools (aws CLI, aws_profile, Session Manager + aws-ssm-connect, ssmsearch, rds-mysql)"
 source = "mise aws-cli, github:eugenetaranov/aws-ssm-connect, github:eugenetaranov/ssmsearch, pipx:git+https://github.com/eugenetaranov/rds-mysql.git · session-manager-plugin 1.2.896.0 (AWS's .deb) · apt mariadb-client · ~/.config/yardo/aws.sh (aws_profile)"

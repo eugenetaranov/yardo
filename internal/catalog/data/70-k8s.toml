@@ -18,6 +18,8 @@ tools = ["kubectl@latest", "kubectx@latest", "kubens@latest", "helm@3", "k9s@lat
 # Everything else, for platform work: one item.
 [[item]]
 id = "k8stools"
+remove = "rm -rf {{home}}/.local/share/helm/plugins/helm-diff {{home}}/.krew"
+remove_say = "removes the Kubernetes extras, helm-diff, and krew with its plugins"
 tab = "k8s"
 label = "Kubernetes extras (kustomize, helmfile, kubeconform, kubelogin, krew, Argo CD, Flux, Tilt, Skaffold, kind, talosctl, …)"
 needs = ["k8s"]

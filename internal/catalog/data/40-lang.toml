@@ -39,6 +39,9 @@ tools = ["java@temurin-25", "maven@latest", "gradle@latest", "kotlin@latest"]
 
 [[item]]
 id = "rust"
+# rust-analyzer is a component of the toolchain, which mise takes off.
+remove = "true"
+remove_say = "removes Rust (the toolchain, rust-analyzer) and cargo-binstall; what you installed with cargo stays in ~/.cargo"
 tab = "lang"
 label = "Rust (rustup) + rust-analyzer + cargo-binstall"
 source = "mise use -g rust@stable cargo-binstall"

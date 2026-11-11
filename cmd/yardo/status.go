@@ -324,7 +324,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			}
 		}
 		if bi.Picked {
-			bi.Removable, bi.RemoveSay = it.Removable(), it.RemoveSay
+			bi.Removable, bi.RemoveSay, bi.KeepSay, bi.RemoveWith = it.Removable(), it.RemoveSay, it.KeepSay, it.RemoveWith
 			for _, n := range neededBy(cat, a.Picks, it.ID) {
 				bi.NeededBy = append(bi.NeededBy, ui.Short(cat.Item(n).Label))
 			}

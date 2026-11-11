@@ -6,6 +6,7 @@
 # prompt is asked (Powerlevel10k or Starship).
 [[item]]
 id = "zsh"
+keep_say = "it's the shell you log in with, and its config; untick to stop managing, and change your shell with chsh"
 tab = "shell"
 label = "zsh, ready to use (asks: Powerlevel10k or Starship prompt)"
 default = true
@@ -16,6 +17,8 @@ source = "oh-my-zsh + autosuggestions, syntax highlighting, history search, fzf-
 # knowing its plugins (which-key lists the keys).
 [[item]]
 id = "neovim"
+remove = "rm -rf {{home}}/.local/share/nvim {{home}}/.local/state/nvim {{home}}/.cache/nvim"
+remove_say = "removes Neovim with its plugins and language servers; your init.lua stays if you edited it"
 tab = "shell"
 label = "Neovim, ready to use (fuzzy find, file browser, LSP, completion)"
 default = true

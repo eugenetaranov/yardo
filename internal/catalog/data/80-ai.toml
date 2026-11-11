@@ -78,6 +78,8 @@ tools = ["aqua:block/goose@latest"]
 
 [[item]]
 id = "omp"
+remove = "rm -f /usr/local/bin/omp"
+remove_say = "deletes /usr/local/bin/omp; its settings in your home stay"
 tab = "ai"
 label = "omp (oh-my-pi coding agent)"
 source = "curl omp.sh/install → /usr/local/bin/omp"
@@ -127,6 +129,7 @@ tools = ["npm:@fission-ai/openspec@latest"]
 
 [[item]]
 id = "ecc"
+keep_say = "ECC writes its agents, rules and commands into ~/.claude among your own, and has no uninstall yardo can trust; delete what you don't want (~/.claude/ecc/install-state.json lists them)"
 tab = "aiext"
 label = "ECC for Claude Code (~68 agents, rules, commands; no hooks)"
 needs = ["node", "claude"]
@@ -140,6 +143,7 @@ check = "grep -q '\"repoVersion\": \"2.2.3\"' ~/.claude/ecc/install-state.json"
 
 [[item]]
 id = "agentcfg"
+keep_say = "its notes and safety settings are in your agents' own config (~/.claude, ~/.codex), mixed with yours"
 tab = "agents"
 after = ["claude", "codex"]
 label = "Agent notes and safety settings for this VM"
@@ -166,6 +170,7 @@ type = "go:agentsafe"
 # ~/.claude/skills), and no agent's name on commits.
 [[item]]
 id = "agentskills"
+keep_say = "the skills sit with your own in ~/.claude/skills and ~/.agents/skills, and you may have edited them; delete the folders you don't want"
 tab = "agents"
 after = ["agentcfg"]
 label = "Agent skills: git commits, PR descriptions, Jira tickets; no agent co-author lines"
@@ -188,6 +193,7 @@ when = "[ -d {{home}}/.codex ]"
 # (internal/assets/skills.lock.toml; updated with scripts/update-skills).
 [[item]]
 id = "communityskills"
+keep_say = "the skills sit with your own in ~/.claude/skills and ~/.agents/skills, and you may have edited them; delete the folders you don't want"
 tab = "agents"
 after = ["agentcfg"]
 label = "Community skills: debugging, verify before done, TDD, grill me, find bugs, humanizer, skill creator, webapp testing"
@@ -199,6 +205,7 @@ skills = ["systematic-debugging", "verification-before-completion", "tdd", "gril
 
 [[item]]
 id = "agentkeys"
+keep_say = "~/.config/yardo/agent.env holds your API keys, and yardo doesn't delete keys; delete it yourself"
 tab = "agents"
 label = "Agent API keys (Anthropic, OpenAI, Gemini)"
 source = "~/.config/yardo/agent.env (0600) · read by interactive shells"
@@ -315,6 +322,7 @@ type = "go:mcp_public"
 # old pick still means install + servers.
 [[item]]
 id = "mcpjungle"
+remove_with = "mcpjungle-install"
 tab = "agents"
 label = "MCP servers on MCPJungle, added to your agents"
 default = true
