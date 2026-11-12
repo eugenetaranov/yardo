@@ -325,7 +325,7 @@ func TestDefaults(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	want := "agentcfg agentskills dbclients debug devcli etckeeper gitid helpers mosh neovim netfs openspec tmux zellij zsh"
+	want := "agentcfg agentskills dbclients debug devcli etckeeper gitid helpers mosh neovim openspec tmux zellij zsh"
 	if strings.Join(got, " ") != want {
 		t.Errorf("defaults: %s\nwant %s", strings.Join(got, " "), want)
 	}

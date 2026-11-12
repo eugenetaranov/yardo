@@ -106,6 +106,7 @@ type Menu struct {
 	btn            int
 	sure           bool            // updates: Update all was pressed once; enter again confirms
 	shown          map[string]bool // fix: details shown
+	unticked       map[string]bool // fix: rows not to fix
 	pick           map[string]string
 	toast          string
 	width          int
@@ -118,7 +119,7 @@ type Menu struct {
 // checked: updates were looked for (Items carry them).
 func NewMenu(info HomeInfo, sub string, items []*BoardItem, settings []*BoardSetting, connect []string, checked bool) *Menu {
 	m := &Menu{info: info, sub: sub, items: items, settings: settings, connect: connect, checked: checked,
-		screen: "home", shown: map[string]bool{}, pick: map[string]string{}, width: 100, height: 30}
+		screen: "home", shown: map[string]bool{}, unticked: map[string]bool{}, pick: map[string]string{}, width: 100, height: 30}
 	m.sortMCP()
 	m.normalize()
 	return m
@@ -165,6 +166,14 @@ func plural(n int, one, many string) string {
 	return fmt.Sprintf("%d %s", n, many)
 }
 
+// problem: i was set up and isn't as it was (stopped, edited by hand, or
+// set up by an older yardo). An item picked but never set up ("not
+// installed", "half set up": yardo never applied it) is no problem to
+// fix: Tools installs it.
+func problem(i *BoardItem) bool {
+	return i.Picked && (i.State == "down" || i.State == "drifted" || i.State == "outdated")
+}
+
 // fixVerb is a fix row's label: what fixing i does.
 func fixVerb(i *BoardItem) string {
 	n := short(i.Label)
@@ -202,7 +211,7 @@ func fixNote(i *BoardItem) string {
 // for three or more), and the updates.
 func (m *Menu) todo() []menuRow {
 	var out []menuRow
-	if ps := m.filter(fixable); len(ps) <= 2 {
+	if ps := m.filter(problem); len(ps) <= 2 {
 		for _, i := range ps {
 			out = append(out, menuRow{id: "fix:" + i.ID, label: fixVerb(i), note: fixNote(i), item: i})
 		}
@@ -379,7 +388,7 @@ func clamp(v, lo, hi int) int {
 func (m *Menu) normalize() {
 	switch m.screen {
 	case "fix":
-		if len(m.filter(fixable)) == 0 {
+		if len(m.filter(problem)) == 0 {
 			m.back()
 		}
 	case "secrets":
@@ -415,14 +424,18 @@ func (m *Menu) normalize() {
 	}
 }
 
-// fixRows are the fix screen's rows: a card per problem, then Fix all
-// (with two or more).
-func (m *Menu) fixRows() int {
-	n := len(m.filter(fixable))
-	if n >= 2 {
-		n++
+// fixRows are the fix screen's rows: a checklist, a problem a row.
+func (m *Menu) fixRows() int { return len(m.filter(problem)) }
+
+// ticked are the fix screen's ticked problems' ids.
+func (m *Menu) ticked() []string {
+	var ids []string
+	for _, i := range m.filter(problem) {
+		if !m.unticked[i.ID] {
+			ids = append(ids, i.ID)
+		}
 	}
-	return n
+	return ids
 }
 
 func (m *Menu) quit(r MenuResult) tea.Cmd {
@@ -510,31 +523,26 @@ func (m *Menu) key(k string) tea.Cmd {
 			m.open(r.id)
 		}
 	case "fix":
-		ps := m.filter(fixable)
+		ps := m.filter(problem)
 		switch {
 		case back:
 			m.back()
 		case up:
-			m.sel, m.btn = m.sel-1, 0
+			m.sel--
 		case down:
-			m.sel, m.btn = m.sel+1, 0
-		case left:
-			m.btn = 0
-		case right:
-			m.btn = 1
-		case k == "enter" && len(ps) >= 2 && m.sel == len(ps): // Fix all
-			ids := make([]string, len(ps))
-			for n, i := range ps {
-				ids[n] = i.ID
-			}
-			return m.quit(MenuResult{Kind: MenuFix, ID: ids[0], IDs: ids})
-		case k == "enter" && m.sel < len(ps):
-			i := ps[m.sel]
-			if m.btn == 1 {
-				m.shown[i.ID] = !m.shown[i.ID]
+			m.sel++
+		case (k == " " || k == "x") && m.sel < len(ps):
+			id := ps[m.sel].ID
+			m.unticked[id] = !m.unticked[id]
+		case (right || left) && m.sel < len(ps):
+			m.shown[ps[m.sel].ID] = right
+		case k == "enter":
+			ids := m.ticked()
+			if len(ids) == 0 {
+				m.toast = "Nothing ticked: space ticks a row."
 				return nil
 			}
-			return m.quit(MenuResult{Kind: MenuFix, ID: i.ID, IDs: []string{i.ID}})
+			return m.quit(MenuResult{Kind: MenuFix, ID: ids[0], IDs: ids})
 		}
 	case "secrets":
 		ss := m.filter(secret)
@@ -659,35 +667,35 @@ func (m *Menu) View() string {
 		}
 		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("esc", "back")}, "   ")
 	case "fix":
-		ps := m.filter(fixable)
+		ps := m.filter(problem)
 		title = "Fix " + plural(len(ps), "thing", "things")
+		add("  "+muted.Render("What yardo set up that isn't as it was. Enter fixes the ticked ones, in one run."), "")
+		col := 8
+		for _, i := range ps {
+			col = max(col, runewidth.StringWidth(short(i.Label)))
+		}
+		col = min(col, 34)
 		for n, i := range ps {
-			add("  " + yellow.Render("▲  ") + bold.Render(padTo(short(i.Label), 56)) + "  " + yellow.Render(stateWord(i.State)))
-			add("     " + muted.Render(runewidth.Truncate(i.Detail, w-8, "…")))
-			btn := func(n2 int, s string) string {
-				if n == m.sel && m.btn == n2 {
-					return rowOn.Render(" " + s + " ")
-				}
-				return muted.Render("[ ") + s + muted.Render(" ]")
+			box := "[x]"
+			if m.unticked[i.ID] {
+				box = "[ ]"
 			}
-			add("     " + btn(0, fixVerb(i)) + "   " + btn(1, "Details"))
-			if m.shown[i.ID] && i.Source != "" {
-				for _, l := range wrap(i.Source, w-10) {
-					add("       " + muted.Render(l))
-				}
-			}
-			add("")
-		}
-		if len(ps) >= 2 {
-			all := fmt.Sprintf("Fix all %d", len(ps))
-			if m.sel == len(ps) {
-				all = rowOn.Render(" " + all + " ")
+			name := padTo(runewidth.Truncate(short(i.Label), col, "…"), col)
+			line := box + " " + name + "  " + padTo(stateWord(i.State), 24)
+			if n == m.sel {
+				line = rowOn.Render(" › " + line + " ")
 			} else {
-				all = muted.Render("[ ") + all + muted.Render(" ]")
+				line = "   " + bold.Render(box+" "+name) + "  " + yellow.Render(padTo(stateWord(i.State), 24))
 			}
-			add("  " + all + "   " + muted.Render("in one run"))
+			add("  " + line + "  " + muted.Render(runewidth.Truncate(fixVerb(i), max(w-col-40, 10), "…")))
+			if m.shown[i.ID] {
+				for _, l := range wrap(strings.TrimSpace(i.Detail+"  "+i.Source), w-12) {
+					add("         " + muted.Render(l))
+				}
+			}
 		}
-		keys = strings.Join([]string{k("↑↓ ←→", "choose"), k("enter", "do it"), k("esc", "back")}, "   ")
+		n := len(m.ticked())
+		keys = strings.Join([]string{k("↑↓", "choose"), k("space", "tick"), k("→", "details"), k("enter", "fix "+fmt.Sprint(n)), k("esc", "back")}, "   ")
 	case "secrets":
 		ss := m.filter(secret)
 		title = "Fill in " + plural(len(ss), "value", "values")
@@ -797,7 +805,7 @@ func (m *Menu) View() string {
 // status are the home's first lines: how the machine is, in words, then
 // what's working and when updates were looked for.
 func (m *Menu) status() []string {
-	ps, ss := len(m.filter(fixable)), 0
+	ps, ss := len(m.filter(problem)), 0
 	for _, i := range m.filter(secret) {
 		ss += len(i.Inputs)
 	}

@@ -503,11 +503,12 @@ func TestMenuMCPEditKey(t *testing.T) {
 }
 
 // Two problems are a row each; three or more are one row, whose screen
-// has Fix all.
+// is a checklist: all ticked, space unticks, enter fixes the ticked. Not
+// installed is no problem: yardo never set it up.
 func TestMenuFixAll(t *testing.T) {
 	m := testMenu(false)
-	m.items[2].State = "missing" // Go too
-	if v := m.View(); !strings.Contains(v, "Start Docker Engine + Compose") || !strings.Contains(v, "Install Go") {
+	m.items[2].State = "drifted" // Go too
+	if v := m.View(); !strings.Contains(v, "Start Docker Engine + Compose") || !strings.Contains(v, "Restore Go") {
 		t.Fatalf("two problems:\n%s", v)
 	}
 	onRow(m, "fix:go")
@@ -517,21 +518,26 @@ func TestMenuFixAll(t *testing.T) {
 	}
 	m = testMenu(false)
 	m.items[2].State = "missing"
-	m.items[3].Picked, m.items[3].State = true, "partial"
+	if v := m.View(); strings.Contains(v, "Install Go") || !strings.Contains(v, "1 thing to fix") {
+		t.Errorf("never set up, offered as a fix:\n%s", v)
+	}
+	m = testMenu(false)
+	m.items[2].State = "outdated"
+	m.items[3].Picked, m.items[3].State = true, "drifted"
 	if v := m.View(); !strings.Contains(v, "Fix 3 things") {
 		t.Fatalf("no Fix 3 things:\n%s", v)
 	}
 	mk(m, "enter")
-	if !strings.Contains(m.View(), "Fix all 3") {
-		t.Fatalf("no Fix all:\n%s", m.View())
+	if v := m.View(); !strings.Contains(v, "[x] Docker") || !strings.Contains(v, "enter fix 3") {
+		t.Fatalf("checklist:\n%s", v)
 	}
-	mk(m, "down", "down", "down", "down")
-	if m.sel != 3 {
-		t.Fatalf("on row %d, want Fix all (3)", m.sel)
+	mk(m, " ")
+	if v := m.View(); !strings.Contains(v, "[ ] Docker") || !strings.Contains(v, "enter fix 2") {
+		t.Fatalf("unticked:\n%s", v)
 	}
 	mk(m, "enter")
-	if r := m.result; r.Kind != MenuFix || strings.Join(r.IDs, " ") != "docker go wg" {
-		t.Errorf("fix all: %+v", r)
+	if r := m.result; r.Kind != MenuFix || strings.Join(r.IDs, " ") != "go wg" {
+		t.Errorf("fix ticked: %+v", r)
 	}
 }
 

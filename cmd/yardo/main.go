@@ -386,16 +386,14 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	dropped = slices.DeleteFunc(dropped, func(id string) bool { return slices.Contains(a.Picks, id) })
 	changed := len(profs) > 0
 	first := len(a.Picks) == 0
+	// based: what's new in the base for this machine, installed by this
+	// run before anything else.
+	var based []string
 	if first {
 		a.Base = catalog.BaseRev // the first run offers the base itself
 	} else if a.Base < catalog.BaseRev {
-		// Set up before the base had all it has: what's new in it comes
-		// in, once (uninstalled later, it stays uninstalled).
-		if add := slices.DeleteFunc(cat.Base(), func(id string) bool { return slices.Contains(a.Picks, id) }); len(add) > 0 {
-			a.Pick(add)
-			fmt.Fprintf(stderr, "yardo: new in every machine's base, added: %s\n", strings.Join(labels(cat, add), ", "))
-		}
-		a.Base, changed = catalog.BaseRev, true
+		based = baseChange(cat, a, stderr)
+		changed = true
 	}
 	ui.SetAccent(steps.AccentHex(a.Accent))
 	// stay: the menu (or the board) comes back after each run, until q;
@@ -445,7 +443,10 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		// mcpEdit: the MCP servers picked new, to fill in once the run has
 		// made their env files.
 		var mcpEdit []string
-		if stay {
+		if based != nil && interactive {
+			fix, based = based, nil // installed now, not left to fix
+		}
+		if stay && fix == nil {
 		loop:
 			for {
 				if d == nil {

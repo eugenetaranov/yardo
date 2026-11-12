@@ -472,9 +472,10 @@ func (c *Catalog) validateChoices() []error {
 	return errs
 }
 
-// BaseRev is the base's revision: raise it when the base gains an item,
-// and machines set up before get it on their next run.
-const BaseRev = 1
+// BaseRev is the base's revision: raise it when the base changes, and
+// machines set up before get the change on their next run (see
+// cmd/yardo's baseChange). 2: NFS + SMB clients left it.
+const BaseRev = 2
 
 // Base is what every first run installs without asking: the default
 // items. (A choice's items aren't default; see validateChoices.)

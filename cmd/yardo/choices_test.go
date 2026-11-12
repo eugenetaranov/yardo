@@ -113,10 +113,33 @@ func TestBaseBackfill(t *testing.T) {
 	if err := cli([]string{"--yes", "--dry-run", "--state", state}, &out, &errb); err != nil {
 		t.Fatalf("run: %v\n%s", err, errb.String())
 	}
-	if !strings.Contains(errb.String(), "new in every machine's base, added: ") || !strings.Contains(errb.String(), "Neovim") {
+	if !strings.Contains(errb.String(), "new in every machine's base, installing: ") || !strings.Contains(errb.String(), "Neovim") {
 		t.Errorf("no note:\n%s", errb.String())
 	}
 	if !strings.Contains(out.String(), "neovim") {
 		t.Errorf("the plan has no neovim:\n%s", out.String())
+	}
+}
+
+// v0.9.0's base had NFS + SMB clients: a machine it came to stops
+// managing them, and installs the base it picked (v0.9.0 didn't), nothing
+// it uninstalled.
+func TestBaseChangeFrom1(t *testing.T) {
+	cat, err := catalog.Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &answers.Answers{Base: 1, Picks: []string{"zsh", "netfs", "mosh"}}
+	var w bytes.Buffer
+	if add := baseChange(cat, a, &w); !slices.Equal(add, []string{"zsh", "mosh"}) || !slices.Equal(a.Picks, []string{"zsh", "mosh"}) || a.Base != catalog.BaseRev {
+		t.Errorf("add %v, picks %v, base %d", add, a.Picks, a.Base)
+	}
+	if !strings.Contains(w.String(), "NFS + SMB clients is no longer") {
+		t.Errorf("note: %q", w.String())
+	}
+	// Before any base: all of it but NFS, to install.
+	a = &answers.Answers{Picks: []string{"zsh"}}
+	if add := baseChange(cat, a, &w); slices.Contains(add, "netfs") || !slices.Contains(add, "mosh") || slices.Contains(add, "zsh") {
+		t.Errorf("add %v", add)
 	}
 }

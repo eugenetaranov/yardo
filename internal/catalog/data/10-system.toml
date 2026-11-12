@@ -210,7 +210,6 @@ type = "go:netbird_up"
 id = "netfs"
 tab = "system"
 label = "NFS + SMB clients"
-default = true
 
 [[item.step]]
 type = "apt"

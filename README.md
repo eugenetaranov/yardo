@@ -80,9 +80,11 @@ up), and the ports they publish, and the services up or
 failed, each with the ports it listens on beyond this machine and who
 can reach them);
 then a row for each thing that needs doing, named by what it does, one
-key each: **Start**, **Install**, **Restore** (a file edited by hand:
-restoring puts back yardo's version) or **Finish setting up** something
-(three or more problems are one **Fix 3 things** row, with **Fix all**),
+key each: **Start** something stopped, **Restore** a file edited by hand
+(putting back yardo's version) or **Update** what an older yardo set up
+(only what yardo set up: an item picked but never installed is on Tools,
+not a problem; three or more are one **Fix 3 things** row, a checklist,
+all ticked: space unticks, enter fixes the ticked in one run),
 **Fill in** a value (opens its file in your editor), **Install 3
 updates** (asks, then updates just those: `mise up` for the tools, apt
 for the packages). Below them, rows that never move: **Choices** (the
@@ -118,14 +120,14 @@ back): the zsh prompt (Powerlevel10k or Starship), then the choices:
 
 Everything else in the base comes without asking: zsh, Neovim, tmux,
 zellij, mosh, shell helpers, dev CLIs and linters, DB clients, admin and
-debug tools, NFS/SMB clients, etckeeper, OpenSpec, agent setup and
+debug tools, etckeeper, OpenSpec, agent setup and
 skills, git name and email; and what every machine gets (security
 updates, SSH keys only, fail2ban, zram, …). Then the whole list, item by
 item, and **Install**, **Customize…** (the full screen below, with it
-all queued) or **Quit**. The rest (Java, Rust, Podman, Ollama, jiractl,
+all queued) or **Quit**. The rest (Java, Rust, Podman, NFS/SMB clients, Ollama, jiractl,
 restic, your dotfiles, commit signing, more agent add-ons) is on Tools.
-A machine set up before the base had all it has gets what's new in it
-on its next run, once.
+A machine set up before the base had all it has installs what's new in
+it on its next run, once, before the home opens.
 
 **Tools** opens the full screen: tabs by area
 (**Installed** first, once anything is: every tool installed, from all

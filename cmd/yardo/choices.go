@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"slices"
+	"strings"
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/catalog"
@@ -136,4 +139,29 @@ func choiceChange(cat *catalog.Catalog, a *answers.Answers, first bool, qs []*ui
 		}
 	}
 	return r
+}
+
+// baseChange brings a's picks up to the catalog's base, once: what's new
+// in it is added (and returned, to install), and NFS + SMB clients, in
+// v0.9.0's base only, stops being managed. v0.9.0 added its base without
+// installing it, so from there the base picked is returned too. An item
+// uninstalled after its base came in stays uninstalled.
+func baseChange(cat *catalog.Catalog, a *answers.Answers, w io.Writer) []string {
+	var add []string
+	if a.Base < 1 {
+		add = slices.DeleteFunc(cat.Base(), func(id string) bool { return slices.Contains(a.Picks, id) })
+	}
+	if a.Base == 1 && slices.Contains(a.Picks, "netfs") {
+		a.Unpick([]string{"netfs"})
+		fmt.Fprintln(w, "yardo: NFS + SMB clients is no longer in every machine's base: yardo stops checking it (installed, it stays; Tools adds it back).")
+	}
+	if len(add) > 0 {
+		a.Pick(add)
+		fmt.Fprintf(w, "yardo: new in every machine's base, installing: %s\n", strings.Join(labels(cat, add), ", "))
+	}
+	if a.Base == 1 {
+		add = slices.DeleteFunc(cat.Base(), func(id string) bool { return !slices.Contains(a.Picks, id) })
+	}
+	a.Base = catalog.BaseRev
+	return add
 }
