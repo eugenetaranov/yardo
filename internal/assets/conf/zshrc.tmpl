@@ -13,12 +13,14 @@ fi
 
 # Plugins follow what is installed: a tool's plugin loads only when the
 # tool is on PATH, so tools added later are picked up by the next shell.
-plugins=(git wd sudo extract colored-man-pages zsh-fzf-history-search)
+# Terraform's and OpenTofu's are aliases (tfp, tfa…) and always load: a
+# project's .tool-versions can bring them in mid-session, through mise.
+plugins=(git wd sudo extract colored-man-pages zsh-fzf-history-search
+         terraform opentofu)
 () {
   local p t
-  for p t in aws aws terraform terraform opentofu tofu kubectl kubectl \
-             kubectx kubectx helm helm docker docker gh gh mise mise \
-             rust rustup golang go; do
+  for p t in aws aws kubectl kubectl kubectx kubectx helm helm \
+             docker docker gh gh mise mise rust rustup golang go; do
     (( $+commands[$t] )) && plugins+=($p)
   done
 }

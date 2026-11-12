@@ -287,20 +287,22 @@ installed by hand.
    needs a Nerd Font in your terminal; `p10k configure` restyles it, and an
    existing `~/.p10k.zsh` is kept) or Starship (one line;
    `~/.config/starship.toml`, kept if you have one). zsh's plugins follow
-   what's installed: git, wd, sudo, extract and fzf history search always,
-   and aws, terraform, opentofu, kubectl, kubectx, helm, docker, gh, mise,
-   rust and golang whenever the tool is on PATH, so a tool added later
-   completes in the next shell. Tools without an oh-my-zsh plugin (k9s,
-   stern, just, task, uv, terragrunt, vault, packer, …) get Tab completion
-   from their own scripts, cached in `~/.cache/yardo/zsh-completions` and
-   refreshed only when the tool is upgraded. Also: Neovim (latest, from
-   mise) with a curated `~/.config/nvim/init.lua` and plugins (fuzzy
-   finding, a file browser, git signs, language servers through `:Mason`,
-   completion; press space and wait to see the keys; `sudo nvim FILE`
-   edits through sudoedit, with your config), tmux (with
-   `~/.tmux.conf`: mouse, splits, 50k history), zellij, mosh. Over SSH,
-   `y` in Neovim and a mouse drag in tmux copy to your laptop's clipboard
-   (OSC 52); iTerm2 lets that through once you allow it, on the laptop:
+   what's installed: git, wd, sudo, extract, fzf history search and the
+   terraform and opentofu aliases (`tfp`, `tfa`, … even before a project's
+   `.tool-versions` brings the tool in) always, and aws, kubectl, kubectx,
+   helm, docker, gh, mise, rust and golang whenever the tool is on PATH, so
+   a tool added later completes in the next shell. Tools without an
+   oh-my-zsh plugin (k9s, stern, just, task, uv, terragrunt, vault,
+   packer, …) get Tab completion from their own scripts, cached in
+   `~/.cache/yardo/zsh-completions` and refreshed only when the tool is
+   upgraded. Also: Neovim (latest, from mise) with a curated
+   `~/.config/nvim/init.lua` and plugins (fuzzy finding, a file browser,
+   git signs, language servers through `:Mason`, completion; press space
+   and wait to see the keys; `sudo nvim FILE` edits through sudoedit, with
+   your config), tmux (with `~/.tmux.conf`: mouse, splits, 50k history),
+   zellij, mosh. Over SSH, `y` in Neovim and a mouse drag in tmux copy to
+   your laptop's clipboard (OSC 52); iTerm2 lets that through once you
+   allow it, on the laptop:
    `defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true`,
    then quit and reopen iTerm2 (Ghostty, kitty, WezTerm and Alacritty
    need nothing; Terminal.app can't). The zsh,
