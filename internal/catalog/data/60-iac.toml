@@ -47,15 +47,6 @@ type = "mise"
 tools = ["github:tackhq/tack@latest"]
 
 [[item]]
-id = "sops-install"
-tab = "iac"
-label = "sops + age (encrypted secrets in files)"
-
-[[item.step]]
-type = "mise"
-tools = ["sops@latest", "age@latest"]
-
-[[item]]
 id = "vault"
 tab = "iac"
 label = "Vault CLI"

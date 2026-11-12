@@ -5,6 +5,7 @@
 id = "etckeeper"
 tab = "system"
 label = "etckeeper (/etc history in git; install it first)"
+default = true
 
 [[item.step]]
 type = "apt"
@@ -57,7 +58,6 @@ remove_say = "stops Docker and uninstalls it, with its tools; images, containers
 tab = "k8s"
 scope = "system"
 label = "Docker Engine + Compose, lazydocker, dive, hadolint, crane, cosign"
-default = true
 source = "apt docker-ce (download.docker.com repo) · log rotation, 10.200/16 networks · docker group = root"
 
 [[item.step]]
@@ -94,11 +94,6 @@ unit = "docker"
 # everywhere unless that item says otherwise.
 [[item.step]]
 type = "go:docker_ports"
-
-# The Docker API over TLS, when This VM → Who can reach it says so (off
-# otherwise: over SSH only).
-[[item.step]]
-type = "go:docker_api"
 
 [[item.step]]
 type = "run"
@@ -215,6 +210,7 @@ type = "go:netbird_up"
 id = "netfs"
 tab = "system"
 label = "NFS + SMB clients"
+default = true
 
 [[item.step]]
 type = "apt"
@@ -231,75 +227,6 @@ source = "apt openvpn · sudo openvpn --config <profile>.ovpn, or /etc/openvpn/c
 type = "apt"
 packages = ["openvpn"]
 
-# The server: its own CA (easy-rsa), UDP 1194, clients on 10.8.0.0/24 with
-# all their traffic sent through this machine (NAT), and a profile for the
-# user in /srv/openvpn (root only: it holds the client's key).
-[[item]]
-id = "openvpn-server"
-remove = """
-systemctl disable --now openvpn-server@server yardo-vpn-nat 2>/dev/null || true
-rm -rf /etc/openvpn/server /srv/openvpn
-"""
-remove_say = "stops the OpenVPN server and deletes its keys and every client's profile (/srv/openvpn): clients can't connect again"
-tab = "net"
-scope = "system"
-label = "OpenVPN server (others connect to this machine; UDP 1194)"
-source = "apt openvpn easy-rsa · /etc/openvpn/server · NAT 10.8.0.0/24 · profiles in /srv/openvpn · users: sudo yardo-vpn openvpn client|list|revoke"
-
-[[item.step]]
-type = "apt"
-packages = ["openvpn", "easy-rsa", "iptables"]
-
-[[item.step]]
-type = "file"
-src = "yardo-vpn"
-to = "/usr/local/sbin/yardo-vpn"
-mode = "0755"
-
-[[item.step]]
-type = "run"
-cmd = "/usr/local/sbin/yardo-vpn openvpn setup"
-creates = "/etc/openvpn/server/crl.pem"
-
-[[item.step]]
-type = "sysctl"
-src = "sysctl-vpn.conf"
-to = "/etc/sysctl.d/62-yardo-vpn.conf"
-
-[[item.step]]
-type = "file"
-src = "yardo-vpn-nat.service"
-to = "/etc/systemd/system/yardo-vpn-nat.service"
-
-[[item.step]]
-type = "file"
-src = "openvpn-server.conf"
-to = "/etc/openvpn/server/server.conf"
-
-[[item.step]]
-type = "systemctl"
-action = "daemon-reload"
-
-[[item.step]]
-type = "systemctl"
-unit = "yardo-vpn-nat"
-
-[[item.step]]
-type = "systemctl"
-unit = "openvpn-server@server"
-
-# A changed config (a newer yardo) takes effect.
-[[item.step]]
-type = "run"
-cmd = "systemctl restart yardo-vpn-nat openvpn-server@server"
-on_change = true
-
-[[item.step]]
-type = "run"
-cmd = "/usr/local/sbin/yardo-vpn openvpn client {{user}} >/dev/null"
-check = "test -f /srv/openvpn/{{user}}.ovpn"
-text = "OpenVPN server: {{user}}'s profile is /srv/openvpn/{{user}}.ovpn (root only; copy it to your machine: ssh <this machine> sudo cat /srv/openvpn/{{user}}.ovpn > {{user}}.ovpn). Its \"remote\" is this machine's own address: change it if clients reach the machine another way (a public IP behind NAT, a DNS name), and open UDP 1194 in the cloud firewall. Users: sudo yardo-vpn openvpn client|list|revoke <name>"
-
 [[item]]
 id = "wireguard-client"
 tab = "net"
@@ -310,52 +237,6 @@ source = "apt wireguard-tools · a config in /etc/wireguard/<name>.conf, then sy
 [[item.step]]
 type = "apt"
 packages = ["wireguard-tools"]
-
-# The server: UDP 51820, clients on 10.9.0.0/24 with all their traffic sent
-# through this machine (NAT, in the interface's PostUp), and a config for
-# the user in /srv/wireguard (root only: it holds the client's key).
-[[item]]
-id = "wireguard-server"
-remove = """
-systemctl disable --now wg-quick@yardo-wg 2>/dev/null || true
-rm -f /etc/wireguard/yardo-wg.conf
-rm -rf /srv/wireguard
-"""
-remove_say = "stops the WireGuard server and deletes its keys and every client's config (/srv/wireguard): clients can't connect again"
-tab = "net"
-scope = "system"
-label = "WireGuard server (others connect to this machine; UDP 51820)"
-source = "apt wireguard-tools · /etc/wireguard/yardo-wg.conf · NAT 10.9.0.0/24 · configs in /srv/wireguard · users: sudo yardo-vpn wireguard client|list|revoke|qr"
-
-[[item.step]]
-type = "apt"
-packages = ["wireguard-tools", "iptables", "qrencode"]
-
-[[item.step]]
-type = "file"
-src = "yardo-vpn"
-to = "/usr/local/sbin/yardo-vpn"
-mode = "0755"
-
-[[item.step]]
-type = "run"
-cmd = "/usr/local/sbin/yardo-vpn wireguard setup"
-creates = "/etc/wireguard/yardo-wg.conf"
-
-[[item.step]]
-type = "sysctl"
-src = "sysctl-vpn.conf"
-to = "/etc/sysctl.d/62-yardo-vpn.conf"
-
-[[item.step]]
-type = "systemctl"
-unit = "wg-quick@yardo-wg"
-
-[[item.step]]
-type = "run"
-cmd = "/usr/local/sbin/yardo-vpn wireguard client {{user}} >/dev/null"
-check = "test -f /srv/wireguard/{{user}}.conf"
-text = "WireGuard server: {{user}}'s config is /srv/wireguard/{{user}}.conf (root only; copy it to your machine: ssh <this machine> sudo cat /srv/wireguard/{{user}}.conf > {{user}}.conf, or scan sudo yardo-vpn wireguard qr {{user}} with the phone app). Its Endpoint is this machine's own address: change it if clients reach the machine another way, and open UDP 51820 in the cloud firewall. Users: sudo yardo-vpn wireguard client|list|revoke|qr <name>"
 
 [[item]]
 id = "devlimits"
@@ -399,21 +280,6 @@ source = "nft table yardo_docker_ports: new connections to published ports only 
 
 [[item.step]]
 type = "go:docker_ports"
-
-# The Docker API over TLS on port 2376, client certificates only, from the
-# local network or the VPNs (never the internet). Docker over SSH needs
-# none of this. Unticked: off again.
-[[item]]
-id = "docker-api"
-keep_say = "it's a setting: change it under Settings → Network access"
-tab = "sysconf"
-scope = "system"
-label = "Docker API over TLS (port 2376, client certificates; local network or VPNs)"
-needs = ["docker"]
-source = "dockerd -H tcp://0.0.0.0:2376 --tlsverify (drop-in, --live-restore) · CA in /etc/docker/tls · laptops: sudo yardo-docker client <name> · nft table yardo_docker_api"
-
-[[item.step]]
-type = "go:docker_api"
 
 [[item]]
 id = "zram"

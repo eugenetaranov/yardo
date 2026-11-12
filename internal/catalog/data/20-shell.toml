@@ -108,6 +108,7 @@ tools = ["zellij@latest"]
 id = "mosh"
 tab = "shell"
 label = "mosh (SSH that survives sleep and roaming)"
+default = true
 
 [[item.step]]
 type = "apt"

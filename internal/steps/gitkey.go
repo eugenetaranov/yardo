@@ -26,8 +26,10 @@ func init() { RegisterGo("gitkey", func(catalog.Step) Step { return gitKeyStep{}
 // key named for the host (~/.ssh/github, ~/.ssh/gitlab, ~/.ssh/bitbucket),
 // made when missing (GitHub's by its login, which uploads it), and a block
 // pointing the host at it; a machine already using ~/.ssh/id_ed25519 keeps
-// it. Every host but github.com, whose published host keys go in
-// known_hosts, is trusted on first use.
+// it. "" (no mode asked: the default now): ~/.ssh/id_ed25519, which ssh
+// uses by itself, made when the user has no key of their own. Every host
+// but github.com, whose published host keys go in known_hosts, is trusted
+// on first use.
 type gitKeyStep struct{}
 
 const (
@@ -95,7 +97,7 @@ func gitHosts(e *Env) []gitHost {
 	add := func(id, host string, m answers.GitHost, keys string) {
 		mode := m.Mode
 		if mode == "" {
-			mode = "key"
+			mode = "own"
 		}
 		if slices.Contains(a.Picks, id) && mode != "token" {
 			out = append(out, gitHost{host: host, mode: mode, keys: keys, name: id})
@@ -147,6 +149,9 @@ func (gitKeyStep) Plan(e *Env) []Action {
 	}
 	for _, g := range withMode(hosts, "key") {
 		out = append(out, Action{"file", "keep ~/.ssh/" + g.name + " (or generate one) for " + g.host})
+	}
+	if wantsOwnKey(hosts) {
+		out = append(out, Action{"file", "keep your SSH key (or generate " + ownKey + ")"})
 	}
 	if len(hosts) > 0 {
 		out = append(out, Action{"file", sshConfig + ": " + names(hosts)})
@@ -250,6 +255,11 @@ func (s gitKeyStep) Check(ctx context.Context, e *Env) (bool, error) {
 			return false, err
 		}
 	}
+	if wantsOwnKey(hosts) {
+		if has, err := hasOwnKey(ctx, e); err != nil || !has {
+			return false, err
+		}
+	}
 	cfg, err := sshRead(ctx, e, sshConfig)
 	if err != nil {
 		return false, err
@@ -268,6 +278,26 @@ func (gitKeyStep) knownDone(ctx context.Context, e *Env, hosts []gitHost) (bool,
 	}
 	kh, err := sshRead(ctx, e, knownHosts)
 	return err == nil && bytes.Contains(kh, []byte("github.com ssh-ed25519 ")), err
+}
+
+// userKeys are the keys ssh tries by itself: one of them is the user's
+// own key.
+var userKeys = []string{ownKey, "~/.ssh/id_ecdsa", "~/.ssh/id_rsa"}
+
+// wantsOwnKey: no host is reached another way (a sent key, one named for
+// it, the agent), so git takes the user's own key, made when missing.
+func wantsOwnKey(hosts []gitHost) bool {
+	return !slices.ContainsFunc(hosts, func(g gitHost) bool { return g.mode != "own" })
+}
+
+// hasOwnKey reports whether the user has a key of their own.
+func hasOwnKey(ctx context.Context, e *Env) (bool, error) {
+	for _, p := range userKeys {
+		if b, err := sshRead(ctx, e, p); err != nil || b != nil {
+			return b != nil, err
+		}
+	}
+	return false, nil
 }
 
 // generate makes an ed25519 key at path and shows it, with where to add it.
@@ -319,6 +349,18 @@ func (s gitKeyStep) Apply(ctx context.Context, e *Env) error {
 			if err := generate(ctx, e, g.key, e.User+"@"+hostname()+" ("+g.name+")", []gitHost{g}); err != nil {
 				return err
 			}
+		}
+	}
+	if has, err := hasOwnKey(ctx, e); err != nil {
+		return err
+	} else if !has && wantsOwnKey(hosts) {
+		own := withMode(hosts, "own")
+		if err := generate(ctx, e, ownKey, e.User+"@"+hostname(), own); err != nil {
+			return err
+		}
+		if len(own) == 0 {
+			pub, _ := sshRead(ctx, e, ownKey+".pub")
+			e.note("SSH key: " + ownKey + ".pub, made here; add it where your repos are (GitHub: https://github.com/settings/keys): " + strings.TrimSpace(string(pub)))
 		}
 	}
 	cfg, err := sshRead(ctx, e, sshConfig)

@@ -21,7 +21,6 @@ func testMenu(healthy bool) *Menu {
 	}
 	settings := []*BoardSetting{
 		{Key: "mcp", Label: "MCP gateway", Value: "127.0.0.1", Choices: [][2]string{{"127.0.0.1", "this machine only"}, {"vpn", "this machine and your VPNs"}}},
-		{Key: "api", Label: "Docker API", Value: "off", Choices: [][2]string{{"off", "off"}, {"lan", "local network"}}},
 		// The look: Settings' Accent colour, not network access.
 		{Key: "accent", Label: "Accent colour", Section: LookSection, Value: "blue", Choices: [][2]string{{"blue", "Blue"}, {"green", "Green"}}, Swatches: map[string]string{"blue": "#0000ff"}},
 	}
@@ -204,10 +203,10 @@ func TestMenuAccess(t *testing.T) {
 		t.Fatalf("access:\n%s", v)
 	}
 	mk(m, "down", "down", "down", "down")
-	if m.sel != 2 {
-		t.Errorf("past Apply: on row %d, want 2", m.sel)
+	if m.sel != 1 {
+		t.Errorf("past Apply: on row %d, want 1", m.sel)
 	}
-	mk(m, "up", "up")
+	mk(m, "up")
 	mk(m, "right")
 	if !strings.Contains(m.View(), "once it's on Tailscale") {
 		t.Errorf("no sentence for the choice:\n%s", m.View())

@@ -48,16 +48,12 @@ type Answers struct {
 	TZ         string `json:"tz"`
 	// DockerPorts is where containers' published ports can be reached
 	// from: "" (everywhere), "vpn" or "local". Machine-wide.
-	DockerPorts string `json:"docker_ports,omitempty"`
-	// DockerAPI is who can reach the Docker API over TLS (port 2376, client
-	// certificates): "" (nobody: over SSH only), "vpn" or "lan" (the local
-	// network and the VPNs). Machine-wide.
-	DockerAPI  string   `json:"docker_api,omitempty"`
-	GitHub     GitHost  `json:"github"`
-	GitLab     GitHost  `json:"gitlab,omitzero"`
-	Bitbucket  GitHost  `json:"bitbucket,omitzero"`
-	NPM        NPM      `json:"npm"`
-	Registries []string `json:"registries"`
+	DockerPorts string   `json:"docker_ports,omitempty"`
+	GitHub      GitHost  `json:"github"`
+	GitLab      GitHost  `json:"gitlab,omitzero"`
+	Bitbucket   GitHost  `json:"bitbucket,omitzero"`
+	NPM         NPM      `json:"npm"`
+	Registries  []string `json:"registries"`
 	// Prompt is the zsh prompt: "p10k" (also "") or "starship".
 	Prompt string `json:"prompt,omitempty"`
 	// Dotfiles is the user's dotfiles repo (cloned to ~/.dotfiles).
@@ -75,6 +71,9 @@ type Answers struct {
 	// Declined are items the user uninstalled that a named profile lists:
 	// applying it again skips them, until they're added by hand.
 	Declined []string `json:"declined,omitempty"`
+	// Base is the catalog's base (catalog.BaseRev) these picks have had
+	// added: a newer one adds what it brings, once.
+	Base int `json:"base,omitempty"`
 	// MCPPort is the user's MCPJungle port (kept in system.json).
 	MCPPort int `json:"-"`
 }
@@ -191,7 +190,7 @@ var PickMap = map[string][]string{
 	"k8sextra": {"k8s"}, "krew": {"k8stools"}, "helmfile": {"k8stools"},
 	"runners": {"devcli"}, "task": {"devcli"}, "yq": {"devcli"}, "http": {"devcli"},
 	"pgcli": {"dbclients"}, "iaclint": {"terraform"},
-	"agekey": {}, "sops": {"sops-install"}, // the age key is no longer an item
+	"agekey": {}, "sops": {}, "sops-install": {}, // sops and its age key are no longer items
 	"needrestart": {}, // with security updates, which every machine gets
 	"ufw":         {}, // no longer an item
 	"act":         {}, // comes with the GitHub item
@@ -216,30 +215,37 @@ var PickMap = map[string][]string{
 	"sudopw":     {}, // no longer an item
 	// always applied now
 	"autoupdate-tools": {},
+	// servers, no longer items: a dev VM's choices are the tools on it
+	"openvpn-server": {}, "wireguard-server": {}, "docker-api": {}, "k3s": {},
 }
 
 // pickNotes explain a migration to the user.
 var pickNotes = map[string]string{
-	"chrony":     "chrony is no longer an item (clock sync is set up when the machine is launched); this machine keeps the chrony it has.",
-	"sshkey":     "The SSH key item is gone: ~/.ssh/id_ed25519 stays, and the GitHub, GitLab and Bitbucket items make it when they use it.",
-	"ufw":        "The firewall (ufw) is no longer an item: yardo leaves this machine's ufw as it is (turn it off with 'sudo ufw disable').",
-	"act":        "act is no longer an item of its own: it comes with the GitHub item; the one installed stays.",
-	"sudopw":     "\"sudo asks for your password\" is no longer an item: yardo leaves this machine's sudo rules as they are.",
-	"gitlab-cli": "glab is no longer an item of its own: it comes with the GitLab item; the one installed stays.",
-	"corpca":     "The internal CA bundle is no longer an item: certificates it installed stay trusted (remove them from /usr/local/share/ca-certificates and run 'sudo update-ca-certificates').",
-	"monitoring": "node_exporter + glances is no longer an item: what it installed stays (remove with 'sudo apt remove prometheus-node-exporter').",
-	"editors":    "Vim is no longer an item: Neovim, set up the same way, replaces it. Vim and ~/.vimrc stay as they are.",
-	"registries": "Container registry logins are no longer an item: logins already made stay (sudo yardo forget still logs out of them); log in with 'docker login <registry>'.",
-	"bun":        "Bun is no longer an item: the one installed stays, and the weekly tool updates still update it.",
-	"deno":       "Deno is no longer an item: the one installed stays, and the weekly tool updates still update it.",
-	"ruby":       "Ruby is no longer an item: the one installed stays, and the weekly tool updates still update it.",
-	"php":        "PHP is no longer an item: what it installed stays (remove with 'sudo apt remove php-cli composer').",
-	"cpp":        "C/C++ is no longer an item: gcc and make still come with the essentials; clang, cmake and gdb stay installed.",
-	"zig":        "Zig is no longer an item: the one installed stays, and the weekly tool updates still update it.",
-	"dotnet":     ".NET is no longer an item: the one installed stays, and the weekly tool updates still update it.",
-	"profiling":  "Profiling (perf, valgrind, bpftrace) is no longer an item: what it installed stays.",
-	"iacscan":    "The IaC scanners item is gone: checkov comes with the Terraform item, and trivy is no longer installed (the ones installed stay).",
-	"npmrc":      "The private npm registry is no longer an item: yardo's block in ~/.npmrc stays (sudo yardo forget still removes it); edit ~/.npmrc yourself.",
+	"chrony":           "chrony is no longer an item (clock sync is set up when the machine is launched); this machine keeps the chrony it has.",
+	"sshkey":           "The SSH key item is gone: ~/.ssh/id_ed25519 stays, and the GitHub, GitLab and Bitbucket items make it when they use it.",
+	"ufw":              "The firewall (ufw) is no longer an item: yardo leaves this machine's ufw as it is (turn it off with 'sudo ufw disable').",
+	"act":              "act is no longer an item of its own: it comes with the GitHub item; the one installed stays.",
+	"sudopw":           "\"sudo asks for your password\" is no longer an item: yardo leaves this machine's sudo rules as they are.",
+	"gitlab-cli":       "glab is no longer an item of its own: it comes with the GitLab item; the one installed stays.",
+	"corpca":           "The internal CA bundle is no longer an item: certificates it installed stay trusted (remove them from /usr/local/share/ca-certificates and run 'sudo update-ca-certificates').",
+	"monitoring":       "node_exporter + glances is no longer an item: what it installed stays (remove with 'sudo apt remove prometheus-node-exporter').",
+	"editors":          "Vim is no longer an item: Neovim, set up the same way, replaces it. Vim and ~/.vimrc stay as they are.",
+	"registries":       "Container registry logins are no longer an item: logins already made stay (sudo yardo forget still logs out of them); log in with 'docker login <registry>'.",
+	"bun":              "Bun is no longer an item: the one installed stays, and the weekly tool updates still update it.",
+	"deno":             "Deno is no longer an item: the one installed stays, and the weekly tool updates still update it.",
+	"ruby":             "Ruby is no longer an item: the one installed stays, and the weekly tool updates still update it.",
+	"php":              "PHP is no longer an item: what it installed stays (remove with 'sudo apt remove php-cli composer').",
+	"cpp":              "C/C++ is no longer an item: gcc and make still come with the essentials; clang, cmake and gdb stay installed.",
+	"zig":              "Zig is no longer an item: the one installed stays, and the weekly tool updates still update it.",
+	"dotnet":           ".NET is no longer an item: the one installed stays, and the weekly tool updates still update it.",
+	"profiling":        "Profiling (perf, valgrind, bpftrace) is no longer an item: what it installed stays.",
+	"iacscan":          "The IaC scanners item is gone: checkov comes with the Terraform item, and trivy is no longer installed (the ones installed stay).",
+	"openvpn-server":   "The OpenVPN server is no longer an item: it keeps running, without yardo (stop it: sudo systemctl disable --now openvpn-server@server yardo-vpn-nat; its profiles are in /srv/openvpn).",
+	"wireguard-server": "The WireGuard server is no longer an item: it keeps running, without yardo (stop it: sudo systemctl disable --now wg-quick@yardo-wg; its configs are in /srv/wireguard).",
+	"docker-api":       "The Docker API over TLS is no longer an item: if it was on, it stays on (turn it off: sudo rm /etc/systemd/system/docker.service.d/yardo-api.conf && sudo systemctl daemon-reload && sudo systemctl restart docker). Docker over SSH needs none of it.",
+	"sops-install":     "sops + age is no longer an item: the ones installed stay, and the weekly tool updates still update them (or: mise unuse -g sops age).",
+	"k3s":              "k3s is no longer an item: the cluster keeps running, without yardo (remove it: sudo /usr/local/bin/k3s-uninstall.sh).",
+	"npmrc":            "The private npm registry is no longer an item: yardo's block in ~/.npmrc stays (sudo yardo forget still removes it); edit ~/.npmrc yourself.",
 }
 
 // MigratePicks applies PickMap, keeping order and dropping duplicates. It

@@ -43,12 +43,26 @@ func TestWriteReadRoundTrip(t *testing.T) {
 }
 
 func TestMigratePicks(t *testing.T) {
-	got, notes := MigratePicks([]string{"cli", "shell", "kubectl", "helm", "chrony", "zsh", "krew", "tmuxcfg", "agekey", "sops"})
-	if want := []string{"zsh", "k8s", "k8stools", "tmux", "sops-install"}; !reflect.DeepEqual(got, want) {
+	got, notes := MigratePicks([]string{"cli", "shell", "kubectl", "helm", "chrony", "zsh", "krew", "tmuxcfg", "agekey"})
+	if want := []string{"zsh", "k8s", "k8stools", "tmux"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("picks = %v, want %v", got, want)
 	}
 	if len(notes) != 1 || !strings.Contains(notes[0], "clock sync") {
 		t.Errorf("notes = %v", notes)
+	}
+}
+
+// The servers that are no longer items: gone from the picks, each with how
+// to stop what keeps running.
+func TestMigrateServers(t *testing.T) {
+	got, notes := MigratePicks([]string{"docker", "openvpn-server", "wireguard-server", "docker-api", "k3s", "sops-install"})
+	if !reflect.DeepEqual(got, []string{"docker"}) || len(notes) != 5 {
+		t.Fatalf("picks %v, notes %v", got, notes)
+	}
+	for i, want := range []string{"openvpn-server@server", "wg-quick@yardo-wg", "yardo-api.conf", "k3s-uninstall.sh", "mise unuse -g sops age"} {
+		if !strings.Contains(notes[i], want) {
+			t.Errorf("note %d: %q, want %s", i, notes[i], want)
+		}
 	}
 }
 

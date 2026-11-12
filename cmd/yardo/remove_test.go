@@ -81,11 +81,11 @@ func TestRemoveDryRun(t *testing.T) {
 // One yardo can't uninstall (or isn't installed): exit 2, saying why,
 // and nothing removed, not even the others.
 func TestRemoveRefuses(t *testing.T) {
-	o, cat, st, x := removeSetup(t, "aws", "github")
+	o, cat, st, x := removeSetup(t, "aws", "zsh")
 	var out, errb bytes.Buffer
-	err := o.removeCmd(cat, st, []string{"github", "aws", "terraform", "--yes"}, &out, &errb)
+	err := o.removeCmd(cat, st, []string{"zsh", "aws", "terraform", "--yes"}, &out, &errb)
 	var e *exitErr
-	if !errors.As(err, &e) || e.code != 2 || !strings.Contains(err.Error(), "gh auth logout") || !strings.Contains(err.Error(), "terraform isn't installed") {
+	if !errors.As(err, &e) || e.code != 2 || !strings.Contains(err.Error(), "chsh first") || !strings.Contains(err.Error(), "terraform isn't installed") {
 		t.Fatalf("err %v", err)
 	}
 	if c := x.changed(); len(c) > 0 {

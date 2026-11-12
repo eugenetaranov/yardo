@@ -58,32 +58,3 @@ type = "run"
 cmd = 'PATH="$HOME/.krew/bin:$PATH" kubectl krew install neat tree view-secret'
 as_user = true
 check = 'l=$(PATH="$HOME/.krew/bin:$PATH" kubectl krew list) && for p in neat tree view-secret; do printf "%s\n" "$l" | grep -qx "$p" || exit 1; done'
-
-[[item]]
-id = "k3s"
-remove = """
-if [ -x /usr/local/bin/k3s-uninstall.sh ]; then /usr/local/bin/k3s-uninstall.sh; fi
-"""
-remove_say = "uninstalls k3s: the cluster and everything in it goes"
-tab = "k8s"
-scope = "system"
-label = "k3s cluster on this VM (systemd)"
-source = "curl get.k3s.io · kubeconfig → ~/.kube/config if absent"
-
-[[item.step]]
-type = "run"
-cmd = 'curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode=600" sh -'
-check = "command -v k3s"
-unverified = "get.k3s.io is k3s's own installer; it checks the k3s binary's sha256"
-
-# The cluster's kubeconfig for the user, unless they have one already
-# (then it stays at /etc/rancher/k3s/k3s.yaml).
-[[item.step]]
-type = "run"
-cmd = "install -d -m 0700 -o {{user}} -g {{group}} {{home}}/.kube && install -m 0600 -o {{user}} -g {{group}} /etc/rancher/k3s/k3s.yaml {{home}}/.kube/config"
-creates = "~/.kube/config"
-
-[[item.step]]
-type = "note"
-text = "k3s: ~/.kube/config already exists, so it was kept; the k3s kubeconfig is /etc/rancher/k3s/k3s.yaml."
-when = "! cmp -s /etc/rancher/k3s/k3s.yaml {{home}}/.kube/config"

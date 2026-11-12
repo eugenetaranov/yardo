@@ -304,7 +304,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	var items []*ui.BoardItem
 	for _, it := range cat.Items {
 		// Access settings are Settings' rows, not items.
-		if it.Hidden() || it.Always || it.ID == "docker-ports" || it.ID == "docker-api" {
+		if it.Hidden() || it.Always || it.ID == "docker-ports" {
 			continue
 		}
 		bi := &ui.BoardItem{ID: it.ID, Label: it.Label, Tab: it.Tab, Picked: picked(it.ID), Source: it.Describe(),
@@ -369,12 +369,6 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		}
 		settings = append(settings, &ui.BoardSetting{Key: "ports", Label: "Container ports", Value: ports, Choices: [][2]string{
 			{"all", "everywhere (Docker's way)"}, {"vpn", "this machine and your VPNs"}, {"local", "this machine only"}}})
-		api := a.DockerAPI
-		if api == "" {
-			api = "off"
-		}
-		settings = append(settings, &ui.BoardSetting{Key: "api", Label: "Docker API", Value: api, Choices: [][2]string{
-			{"off", "off: Docker over SSH only"}, {"lan", "over TLS, from the local network and your VPNs"}, {"vpn", "over TLS, from your VPNs only"}}})
 	}
 	// The accent colour: yardo's, the prompt's, tmux's.
 	look := &ui.BoardSetting{Key: "accent", Label: "Accent colour", Section: ui.LookSection, Value: a.Accent, Swatches: map[string]string{}}

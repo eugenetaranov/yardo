@@ -8,11 +8,13 @@ import (
 
 // usage is yardo --help: every command, and the flags that matter.
 const usage = `yardo sets up this Linux machine (Ubuntu or Debian) for you and your
-coding agents: tick what you want, and it installs and configures it.
+coding agents: answer a few choices, and it installs and configures them
+with a base of everything else a dev machine needs.
 
 Usage:
   sudo yardo                   the home: how the machine is, what needs doing,
-                               Tools, MCP servers, Settings (Tools on a first run)
+                               Choices, Tools, MCP servers, Settings (the
+                               choices on a first run)
   sudo yardo --yes             re-apply everything chosen so far, no questions
   yardo --dry-run              ask, then show what would happen; change nothing
   sudo yardo --profile FILE|URL [--yes]

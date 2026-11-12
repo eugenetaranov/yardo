@@ -101,18 +101,36 @@ func TestGitKeyModes(t *testing.T) {
 	if !strings.Contains(read(t, e.Path("~/.ssh/known_hosts")), "github.com ssh-ed25519 ") {
 		t.Error("no GitHub host keys")
 	}
-	// GitHub alone over its own key: ~/.ssh/github (its login makes it).
+	// GitHub alone, no way asked: the user's own key, which ssh finds by
+	// itself; no block.
 	e.Answers = &answers.Answers{Picks: []string{"github"}}
+	put(t, e.Path("~/.ssh/id_ed25519"), testKey)
 	apply(t, e, st)
-	if cfg := read(t, e.Path("~/.ssh/config")); cfg != gitBegin+"\nHost github.com\n  User git\n  IdentityFile ~/.ssh/github\n  IdentitiesOnly yes\n"+gitEnd+"\n\nHost *\n  ServerAliveInterval 30\n" {
+	if cfg := read(t, e.Path("~/.ssh/config")); cfg != "Host *\n  ServerAliveInterval 30\n" {
 		t.Errorf("config = %q", cfg)
 	}
-	put(t, e.Path("~/.ssh/github"), testKey)
 	if !check(t, e, st) {
 		t.Error("Check = false after Apply")
 	}
-	if a := st.Plan(e); len(a) != 1 {
+	if a := st.Plan(e); len(a) != 2 {
 		t.Errorf("plan = %v", a)
+	}
+}
+
+// No key of the user's own and no other way: ~/.ssh/id_ed25519 is made,
+// and shown with where to add it.
+func TestGitKeyOwnMade(t *testing.T) {
+	x := &fakeExec{}
+	e := shellEnv(t)
+	e.Exec = x
+	e.Answers = &answers.Answers{Picks: []string{"gitlab"}}
+	st := step(t, catalog.Step{Type: "go:gitkey"})
+	apply(t, e, st)
+	if got := strings.Join(x.commands(), "\n"); !strings.Contains(got, "ssh-keygen") || !strings.HasSuffix(got, "/.ssh/id_ed25519") {
+		t.Errorf("ran %q", got)
+	}
+	if cfg := read(t, e.Path("~/.ssh/config")); strings.Contains(cfg, "IdentityFile") || !strings.Contains(cfg, "Host gitlab.com") {
+		t.Errorf("config:\n%s", cfg)
 	}
 }
 

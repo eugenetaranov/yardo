@@ -54,6 +54,41 @@ func (t Tab) PhaseOf() string {
 	return t.Phase
 }
 
+// Choice is one question of the first run's short list: a switch, a pick
+// of several or a pick of one, each answer a set of items. What no choice
+// holds comes in by default (the base) or from the Tools screen.
+type Choice struct {
+	ID    string `toml:"id"`
+	Title string `toml:"title"`
+	// Kind: "toggle" (one switch for every item), "multi" (each item ticked
+	// on its own) or "one" (at most one option).
+	Kind string `toml:"kind"`
+	// Items are what the choice holds; Options, for a "one" choice, are
+	// its answers, each a set of them ("none" is offered too).
+	Items   []string `toml:"items"`
+	Options []Option `toml:"option"`
+	// On is ticked on the first run: the items for a multi, ["on"] for a
+	// toggle, an option's id for a one.
+	On   []string `toml:"on"`
+	Note string   `toml:"note"`
+}
+
+// Option is one answer of a "one" choice.
+type Option struct {
+	ID    string   `toml:"id"`
+	Title string   `toml:"title"`
+	Items []string `toml:"items"`
+}
+
+// Held is every item the choice can turn on.
+func (ch Choice) Held() []string {
+	out := slices.Clone(ch.Items)
+	for _, o := range ch.Options {
+		out = append(out, o.Items...)
+	}
+	return out
+}
+
 // Item is one thing the picker offers.
 type Item struct {
 	ID    string   `toml:"id"`
@@ -181,10 +216,11 @@ func (it *Item) UsesMise() bool {
 
 // Catalog is the loaded, validated catalog.
 type Catalog struct {
-	Tabs  []Tab
-	Items []*Item // file order: tabs.toml's tabs, then items as the files list them
-	byID  map[string]*Item
-	files fs.FS
+	Tabs    []Tab
+	Choices []Choice
+	Items   []*Item // file order: tabs.toml's tabs, then items as the files list them
+	byID    map[string]*Item
+	files   fs.FS
 }
 
 // Item returns the item with id, or nil.
@@ -216,8 +252,9 @@ func (c *Catalog) TabItems(tab string) []*Item {
 }
 
 type fileDoc struct {
-	Tabs  []Tab   `toml:"tab"`
-	Items []*Item `toml:"item"`
+	Tabs    []Tab    `toml:"tab"`
+	Choices []Choice `toml:"choice"`
+	Items   []*Item  `toml:"item"`
 }
 
 // Load reads the embedded catalog, then every *.toml in local (nil to skip),
@@ -270,10 +307,11 @@ func (c *Catalog) addFile(name string, b []byte, local bool) error {
 	if und := md.Undecoded(); len(und) > 0 {
 		return fmt.Errorf("%s: unknown key %s", name, und[0])
 	}
-	if local && len(doc.Tabs) > 0 {
-		return fmt.Errorf("%s: local catalog files can't add tabs", name)
+	if local && len(doc.Tabs)+len(doc.Choices) > 0 {
+		return fmt.Errorf("%s: local catalog files can't add tabs or choices", name)
 	}
 	c.Tabs = append(c.Tabs, doc.Tabs...)
+	c.Choices = append(c.Choices, doc.Choices...)
 	for _, it := range doc.Items {
 		it.From = name
 		if old, ok := c.byID[it.ID]; ok {
@@ -368,10 +406,96 @@ func (c *Catalog) validate() error {
 			}
 		}
 	}
+	errs = append(errs, c.validateChoices()...)
 	if cyc := c.cycle(); cyc != nil {
 		errs = append(errs, fmt.Errorf("needs/after cycle: %s", strings.Join(cyc, " → ")))
 	}
 	return errors.Join(errs...)
+}
+
+// validateChoices checks the choices: known kinds, items the picker
+// offers, each in one choice at most, and none preselected by default too
+// (a choice's on decides).
+func (c *Catalog) validateChoices() []error {
+	var errs []error
+	fail := func(ch Choice, format string, a ...any) {
+		errs = append(errs, fmt.Errorf("choice %q: %s", ch.ID, fmt.Sprintf(format, a...)))
+	}
+	held := map[string]string{}
+	ids := map[string]bool{}
+	for _, ch := range c.Choices {
+		if ch.ID == "" || ch.Title == "" || ids[ch.ID] {
+			fail(ch, "needs a unique id and a title")
+		}
+		ids[ch.ID] = true
+		switch ch.Kind {
+		case "toggle", "multi":
+			if len(ch.Items) == 0 || len(ch.Options) > 0 {
+				fail(ch, "a %s choice has items and no options", ch.Kind)
+			}
+		case "one":
+			if len(ch.Options) == 0 || len(ch.Items) > 0 {
+				fail(ch, "a one choice has options and no items")
+			}
+		default:
+			fail(ch, "kind %q: want toggle, multi or one", ch.Kind)
+		}
+		for _, id := range ch.Held() {
+			it := c.byID[id]
+			switch {
+			case it == nil:
+				fail(ch, "%q is not an item", id)
+			case it.Hidden() || it.Always:
+				fail(ch, "%q: a hidden or always item can't be chosen", id)
+			case it.Default:
+				fail(ch, "%q: default too (the choice's on preselects)", id)
+			case held[id] != "" && held[id] != ch.ID:
+				fail(ch, "%q is in choice %q too", id, held[id])
+			}
+			held[id] = ch.ID
+		}
+		for _, on := range ch.On {
+			ok := false
+			switch ch.Kind {
+			case "toggle":
+				ok = on == "on"
+			case "multi":
+				ok = slices.Contains(ch.Items, on)
+			case "one":
+				ok = slices.ContainsFunc(ch.Options, func(o Option) bool { return o.ID == on })
+			}
+			if !ok {
+				fail(ch, "on %q: not one of its answers", on)
+			}
+		}
+	}
+	return errs
+}
+
+// BaseRev is the base's revision: raise it when the base gains an item,
+// and machines set up before get it on their next run.
+const BaseRev = 1
+
+// Base is what every first run installs without asking: the default
+// items. (A choice's items aren't default; see validateChoices.)
+func (c *Catalog) Base() []string {
+	var out []string
+	for _, it := range c.Items {
+		if it.Default {
+			out = append(out, it.ID)
+		}
+	}
+	return out
+}
+
+// ChoiceOf returns the choice holding id, or nil.
+func (c *Catalog) ChoiceOf(id string) *Choice {
+	for i := range c.Choices {
+		if slices.Contains(c.Choices[i].Held(), id) {
+			return &c.Choices[i]
+		}
+	}
+	return nil
 }
 
 // cycle returns a needs cycle, or nil.

@@ -67,6 +67,7 @@ account is created). Once something is set up, it opens on the home:
    Fill in OPENAI_API_KEY         Agent API keys needs it · opens its file
    Install 3 updates              node 22.12 → 24.11 · gh 2.80 → 2.83 · uv 0.5.9 → 0.9.1
   ──────────────────────────────────────────────
+   Choices                        prompt, languages, Docker, Kubernetes, Terraform, clouds, agents, git hosts, VPN
    Tools                          add or uninstall: languages, AI, cloud… or just start typing
    MCP servers                    github, jira-work
    Settings                       network access, git, prompt, look, laptop, updates
@@ -84,10 +85,12 @@ restoring puts back yardo's version) or **Finish setting up** something
 (three or more problems are one **Fix 3 things** row, with **Fix all**),
 **Fill in** a value (opens its file in your editor), **Install 3
 updates** (asks, then updates just those: `mise up` for the tools, apt
-for the packages). Below them, three rows that never move: **Tools**
+for the packages). Below them, rows that never move: **Choices** (the
+first run's questions again: what you turn off is uninstalled, asking
+first; what you turn on, installed), **Tools**
 (the full screen, below), **MCP servers** (the gateway's list: add one,
 or another instance of one; **d** deletes one, asking first) and **Settings**: **Network access** (the
-MCP gateway, containers' published ports and the Docker API, each a row
+MCP gateway and containers' published ports, each a row
 of choices with a sentence saying what it means), the **Accent colour**,
 your **Git name and email**, **Shell prompt** and **Dotfiles repo**
 (asked again, then applied), **Connect from a laptop** and **Check for
@@ -99,7 +102,32 @@ fix or an install, yardo comes back to the home and says how it went;
 the run's output is under the screen when you quit. Esc or q goes back
 from any screen; on the home, q quits.
 
-**Tools**, and the first run, open the full screen: tabs by area
+**The first run** asks a few questions, a page each (shift+tab goes
+back): the zsh prompt (Powerlevel10k or Starship), then the choices:
+
+| Choice | What it installs | Starts |
+|---|---|---|
+| Languages | Python, Node.js and Go | on |
+| Docker | Docker and its tools, published-port limits, the MCP gateway | on |
+| Kubernetes tools | kubectl and its aliases, kubectx, helm, k9s, the extras | off |
+| Terraform tools | Terraform, OpenTofu, Packer, Ansible, tack, Vault | off |
+| Cloud providers | any of AWS, DigitalOcean, Hetzner, cloudflared, Google Cloud, Azure | none |
+| Coding agents | any of Claude Code, Codex, Gemini, OpenCode, Aider, Goose, omp, API keys | Claude Code |
+| Git hosts | any of GitHub, GitLab, Bitbucket (each logs in) | GitHub |
+| VPN or mesh | one of Tailscale, NetBird, the OpenVPN or WireGuard client | none |
+
+Everything else in the base comes without asking: zsh, Neovim, tmux,
+zellij, mosh, shell helpers, dev CLIs and linters, DB clients, admin and
+debug tools, NFS/SMB clients, etckeeper, OpenSpec, agent setup and
+skills, git name and email; and what every machine gets (security
+updates, SSH keys only, fail2ban, zram, …). Then the whole list, item by
+item, and **Install**, **Customize…** (the full screen below, with it
+all queued) or **Quit**. The rest (Java, Rust, Podman, Ollama, jiractl,
+restic, your dotfiles, commit signing, more agent add-ons) is on Tools.
+A machine set up before the base had all it has gets what's new in it
+on its next run, once.
+
+**Tools** opens the full screen: tabs by area
 (**Installed** first, once anything is: every tool installed, from all
 the tabs, to fix or uninstall one; then **Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
 SSH**) above a checklist, where a ticked box means installed and a mark
@@ -252,10 +280,9 @@ installed by hand.
    kubectx/kubens, Helm 3, k9s, stern, k3d for local clusters in Docker);
    Kubernetes extras as another (kustomize, helmfile + helm-diff,
    kubeconform, kubelogin, kubie, kubecolor, krew with plugins, Argo CD,
-   Flux, Tilt, Skaffold, ctlptl, kind, talosctl); or k3s as a real cluster
-   on the VM.
+   Flux, Tilt, Skaffold, ctlptl, kind, talosctl).
 4. **DevOps → IaC** (mise): Terraform with terragrunt, tflint,
-   terraform-docs and checkov, OpenTofu, Packer, Ansible, tack, sops + age,
+   terraform-docs and checkov, OpenTofu, Packer, Ansible, tack,
    Vault.
 5. **DevOps → Cloud** (mise): AWS, Google Cloud, Azure, DigitalOcean, Hetzner,
    cloudflared. AWS is one item with what goes with the
@@ -321,32 +348,22 @@ installed by hand.
 9. **System → System (root):** etckeeper, admin and debug tools (dig, mtr, tcpdump,
    iperf3, nmap, strace, htop, btop, ncdu, …), NFS/SMB clients.
 10. **System → Connectivity (root):** Tailscale and NetBird (log in from
-   their details: enter on the row), the OpenVPN client, and an OpenVPN server:
-   its own CA (easy-rsa), UDP 1194, clients on 10.8.0.0/24 with all their
-   traffic sent through the machine (NAT, through Docker's DOCKER-USER
-   chain when Docker is there), and a profile for you in
-   `/srv/openvpn/<you>.ovpn`, root only (change its `remote` if clients
-   reach the machine by another address, and open UDP 1194 in the cloud
-   firewall). WireGuard the same way: UDP 51820, clients on
-   10.9.0.0/24, configs in `/srv/wireguard/<name>.conf`. Users, for
-   either: `sudo yardo-vpn openvpn|wireguard client|list|revoke <name>`
-   (`wireguard qr <name>` shows a config as a QR code for the phone app).
-   The OpenVPN and WireGuard clients are for the other way round:
-   connecting this machine to a VPN elsewhere.
+   their details: enter on the row), and the OpenVPN and WireGuard
+   clients, connecting this machine to a VPN elsewhere. yardo no longer
+   sets up VPN servers, the Docker API over TLS or k3s: a machine that
+   has one keeps it running, and yardo says once how to stop it.
 
 ### Configuring it
 
 1. **Network access** (Settings): who can reach the MCP gateway, containers'
    published ports (everywhere, Docker's way; this machine and your VPNs;
-   or this machine only) and the Docker API (off: Docker over SSH only;
-   over TLS from the local network and your VPNs, or your VPNs only), each
-   a row of choices.
-2. **Git & SSH:** git name, email and defaults as one item, with lazygit (rebase on pull, push
-   sets upstream, delta diffs, aliases, a global ignore file), one item per
-   git host (GitHub with the gh login and act to run Actions locally,
-   GitLab with glab, for gitlab.com or your own host, Bitbucket), each asking how this machine reaches it over
-   SSH (a forwarded agent, a key made here, or a key you send; GitHub also
-   a token), commit signing with SSH, global git ignores in
+   or this machine only), each a row of choices.
+2. **Git & SSH:** git name, email, your SSH key and defaults as one item,
+   with lazygit (rebase on pull, push sets upstream, delta diffs, aliases,
+   a global ignore file); one item per git host (GitHub with act to run
+   Actions locally, GitLab with glab, for gitlab.com or your own host,
+   Bitbucket), all reached over your SSH key; commit signing with SSH,
+   global git ignores in
    `~/.config/git/ignore` (`.claude/`, `.python-version`, `.env` and
    `.env.*` but examples, `.envrc`, `.venv/`, `.terraform*` and local state,
    `node_modules/`, Go coverage and `go.work`, caches, editor files; yardo
@@ -428,20 +445,20 @@ installed by hand.
 In a profile, a split item's old id means both halves: `tailscale` and
 `mcpjungle` are the configure items, and each pulls in its install item
 (`tailscale-install`, `mcpjungle-install`), which a profile can also list
-alone. `sops` is `sops-install` now: yardo no longer sets up an age key. Merged items' old ids still work in
+alone. sops + age is no longer an item (the ones installed stay). Merged items' old ids still work in
 saved choices: `ctools` is `docker`, `lint` is `devcli`, `gitcfg` is
 `gitid`, `lazygit` is `gitid`, `agentsafe` is `agentcfg` and `k3d` is `kind`.
 
 Downloads are pinned: vendor apt keys are checked against their
 fingerprints and release binaries against their sha256 before they're
 installed. The few vendor installers that change in place (Tailscale,
-Ollama, k3s, krew, omp, Neovim's plugins) can't be pinned; `~/yardo.txt`
+Ollama, krew, omp, Neovim's plugins) can't be pinned; `~/yardo.txt`
 lists the installed ones under "Installed without a pinned checksum", with
 why. A `catalog.d` item that downloads must do the same (`sha256`, or
 `unverified = "why"`), or yardo refuses to load it.
 
 When you press a and confirm, it asks every typed question in one place:
-git name and email, timezone, how to reach GitHub, and the credentials of
+git name and email, timezone, and the credentials of
 the items you added, then installs. To change an answer later (git name
 and email, the zsh prompt, the dotfiles repo, the MCP servers), press enter
 on the item and choose Change: yardo asks again and applies just that item. `~/yardo.txt` lists everything installed so far,
@@ -489,28 +506,18 @@ holds while the agent can't get root: with passwordless sudo (the default
 for the VM's user) or membership of the docker group, it can; the
 "Set up agents for this VM" item denies Claude Code sudo.
 
-`sudo yardo --yes` never waits for input: a step that would (the
-GitHub browser login, adding a gh scope, `tailscale up` without a key)
-leaves a note naming the command to run instead.
+`sudo yardo --yes` never waits for input: a step that would (`tailscale
+up` without a key) leaves a note naming the command to run instead.
 
-**GitHub** asks how the VM should reach it:
-
-- **Forwarded agent** (the default when you connected with
-  `ssh -A`): no key on the machine. git over SSH uses your laptop's
-  agent, and gh logs in with the browser code, without permission to add
-  keys to your account.
-- **A key on this VM**: `~/.ssh/github` (optionally with a passphrase)
-  uploaded to your account, and `~/.ssh/config` points github.com at it.
-  GitLab's and Bitbucket's are `~/.ssh/gitlab` and `~/.ssh/bitbucket`. A
-  machine already using `~/.ssh/id_ed25519` (an earlier yardo's) keeps it.
-  For an organization with SAML SSO, authorize it at
-  github.com/settings/keys → Configure SSO.
-- **A fine-grained token**: pasted once, used by gh and by git over HTTPS;
-  nothing is uploaded.
-
-github.com's host keys come from GitHub's published list, not a first-use
-scan. When git has no email yet, you pick one of your verified addresses
-(the noreply one only if it's all there is). **Sign commits with SSH**
+**Git and SSH.** The Git item asks your name and email and sets them
+globally. git reaches every host over your own SSH key: one you already
+have (`~/.ssh/id_ed25519`, `id_ecdsa` or `id_rsa`), or
+`~/.ssh/id_ed25519` made here when there's none, shown with where to
+add it (GitHub: github.com/settings/keys). Nothing is uploaded and
+nothing logs in: run `gh auth login` yourself when you want gh to. A
+machine set up with a way per host (a forwarded agent, `~/.ssh/github`,
+a token, a sent key) keeps it. github.com's host keys come from
+GitHub's published list, not a first-use scan. **Sign commits with SSH**
 signs commits and tags with the agent's key or the VM's key, uploads it as
 a signing key, and writes `~/.config/git/allowed_signers`.
 
@@ -525,7 +532,7 @@ can't revoke itself. Run it before you throw a machine away.
 Run it again any time to add more. Choices accumulate, never with
 secrets, and are only read as data, never run:
 
-- machine-wide items (the System tab, k3s, Ollama), the timezone, the users
+- machine-wide items (the System tab, Ollama), the timezone, the users
   set up and their MCPJungle ports in root-only
   `/var/lib/yardo/system.json`;
 - each user's own items and settings in their `~/.config/yardo/answers.json`.
@@ -599,15 +606,7 @@ first): Docker over SSH, which opens no port and needs no certificate
 this machine's paths, `-p` ports open here); and the MCP gateway's URL,
 how to make a laptop's token (`mcp-sync client laptop`) and the
 `claude mcp add` and Codex lines that use it, or, when the gateway is for
-this machine only, an SSH tunnel to it. For tools that can't use SSH,
-Settings → Network access → "Docker API" opens port 2376,
-client certificates only, from the local network (10/8, 172.16/12,
-192.168/16, Tailscale's 100.64/10) and the VPNs, or the VPNs only; never
-the internet. yardo makes a CA (`/etc/docker/tls`) and Docker gets the
-port from a systemd drop-in, with `--live-restore`, so its restart leaves
-the containers running. `sudo yardo-docker client laptop` makes a
-laptop's certificate and says how to use it; Docker can't revoke one, so
-`sudo yardo-docker revoke-all` makes a new CA instead. Containers' published ports are
+this machine only, an SSH tunnel to it. Containers' published ports are
 reachable from everywhere, as Docker does it, unless Settings → Network
 access → "Container ports" keeps them to the VPNs or this machine.
 yardo's firewall rules are nftables tables of its own in

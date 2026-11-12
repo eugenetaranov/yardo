@@ -6,10 +6,10 @@
 id = "gitid"
 remove_say = "unsets the git settings yardo made, where they're still its own, and removes lazygit"
 tab = "git"
-label = "Git: name, email and defaults (rebase pulls, auto upstream, delta diffs, aliases), lazygit"
+label = "Git: name, email, your SSH key and defaults (rebase pulls, auto upstream, delta diffs, aliases), lazygit"
 default = true
-needs = ["essentials"]
-source = "git config --global user.name/email and defaults · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore · mise use -g lazygit"
+needs = ["essentials", "gitkey"]
+source = "git config --global user.name/email and defaults · ~/.ssh/id_ed25519 made when you have no key · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore · mise use -g lazygit"
 
 # lazygit, the git TUI.
 [[item.step]]
@@ -66,7 +66,9 @@ type = "block"
 src = "gitignore_global"
 to = "~/.config/git/ignore"
 
-# SSH for the git hosts, as each host item's mode says: the key sent from
+# SSH for git: your own key (~/.ssh/id_ed25519, made when you have none),
+# which ssh uses for every host by itself. Machines set up with a way per
+# host keep it, as each host item's mode says: the key sent from
 # your machine with `ssh <host> 'sudo yardo gitkey' < <key>` (a deploy key,
 # or your account's; one is made here when none was sent), which
 # ~/.ssh/config points every connection to those hosts at, so it works for
@@ -77,23 +79,25 @@ to = "~/.config/git/ignore"
 id = "gitkey"
 tab = "-"
 phase = "configure"
-label = "SSH for the git hosts"
-source = "~/.ssh/yardo_git_key or ~/.ssh/github, gitlab, bitbucket · ~/.ssh/config · host keys"
+label = "SSH for git"
+source = "~/.ssh/id_ed25519 (or ~/.ssh/yardo_git_key, ~/.ssh/github, gitlab, bitbucket) · ~/.ssh/config · host keys"
 
 [[item.step]]
 type = "go:gitkey"
 
+# GitHub: gh (with the essentials), act, GitHub's host keys and git over
+# your SSH key. Logging in is yours: gh auth login, when you want it.
 [[item]]
 id = "github"
-keep_say = "it's your GitHub access: gh auth logout, and delete the SSH key on GitHub"
 tab = "git"
-label = "GitHub: gh login + SSH key for git, act (run Actions locally)"
-default = true
+label = "GitHub: act (run Actions locally), git over your SSH key; gh auth login is yours"
 needs = ["essentials", "gitkey"]
-source = "gh auth login · git over SSH: forwarded agent, a key made here (gh ssh-key add) or one you send (yardo gitkey); or a token · mise act (needs Docker to run)"
+source = "gh (essentials) · GitHub's host keys in ~/.ssh/known_hosts · mise act (needs Docker to run) · log in yourself: gh auth login"
 
 [[item.step]]
-type = "legacy"
+type = "note"
+text = "GitHub: log gh in when you want it: gh auth login (git over SSH uses ~/.ssh/id_ed25519; add its .pub at https://github.com/settings/keys)."
+when = "! runuser -u {{user}} -- gh auth status -h github.com >/dev/null 2>&1"
 
 [[item.step]]
 type = "mise"

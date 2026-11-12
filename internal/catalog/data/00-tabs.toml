@@ -78,3 +78,80 @@ phase = "configure"
 id = "logins"
 title = "VPN logins"
 phase = "configure"
+
+# The first run's choices, in order, after the prompt (Powerlevel10k or
+# Starship, a setting). Every other item the picker offers is either in
+# the base (default = true: installed without asking) or on the Tools
+# screen only. Each answer is a set of items; picks stay item by item.
+
+[[choice]]
+id = "lang"
+title = "Languages: Python, Node.js and Go"
+kind = "toggle"
+items = ["python", "node", "go"]
+on = ["on"]
+
+[[choice]]
+id = "docker"
+title = "Docker (and the MCP gateway, which runs in it)"
+kind = "toggle"
+items = ["docker", "docker-ports", "mcpjungle-install", "mcpjungle"]
+on = ["on"]
+
+[[choice]]
+id = "k8s"
+title = "Kubernetes tools: kubectl and its aliases, helm, k9s, kustomize, …"
+kind = "toggle"
+items = ["k8s", "k8stools"]
+
+[[choice]]
+id = "iac"
+title = "Terraform tools: Terraform, OpenTofu, Packer, Ansible, …"
+kind = "toggle"
+items = ["terraform", "opentofu", "packer", "ansible", "tack", "vault"]
+
+[[choice]]
+id = "cloud"
+title = "Cloud providers"
+kind = "multi"
+items = ["aws", "doctl", "hcloud", "cloudflared", "gcloud", "azure"]
+note = "the Google Cloud and Azure CLIs are large"
+
+[[choice]]
+id = "agents"
+title = "Coding agents"
+kind = "multi"
+items = ["claude", "codex", "gemini", "opencode", "aider", "goose", "omp", "agentkeys"]
+on = ["claude"]
+
+[[choice]]
+id = "githost"
+title = "Git hosts"
+kind = "multi"
+items = ["github", "gitlab", "bitbucket"]
+on = ["github"]
+
+[[choice]]
+id = "vpn"
+title = "VPN or mesh network"
+kind = "one"
+
+[[choice.option]]
+id = "tailscale"
+title = "Tailscale"
+items = ["tailscale-install", "tailscale"]
+
+[[choice.option]]
+id = "netbird"
+title = "NetBird"
+items = ["netbird-install", "netbird"]
+
+[[choice.option]]
+id = "openvpn"
+title = "OpenVPN client"
+items = ["openvpn-client"]
+
+[[choice.option]]
+id = "wireguard"
+title = "WireGuard client"
+items = ["wireguard-client"]

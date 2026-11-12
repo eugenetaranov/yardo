@@ -5,7 +5,6 @@
 id = "claude"
 tab = "ai"
 label = "Claude Code"
-default = true
 source = "apt claude-code (Anthropic repo)"
 
 [[item.step]]
@@ -265,7 +264,6 @@ if ! systemctl list-units 'mcpjungle@*' --all --no-legend 2>/dev/null | grep -q 
 remove_say = "stops your MCP gateway and removes it; your servers' settings in ~/.mcp stay"
 tab = "aiext"
 label = "MCPJungle MCP gateway (runs in Docker; its servers: MCP servers, on the menu)"
-default = true
 needs = ["docker"]
 source = "release binary · systemd mcpjungle@<user> as mcp-<user>"
 
@@ -324,7 +322,6 @@ part_of = "mcpjungle-install"
 keep_say = "its servers are yours to add and delete: Manage MCP servers, in the gateway's details"
 tab = "agents"
 label = "MCP servers on MCPJungle, added to your agents"
-default = true
 needs = ["mcpjungle-install"]
 source = "~/.mcp/<server>/env (0600) · mcp-sync · Claude Code, Codex, Gemini CLI, OpenCode, Goose"
 

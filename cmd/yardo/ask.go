@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"os/user"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -32,10 +30,12 @@ type choices struct {
 
 // asker runs the prompts. Its hooks are seams for tests.
 type asker struct {
-	cat   *catalog.Catalog
-	a     *answers.Answers
-	share string
-	out   io.Writer
+	cat *catalog.Catalog
+	// promptSet: the choices picked the prompt already.
+	promptSet bool
+	a         *answers.Answers
+	share     string
+	out       io.Writer
 	// installed reports whether a tool is on the user's PATH.
 	installed func(tool string) bool
 	// profile: the answers already hold the profiles' picks; review them
@@ -92,8 +92,6 @@ func (k *asker) fromBoard(ctx context.Context, res ui.BoardResult, first bool) (
 			k.listenSet = true
 		case "ports":
 			k.a.DockerPorts = strings.TrimPrefix(v, "all")
-		case "api":
-			k.a.DockerAPI = strings.TrimPrefix(v, "off")
 		case "accent":
 			k.a.Accent = v
 		}
@@ -148,7 +146,7 @@ func (k *asker) questions(ctx context.Context, c *choices, first bool, saved []s
 			return err
 		}
 	}
-	if isNew("zsh") {
+	if isNew("zsh") && !k.promptSet {
 		if err := k.askPrompt(); err != nil {
 			return err
 		}
@@ -171,11 +169,6 @@ func (k *asker) questions(ctx context.Context, c *choices, first bool, saved []s
 	}
 	if isNew("docker-ports") || (has("docker-ports") && k.a.DockerPorts == "") {
 		if err := k.askDockerPorts(); err != nil {
-			return err
-		}
-	}
-	if isNew("docker-api") || (has("docker-api") && k.a.DockerAPI == "") {
-		if err := k.askDockerAPI(); err != nil {
 			return err
 		}
 	}
@@ -269,18 +262,8 @@ func askUser(def string) (string, error) {
 // askSecrets asks for the credentials and secrets of the plan's items.
 func (k *asker) askSecrets(c *choices, has func(string) bool) error {
 	var err error
-	if has("github") {
-		if err := k.askGitHub(c); err != nil {
-			return err
-		}
-	}
 	if has("gitlab") {
 		if err := k.askGitLab(); err != nil {
-			return err
-		}
-	}
-	if has("bitbucket") {
-		if err := k.askGitHost("Bitbucket", "bitbucket.org", &k.a.Bitbucket); err != nil {
 			return err
 		}
 	}
@@ -360,8 +343,7 @@ func (k *asker) askTZ() error {
 
 // askPrompt asks which zsh prompt to set up.
 func (k *asker) askPrompt() error {
-	p10k := "Powerlevel10k (lean, one line, icons; p10k configure restyles it)"
-	starship := "Starship (one line, fast; ~/.config/starship.toml)"
+	p10k, starship := promptP10k, promptStarship
 	cur := p10k
 	if k.a.Prompt == "starship" {
 		cur = starship
@@ -431,22 +413,6 @@ func (k *asker) askMCPDomain() error {
 	}
 }
 
-// askDockerAPI asks who can reach the Docker API over TLS.
-func (k *asker) askDockerAPI() error {
-	lan := "the local network (10/8, 172.16/12, 192.168/16, Tailscale's 100.64/10) and your VPNs"
-	vpn := "your VPNs only (Tailscale, NetBird, WireGuard, OpenVPN)"
-	sel := lan
-	if k.a.DockerAPI == "vpn" {
-		sel = vpn
-	}
-	ch, err := ui.Choose("The Docker API over TLS (port 2376, client certificates) can be reached from", []string{lan, vpn}, sel)
-	if err != nil {
-		return err
-	}
-	k.a.DockerAPI = map[string]string{lan: "lan", vpn: "vpn"}[ch]
-	return nil
-}
-
 // askDockerPorts asks where containers' published ports can be reached
 // from, besides this machine.
 func (k *asker) askDockerPorts() error {
@@ -481,59 +447,7 @@ func (k *asker) askWire(has func(string) bool) error {
 	return nil
 }
 
-// The ways to reach a git host over SSH, as the host prompts offer them.
-const (
-	wayAgent = "Forwarded SSH agent (no key on this machine; connect with ssh -A)"
-	waySent  = "A key you send from your machine (ssh <this machine> 'sudo yardo gitkey' < <key file>; a deploy or account key)"
-)
-
-// chooseWay asks how to reach a git host: ways maps each mode to its
-// label, in the order given; the saved mode, else the agent when one is
-// forwarded, else a key made here, is the default.
-func chooseWay(title, cur string, modes []string, ways map[string]string) (string, error) {
-	if cur == "" {
-		cur = "key"
-		if os.Getenv("SSH_AUTH_SOCK") != "" && exec.Command("ssh-add", "-l").Run() == nil {
-			cur = "agent"
-		}
-	}
-	var opts []string
-	for _, m := range modes {
-		opts = append(opts, ways[m])
-	}
-	ch, err := ui.Choose(title, opts, ways[cur])
-	if err != nil {
-		return "", err
-	}
-	for _, m := range modes {
-		if ways[m] == ch {
-			return m, nil
-		}
-	}
-	return cur, nil
-}
-
-// sentHint says how to send the key for host.
-func (k *asker) sentHint(host string) {
-	fmt.Fprintf(k.out, "Send the key from your machine:  ssh <this machine> 'sudo yardo gitkey --host %s' < <key file>\n(until then yardo makes one here; the closing notes say where to add it).\n", host)
-}
-
-// askGitHost asks how to reach a git host without a CLI login (Bitbucket).
-func (k *asker) askGitHost(name, host string, m *answers.GitHost) error {
-	mode, err := chooseWay("How should this VM reach "+name+"?", m.Mode, []string{"agent", "key", "sent"}, map[string]string{
-		"agent": wayAgent, "key": "A key made here (~/.ssh/" + strings.ToLower(name) + "; the closing notes say where to add it on " + name + ")", "sent": waySent})
-	if err != nil {
-		return err
-	}
-	m.Mode = mode
-	if mode == "sent" {
-		k.sentHint(host)
-	}
-	return nil
-}
-
-// askGitLab asks for the GitLab host (gitlab.com or your own) and how to
-// reach it.
+// askGitLab asks for the GitLab host (gitlab.com or your own).
 func (k *asker) askGitLab() error {
 	cur := k.a.GitLabHost()
 	for {
@@ -551,42 +465,6 @@ func (k *asker) askGitLab() error {
 		}
 		fmt.Fprintf(k.out, "Not a host name: %q\n", v)
 		cur = v
-	}
-	return k.askGitHost("GitLab", k.a.GitLabHost(), &k.a.GitLab)
-}
-
-func (k *asker) askGitHub(c *choices) error {
-	mode, err := chooseWay("How should this VM reach GitHub?", k.a.GitHub.Mode, []string{"agent", "key", "sent", "token"}, map[string]string{
-		"agent": wayAgent, "key": "A key made here (~/.ssh/github, uploaded to GitHub)", "sent": waySent,
-		"token": "A fine-grained token (git over HTTPS; no key)"})
-	if err != nil {
-		return err
-	}
-	k.a.GitHub.Mode = mode
-	if mode == "sent" {
-		k.sentHint("github.com")
-	}
-	home := homeOf(k.a.User)
-	if k.a.GitHub.Mode == "key" {
-		key := steps.OwnKey("github", func(p string) bool {
-			_, err := os.Stat(filepath.Join(home, strings.TrimPrefix(p, "~/")))
-			return err == nil
-		})
-		if _, err := os.Stat(filepath.Join(home, strings.TrimPrefix(key, "~/"))); err != nil {
-			yes, err := ui.Confirm("Protect the new key with a passphrase?", "ssh-keygen asks for it after the installs.", false)
-			if err != nil {
-				return err
-			}
-			if yes {
-				c.secrets.GHPassphrase = "yes"
-			}
-		}
-	}
-	if k.a.GitHub.Mode == "token" && exec.Command("runuser", "-u", k.a.User, "--", "gh", "auth", "status", "-h", "github.com").Run() != nil {
-		fmt.Fprintln(k.out, "Create one at https://github.com/settings/personal-access-tokens (Contents: read/write on your repos).")
-		if c.secrets.GHToken, err = ui.Password("GitHub fine-grained token (empty: later)", ""); err != nil {
-			return err
-		}
 	}
 	return nil
 }

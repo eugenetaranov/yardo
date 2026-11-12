@@ -36,7 +36,6 @@ type systemFile struct {
 	TZ      string   `json:"tz"`
 	// DockerPorts: see Answers.DockerPorts.
 	DockerPorts string              `json:"docker_ports,omitempty"`
-	DockerAPI   string              `json:"docker_api,omitempty"`
 	Layers      map[string][]string `json:"layers,omitempty"`
 	Hand        []string            `json:"hand,omitempty"`
 	// Users are the users set up, by name.
@@ -65,6 +64,7 @@ type userFile struct {
 	Registries  []string            `json:"registries"`
 	Dotfiles    string              `json:"dotfiles,omitempty"`
 	Prompt      string              `json:"prompt,omitempty"`
+	Base        int                 `json:"base,omitempty"`
 	GitKeyHosts []string            `json:"gitkey_hosts,omitempty"`
 	Layers      map[string][]string `json:"layers,omitempty"`
 	Hand        []string            `json:"hand,omitempty"`
@@ -188,7 +188,7 @@ func (s *Store) Load(name string) (*Answers, []string, error) {
 	if err != nil {
 		return nil, notes, err
 	}
-	a := &Answers{Version: Version, User: name, TZ: sys.TZ, DockerPorts: sys.DockerPorts, DockerAPI: sys.DockerAPI, Layers: map[string][]string{}}
+	a := &Answers{Version: Version, User: name, TZ: sys.TZ, DockerPorts: sys.DockerPorts, Layers: map[string][]string{}}
 	a.Picks = slices.DeleteFunc(slices.Clone(sys.Picks), func(id string) bool { return !s.IsSystem(id) })
 	a.Hand = slices.DeleteFunc(slices.Clone(sys.Hand), func(id string) bool { return !s.IsSystem(id) })
 	for n, l := range sys.Layers {
@@ -223,7 +223,7 @@ func (s *Store) Load(name string) (*Answers, []string, error) {
 		}
 		a.MiseExtra, a.MCPListen, a.MCPDomain, a.MCPServers, a.WireAgents = uf.MiseExtra, uf.MCPListen, uf.MCPDomain, uf.MCPServers, uf.WireAgents
 		a.Git, a.GitHub, a.NPM, a.Registries, a.Dotfiles, a.GitKeyHosts = uf.Git, uf.GitHub, uf.NPM, uf.Registries, uf.Dotfiles, uf.GitKeyHosts
-		a.GitLab, a.Bitbucket, a.Prompt, a.Accent = uf.GitLab, uf.Bitbucket, uf.Prompt, uf.Accent
+		a.GitLab, a.Bitbucket, a.Prompt, a.Accent, a.Base = uf.GitLab, uf.Bitbucket, uf.Prompt, uf.Accent, uf.Base
 	}
 	if len(a.Layers) == 0 {
 		a.Layers = nil
@@ -262,8 +262,8 @@ func (s *Store) Save(a *Answers) error {
 		return Merge(nil, system), Merge(nil, own)
 	}
 	uf := &userFile{Version: Version, MiseExtra: a.MiseExtra, MCPListen: a.MCPListen, MCPDomain: a.MCPDomain, MCPServers: a.MCPServers,
-		WireAgents: a.WireAgents, Git: a.Git, GitHub: a.GitHub, GitLab: a.GitLab, Bitbucket: a.Bitbucket, NPM: a.NPM, Registries: a.Registries, Dotfiles: a.Dotfiles, GitKeyHosts: a.GitKeyHosts, Prompt: a.Prompt, Accent: a.Accent}
-	sys.Version, sys.TZ, sys.DockerPorts, sys.DockerAPI = Version, a.TZ, a.DockerPorts, a.DockerAPI
+		WireAgents: a.WireAgents, Git: a.Git, GitHub: a.GitHub, GitLab: a.GitLab, Bitbucket: a.Bitbucket, NPM: a.NPM, Registries: a.Registries, Dotfiles: a.Dotfiles, GitKeyHosts: a.GitKeyHosts, Prompt: a.Prompt, Accent: a.Accent, Base: a.Base}
+	sys.Version, sys.TZ, sys.DockerPorts = Version, a.TZ, a.DockerPorts
 	sys.Picks, uf.Picks = split(a.Picks)
 	sys.Hand, uf.Hand = split(a.Hand)
 	if len(sys.Hand) == 0 {

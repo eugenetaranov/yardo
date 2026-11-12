@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"errors"
 	"os"
 	"regexp"
 	"sort"
@@ -45,7 +46,7 @@ func TestEmbeddedCatalogLoads(t *testing.T) {
 		}
 	}
 	// Moved off the System tab, still machine-wide.
-	for _, id := range []string{"tailscale-install", "netbird-install", "openvpn-client", "openvpn-server", "wireguard-client", "wireguard-server"} {
+	for _, id := range []string{"tailscale-install", "netbird-install", "openvpn-client", "wireguard-client"} {
 		if it := c.Item(id); it.Tab != "net" || !it.System() {
 			t.Errorf("%s: tab %s, system %v; want net, machine-wide", id, it.Tab, it.System())
 		}
@@ -229,7 +230,7 @@ func TestScope(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	want := "autoupdates debug devlimits docker docker-api docker-ports essentials etckeeper fail2ban journald k3s netbird netbird-install netfs ollama openvpn-client openvpn-server podman sshharden tailscale tailscale-install tzlocale wireguard-client wireguard-server zram"
+	want := "autoupdates debug devlimits docker docker-ports essentials etckeeper fail2ban journald netbird netbird-install netfs ollama openvpn-client podman sshharden tailscale tailscale-install tzlocale wireguard-client zram"
 	if strings.Join(got, " ") != want {
 		t.Errorf("system items: %s\nwant %s", strings.Join(got, " "), want)
 	}
@@ -295,7 +296,7 @@ func TestUnverifiedList(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	if want := "k3s k8stools neovim neovim ollama omp tailscale-install"; strings.Join(got, " ") != want {
+	if want := "k8stools neovim neovim ollama omp tailscale-install"; strings.Join(got, " ") != want {
 		t.Errorf("unverified downloads: %s\nwant %s (update this list when that's intended)", strings.Join(got, " "), want)
 	}
 }
@@ -324,13 +325,57 @@ func TestDefaults(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	want := "agentcfg agentskills claude dbclients debug devcli docker github gitid helpers mcpjungle mcpjungle-install neovim openspec tmux zellij zsh"
+	want := "agentcfg agentskills dbclients debug devcli etckeeper gitid helpers mosh neovim netfs openspec tmux zellij zsh"
 	if strings.Join(got, " ") != want {
 		t.Errorf("defaults: %s\nwant %s", strings.Join(got, " "), want)
+	}
+	if b := strings.Join(load(t, nil).Base(), " "); len(strings.Fields(b)) != len(strings.Fields(want)) {
+		t.Errorf("Base() = %s", b)
 	}
 	err := loadErr(t, fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\nalways = true\ndefault = true\n[[item.step]]\ntype = \"apt\"\npackages = [\"jq\"]\n")}})
 	if !strings.Contains(err, "only an item the picker offers") {
 		t.Errorf("an Always default: %s", err)
+	}
+}
+
+// The first run's choices, kept explicit like the defaults; and what makes
+// one wrong.
+func TestChoices(t *testing.T) {
+	c := load(t, nil)
+	var got []string
+	for _, ch := range c.Choices {
+		got = append(got, ch.ID)
+	}
+	if want := "lang docker k8s iac cloud agents githost vpn"; strings.Join(got, " ") != want {
+		t.Errorf("choices: %s\nwant %s", strings.Join(got, " "), want)
+	}
+	if ch := c.ChoiceOf("netbird"); ch == nil || ch.ID != "vpn" {
+		t.Errorf("ChoiceOf(netbird) = %v", ch)
+	}
+	if c.ChoiceOf("zsh") != nil {
+		t.Error("zsh is in the base, not a choice")
+	}
+	for name, tc := range map[string]struct {
+		ch   Choice
+		want string
+	}{
+		"unknown item": {Choice{ID: "x", Title: "X", Kind: "multi", Items: []string{"nope"}}, `"nope" is not an item`},
+		"hidden item":  {Choice{ID: "x", Title: "X", Kind: "multi", Items: []string{"mise"}}, "hidden or always"},
+		"default item": {Choice{ID: "x", Title: "X", Kind: "multi", Items: []string{"zsh"}}, "default too"},
+		"in two":       {Choice{ID: "x", Title: "X", Kind: "toggle", Items: []string{"java", "python"}}, `"python" is in choice "lang" too`},
+		"bad kind":     {Choice{ID: "x", Title: "X", Kind: "some", Items: []string{"java"}}, "want toggle, multi or one"},
+		"one, items":   {Choice{ID: "x", Title: "X", Kind: "one", Items: []string{"java"}}, "has options and no items"},
+		"bad on":       {Choice{ID: "x", Title: "X", Kind: "multi", Items: []string{"java"}, On: []string{"rust"}}, `on "rust"`},
+		"same id":      {Choice{ID: "lang", Title: "X", Kind: "multi", Items: []string{"java"}}, "unique id"},
+	} {
+		c := load(t, nil)
+		c.Choices = append(c.Choices, tc.ch)
+		if err := errors.Join(c.validateChoices()...); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v, want %q", name, err, tc.want)
+		}
+	}
+	if got := loadErr(t, fstest.MapFS{"x.toml": {Data: []byte("[[choice]]\nid = \"x\"\ntitle = \"X\"\nkind = \"multi\"\nitems = [\"java\"]\n")}}); !strings.Contains(got, "can't add tabs or choices") {
+		t.Errorf("a local choice: %s", got)
 	}
 }
 
@@ -343,10 +388,10 @@ func TestRemovable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for id, want := range map[string]bool{"docker": true, "tailscale-install": true, "mcpjungle-install": true, "k3s": true,
-		"terraform": true, "podman": true, "claude": true, "neovim": true, "openvpn-server": true, "aws": true, "helpers": true,
+	for id, want := range map[string]bool{"docker": true, "tailscale-install": true, "mcpjungle-install": true,
+		"terraform": true, "podman": true, "claude": true, "neovim": true, "aws": true, "helpers": true,
 		"gitid": true, "bitbucket": true, "agentkeys": true, "netbird": true,
-		"github": false, "zsh": false, "ecc": false} {
+		"github": true, "zsh": false, "ecc": false} {
 		if got := c.Item(id).Removable(); got != want {
 			t.Errorf("%s: removable %v, want %v", id, got, want)
 		}
