@@ -143,10 +143,12 @@ func (m *Menu) choices() []*BoardSetting {
 	return m.access()
 }
 
+// filter are the items f picks; not a part (a login), which its tool's
+// row stands for.
 func (m *Menu) filter(f func(*BoardItem) bool) []*BoardItem {
 	var out []*BoardItem
 	for _, i := range m.items {
-		if f(i) {
+		if !folded(m.items, i) && f(i) {
 			out = append(out, i)
 		}
 	}

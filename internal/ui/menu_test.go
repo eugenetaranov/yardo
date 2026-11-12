@@ -766,3 +766,15 @@ func TestMenuMCPDelete(t *testing.T) {
 		t.Errorf("y: %+v", r)
 	}
 }
+
+// A part (a login) folded into its tool's row is counted once: by the row.
+func TestMenuPartsCountedOnce(t *testing.T) {
+	m := testMenu(false)
+	in := []string{"~/.mcp/github/env: GITHUB_PERSONAL_ACCESS_TOKEN", "~/.mcp/jira/env: JIRA_URL"}
+	m.items = append(m.items,
+		&BoardItem{ID: "gw", Label: "MCP gateway", Tab: "ai", Picked: true, State: "secret", Inputs: in},
+		&BoardItem{ID: "gw-servers", Label: "MCP servers", Tab: "ai", Picked: true, State: "secret", Inputs: in, PartOf: "gw"})
+	if v := m.View(); !strings.Contains(v, "Fill in 3 values") || strings.Count(v, "JIRA_URL") != 1 {
+		t.Errorf("counted twice:\n%s", v)
+	}
+}

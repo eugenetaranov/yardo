@@ -337,8 +337,13 @@ func (b *Board) tabTitle(section string) string {
 
 // inRow reports whether i is part of another item's row (a login, in its
 // tool's), so not a row of its own.
-func (b *Board) inRow(i *BoardItem) bool {
-	return i.PartOf != "" && slices.ContainsFunc(b.items, func(t *BoardItem) bool { return t.ID == i.PartOf })
+func (b *Board) inRow(i *BoardItem) bool { return folded(b.items, i) }
+
+// folded reports whether i is part of another of items (a login, in its
+// tool's): that item's row shows its state and values, so i isn't
+// counted on its own.
+func folded(items []*BoardItem, i *BoardItem) bool {
+	return i.PartOf != "" && slices.ContainsFunc(items, func(t *BoardItem) bool { return t.ID == i.PartOf })
 }
 
 // rows are what the current tab (or the search) lists.
@@ -1004,13 +1009,17 @@ func (b *Board) header(w int) string {
 	if b.first {
 		right = append(right, muted.Render("nothing installed yet: a installs what's queued"))
 	} else {
-		if n := b.count(fixable); n > 0 {
+		// Health counts its rows: a part's is in its tool's.
+		own := func(f func(*BoardItem) bool) func(*BoardItem) bool {
+			return func(i *BoardItem) bool { return !b.inRow(i) && f(i) }
+		}
+		if n := b.count(own(fixable)); n > 0 {
 			right = append(right, red.Render(fmt.Sprintf("✗ %d to fix", n)))
 		}
-		if n := b.count(secret); n > 0 {
+		if n := b.count(own(secret)); n > 0 {
 			right = append(right, accent.Render(fmt.Sprintf("○ %d to fill in", n)))
 		}
-		if n := b.count(newer); n > 0 {
+		if n := b.count(own(newer)); n > 0 {
 			right = append(right, yellow.Render(fmt.Sprintf("↑ %d with updates", n)))
 		}
 		if len(right) == 0 {
