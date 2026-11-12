@@ -291,7 +291,7 @@ func (m *Menu) settingsRows() []menuRow {
 			}
 		}
 	}
-	out = append(out, menuRow{id: "connect", label: "Connect from a laptop", note: "Docker over SSH, the MCP gateway"})
+	out = append(out, menuRow{id: "connect", label: "Connect from a laptop", note: "SSH, Docker, the MCP gateway, copy and paste"})
 	check := menuRow{id: "check", label: "Check for updates", note: "apt and mise, in the background"}
 	switch {
 	case m.wait != nil:

@@ -388,7 +388,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	settings = append(settings, look)
 	var buf strings.Builder
 	addrs := addresses()
-	printConnect(&buf, a, addrs, withNames(ctx, steps.OSExec{}, addrs))
+	printConnect(&buf, a, addrs, withNames(ctx, steps.OSExec{}, addrs), os.Getenv("LC_TERMINAL"))
 	host, _ := os.Hostname()
 	sub := osName()
 	if len(addrs) > 0 {

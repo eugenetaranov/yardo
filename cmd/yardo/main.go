@@ -805,6 +805,12 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			if planHas(items)("mcpjungle") && !before("mcpjungle") && len(a.MCPServers) == 0 {
 				fmt.Fprintln(stdout, "MCP servers: add GitHub, Jira, Grafana and more from 'sudo yardo' → MCP servers.")
 			}
+			// Newly set up Neovim or tmux: how their copies reach the laptop.
+			if has := planHas(items); (has("neovim") && !before("neovim")) || (has("tmux") && !before("tmux")) {
+				for _, l := range clipboardHint(os.Getenv("LC_TERMINAL")) {
+					fmt.Fprintln(stdout, l)
+				}
+			}
 			if h := newShellHint(res.Changed); h != "" {
 				fmt.Fprintln(stdout, h)
 			}
@@ -1285,7 +1291,7 @@ func asRoot(args []string) error {
 	argv := []string{"sudo"}
 	// Keep a forwarded agent, the user's editor, and a proxy their shell has.
 	var keep []string
-	for _, k := range []string{"SSH_AUTH_SOCK", "VISUAL", "EDITOR", "http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} {
+	for _, k := range []string{"SSH_AUTH_SOCK", "LC_TERMINAL", "VISUAL", "EDITOR", "http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} {
 		if os.Getenv(k) != "" {
 			keep = append(keep, k)
 		}

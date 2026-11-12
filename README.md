@@ -298,7 +298,12 @@ installed by hand.
    finding, a file browser, git signs, language servers through `:Mason`,
    completion; press space and wait to see the keys; `sudo nvim FILE`
    edits through sudoedit, with your config), tmux (with
-   `~/.tmux.conf`: mouse, splits, 50k history), zellij, mosh. The zsh,
+   `~/.tmux.conf`: mouse, splits, 50k history), zellij, mosh. Over SSH,
+   `y` in Neovim and a mouse drag in tmux copy to your laptop's clipboard
+   (OSC 52); iTerm2 lets that through once you allow it, on the laptop:
+   `defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true`,
+   then quit and reopen iTerm2 (Ghostty, kitty, WezTerm and Alacritty
+   need nothing; Terminal.app can't). The zsh,
    Neovim and tmux files replace yours, keeping the old ones as `.orig`; keep your
    own lines in the local files instead (see [Your own
    settings](#your-own-settings)). **Shell helpers**, in

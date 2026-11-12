@@ -101,7 +101,25 @@ func withNames(ctx context.Context, x steps.Execer, addrs []address) *steps.TSSt
 
 // printConnect writes how to reach Docker and the MCP gateway from a
 // laptop, for user a; ts is Tailscale's status, when it's up.
-func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TSStatus) {
+// clipboardHint is how copying in Neovim or tmux here reaches the
+// laptop's clipboard: through the terminal (OSC 52), which iTerm2 lets
+// through only once allowed. term is the laptop's terminal when it says
+// (iTerm2 sends LC_TERMINAL over ssh), else "".
+func clipboardHint(term string) []string {
+	out := []string{
+		"Copy and paste (y in Neovim, a drag in tmux) reach your laptop's clipboard through the terminal.",
+		"  iTerm2, once on your laptop (then quit and reopen it):",
+		"    defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true",
+	}
+	if term != "iTerm2" {
+		out = append(out, "  Ghostty, kitty, WezTerm, Alacritty: nothing to do · Terminal.app can't (hold fn to select).")
+	}
+	return out
+}
+
+// printConnect says how to reach this machine from a laptop; term is the
+// laptop's terminal when it says (see clipboardHint).
+func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TSStatus, term string) {
 	host, _ := os.Hostname()
 	ctxName := strings.SplitN(host, ".", 2)[0]
 	fmt.Fprintf(w, "Connecting to %s from your laptop (as %s)\n\n", host, a.User)
@@ -163,6 +181,11 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		fmt.Fprintf(w, "  then: docker context create %s-tls --docker \"host=tcp://%s:2376,ca=…,cert=…,key=…\"\n", ctxName, addr)
 	}
 
+	fmt.Fprintln(w)
+	for _, l := range clipboardHint(term) {
+		fmt.Fprintln(w, l)
+	}
+
 	port := a.MCPPort
 	if port == 0 {
 		port = answers.FirstMCPPort
@@ -204,7 +227,7 @@ func (o *options) connect(stdout io.Writer, st *answers.Store) error {
 	}
 	a.User = u
 	addrs := addresses()
-	printConnect(stdout, a, addrs, withNames(context.Background(), steps.OSExec{}, addrs))
+	printConnect(stdout, a, addrs, withNames(context.Background(), steps.OSExec{}, addrs), os.Getenv("LC_TERMINAL"))
 	return nil
 }
 
