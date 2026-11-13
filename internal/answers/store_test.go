@@ -31,7 +31,7 @@ func userPath(home string) string { return filepath.Join(append([]string{home}, 
 
 func TestStoreTwoUsers(t *testing.T) {
 	s, home := testStore(t)
-	ada := &Answers{User: "ada", Picks: []string{"docker", "zsh"}, Git: Git{Name: "Ada"}, TZ: "UTC", MCPPort: 8080}
+	ada := &Answers{User: "ada", Picks: []string{"docker", "zsh"}, Git: Git{Name: "Ada"}, TZ: "UTC", MCPPort: 8080, Theme: "covert"}
 	if err := s.Save(ada); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestStoreTwoUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(a.Picks, []string{"docker", "zsh"}) || a.Git.Name != "Ada" || a.MCPPort != 8080 {
+	if !reflect.DeepEqual(a.Picks, []string{"docker", "zsh"}) || a.Git.Name != "Ada" || a.MCPPort != 8080 || a.Theme != "covert" || bob.Theme != "" {
 		t.Errorf("ada after bob's run = %+v", a)
 	}
 	if users, _, _ := s.Users(); !reflect.DeepEqual(users, []string{"ada", "bob"}) {

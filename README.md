@@ -93,7 +93,7 @@ first; what you turn on, installed), **Tools**
 (the full screen, below), **MCP servers** (the gateway's list: add one,
 or another instance of one; **d** deletes one, asking first) and **Settings**: **Network access** (the
 MCP gateway and containers' published ports, each a row
-of choices with a sentence saying what it means), the **Accent colour**,
+of choices with a sentence saying what it means), the **Look** (theme and accent colour),
 your **Git name and email**, **Shell prompt** and **Dotfiles repo**
 (asked again, then applied), **Connect from a laptop** and **Check for
 updates**. Typing on the home searches the tools.
@@ -165,9 +165,18 @@ yardo (this one ships newer files; Fix applies them), `○` needs a value,
 home says how many tools came from it, the Tools screen notes each, and
 unticking one warns that applying the profile again adds it back.
 
-**Accent colour.** Settings → Accent colour: Coral (the default),
+**Theme.** Settings → Look → Theme, or `--theme` for one run:
+**Classic** (the default: calm, in your accent colour), **Bridge** (a
+starship console: navy, cyan and amber, ● ✕ ◧ marks, titles in
+capitals), **Covert** (a night-ops dossier: phosphor green with signal
+orange, ■ ! ▣ marks) or **Tactical** (a shooter HUD: graphite, white
+and orange). A theme is yardo's own screens only; it's kept at once,
+without a run. Your terminal's background and font stay yours, so it
+works over SSH anywhere.
+
+**Accent colour.** Settings → Look → Accent colour: Coral (the default),
 Lagoon (aqua blue), Pistachio, Lavender, Amber or Rose. yardo's screen
-takes it, and so does your shell, so each machine's terminals can be
+takes it in the Classic theme, and so does your shell, so each machine's terminals can be
 told apart at a glance: the prompt (Powerlevel10k's OS icon, directory
 and prompt character, or Starship's), tmux's status bar and active pane
 border, and `$YARDO_ACCENT` for your own scripts. yardo only rewrites a

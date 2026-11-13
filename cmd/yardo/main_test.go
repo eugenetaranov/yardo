@@ -648,3 +648,11 @@ func TestNeededBy(t *testing.T) {
 		t.Errorf("go: %v", got)
 	}
 }
+
+// --theme takes one of the looks.
+func TestThemeFlag(t *testing.T) {
+	var out, errb bytes.Buffer
+	if err := cli([]string{"--theme", "neon", "--dry-run"}, &out, &errb); err == nil || !strings.Contains(err.Error(), "classic, bridge, covert or tactical") {
+		t.Errorf("--theme neon: %v", err)
+	}
+}

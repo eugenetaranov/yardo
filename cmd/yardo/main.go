@@ -15,6 +15,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -41,6 +42,7 @@ import (
 	"github.com/eugenetaranov/yardo/internal/profile"
 	"github.com/eugenetaranov/yardo/internal/run"
 	"github.com/eugenetaranov/yardo/internal/steps"
+	"github.com/eugenetaranov/yardo/internal/tui"
 	"github.com/eugenetaranov/yardo/internal/ui"
 	"golang.org/x/term"
 )
@@ -126,7 +128,9 @@ type options struct {
 	// scripts), collected in statuses.
 	status, json, updates bool
 	// ui is the screen sudo yardo opens on: menu, or board.
-	ui                       string
+	ui string
+	// theme is the look for this run (tui.Looks), over the saved one.
+	theme                    string
 	statuses                 []userStatus
 	state, log, legacy, user string
 	profiles                 list
@@ -167,6 +171,7 @@ func cli(args []string, stdout, stderr io.Writer) error {
 	fs.Var(&o.profiles, "profile", "apply a profile (file or https URL; repeatable, later ones win)")
 	fs.StringVar(&o.user, "user", "", "the account to set up, created if missing (wins over profiles)")
 	fs.StringVar(&o.ui, "ui", "menu", "the screen sudo yardo opens on: menu (the home) or board (Tools, the tabbed checklist)")
+	fs.StringVar(&o.theme, "theme", "", "the look of yardo's screens for this run: classic, bridge, covert or tactical (Settings › Look keeps one)")
 	o.legacy = envOr("YARDO_LEGACY", defaultLegacy)
 	fs.Usage = func() { fmt.Fprintln(stderr, "Run 'yardo --help' for the commands and flags.") }
 	if err := fs.Parse(args); err != nil {
@@ -178,6 +183,9 @@ func cli(args []string, stdout, stderr io.Writer) error {
 	}
 	if o.ui != "menu" && o.ui != "board" {
 		return fmt.Errorf("--ui %q: want menu or board", o.ui)
+	}
+	if _, ok := tui.LookOf(o.theme); o.theme != "" && !ok {
+		return fmt.Errorf("--theme %q: classic, bridge, covert or tactical", o.theme)
 	}
 	if o.showVersion {
 		fmt.Fprintln(stdout, version)
@@ -395,7 +403,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		based = baseChange(cat, a, stderr)
 		changed = true
 	}
-	ui.SetAccent(steps.AccentHex(a.Accent))
+	ui.SetLook(cmp.Or(o.theme, a.Theme), steps.AccentHex(a.Accent))
 	// stay: the menu (or the board) comes back after each run, until q;
 	// lastErr is the last run's, returned then.
 	stay := interactive && len(profs) == 0
@@ -522,6 +530,22 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							reopen, toast = "home", said
 						}
 					case ui.MenuApply:
+						// The theme is yardo's own: kept, and shown, without a run.
+						if v, ok := res.Settings["theme"]; ok {
+							delete(res.Settings, "theme")
+							a.Theme, o.theme = v, ""
+							ui.SetLook(a.Theme, steps.AccentHex(a.Accent))
+							if !o.dryRun {
+								if err := st.Save(a); err != nil {
+									return err
+								}
+							}
+							if len(res.Settings) == 0 {
+								l, _ := tui.LookOf(v)
+								d, reopen, toast = nil, "settings", "Theme: "+l.Name+"."
+								break
+							}
+						}
 						board = &ui.BoardResult{Kind: ui.BoardApply, Settings: res.Settings}
 						break loop
 					case ui.MenuChoices:
@@ -731,7 +755,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				}
 				a.Pick(c.picks)
 				a.MiseExtra = c.miseExtra
-				ui.SetAccent(steps.AccentHex(a.Accent)) // a new one shows from now on
+				ui.SetLook(cmp.Or(o.theme, a.Theme), steps.AccentHex(a.Accent)) // a new one shows from now on
 				items, extra, sec = c.items, c.miseExtra, c.secrets
 				changed = true
 			} else {

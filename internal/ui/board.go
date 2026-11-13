@@ -67,15 +67,20 @@ var (
 	rowOn  = lipgloss.NewStyle().Foreground(lipgloss.Color("#1A1A1A")).Background(tui.Accent).Bold(true)
 )
 
-// SetAccent colours yardo's screens (and its prompts) with hex: the
-// user's accent colour.
-func SetAccent(hex string) {
-	c := lipgloss.Color(hex)
-	tui.Accent = c
-	accent = lipgloss.NewStyle().Foreground(c)
+// SetLook colours yardo's screens (and its prompts) with the look key
+// names (tui.Looks), hex being the user's accent colour, Classic's.
+func SetLook(key, hex string) {
+	tui.Use(key, lipgloss.Color(hex))
+	l := tui.Cur
+	accent = lipgloss.NewStyle().Foreground(tui.Accent)
 	accentBd = accent.Bold(true)
-	tabOn = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1A1A1A")).Background(c)
-	rowOn = lipgloss.NewStyle().Foreground(lipgloss.Color("#1A1A1A")).Background(c).Bold(true)
+	muted = lipgloss.NewStyle().Foreground(l.Muted)
+	green = lipgloss.NewStyle().Foreground(l.OK).Bold(true)
+	red = lipgloss.NewStyle().Foreground(l.Bad)
+	yellow = lipgloss.NewStyle().Foreground(l.Warn)
+	keyOn = lipgloss.NewStyle().Foreground(l.Info).Bold(true)
+	tabOn = lipgloss.NewStyle().Bold(true).Foreground(l.Ink).Background(tui.Accent)
+	rowOn = lipgloss.NewStyle().Foreground(l.Ink).Background(tui.Accent).Bold(true)
 }
 
 // Fixable reports whether fixing (applying it again) is what a state
@@ -911,19 +916,20 @@ func mark(i *BoardItem) (string, lipgloss.Style) {
 	if !i.Picked || i.State == "" || i.Pending != "" {
 		return " ", muted
 	}
+	m := tui.Cur.Mark
 	switch {
 	case i.State == "down" || i.State == "missing":
-		return "✗", red
+		return m.Down, red
 	case i.State == "partial" || i.State == "drifted" || i.State == "outdated":
-		return "~", yellow
+		return m.Partial, yellow
 	case i.State == "secret":
-		return "○", accent
+		return m.Need, accent
 	case i.State == "unchecked":
-		return "·", muted
+		return m.Unchecked, muted
 	case len(i.Updates) > 0:
-		return "↑", yellow
+		return m.Update, yellow
 	}
-	return "✓", green
+	return m.OK, green
 }
 
 // note is what a row says after its label, and its style.
@@ -1001,7 +1007,7 @@ func padTo(s string, w int) string {
 }
 
 func (b *Board) header(w int) string {
-	left := " " + accentBd.Render("yardo") + muted.Render(" · "+b.info.Host+" · "+b.info.User)
+	left := " " + accentBd.Render(tui.Cur.Brand) + muted.Render(" · "+b.info.Host+" · "+b.info.User)
 	var right []string
 	if n := b.queued(); n > 0 {
 		right = append(right, accentBd.Render(plural(n, "change", "changes")+" queued"))
@@ -1014,16 +1020,16 @@ func (b *Board) header(w int) string {
 			return func(i *BoardItem) bool { return !b.inRow(i) && f(i) }
 		}
 		if n := b.count(own(fixable)); n > 0 {
-			right = append(right, red.Render(fmt.Sprintf("✗ %d to fix", n)))
+			right = append(right, red.Render(fmt.Sprintf("%s %d to fix", tui.Cur.Mark.Down, n)))
 		}
 		if n := b.count(own(secret)); n > 0 {
-			right = append(right, accent.Render(fmt.Sprintf("○ %d to fill in", n)))
+			right = append(right, accent.Render(fmt.Sprintf("%s %d to fill in", tui.Cur.Mark.Need, n)))
 		}
 		if n := b.count(own(newer)); n > 0 {
-			right = append(right, yellow.Render(fmt.Sprintf("↑ %d with updates", n)))
+			right = append(right, yellow.Render(fmt.Sprintf("%s %d with updates", tui.Cur.Mark.Update, n)))
 		}
 		if len(right) == 0 {
-			right = append(right, green.Render("✓ all well"))
+			right = append(right, green.Render(tui.Cur.Mark.OK+" all well"))
 		}
 		if b.info.Checked != "" {
 			right = append(right, muted.Render("updates checked "+b.info.Checked))
@@ -1063,7 +1069,8 @@ func (b *Board) tabBar(w int) string {
 	cur := b.current(tabs)
 	var parts []string
 	for n, t := range tabs {
-		label := " " + t.Title + [...]string{"", " ↑", " ○", " ✗"}[worst[t.ID]] + " "
+		m := tui.Cur.Mark
+		label := " " + tui.Title(t.Title) + [...]string{"", " " + m.Update, " " + m.Need, " " + m.Down}[worst[t.ID]] + " "
 		if n == cur && b.search == nil {
 			parts = append(parts, tabOn.Render(label))
 		} else {
@@ -1216,7 +1223,7 @@ func (b *Board) View() string {
 		x := rs[n]
 		switch {
 		case x.head != "":
-			out = append(out, " "+accentBd.Render(x.head))
+			out = append(out, " "+accentBd.Render(tui.Title(x.head)))
 			continue
 		case x.text != "":
 			out = append(out, "  "+muted.Render(x.text))

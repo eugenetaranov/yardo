@@ -40,7 +40,9 @@ type Answers struct {
 	MCPDomain string `json:"mcp_domain,omitempty"`
 	// Accent is the user's accent colour (steps.Accents), in yardo and
 	// their shell: "" is coral.
-	Accent     string   `json:"accent,omitempty"`
+	Accent string `json:"accent,omitempty"`
+	// Theme is the look of yardo's screens (tui.Looks; "" is Classic).
+	Theme      string   `json:"theme,omitempty"`
 	MCPServers []string `json:"mcp_servers"`
 	// WireAgents: nil means never asked.
 	WireAgents *bool  `json:"wire_agents"`

@@ -9,6 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+
+	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
 // The menu is yardo's calm home: two lines of how the machine is, a row
@@ -291,8 +293,17 @@ func (m *Menu) settingsRows() []menuRow {
 		}
 		out = append(out, menuRow{id: "access", label: "Network access", note: strings.Join(now, " · ")})
 	}
-	for _, s := range m.section(LookSection) {
-		out = append(out, menuRow{id: "look", label: s.Label, note: s.label(s.Value) + " · yardo, your prompt and tmux"})
+	// The look: one row (the theme, the accent colour), one screen.
+	if ls := m.section(LookSection); len(ls) > 0 {
+		var now []string
+		for _, s := range ls {
+			now = append(now, s.Label+": "+s.label(s.Value))
+		}
+		label := ls[0].Label
+		if len(ls) > 1 {
+			label = "Look"
+		}
+		out = append(out, menuRow{id: "look", label: label, note: strings.Join(now, " · ")})
 	}
 	for _, i := range m.items {
 		if !i.Picked {
@@ -633,7 +644,7 @@ func (m *Menu) View() string {
 	w, h := max(50, m.width), max(12, m.height)
 	var b []string
 	add := func(s ...string) { b = append(b, s...) }
-	add("", "  "+accentBd.Render("yardo")+muted.Render("  ·  "+m.info.Host+"  ·  "+m.sub), "")
+	add("", "  "+accentBd.Render(tui.Cur.Brand)+muted.Render("  ·  "+m.info.Host+"  ·  "+m.sub), "")
 	title, keys := "", ""
 	k := func(key, what string) string { return keyOn.Render(key) + " " + what }
 
@@ -785,7 +796,7 @@ func (m *Menu) View() string {
 		}
 	}
 	if title != "" {
-		b = append(b[:3], append([]string{"  " + muted.Render("Home  ›  ") + bold.Render(title), ""}, b[3:]...)...)
+		b = append(b[:3], append([]string{"  " + muted.Render(tui.Title("Home  ›  ")) + bold.Render(tui.Title(title)), ""}, b[3:]...)...)
 	}
 	for len(b) < h-2 {
 		b = append(b, "")

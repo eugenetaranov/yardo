@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ import (
 	"github.com/eugenetaranov/yardo/internal/plan"
 	"github.com/eugenetaranov/yardo/internal/run"
 	"github.com/eugenetaranov/yardo/internal/steps"
+	"github.com/eugenetaranov/yardo/internal/tui"
 	"github.com/eugenetaranov/yardo/internal/ui"
 )
 
@@ -370,6 +372,13 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		settings = append(settings, &ui.BoardSetting{Key: "ports", Label: "Container ports", Value: ports, Choices: [][2]string{
 			{"all", "everywhere (Docker's way)"}, {"vpn", "this machine and your VPNs"}, {"local", "this machine only"}}})
 	}
+	// The theme: yardo's screens.
+	theme := &ui.BoardSetting{Key: "theme", Label: "Theme", Section: ui.LookSection, Value: cmp.Or(a.Theme, "classic"), Swatches: map[string]string{}}
+	for _, l := range tui.Looks {
+		theme.Choices = append(theme.Choices, [2]string{l.Key, l.Name})
+		theme.Swatches[l.Key] = cmp.Or(string(l.Accent), steps.AccentHex(a.Accent))
+	}
+	settings = append(settings, theme)
 	// The accent colour: yardo's, the prompt's, tmux's.
 	look := &ui.BoardSetting{Key: "accent", Label: "Accent colour", Section: ui.LookSection, Value: a.Accent, Swatches: map[string]string{}}
 	if look.Value == "" {
