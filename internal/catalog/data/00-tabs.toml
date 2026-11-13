@@ -86,27 +86,31 @@ phase = "configure"
 
 [[choice]]
 id = "lang"
-title = "Languages: Python, Node.js and Go"
+title = "Languages"
+note = "Python, Node.js and Go"
 kind = "toggle"
 items = ["python", "node", "go"]
 on = ["on"]
 
 [[choice]]
 id = "docker"
-title = "Docker (and the MCP gateway, which runs in it)"
+title = "Docker"
+note = "and the MCP gateway, which runs in it"
 kind = "toggle"
 items = ["docker", "docker-ports", "mcpjungle-install", "mcpjungle"]
 on = ["on"]
 
 [[choice]]
 id = "k8s"
-title = "Kubernetes tools: kubectl and its aliases, helm, k9s, kustomize, …"
+title = "Kubernetes tools"
+note = "kubectl and its aliases, helm, k9s, kustomize, …"
 kind = "toggle"
 items = ["k8s", "k8stools"]
 
 [[choice]]
 id = "iac"
-title = "Terraform tools: Terraform, OpenTofu, Packer, Ansible, …"
+title = "Terraform tools"
+note = "Terraform, OpenTofu, Packer, Ansible, …"
 kind = "toggle"
 items = ["terraform", "opentofu", "packer", "ansible", "tack", "vault"]
 

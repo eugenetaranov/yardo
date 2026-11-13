@@ -2,7 +2,9 @@ package ui
 
 import (
 	"errors"
+	"slices"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
 	"github.com/eugenetaranov/yardo/internal/tui"
@@ -60,56 +62,22 @@ type Question struct {
 	Picked            []string
 }
 
-// Ask asks qs, a page each (shift+tab goes back), and fills in their
-// Picked.
+// Ask asks qs on one checklist, and fills in their Picked; esc leaves
+// them as they were.
 func Ask(qs []*Question) error {
-	var groups []*huh.Group
-	ones := map[*Question]*string{}
-	toggles := map[*Question]*bool{}
-	for _, q := range qs {
-		var f huh.Field
-		switch q.Kind {
-		case "toggle":
-			v := len(q.Picked) > 0
-			toggles[q] = &v
-			f = huh.NewConfirm().Title(q.Title).Description(q.Note).Affirmative("Yes").Negative("No").Value(&v)
-		case "one", "pick":
-			v := ""
-			if len(q.Picked) > 0 {
-				v = q.Picked[0]
-			}
-			ones[q] = &v
-			var o []huh.Option[string]
-			if q.Kind == "one" {
-				o = append(o, huh.NewOption("None", ""))
-			}
-			for _, kv := range q.Options {
-				o = append(o, huh.NewOption(kv[1], kv[0]))
-			}
-			f = huh.NewSelect[string]().Title(q.Title).Description(q.Note).Options(o...).Value(&v)
-		default:
-			var o []huh.Option[string]
-			for _, kv := range q.Options {
-				o = append(o, huh.NewOption(kv[1], kv[0]))
-			}
-			f = huh.NewMultiSelect[string]().Title(q.Title).Description(q.Note).Options(o...).Value(&q.Picked)
-		}
-		groups = append(groups, huh.NewGroup(f))
+	saved := make([][]string, len(qs))
+	for i, q := range qs {
+		saved[i] = slices.Clone(q.Picked)
 	}
-	err := huh.NewForm(groups...).WithTheme(tui.Theme()).Run()
-	if errors.Is(err, huh.ErrUserAborted) {
-		return ErrQuit
+	c := newChecklist(qs)
+	_, err := tea.NewProgram(c, tea.WithAltScreen()).Run()
+	c.out = true
+	if err == nil && c.quit {
+		err = ErrQuit
 	}
-	for q, v := range toggles {
-		q.Picked = nil
-		if *v {
-			q.Picked = []string{"on"}
-		}
-	}
-	for q, v := range ones {
-		q.Picked = nil
-		if *v != "" {
-			q.Picked = []string{*v}
+	if err != nil {
+		for i, q := range qs {
+			q.Picked = saved[i]
 		}
 	}
 	return err
