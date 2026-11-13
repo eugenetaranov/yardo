@@ -322,6 +322,10 @@ func window(lines []string, sel, n int) []string {
 	return lines[start : start+n]
 }
 
+// mcpAbout is how many lines the MCP servers screen keeps for the chosen
+// server's details.
+const mcpAbout = 3
+
 // mcpView is the MCP screens' title, lines and keys; room is how many
 // lines the screen has for them.
 func (m *Menu) mcpView(w, room int) (string, []string, string) {
@@ -348,15 +352,7 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			cols := padTo(mcpType(s), 13) + "  " + mcpWord(s)
 			if n == m.sel {
 				selLine = len(lines)
-				// Its state padded, so what it is starts in one column.
-				const col = 2 + 21 + 2 + 13 + 2 + 30 + 2
-				head := "  " + rowOn.Render(padTo(" › "+s.Name, 21)) + "  " + padTo(mcpType(s), 13) + "  " + mcpWord(s)
-				head += strings.Repeat(" ", max(2, col-lipgloss.Width(head)))
-				from := ""
-				if s.From != "" {
-					from = fromLine(s)
-				}
-				lines = append(lines, beside(head, col, w-2, muted, s.About, from)...)
+				lines = append(lines, "  "+rowOn.Render(padTo(" › "+s.Name, 21))+"  "+cols)
 			} else {
 				lines = append(lines, "     "+padTo(s.Name, 18)+"  "+cols)
 			}
@@ -368,7 +364,30 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		} else {
 			lines = append(lines, "     "+padTo("+ Add a server", 18)+"  "+muted.Render(m.examples()))
 		}
-		add(window(lines, selLine, room-len(b)-2)...)
+		// The chosen server's details, under the list, in lines that don't
+		// change in number: the rows never move.
+		var about []string
+		if m.sel < len(ss) {
+			s := ss[m.sel]
+			about = wrap(s.About, max(20, w-8))
+			if len(about) > mcpAbout-1 {
+				about = append(about[:mcpAbout-2], runewidth.Truncate(strings.Join(about[mcpAbout-2:], " "), max(20, w-8), "…"))
+			}
+			if s.From != "" {
+				about = append(about, runewidth.Truncate(fromLine(s), max(20, w-8), "…"))
+			}
+		}
+		for len(about) < mcpAbout {
+			about = append(about, "")
+		}
+		for n, l := range about {
+			if l != "" {
+				about[n] = "     " + muted.Render(l)
+			}
+		}
+		add(window(lines, selLine, room-len(b)-3-mcpAbout)...)
+		add("")
+		add(about...)
 		add("", "  "+muted.Render("Agents reach their tools through the gateway as <name>__<tool>."))
 		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("e", "edit its settings"), k("d", "delete"), k("a", "add"), k("esc", "back")}, "   ")
 	case "mcp:server", "mcp:delete":

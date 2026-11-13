@@ -290,12 +290,21 @@ func TestMenuMCPList(t *testing.T) {
 			t.Errorf("list lacks %q:\n%s", want, v)
 		}
 	}
-	// The selected one's description is right of it, wrapped as it needs.
-	for _, l := range strings.Split(v, "\n") {
-		if strings.Contains(l, "› github") && !strings.Contains(l, "GitHub:") {
-			t.Errorf("description not beside the row:\n%s", v)
+	// The selected one's description is under the list, in lines kept for
+	// it: moving down, the rows stay where they are.
+	at := func(v, name string) int {
+		for n, l := range strings.Split(ansi.Strip(v), "\n") {
+			if strings.Contains(l, " "+name+" ") {
+				return n
+			}
 		}
+		return -1
 	}
+	mk(m, "down")
+	if v2 := m.View(); at(v, "opensearch") != at(v2, "opensearch") || at(v, "Agents reach") != at(v2, "Agents reach") {
+		t.Errorf("rows moved:\n%s\n%s", v, v2)
+	}
+	mk(m, "up")
 	if !strings.Contains(strings.Join(strings.Fields(ansi.Strip(v)), " "), "GitHub: repositories and pull requests") {
 		t.Errorf("list lacks the description:\n%s", v)
 	}
