@@ -346,7 +346,7 @@ func TestChoices(t *testing.T) {
 	for _, ch := range c.Choices {
 		got = append(got, ch.ID)
 	}
-	if want := "lang docker k8s iac cloud agents githost vpn"; strings.Join(got, " ") != want {
+	if want := "lang docker k8s iac cloud agents githost jira vpn"; strings.Join(got, " ") != want {
 		t.Errorf("choices: %s\nwant %s", strings.Join(got, " "), want)
 	}
 	if ch := c.ChoiceOf("netbird"); ch == nil || ch.ID != "vpn" {

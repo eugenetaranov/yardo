@@ -136,6 +136,13 @@ items = ["github", "gitlab", "bitbucket"]
 on = ["github"]
 
 [[choice]]
+id = "jira"
+title = "Jira"
+note = "jiractl: issues and saved JQL queries from the terminal"
+kind = "toggle"
+items = ["jiractl"]
+
+[[choice]]
 id = "vpn"
 title = "VPN or mesh network"
 kind = "one"

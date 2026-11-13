@@ -67,7 +67,7 @@ account is created). Once something is set up, it opens on the home:
    Fill in OPENAI_API_KEY         Agent API keys needs it · opens its file
    Install 3 updates              node 22.12 → 24.11 · gh 2.80 → 2.83 · uv 0.5.9 → 0.9.1
   ──────────────────────────────────────────────
-   Choices                        prompt, languages, Docker, Kubernetes, Terraform, clouds, agents, git hosts, VPN
+   Choices                        prompt, languages, Docker, Kubernetes, Terraform, clouds, agents, git hosts, Jira, VPN
    Tools                          add or uninstall: languages, AI, cloud… or just start typing
    MCP servers                    github, jira-work
    Settings                       network access, git, prompt, look, laptop, updates

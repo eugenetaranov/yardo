@@ -266,7 +266,7 @@ func (m *Menu) todo() []menuRow {
 // Tools, MCP servers (with the gateway) and Settings.
 func (m *Menu) rows() []menuRow {
 	out := m.todo()
-	out = append(out, menuRow{id: "choices", label: "Choices", note: "prompt, languages, Docker, Kubernetes, Terraform, clouds, agents, git hosts, VPN"})
+	out = append(out, menuRow{id: "choices", label: "Choices", note: "prompt, languages, Docker, Kubernetes, Terraform, clouds, agents, git hosts, Jira, VPN"})
 	out = append(out, menuRow{id: "tools", label: "Tools", note: "yours: fix, add or uninstall · or just start typing"})
 	if m.hasMCP() {
 		var names []string
