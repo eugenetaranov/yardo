@@ -36,62 +36,6 @@ type Service struct {
 // vpn, local (this machine), or one address.
 type Listener struct{ Port, Proto, Name, Scope string }
 
-// dashLines are the dashboard's lines, w wide: a label, then as much as
-// fits, and how many more when not all of it does. The tools installed
-// wrap onto as many as room lines, all of them when there's room.
-func (m *Menu) dashLines(w, room int) []string {
-	d := m.info.Dash
-	var out []string
-	line := func(label string, parts []string) {
-		if len(parts) == 0 {
-			return
-		}
-		out = append(out, "  "+muted.Render(padTo(label, 12))+fit(parts, w-16))
-	}
-	var tools []string
-	for _, i := range m.items {
-		if i.Picked && i.Tab != ExtraTab {
-			tools = append(tools, short(i.Label))
-		}
-	}
-	for _, i := range m.items {
-		if i.Picked && i.Tab == ExtraTab {
-			tools = append(tools, short(i.Label))
-		}
-	}
-	if len(tools) > 0 {
-		tools[0] = fmt.Sprintf("%d: %s", len(tools), tools[0])
-		for n, l := range wrapList(tools, w-16, max(1, room)) {
-			label := "Installed"
-			if n > 0 {
-				label = ""
-			}
-			out = append(out, "  "+muted.Render(padTo(label, 12))+l)
-		}
-	}
-	if d.Docker {
-		var cs []string
-		for _, c := range d.Containers {
-			s := c.Image
-			if c.Name != "" {
-				s += muted.Render(" (" + c.Name + ")")
-			}
-			if len(c.Ports) > 0 {
-				s += " :" + strings.Join(c.Ports, ",")
-			}
-			cs = append(cs, s)
-		}
-		if len(cs) == 0 {
-			cs = []string{"0"}
-		} else {
-			cs[0] = fmt.Sprintf("%d: %s", len(cs), cs[0])
-		}
-		line("Containers", cs)
-	}
-	line("Services", services(d))
-	return out
-}
-
 // services are the dashboard's services: each with its state and the
 // ports it listens on beyond this machine ("tailscale ✓ 80/tcp,
 // 41641/udp"), then what else listens, by name (or port); the ports open
@@ -156,30 +100,6 @@ func services(d Dashboard) []string {
 	}
 	if local > 0 {
 		out = append(out, muted.Render(fmt.Sprintf("+ %d on this machine only", local)))
-	}
-	return out
-}
-
-// wrapList lays parts out joined with " · ", in lines at most w wide and
-// at most n of them, the last ending "+ N more" when they don't all fit.
-func wrapList(parts []string, w, n int) []string {
-	var out []string
-	for len(parts) > 0 {
-		if len(out) == n-1 {
-			return append(out, fit(parts, w))
-		}
-		line, used := "", 0
-		for _, p := range parts {
-			next := p
-			if line != "" {
-				next = line + muted.Render(" · ") + p
-			}
-			if line != "" && lipgloss.Width(next) > w {
-				break
-			}
-			line, used = next, used+1
-		}
-		out, parts = append(out, line), parts[used:]
 	}
 	return out
 }

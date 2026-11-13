@@ -58,7 +58,7 @@ func TestSetLook(t *testing.T) {
 	}
 	SetLook("nope", "#D97757")
 	m = testMenu(false)
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "  yardo  ·  vm") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, " yardo  ·  vm") {
 		t.Errorf("an unknown theme isn't Classic:\n%s", v)
 	}
 	if g, _ := mark(&BoardItem{Picked: true, State: "ok"}); g != "✓" {

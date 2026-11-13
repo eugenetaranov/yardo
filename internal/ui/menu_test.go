@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -57,8 +58,8 @@ func mk(m *Menu, keys ...string) {
 func TestMenuHome(t *testing.T) {
 	m := testMenu(false)
 	v := m.View()
-	for _, want := range []string{"Needs you: 1 thing to fix, 1 value to fill in", "1 tool working", "updates not checked",
-		"Start Docker Engine + Compose", "stopped: docker isn't running", "Fill in OPENAI_API_KEY", "Agent API keys needs it",
+	for _, want := range []string{"2 things need you", "1 of 3 tools working", "updates not checked", "Machine", "Needs you", "Go to",
+		"Start Docker Engine + Compose", "stopped: docker isn't running", "Fill in OPENAI_API_KEY", "Agent API keys",
 		"Tools", "or just start typing", "Settings", "type search tools"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("home lacks %q:\n%s", want, v)
@@ -69,12 +70,12 @@ func TestMenuHome(t *testing.T) {
 			t.Errorf("home has %q:\n%s", gone, v)
 		}
 	}
-	// The rows that never move come after a rule.
-	if strings.Index(v, "───") > strings.Index(v, "Tools") || strings.Index(v, "───") < strings.Index(v, "OPENAI_API_KEY") {
-		t.Errorf("no rule before Tools:\n%s", v)
+	// Needs you's rows come before Go to's.
+	if strings.Index(v, "Go to") < strings.Index(v, "OPENAI_API_KEY") {
+		t.Errorf("Go to before Needs you:\n%s", v)
 	}
 	h := testMenu(true).View()
-	if strings.Contains(h, "Start ") || strings.Contains(h, "Fill in") || strings.Contains(h, "───") || !strings.Contains(h, "All good.") || !strings.Contains(h, "3 tools working") {
+	if strings.Contains(h, "Start ") || strings.Contains(h, "Fill in") || !strings.Contains(h, "All good") || !strings.Contains(h, "Nothing needs you.") || !strings.Contains(h, "3 of 3 tools working") {
 		t.Errorf("healthy home:\n%s", h)
 	}
 }
@@ -89,7 +90,7 @@ func TestMenuFix(t *testing.T) {
 	}
 	m = testMenu(true)
 	m.items[2].State, m.items[2].Detail = "drifted", "~/.zshrc"
-	if v := m.View(); !strings.Contains(v, "Restore Go") || !strings.Contains(v, "puts back yardo's version") {
+	if v := m.View(); !strings.Contains(v, "Restore Go") || !strings.Contains(v, "puts back yardo's") || !strings.Contains(v, "version · ~/.zshrc") {
 		t.Errorf("drifted:\n%s", v)
 	}
 }
@@ -110,10 +111,10 @@ func TestMenuSecretsAndTools(t *testing.T) {
 	}
 	m = testMenu(false)
 	m.items[1].Inputs = append(m.items[1].Inputs, "~/.config/yardo/agent.env: GEMINI_API_KEY", "~/.config/yardo/agent.env: XAI_API_KEY")
+	onRow(m, "secrets")
 	if v := m.View(); !strings.Contains(v, "Fill in 3 values") || !strings.Contains(v, "OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY") {
 		t.Errorf("three values:\n%s", v)
 	}
-	onRow(m, "secrets")
 	mk(m, "enter")
 	if v := m.View(); !strings.Contains(v, "Home  ›  Fill in 1 value") {
 		t.Errorf("values screen:\n%s", v)
@@ -278,8 +279,14 @@ func TestMenuMCPList(t *testing.T) {
 		t.Error("an MCP servers row without the gateway")
 	}
 	m := mcpMenu()
+	// The ones that need you are Needs you's rows; the panel lists them all.
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Fill in jira") || !strings.Contains(v, "Check opensearch") || !strings.Contains(v, "MCP servers") ||
+		!strings.Contains(v, "● github") || !strings.Contains(v, "+ 1 more in ~/.mcp") {
+		t.Errorf("home:\n%s", v)
+	}
+	onRow(m, "mcp")
 	if v := m.View(); !strings.Contains(v, "github, jira, jira-work, opensearch · 2 need you") {
-		t.Errorf("home note:\n%s", v)
+		t.Errorf("Go to's note:\n%s", v)
 	}
 	onRow(m, "mcp")
 	mk(m, "enter")
@@ -527,7 +534,7 @@ func TestMenuFixAll(t *testing.T) {
 	}
 	m = testMenu(false)
 	m.items[2].State = "missing"
-	if v := m.View(); strings.Contains(v, "Install Go") || !strings.Contains(v, "1 thing to fix") {
+	if v := m.View(); strings.Contains(v, "Install Go") || !strings.Contains(v, "2 things need you") {
 		t.Errorf("never set up, offered as a fix:\n%s", v)
 	}
 	m = testMenu(false)
@@ -660,7 +667,7 @@ func TestMenuUpgrade(t *testing.T) {
 	m := testMenu(true)
 	m.items[2].Updates = []string{"go 1.25.1 → 1.25.2"}
 	m.checked = true
-	if !strings.Contains(m.View(), "Install 1 update") || !strings.Contains(m.View(), "working · 1 update") {
+	if !strings.Contains(m.View(), "Install 1 update") || !strings.Contains(m.View(), "1 update") {
 		t.Fatalf("home:\n%s", m.View())
 	}
 	onRow(m, "updates")
@@ -712,8 +719,8 @@ func TestMenuChecking(t *testing.T) {
 	}
 }
 
-// The home's dashboard: what's installed, the containers, the services
-// and what listens beyond this machine; what doesn't fit is counted.
+// The home's panels: the services, what they listen on and who can
+// reach it, then the containers; what doesn't fit is counted.
 func TestMenuDashboard(t *testing.T) {
 	m := testMenu(true)
 	m.info.Dash = Dashboard{Docker: true,
@@ -721,23 +728,39 @@ func TestMenuDashboard(t *testing.T) {
 		Services:   []Service{{Name: "ssh", Up: true}, {Name: "fail2ban"}},
 		Listening:  []Listener{{"22", "tcp", "ssh", "all"}, {"41641", "udp", "tailscale", "all"}, {"8080", "tcp", "docker", "vpn"}, {"631", "tcp", "cupsd", "local"}}}
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"Installed   3: Docker Engine + Compose · Agent API keys · Go", "Containers  1: postgres:16 (myapp-db-1) :5432",
-		"Services    ssh (22/tcp) · fail2ban (failed) · tailscale (41641/udp) · docker (8080/tcp VPN only)"} {
+	for _, want := range []string{"Services & containers", "● ssh          22/tcp         anyone", "fail2ban     failed", "tailscale    41641/udp      anyone",
+		"docker       8080/tcp       VPN", "+ 1 port on this machine only", "● postgres:16    myapp-db-1     :5432"} {
 		if !strings.Contains(v, want) {
-			t.Errorf("dashboard lacks %q:\n%s", want, v)
+			t.Errorf("panel lacks %q:\n%s", want, v)
 		}
 	}
-	if strings.Contains(v, "Listening") {
-		t.Errorf("listening apart from the services:\n%s", v)
-	}
-	m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
-	// Narrow: every tool, on as many lines as it takes; the services cut.
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "Installed   3: Docker Engine + Compose · Agent API keys\n              Go\n") || !strings.Contains(v, "+ 3 more") {
+	// Narrow: the panels stack, the services fold to a line.
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Services  ssh (22/tcp)") || strings.Contains(v, "Services & containers") {
 		t.Errorf("narrow:\n%s", v)
 	}
+	m.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
 	m.info.Dash = Dashboard{Docker: true}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "Containers  0\n") || strings.Contains(v, "Services") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "none running") || strings.Contains(v, "ssh") {
 		t.Errorf("nothing running:\n%s", v)
+	}
+}
+
+// The Machine panel: CPU (its average, a sparkline), load against the
+// cores, memory, disk, uptime.
+func TestMenuMachine(t *testing.T) {
+	saved := machine.m
+	t.Cleanup(func() { machine.m = saved })
+	machine.m = Machine{Read: true, CPU: []float64{0.1, 0.2, 0.06}, Load: [3]float64{5.5, 0.38, 0.31}, Cores: 4,
+		MemUsed: 3 << 30, MemTotal: 8 << 30, DiskUsed: 33 << 30, DiskTotal: 80 << 30, Up: 76 * time.Hour}
+	v := ansi.Strip(testMenu(true).View())
+	for _, want := range []string{"CPU   12%", "now", "Load  5.50 0.38 0.31", "on 4 cores", "38%", "3.0 GB of 8.0 GB", "41%", "of 80 GB", "Up    3d 4h"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("machine lacks %q:\n%s", want, v)
+		}
+	}
+	if got := spark([]float64{0, 0.5, 1}, 2); got != "▅█" {
+		t.Errorf("spark = %q", got)
 	}
 }
 
@@ -745,22 +768,13 @@ func TestMenuDashboard(t *testing.T) {
 func TestMenuTeam(t *testing.T) {
 	m := testMenu(true)
 	m.items[0].Team, m.items[2].Team = "platform", "platform"
-	if v := m.View(); !strings.Contains(v, "3 tools working · 2 from the team profile platform · updates not checked") {
+	if v := m.View(); !strings.Contains(v, "3 of 3 tools working") || !strings.Contains(v, "2 from the team profile platform") {
 		t.Errorf("home:\n%s", v)
 	}
 }
 
 // The tools installed take the lines there are, the last saying how many
 // more when they don't all fit.
-func TestWrapList(t *testing.T) {
-	parts := []string{"zsh", "Neovim", "tmux", "Go", "Python", "Node", "Docker", "Kubernetes"}
-	if got := ansi.Strip(strings.Join(wrapList(parts, 20, 10), "|")); got != "zsh · Neovim · tmux|Go · Python · Node|Docker · Kubernetes" {
-		t.Errorf("all: %q", got)
-	}
-	if got := ansi.Strip(strings.Join(wrapList(parts, 20, 2), "|")); got != "zsh · Neovim · tmux|Go · Python + 3 more" {
-		t.Errorf("two lines: %q", got)
-	}
-}
 
 // d on the MCP servers list asks to delete the one under the cursor; y
 // deletes, n goes back to the list.
@@ -788,6 +802,7 @@ func TestMenuPartsCountedOnce(t *testing.T) {
 	m.items = append(m.items,
 		&BoardItem{ID: "gw", Label: "MCP gateway", Tab: "ai", Picked: true, State: "secret", Inputs: in},
 		&BoardItem{ID: "gw-servers", Label: "MCP servers", Tab: "ai", Picked: true, State: "secret", Inputs: in, PartOf: "gw"})
+	onRow(m, "secrets")
 	if v := m.View(); !strings.Contains(v, "Fill in 3 values") || strings.Count(v, "JIRA_URL") != 1 {
 		t.Errorf("counted twice:\n%s", v)
 	}

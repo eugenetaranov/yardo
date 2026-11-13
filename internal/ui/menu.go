@@ -2,12 +2,12 @@ package ui
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/eugenetaranov/yardo/internal/tui"
@@ -240,6 +240,18 @@ func (m *Menu) todo() []menuRow {
 		}
 		out = append(out, menuRow{id: "secrets", label: "Fill in " + plural(len(ins), "value", "values"), note: strings.Join(keys, ", ")})
 	}
+	// yardo's MCP servers that aren't ready.
+	if m.hasMCP() {
+		for _, x := range m.mcpServers() {
+			switch {
+			case !x.Yardo:
+			case x.State == "secret":
+				out = append(out, menuRow{id: "mcpkey:" + x.Name, label: "Fill in " + x.Name, note: strings.Join(x.Keys, ", ")})
+			case x.State == "failed" || x.State == "retired" || x.State == "nospec":
+				out = append(out, menuRow{id: "mcp:" + x.Name, label: "Check " + x.Name, note: strings.TrimPrefix(ansi.Strip(mcpWord(x)), "▲ ")})
+			}
+		}
+	}
 	if us := m.filter(newer); len(us) > 0 {
 		var v []string
 		for _, i := range us {
@@ -350,16 +362,24 @@ func (m *Menu) Checking(wait func() UpdatesMsg) *Menu {
 }
 
 func (m *Menu) Init() tea.Cmd {
-	if m.wait == nil {
-		return nil
+	cmds := []tea.Cmd{readMachine}
+	if m.wait != nil {
+		cmds = append(cmds, func() tea.Msg { return m.wait() })
 	}
-	return func() tea.Msg { return m.wait() }
+	return tea.Batch(cmds...)
 }
 
 func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
+	case machineMsg:
+		v.took()
+		// The first two readings close together: the CPU shows sooner.
+		if len(machine.m.CPU) == 0 {
+			return m, tickMachine(time.Second)
+		}
+		return m, tickMachine(machineEvery)
 	case UpdatesMsg:
 		for _, i := range m.items {
 			if i.Picked {
@@ -495,11 +515,19 @@ func (m *Menu) key(k string) tea.Cmd {
 	switch m.screen {
 	case "home":
 		r := m.rows()[m.sel]
+		todo := len(m.todo())
 		switch {
-		case up:
+		case up || k == "left":
 			m.sel--
-		case down:
+		case down || k == "right":
 			m.sel++
+		case k == "tab" || k == "shift+tab":
+			// Between Needs you and Go to.
+			if m.sel < todo {
+				m.sel = todo
+			} else {
+				m.sel = 0
+			}
 		case k == "q":
 			return m.quit(MenuResult{Kind: MenuQuit})
 		case k == "esc":
@@ -512,6 +540,15 @@ func (m *Menu) key(k string) tea.Cmd {
 			return m.quit(MenuResult{Kind: MenuTools})
 		case k == "enter" && r.id == "choices":
 			return m.quit(MenuResult{Kind: MenuChoices})
+		case k == "enter" && (strings.HasPrefix(r.id, "mcp:") || strings.HasPrefix(r.id, "mcpkey:")):
+			// The MCP servers, on this one.
+			_, name, _ := strings.Cut(r.id, ":")
+			m.open("mcp")
+			for n, x := range m.mcpServers() {
+				if x.Name == name {
+					m.sel = n
+				}
+			}
 		case k == "enter":
 			m.open(r.id)
 		}
@@ -642,6 +679,9 @@ func (m *Menu) View() string {
 		return ""
 	}
 	w, h := max(50, m.width), max(12, m.height)
+	if m.screen == "home" {
+		return m.homeView(w, h)
+	}
 	var b []string
 	add := func(s ...string) { b = append(b, s...) }
 	add("", "  "+accentBd.Render(tui.Cur.Brand)+muted.Render("  ·  "+m.info.Host+"  ·  "+m.sub), "")
@@ -649,26 +689,6 @@ func (m *Menu) View() string {
 	k := func(key, what string) string { return keyOn.Render(key) + " " + what }
 
 	switch m.screen {
-	case "home":
-		add(m.status()...)
-		add("")
-		// The tools installed get the lines the rest leaves: the header and
-		// status, the other dashboard lines, the rows, the keys.
-		rs := m.rows()
-		room := h - len(b) - 2 - 4 - len(rs) - 1 - 3
-		if dl := m.dashLines(w, room); len(dl) > 0 {
-			add(dl...)
-			add("")
-		}
-		todo := len(m.todo())
-		col := labelCol(rs, w)
-		for n, r := range rs {
-			if n == todo && todo > 0 {
-				add("  " + muted.Render(strings.Repeat("─", min(60, w-6))))
-			}
-			add(m.row(n == m.sel, r, col, w)...)
-		}
-		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("type", "search tools"), k("q", "quit")}, "   ")
 	case "settings":
 		title = "Settings"
 		rs := m.settingsRows()
@@ -811,54 +831,6 @@ func (m *Menu) View() string {
 	}
 	b = append(b, "  "+keys)
 	return strings.Join(b, "\n")
-}
-
-// status are the home's first lines: how the machine is, in words, then
-// what's working and when updates were looked for.
-func (m *Menu) status() []string {
-	ps, ss := len(m.filter(problem)), 0
-	for _, i := range m.filter(secret) {
-		ss += len(i.Inputs)
-	}
-	ready := len(m.filter(func(i *BoardItem) bool { return i.Picked && i.State == "ok" }))
-	head := green.Render("All good.")
-	if ps+ss > 0 {
-		var need []string
-		if ps > 0 {
-			need = append(need, plural(ps, "thing", "things")+" to fix")
-		}
-		if ss > 0 {
-			need = append(need, plural(ss, "value", "values")+" to fill in")
-		}
-		head = yellow.Render("Needs you: " + strings.Join(need, ", "))
-	}
-	sub := []string{plural(ready, "tool", "tools") + " working"}
-	// A machine set up from a team profile says so, and how much is the
-	// team's.
-	team, teams := 0, map[string]bool{}
-	for _, i := range m.items {
-		if i.Picked && i.Team != "" {
-			team++
-			teams[i.Team] = true
-		}
-	}
-	if team > 0 {
-		sub = append(sub, fmt.Sprintf("%d from the team profile %s", team, strings.Join(slices.Sorted(maps.Keys(teams)), ", ")))
-	}
-	switch us := len(m.filter(newer)); {
-	case m.wait != nil:
-		sub = append(sub, "checking for updates…")
-	case us > 0:
-		sub = append(sub, plural(us, "update", "updates"))
-	case m.checked:
-		sub = append(sub, "nothing newer")
-	default:
-		sub = append(sub, "updates not checked")
-	}
-	if m.info.Checked != "" && m.wait == nil {
-		sub = append(sub, "checked "+m.info.Checked)
-	}
-	return []string{"  " + head, "  " + muted.Render(strings.Join(sub, " · "))}
 }
 
 // labelCol is how wide rs' labels are laid out: the longest, at least 25
