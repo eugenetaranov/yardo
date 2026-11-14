@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 
+	bkey "github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
@@ -13,8 +14,16 @@ import (
 // ErrQuit is returned when the user quits a prompt (esc / ctrl-c).
 var ErrQuit = errors.New("cancelled")
 
+// keys are huh's, with esc cancelling a prompt as it does every screen
+// (huh's own is ctrl+c only).
+func keys() *huh.KeyMap {
+	km := huh.NewDefaultKeyMap()
+	km.Quit = bkey.NewBinding(bkey.WithKeys("ctrl+c", "esc"))
+	return km
+}
+
 func run(f huh.Field) error {
-	err := huh.NewForm(huh.NewGroup(f)).WithTheme(tui.Theme()).WithShowHelp(false).Run()
+	err := huh.NewForm(huh.NewGroup(f)).WithTheme(tui.Theme()).WithKeyMap(keys()).WithShowHelp(false).Run()
 	if errors.Is(err, huh.ErrUserAborted) {
 		return ErrQuit
 	}

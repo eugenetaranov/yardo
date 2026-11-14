@@ -46,6 +46,8 @@ func mk(m *Menu, keys ...string) {
 			msg = tea.KeyMsg{Type: tea.KeyEnter}
 		case "esc":
 			msg = tea.KeyMsg{Type: tea.KeyEsc}
+		case "tab":
+			msg = tea.KeyMsg{Type: tea.KeyTab}
 		default:
 			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
 		}
@@ -805,5 +807,58 @@ func TestMenuPartsCountedOnce(t *testing.T) {
 	onRow(m, "secrets")
 	if v := m.View(); !strings.Contains(v, "Fill in 3 values") || strings.Count(v, "JIRA_URL") != 1 {
 		t.Errorf("counted twice:\n%s", v)
+	}
+}
+
+// Network access: Apply says nothing changed until a choice does, then
+// stands out with how many; a applies from any row, enter on an
+// unchanged screen says so.
+func TestMenuAccessApply(t *testing.T) {
+	m := testMenu(false)
+	onRow(m, "settings")
+	mk(m, "enter")
+	onSetting(m, "access")
+	mk(m, "enter")
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "nothing changed yet") || strings.Contains(v, "Apply 1 change") {
+		t.Errorf("unchanged:\n%s", v)
+	}
+	mk(m, "a")
+	if m.result.Kind == MenuApply || m.screen != "access" || !strings.Contains(m.View(), "Nothing changed") {
+		t.Errorf("a, unchanged: %+v on %s", m.result, m.screen)
+	}
+	mk(m, "right")
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "[ Apply 1 change ]") || !strings.Contains(v, "a applies from anywhere") {
+		t.Errorf("changed:\n%s", v)
+	}
+	mk(m, "a")
+	if m.result.Kind != MenuApply || m.result.Settings["mcp"] != "vpn" {
+		t.Errorf("a: %+v", m.result)
+	}
+}
+
+// tab goes from Needs you to Go to, then along Go to and back round;
+// shift+tab goes back. With nothing to do, it walks Go to alone.
+func TestMenuTab(t *testing.T) {
+	m := testMenu(false) // two rows need you
+	var got []string
+	for range 5 {
+		mk(m, "tab")
+		got = append(got, m.rows()[m.sel].id)
+	}
+	if strings.Join(got, " ") != "choices tools settings fix:docker choices" {
+		t.Errorf("tab: %v", got)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if id := m.rows()[m.sel].id; id != "fix:docker" {
+		t.Errorf("shift+tab from Choices: on %s", id)
+	}
+	m = testMenu(true)
+	got = nil
+	for range 3 {
+		mk(m, "tab")
+		got = append(got, m.rows()[m.sel].id)
+	}
+	if strings.Join(got, " ") != "tools settings choices" {
+		t.Errorf("tab, nothing to do: %v", got)
 	}
 }

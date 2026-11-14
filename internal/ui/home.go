@@ -91,7 +91,7 @@ func (m *Menu) homeView(w, h int) string {
 		b = append(b, "")
 	}
 	k := func(key, what string) string { return keyOn.Render(key) + " " + what }
-	b = append(b, " "+strings.Join([]string{k("↑↓←→", "choose"), k("tab", "next panel"), k("enter", "open"), k("type", "search tools"), k("q", "quit")}, "   "))
+	b = append(b, " "+strings.Join([]string{k("↑↓←→", "choose"), k("tab", "next"), k("enter", "open"), k("type", "search tools"), k("q", "quit")}, "   "))
 	return strings.Join(b, "\n")
 }
 

@@ -127,6 +127,18 @@ func NewMenu(info HomeInfo, sub string, items []*BoardItem, settings []*BoardSet
 	return m
 }
 
+// changed are the access or look screen's choices that differ from the
+// saved ones, by key.
+func (m *Menu) changed() map[string]string {
+	set := map[string]string{}
+	for _, s := range m.choices() {
+		if v, ok := m.pick[s.Key]; ok && v != s.Value {
+			set[s.Key] = v
+		}
+	}
+	return set
+}
+
 // access are the settings Network access shows: who can reach what.
 func (m *Menu) access() []*BoardSetting { return m.section("") }
 
@@ -521,12 +533,24 @@ func (m *Menu) key(k string) tea.Cmd {
 			m.sel--
 		case down || k == "right":
 			m.sel++
-		case k == "tab" || k == "shift+tab":
-			// Between Needs you and Go to.
-			if m.sel < todo {
+		case k == "tab":
+			// From Needs you to Go to, then along Go to, then back round.
+			switch n := len(m.rows()); {
+			case m.sel < todo:
 				m.sel = todo
-			} else {
+			case m.sel < n-1:
+				m.sel++
+			default:
 				m.sel = 0
+			}
+		case k == "shift+tab":
+			switch {
+			case m.sel > todo:
+				m.sel--
+			case m.sel == todo && todo > 0:
+				m.sel = 0
+			default:
+				m.sel = len(m.rows()) - 1
 			}
 		case k == "q":
 			return m.quit(MenuResult{Kind: MenuQuit})
@@ -631,15 +655,10 @@ func (m *Menu) key(k string) tea.Cmd {
 			m.pick[s.Key] = s.Choices[idx][0]
 		case k == "enter" && m.sel < n:
 			m.sel = n // on to Apply
-		case k == "enter":
-			set := map[string]string{}
-			for _, s := range as {
-				if v, ok := m.pick[s.Key]; ok && v != s.Value {
-					set[s.Key] = v
-				}
-			}
+		case k == "enter" || k == "a":
+			set := m.changed()
 			if len(set) == 0 {
-				m.back()
+				m.toast = "Nothing changed: ←→ picks a setting's choice."
 				return nil
 			}
 			return m.quit(MenuResult{Kind: MenuApply, Settings: set})
@@ -779,12 +798,20 @@ func (m *Menu) View() string {
 			}
 			add("")
 		}
-		apply := muted.Render("[ ") + "Apply" + muted.Render(" ]")
-		if m.sel == len(as) {
-			apply = rowOn.Render(" Apply ")
+		// Apply stands out once something's changed.
+		n := len(m.changed())
+		apply := muted.Render("[ Apply ]   nothing changed yet: ←→ picks a choice")
+		if n > 0 {
+			label := "Apply " + plural(n, "change", "changes")
+			apply = accentBd.Render("[ "+label+" ]") + "   " + muted.Render("a applies from anywhere · esc leaves without changing anything")
+			if m.sel == len(as) {
+				apply = rowOn.Render("  "+label+"  ") + "   " + muted.Render("esc leaves without changing anything")
+			}
+		} else if m.sel == len(as) {
+			apply = rowOn.Render(" Apply ") + "   " + muted.Render("nothing changed yet: ←→ picks a choice")
 		}
-		add("  " + apply + "   " + muted.Render("esc leaves without changing anything"))
-		keys = strings.Join([]string{k("↑↓", "setting"), k("←→", "choose"), k("enter", "apply"), k("esc", "back")}, "   ")
+		add("  " + apply)
+		keys = strings.Join([]string{k("↑↓", "setting"), k("←→", "choose"), k("a", "apply"), k("esc", "back")}, "   ")
 	case "connect":
 		title = "Settings  ›  Connect from a laptop"
 		for _, l := range m.connect {
