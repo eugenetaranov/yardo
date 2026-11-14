@@ -1094,7 +1094,7 @@ func (b *Board) footer(r *row) string {
 			keys = []string{k("esc", "close")}
 		}
 	case b.search != nil && b.typing:
-		keys = []string{accentBd.Render("/" + *b.search + "_"), k("enter", "into the list"), k("space", "add/uninstall"), k("esc", "clear")}
+		keys = []string{k("enter", "into the list"), k("space", "add/uninstall"), k("esc", "clear")}
 	default:
 		first := k("enter", "details")
 		switch {
@@ -1117,9 +1117,6 @@ func (b *Board) footer(r *row) string {
 		if n := b.queued(); n > 0 {
 			keys = append(keys, accentBd.Render("a")+" "+accentBd.Render(fmt.Sprintf("APPLY %d", n)))
 		}
-		if b.search != nil {
-			keys = append([]string{accentBd.Render("/" + *b.search)}, keys...)
-		}
 		leave := k("q", "quit")
 		if b.search != nil {
 			leave = k("esc", "clear the filter")
@@ -1141,9 +1138,28 @@ func (b *Board) View() string {
 	w, h := max(50, b.width), max(12, b.height)
 	rule := muted.Render(strings.Repeat("─", w-1))
 	var out []string
-	out = append(out, b.header(w), b.tabBar(w), rule)
-
+	out = append(out, b.header(w), b.tabBar(w))
 	rs := b.rows()
+	// The search, at the top, by what it found.
+	if b.search != nil {
+		cursor, hint := " ", "enter: into the list · esc clears"
+		if b.typing {
+			cursor = "▏"
+		} else {
+			hint = "/ edits · esc clears"
+		}
+		found := 0
+		for _, x := range rs {
+			if x.selectable() {
+				found++
+			}
+		}
+		q := runewidth.Truncate(*b.search, 40, "…") + cursor
+		out = append(out, " "+accentBd.Render("Search ")+field.Render(" "+q+strings.Repeat(" ", max(1, 26-runewidth.StringWidth(q))))+"  "+
+			muted.Render(plural(found, "match", "matches")+" · "+hint))
+	}
+	out = append(out, rule)
+
 	cur, r := b.selected(rs)
 	var pl []string
 	if p := b.panel; p != nil {
@@ -1186,6 +1202,9 @@ func (b *Board) View() string {
 		ql = append(ql, " "+accentBd.Render("Queued: ")+runewidth.Truncate(strings.Join(q, " · "), max(10, w-24), "…")+muted.Render("   a applies"))
 	}
 	listH := max(1, h-5-len(pl)-len(ql))
+	if b.search != nil {
+		listH = max(1, listH-1)
+	}
 	// Labels as wide as the longest one, leaving the notes beside them
 	// room (up to 2/5 of the screen) when any row has one.
 	// Each row's note, worked out once.

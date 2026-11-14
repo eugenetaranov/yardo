@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func testBoard(first bool) *Board {
@@ -308,7 +309,10 @@ func TestBoardExtraKeepsTab(t *testing.T) {
 func TestBoardSearchOpen(t *testing.T) {
 	b := testBoard(false)
 	b.Search("wire")
-	if v := b.View(); !strings.Contains(v, "WireGuard server") || !strings.Contains(v, "/wire_") {
+	// The search is at the top, under the tabs, with what it found.
+	v := ansi.Strip(b.View())
+	lines := strings.Split(v, "\n")
+	if !strings.Contains(v, "WireGuard server") || !strings.Contains(lines[2], "Search  wire") || !strings.Contains(lines[2], "1 match") {
 		t.Errorf("search:\n%s", v)
 	}
 }

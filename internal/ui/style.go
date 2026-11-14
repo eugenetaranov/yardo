@@ -35,6 +35,8 @@ var (
 	green    = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
 	tabOn    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1A1A1A")).Background(tui.Accent)
 	accentBd = accent.Bold(true)
+	// field is a text box's background (the board's search).
+	field = lipgloss.NewStyle().Background(lipgloss.Color("#2B2D33"))
 )
 
 // wrap splits s into lines at most w cells wide, at spaces where it can.
