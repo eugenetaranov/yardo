@@ -110,7 +110,7 @@ back): the zsh prompt (Powerlevel10k or Starship), then the choices:
 
 | Choice | What it installs | Starts |
 |---|---|---|
-| Languages | Python, Node.js and Go | on |
+| Languages | any of Python, Node.js, Go, each on its own | none |
 | Docker | Docker and its tools, published-port limits, the MCP gateway | on |
 | Kubernetes tools | kubectl and its aliases, kubectx, helm, k9s, the extras | off |
 | Terraform tools | Terraform, OpenTofu, Packer, Ansible, tack, Vault | off |
@@ -410,9 +410,11 @@ installed by hand.
    HTTP. Beyond this machine it needs a token
    (MCPJungle's enterprise mode): yardo makes the admin token (kept in
    `~/.mcp`, the gateway user's) and one for the agents on the VM, wired
-   into them; `mcp-sync client <name>` makes one for a laptop's agent,
-   sent as `Authorization: Bearer <token>`. It never shows the token: it
-   goes to `~/.mcp/clients/<name>.token`, read with `sudo cat`. The
+   into them, and one for your laptop, in `~/.mcp/clients/laptop.token`
+   (read it with `sudo cat`; the home's How to connect says where). More
+   laptops: `mcp-sync client <name>`, sent as `Authorization: Bearer
+   <token>`. Neither shows a token: it goes to
+   `~/.mcp/clients/<name>.token`. The
    laptop only ever talks to the gateway: the servers' own tokens
    (GitHub, Jira…) stay on this machine. On this machine only, there
    are no tokens: anything on the VM can use the gateway.

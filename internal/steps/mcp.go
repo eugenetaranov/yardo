@@ -480,22 +480,35 @@ func randomToken() (string, error) {
 // --- go:mcp_auth: the tokens, in enterprise mode -------------------------------
 
 // mcpAuthStep initializes an enterprise-mode gateway (its admin token, in
-// ~/.mcp/.mcpjungle.conf, for mcp-sync) and creates the client the VM's own
-// agents use (allowed every server; its token in ~/.mcp/agent-token). Both
-// stay with the service user; the token reaches the agents' configs.
+// ~/.mcp/.mcpjungle.conf, for mcp-sync) and creates its clients, each
+// allowed every server: the VM's own agents (token in ~/.mcp/agent-token,
+// which reaches the agents' configs) and your laptop (token in
+// ~/.mcp/clients/laptop.token, read with sudo: Connect points there). All
+// stay with the service user.
 type mcpAuthStep struct{}
 
 const (
 	mcpAdminConf  = ".mcpjungle.conf"
 	mcpAgentToken = "agent-token"
 	mcpAgentName  = "yardo-agents"
+	// LaptopToken is the laptop's token in ~/.mcp; mcp-sync client
+	// makes more alongside it.
+	LaptopToken = "clients/laptop.token"
 )
+
+// mcpClients are the gateway's clients yardo makes: name, what it is, its
+// token's file and its config's, in ~/.mcp.
+var mcpClients = []struct{ name, about, token, conf string }{
+	{mcpAgentName, "the coding agents on this machine (yardo)", mcpAgentToken, "agent-client.json"},
+	{"laptop", "your laptop (yardo)", LaptopToken, "clients/laptop.json"},
+}
 
 func (mcpAuthStep) Plan(e *Env) []Action {
 	if !Enterprise(e) {
 		return nil
 	}
-	return []Action{{"run", "mcpjungle init-server; create mcp-client " + mcpAgentName + " (token in ~/.mcp/" + mcpAgentToken + ")"}}
+	return []Action{{"run", "mcpjungle init-server; create mcp-client " + mcpAgentName + " (token in ~/.mcp/" + mcpAgentToken +
+		") and laptop (token in ~/.mcp/" + LaptopToken + ")"}}
 }
 
 // mj runs the mcpjungle CLI against the user's gateway, as the service
@@ -517,12 +530,17 @@ func (mcpAuthStep) Check(ctx context.Context, e *Env) (bool, error) {
 	if err != nil || !bytes.Contains(conf, []byte("access_token:")) {
 		return false, nil
 	}
-	tok, err := mcpRead(ctx, e, mcpAgentToken)
-	if err != nil || len(bytes.TrimSpace(tok)) == 0 {
+	out, err := mj(ctx, e, "list", "mcp-clients")
+	if err != nil {
 		return false, nil
 	}
-	out, err := mj(ctx, e, "list", "mcp-clients")
-	return err == nil && bytes.Contains(out, []byte(mcpAgentName)), nil
+	for _, c := range mcpClients {
+		tok, err := mcpRead(ctx, e, c.token)
+		if err != nil || len(bytes.TrimSpace(tok)) == 0 || !bytes.Contains(out, []byte(c.name)) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (mcpAuthStep) Apply(ctx context.Context, e *Env) error {
@@ -538,30 +556,42 @@ func (mcpAuthStep) Apply(ctx context.Context, e *Env) error {
 			return fmt.Errorf("mcpjungle init-server: %w: %s", err, out)
 		}
 	}
-	tok, err := mcpRead(ctx, e, mcpAgentToken)
-	if err != nil {
-		return err
-	}
-	if len(bytes.TrimSpace(tok)) == 0 {
-		t, err := randomToken()
+	list, _ := mj(ctx, e, "list", "mcp-clients")
+	for _, c := range mcpClients {
+		tok, err := mcpRead(ctx, e, c.token)
 		if err != nil {
 			return err
 		}
-		if err := mcpWrite(ctx, e, mcpAgentToken, []byte(t+"\n")); err != nil {
+		fresh := len(bytes.TrimSpace(tok)) == 0
+		if fresh {
+			t, err := randomToken()
+			if err != nil {
+				return err
+			}
+			if err := mcpWrite(ctx, e, c.token, []byte(t+"\n")); err != nil {
+				return err
+			}
+		}
+		listed := bytes.Contains(list, []byte(c.name))
+		if listed && !fresh {
+			continue
+		}
+		if listed {
+			// Made before its token had a file (mcp-sync client once
+			// printed it): the new token replaces it.
+			if out, err := mj(ctx, e, "delete", "mcp-client", c.name); err != nil {
+				return fmt.Errorf("mcpjungle delete mcp-client %s: %w: %s", c.name, err, out)
+			}
+		}
+		// From a file the CLI reads: on the command line, ps would show it.
+		client := fmt.Sprintf(`{"name": %q, "description": %q, "allowed_servers": ["*"], "access_token_ref": {"file": %q}}`+"\n",
+			c.name, c.about, filepath.Join(e.Home, ".mcp", c.token))
+		if err := mcpWrite(ctx, e, c.conf, []byte(client)); err != nil {
 			return err
 		}
-	}
-	if out, err := mj(ctx, e, "list", "mcp-clients"); err == nil && bytes.Contains(out, []byte(mcpAgentName)) {
-		return nil
-	}
-	// From a file the CLI reads: on the command line, ps would show it.
-	client := fmt.Sprintf(`{"name": %q, "description": "the coding agents on this machine (yardo)", "allowed_servers": ["*"], "access_token_ref": {"file": %q}}`+"\n",
-		mcpAgentName, filepath.Join(e.Home, ".mcp", mcpAgentToken))
-	if err := mcpWrite(ctx, e, "agent-client.json", []byte(client)); err != nil {
-		return err
-	}
-	if out, err := mj(ctx, e, "create", "mcp-client", "--conf", filepath.Join(e.Home, ".mcp", "agent-client.json")); err != nil {
-		return fmt.Errorf("mcpjungle create mcp-client: %w: %s", err, out)
+		if out, err := mj(ctx, e, "create", "mcp-client", "--conf", filepath.Join(e.Home, ".mcp", c.conf)); err != nil {
+			return fmt.Errorf("mcpjungle create mcp-client %s: %w: %s", c.name, err, out)
+		}
 	}
 	return nil
 }

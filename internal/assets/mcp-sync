@@ -115,6 +115,11 @@ if [ "${1:-}" = client ]; then
   (umask 077; mkdir -p "$MCP_DIR/clients"; od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$tok"; echo >> "$tok")
   printf '{"name": "%s", "description": "%s (mcp-sync client)", "allowed_servers": ["*"], "access_token_ref": {"file": "%s"}}\n' \
     "$2" "$2" "$tok" > "$MCP_DIR/clients/$2.json"
+  # One made before its token had a file (this once printed it): the new
+  # token replaces it.
+  if mj --registry "$REGISTRY" list mcp-clients 2>/dev/null | grep -qw -- "$2"; then
+    mj --registry "$REGISTRY" delete mcp-client "$2" >/dev/null || true
+  fi
   if ! mj --registry "$REGISTRY" create mcp-client --conf "$MCP_DIR/clients/$2.json" >/dev/null; then
     rm -f "$tok" "$MCP_DIR/clients/$2.json"
     echo "mcp-sync: the gateway didn't make $2" >&2

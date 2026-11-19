@@ -192,8 +192,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 				fmt.Fprintf(w, "    sudo cat %s\n", t)
 			}
 		} else {
-			fmt.Fprintln(w, "  Make it once, here (it goes to a file, not the screen):")
-			fmt.Fprintln(w, "    mcp-sync client laptop")
+			fmt.Fprintln(w, "  yardo makes it on its next run (sudo yardo --yes), in a file, not on the screen:")
 			fmt.Fprintf(w, "    sudo cat %s\n", laptopToken(a.User, "laptop"))
 		}
 		fmt.Fprintln(w, "  then on the laptop:")
@@ -268,12 +267,12 @@ func connectRows(a *answers.Answers, addrs []address, tokens []string, gateway b
 		case len(tokens) > 0:
 			mcp.Note = "mcpjungle, with a token: sudo cat " + tildeOf(a.User, tokens[0])
 		default:
-			mcp.Note = "mcpjungle, with a token: make one with mcp-sync client laptop"
+			mcp.Note = "mcpjungle, with a token: sudo yardo --yes makes it, in ~/.mcp/clients/laptop.token"
 		}
 	} else {
 		p := mcpPort(a)
 		mcp.Use = fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s", p, p, ctxName)
-		mcp.Note = fmt.Sprintf("mcpjungle, this machine only: then http://127.0.0.1:%d/mcp", p)
+		mcp.Note = fmt.Sprintf("mcpjungle, then http://127.0.0.1:%d/mcp · no token: it's this machine's only, the tunnel is the login (Settings › Network access opens it, with a token)", p)
 	}
 	return append(rows, mcp)
 }

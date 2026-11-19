@@ -422,20 +422,24 @@ func TestDockerPorts(t *testing.T) {
 }
 
 // Beyond this machine the gateway needs tokens: yardo initializes it (the
-// admin token lands in ~/.mcp for mcp-sync) and creates the agents' client
-// from a file, so no token is on a command line.
+// admin token lands in ~/.mcp for mcp-sync) and creates the agents' and
+// the laptop's clients from files, so no token is on a command line. A
+// laptop made before its token had a file is replaced.
 func TestMCPAuth(t *testing.T) {
 	var e *Env
-	created := false
+	clients := "laptop\n" // made by hand once, its token printed
+	deleted := ""
 	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
 		args := strings.Join(c.Args, " ")
 		switch {
 		case strings.HasSuffix(args, " init-server"):
 			put(t, e.Path("~/.mcp/.mcpjungle.conf"), "registry_url: x\naccess_token: admin-1\n")
 		case strings.Contains(args, " create mcp-client --conf "):
-			created = true
-		case strings.HasSuffix(args, " list mcp-clients") && created:
-			return []byte("yardo-agents\n"), nil
+			clients += strings.TrimSuffix(filepath.Base(c.Args[len(c.Args)-1]), ".json") + "\n"
+		case strings.Contains(args, " delete mcp-client "):
+			deleted += c.Args[len(c.Args)-1] + " "
+		case strings.HasSuffix(args, " list mcp-clients"):
+			return []byte(strings.ReplaceAll(clients, "agent-client", "yardo-agents")), nil
 		}
 		return nil, nil
 	}}
@@ -464,6 +468,16 @@ func TestMCPAuth(t *testing.T) {
 		if strings.Contains(c, "mcpjungle") && !strings.Contains(c, "HOME=/home/ada/.mcp") {
 			t.Errorf("mcpjungle without ~/.mcp as its home: %s", c)
 		}
+	}
+	lap := strings.TrimSpace(read(t, e.Path("~/.mcp/clients/laptop.token")))
+	if len(lap) != 64 || lap == tok {
+		t.Errorf("laptop token = %q", lap)
+	}
+	if c := read(t, e.Path("~/.mcp/clients/laptop.json")); !strings.Contains(c, `"name": "laptop"`) || !strings.Contains(c, "/home/ada/.mcp/clients/laptop.token") {
+		t.Errorf("laptop config = %s", c)
+	}
+	if deleted != "laptop " {
+		t.Errorf("deleted %q: the old laptop, only", deleted)
 	}
 	if !check(t, e, st) {
 		t.Error("Check = false after the tokens")

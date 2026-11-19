@@ -45,12 +45,13 @@ func TestChoicesFirstRun(t *testing.T) {
 	if r.prompt != "starship" || len(r.forget) != 0 {
 		t.Errorf("prompt %q, forget %v", r.prompt, r.forget)
 	}
-	for _, id := range append(cat.Base(), "python", "node", "go", "docker", "mcpjungle", "claude", "github") {
+	for _, id := range append(cat.Base(), "docker", "mcpjungle", "claude", "github") {
 		if !slices.Contains(r.adds, id) {
 			t.Errorf("first run doesn't add %s: %v", id, r.adds)
 		}
 	}
-	for _, id := range []string{"k8s", "terraform", "aws", "codex", "gitlab", "tailscale", "java", "podman"} {
+	// The languages too: each is ticked on its own.
+	for _, id := range []string{"python", "node", "go", "k8s", "terraform", "aws", "codex", "gitlab", "tailscale", "java", "podman"} {
 		if slices.Contains(r.adds, id) {
 			t.Errorf("first run adds %s, off by default", id)
 		}

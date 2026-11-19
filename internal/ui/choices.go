@@ -146,7 +146,8 @@ func (c *checklist) lines(w int) ([]string, int) {
 			out = append(out, "")
 		}
 		if r.head {
-			l := "  " + bold.Render(tui.Title(r.q.Title))
+			// In line with a toggle's box; its options under it.
+			l := "     " + bold.Render(tui.Title(r.q.Title))
 			if r.q.Note != "" {
 				l += "  " + muted.Render(runewidth.Truncate(r.q.Note, max(10, w-runewidth.StringWidth(r.q.Title)-6), "…"))
 			}

@@ -418,7 +418,7 @@ func TestConnectRows(t *testing.T) {
 			t.Errorf("rows lack %q:\n%s", want, all)
 		}
 	}
-	if r := connectRows(a, addrs, nil, true); !strings.Contains(r[2].Note, "mcp-sync client laptop") {
+	if r := connectRows(a, addrs, nil, true); !strings.Contains(r[2].Note, "~/.mcp/clients/laptop.token") {
 		t.Errorf("no token yet: %+v", r[2])
 	}
 	a.MCPListen = ""
@@ -431,7 +431,7 @@ func TestConnectRows(t *testing.T) {
 	var out strings.Builder
 	a.MCPListen = "vpn"
 	printConnect(&out, a, addrs, nil, "", []string{tok})
-	if !strings.Contains(out.String(), "sudo cat "+tok) || strings.Contains(out.String(), "mcp-sync client laptop") {
+	if !strings.Contains(out.String(), "sudo cat "+tok) || strings.Contains(out.String(), "next run") {
 		t.Errorf("connect with a token:\n%s", out.String())
 	}
 }
@@ -444,7 +444,7 @@ func TestPrintConnect(t *testing.T) {
 	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}, addrs, nil, "", nil)
 	got := out.String()
 	for _, want := range []string{`docker context create`, `"host=ssh://ada@100.64.1.7"`, "reachable from this machine and the VPNs",
-		"mcp-sync client laptop", "http://100.64.1.7:8081/mcp --header \"Authorization: Bearer <token>\"", "tailscale0 · Tailscale"} {
+		"sudo cat /home/ada/.mcp/clients/laptop.token", "http://100.64.1.7:8081/mcp --header \"Authorization: Bearer <token>\"", "tailscale0 · Tailscale"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("vpn: lacks %q:\n%s", want, got)
 		}

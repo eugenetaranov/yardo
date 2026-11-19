@@ -84,13 +84,12 @@ phase = "configure"
 # the base (default = true: installed without asking) or on the Tools
 # screen only. Each answer is a set of items; picks stay item by item.
 
+# Each language on its own: none comes unless ticked.
 [[choice]]
 id = "lang"
 title = "Languages"
-note = "Python, Node.js and Go"
-kind = "toggle"
+kind = "multi"
 items = ["python", "node", "go"]
-on = ["on"]
 
 [[choice]]
 id = "docker"
