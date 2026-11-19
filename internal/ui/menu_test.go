@@ -889,3 +889,15 @@ func TestMenuTab(t *testing.T) {
 		t.Errorf("tab, nothing to do: %v", got)
 	}
 }
+
+// A row is a line, its note cut, the selected one's too: the rows below
+// stay put as the selection moves.
+func TestMenuRowOneLine(t *testing.T) {
+	m := testMenu(true)
+	r := menuRow{label: "Network access", note: strings.Repeat("MCP gateway: everywhere, plain HTTP (with a token) · ", 4)}
+	for _, on := range []bool{true, false} {
+		if ls := m.row(on, r, 25, 100); len(ls) != 1 || ansi.StringWidth(ls[0]) > 98 {
+			t.Errorf("selected %v: %d lines, %d wide", on, len(ls), ansi.StringWidth(ls[0]))
+		}
+	}
+}

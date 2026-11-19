@@ -983,32 +983,6 @@ func fixLabel(state string) string {
 	return "Fix it (sets it up again)"
 }
 
-// beside lays a selected row out: head (rendered, at col cells wide), then
-// each of notes in style to its right, wrapped to the w left: as many lines
-// as they take, the ones after under the first. Too narrow a column for
-// them, they go below head instead.
-func beside(head string, col, w int, style lipgloss.Style, notes ...string) []string {
-	indent := col
-	if w-col < 24 {
-		indent = min(col, 7)
-	}
-	var wrapped []string
-	for _, n := range notes {
-		if n != "" {
-			wrapped = append(wrapped, wrap(n, max(10, w-indent))...)
-		}
-	}
-	out := []string{head}
-	for i, l := range wrapped {
-		if i == 0 && indent == col {
-			out[0] = head + style.Render(l)
-			continue
-		}
-		out = append(out, strings.Repeat(" ", indent)+style.Render(l))
-	}
-	return out
-}
-
 func padTo(s string, w int) string {
 	s = runewidth.Truncate(s, w, "…")
 	return s + strings.Repeat(" ", max(0, w-runewidth.StringWidth(s)))
@@ -1235,16 +1209,9 @@ func (b *Board) View() string {
 		reserve = min(noteMax, max(30, w*2/5))
 	}
 	labelW := max(20, min(longest, w-14-reserve))
-	// The selected row's note wraps under itself: the lines it takes more.
-	more := 0
-	if cur >= 0 && cur < len(rs) && b.panel == nil && rs[cur].head == "" && rs[cur].text == "" {
-		note := notes[cur].text
-		more = max(0, len(wrap(note, max(4, w-labelW-12)))-1)
-		more = min(more, max(0, listH-1))
-	}
 	top := 0
-	if cur >= listH-more {
-		top = cur - (listH - more) + 1
+	if cur >= listH {
+		top = cur - listH + 1
 	}
 	for n := top; n < len(rs) && len(out) < 3+listH; n++ {
 		x := rs[n]
@@ -1276,22 +1243,10 @@ func (b *Board) View() string {
 		}
 		plain := fmt.Sprintf(" %s%s %s %s  ", pointer, box, mk, padTo(label, labelW))
 		noteW := max(4, w-runewidth.StringWidth(plain)-1)
+		// Each row a line, the selected one's note cut too: wrapped, it
+		// would move the rows below as the selection moves.
 		if n == cur && b.panel == nil {
-			ls := wrap(note, noteW)
-			if note == "" {
-				ls = []string{""}
-			}
-			pad := strings.Repeat(" ", runewidth.StringWidth(plain))
-			for j, l := range ls {
-				if j > 0 && len(out) >= 3+listH {
-					break
-				}
-				lead := plain
-				if j > 0 {
-					lead = pad
-				}
-				out = append(out, rowOn.Render(padTo(lead+l, w-1)))
-			}
+			out = append(out, rowOn.Render(padTo(plain+runewidth.Truncate(note, noteW, "…"), w-1)))
 		} else {
 			out = append(out, fmt.Sprintf(" %s%s %s %s  ", pointer, box, ms.Render(mk), padTo(label, labelW))+ns.Render(runewidth.Truncate(note, noteW, "…")))
 		}

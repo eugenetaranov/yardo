@@ -870,14 +870,15 @@ func labelCol(rs []menuRow, w int) int {
 	return min(col, w/2)
 }
 
-// row is one of the home's (or Settings') rows, its label col cells wide:
-// the selected one with its note wrapped beside it, the others with theirs
-// cut to the line.
+// row is one of the home's (or Settings') rows, its label col cells wide,
+// its note cut to the line: the selected one's too (wrapped, it would move
+// the rows below as the selection moves).
 func (m *Menu) row(on bool, r menuRow, col, w int) []string {
+	note := muted.Render(runewidth.Truncate(r.note, max(4, w-col-9), "…"))
 	if on {
-		return beside("  "+rowOn.Render(padTo(" › "+r.label, col+3))+"  ", col+7, w-2, muted, r.note)
+		return []string{"  " + rowOn.Render(padTo(" › "+r.label, col+3)) + "  " + note}
 	}
-	return []string{"     " + padTo(r.label, col) + "  " + muted.Render(runewidth.Truncate(r.note, max(4, w-col-9), "…"))}
+	return []string{"     " + padTo(r.label, col) + "  " + note}
 }
 
 // wrapStyled lays rendered pieces out in lines at most w wide.

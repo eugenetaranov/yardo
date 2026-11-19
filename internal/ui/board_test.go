@@ -493,3 +493,24 @@ func TestBoardQClearsFilter(t *testing.T) {
 		t.Error("q with no filter doesn't leave")
 	}
 }
+
+// The selected row's long note is cut to its line: the rows below stay
+// put as the selection moves onto it.
+func TestBoardLongNoteStays(t *testing.T) {
+	b := testBoard(false)
+	b.items[0].Detail = strings.Repeat("docker isn't running: the daemon didn't start ", 6)
+	at := func() int {
+		for n, l := range strings.Split(b.View(), "\n") {
+			if strings.Contains(l, "Terraform") {
+				return n
+			}
+		}
+		return -1
+	}
+	press2(b, "down")
+	away := at()
+	press2(b, "up")
+	if on := at(); on != away || on < 0 {
+		t.Errorf("Terraform at line %d on the long note, %d off it:\n%s", on, away, b.View())
+	}
+}
