@@ -261,15 +261,16 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 	case "edit":
 		yardo := slices.Contains(k.a.MCPServers, act.Entry)
 		adopt()
-		if spec == "aws" && yardo {
-			// A profile of the AWS CLI's, picked, instead of the file.
-			c, ok, err := k.askAWS(ctx, name)
+		if yardo {
+			// An AWS profile or a Kubernetes context, picked, instead of
+			// the file.
+			env, _, ok, err := k.askPick(ctx, spec, name)
 			if err != nil {
 				k.a.MCPServers = before
 				return mcpOutcome{}, err
 			}
 			if ok {
-				if err := k.setEnv(ctx, name, c.env()); err != nil {
+				if err := k.setEnv(ctx, name, env); err != nil {
 					return mcpOutcome{}, err
 				}
 				return mcpOutcome{sync: name}, nil
@@ -530,19 +531,15 @@ func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Stor
 			return fmt.Errorf("usage: sudo yardo mcp edit <server>; the servers: %s", strings.Join(mcpNames(a.MCPServers), ", "))
 		}
 		k := &asker{a: a, out: stdout}
-		var c awsChoice
-		ok := false
-		if mcpSpecOf(a.MCPServers, args[1]) == "aws" {
-			var err error
-			if c, ok, err = k.askAWS(ctx, args[1]); err != nil {
-				return err
-			}
+		env, says, ok, err := k.askPick(ctx, mcpSpecOf(a.MCPServers, args[1]), args[1])
+		if err != nil {
+			return err
 		}
 		if ok {
-			if err := k.setEnv(ctx, args[1], c.env()); err != nil {
+			if err := k.setEnv(ctx, args[1], env); err != nil {
 				return err
 			}
-			fmt.Fprintln(stdout, c.says(args[1]))
+			fmt.Fprintln(stdout, says)
 		} else if err := editMCP(ctx, a.User, args[1]); err != nil {
 			return err
 		}

@@ -1378,18 +1378,16 @@ func asRoot(args []string) error {
 func (o *options) fillMCP(ctx context.Context, r *run.Runner, a *answers.Answers, items []*catalog.Item, names []string, stdout io.Writer) error {
 	k := &asker{a: a, out: stdout}
 	for _, n := range names {
-		if mcpSpecOf(a.MCPServers, n) == "aws" {
-			c, ok, err := k.askAWS(ctx, n)
-			if err != nil {
+		env, says, ok, err := k.askPick(ctx, mcpSpecOf(a.MCPServers, n), n)
+		if err != nil {
+			return err
+		}
+		if ok {
+			if err := k.setEnv(ctx, n, env); err != nil {
 				return err
 			}
-			if ok {
-				if err := k.setEnv(ctx, n, c.env()); err != nil {
-					return err
-				}
-				fmt.Fprintln(stdout, c.says(n))
-				continue
-			}
+			fmt.Fprintln(stdout, says)
+			continue
 		}
 		fmt.Fprintf(stdout, "\n%s: its settings open in the editor. Fill in the values, uncomment the options you want, save and quit. (Later: sudo yardo mcp edit %s)\n", n, n)
 		if err := editMCP(ctx, a.User, n); err != nil {

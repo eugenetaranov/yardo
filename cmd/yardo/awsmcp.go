@@ -193,28 +193,13 @@ func (k *asker) askAWS(ctx context.Context, name string) (awsChoice, bool, error
 		return awsChoice{}, false, err
 	}
 	p := ps[slices.Index(opts, pick)]
-	who, err := awsWho(ctx, k.a.User, p.name)
-	if err != nil && p.kind == "SSO" {
-		fmt.Fprintf(k.out, "%s: %v\n", p.name, err)
-		login, cerr := ui.Confirm("Log in to AWS now?", "aws sso login --profile "+p.name+" --use-device-code: open the link it shows, on any device.", true)
-		if cerr != nil {
-			return awsChoice{}, false, cerr
-		}
-		if login {
-			c := asUser(ctx, k.a.User, "aws", "sso", "login", "--profile", p.name, "--use-device-code")
-			c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-			_ = c.Run()
-			who, err = awsWho(ctx, k.a.User, p.name)
-		}
+	who, err := k.awsSignIn(ctx, p)
+	if err != nil {
+		return awsChoice{}, false, err
 	}
 	role := "A read-only role (ReadOnlyAccess) keeps it to reading."
-	if err == nil && adminRole.MatchString(who) {
+	if adminRole.MatchString(who) {
 		role = "This one is an admin role: it can change or delete anything you can."
-	}
-	if err != nil {
-		fmt.Fprintf(k.out, "%s doesn't sign in yet (%v): the server won't register until it does. Then: Try again, on its screen.\n", p.name, err)
-	} else {
-		fmt.Fprintf(k.out, "%s is %s\n", p.name, who)
 	}
 	apis, err := ui.Confirm("Let the agent call AWS APIs in this account?",
 		"Yes: it does what the role allows. "+role+" No: read-only, AWS's docs and guides only.", true)
@@ -226,6 +211,47 @@ func (k *asker) askAWS(ctx context.Context, name string) (awsChoice, bool, error
 		c.region = "us-east-1"
 	}
 	return c, true, nil
+}
+
+// awsSignIn is who profile p signs in as ("" when it doesn't, said with
+// why), an SSO login that's missing or run out offered there and then;
+// err is only the prompt's.
+func (k *asker) awsSignIn(ctx context.Context, p awsProfile) (string, error) {
+	who, err := awsWho(ctx, k.a.User, p.name)
+	if err != nil && p.kind == "SSO" {
+		fmt.Fprintf(k.out, "%s: %v\n", p.name, err)
+		login, cerr := ui.Confirm("Log in to AWS now?", "aws sso login --profile "+p.name+" --use-device-code: open the link it shows, on any device.", true)
+		if cerr != nil {
+			return "", cerr
+		}
+		if login {
+			c := asUser(ctx, k.a.User, "aws", "sso", "login", "--profile", p.name, "--use-device-code")
+			c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+			_ = c.Run()
+			who, err = awsWho(ctx, k.a.User, p.name)
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(k.out, "%s doesn't sign in yet (%v): the server won't register until it does. Then: Try again, on its screen.\n", p.name, err)
+		return "", nil
+	}
+	fmt.Fprintf(k.out, "%s is %s\n", p.name, who)
+	return who, nil
+}
+
+// askPick picks a server's settings when its spec has a picker (AWS: a
+// profile; Kubernetes: a context): its env's lines, and a line saying
+// them; ok false: its settings open instead.
+func (k *asker) askPick(ctx context.Context, spec, name string) (env [][2]string, says string, ok bool, err error) {
+	switch spec {
+	case "aws":
+		c, ok, err := k.askAWS(ctx, name)
+		return c.env(), c.says(name), ok, err
+	case "kubernetes":
+		c, ok, err := k.askKube(ctx, name)
+		return c.env(), c.says(name), ok, err
+	}
+	return nil, "", false, nil
 }
 
 // setMCPEnv sets keys in server name's env, as ~/.mcp's owner.
