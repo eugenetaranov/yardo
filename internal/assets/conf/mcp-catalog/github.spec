@@ -6,6 +6,10 @@ IMAGE=ghcr.io/github/github-mcp-server:v2.0.2
 REQUIRED="GITHUB_PERSONAL_ACCESS_TOKEN"
 skeleton() {
   cat <<'SKEL'
+# Or leave it empty: once you're logged in with gh (gh auth login), yardo
+# fills in gh's token on its next run, and keeps it current. gh's token
+# reaches all you can; a token of your own here is never replaced.
+#
 # A fine-grained token reaches only the repositories you pick. Make one at
 # https://github.com/settings/personal-access-tokens/new
 #   Resource owner: you, or the organization whose repositories these are

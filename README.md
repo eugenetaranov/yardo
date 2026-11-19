@@ -430,6 +430,15 @@ installed by hand.
    `sudo yardo mcp edit <name>`, `sudo yardo mcp sync`,
    `sudo yardo mcp status`. A profile lists another instance as
    `"grafana:prod"` in `[mcp] servers`.
+   **Logins you already have** fill in what's empty, so a token isn't
+   typed twice: GitHub (github.com) gets gh's token after `gh auth login`,
+   and `jira` and `confluence` get jiractl's server, user and token after
+   `jiractl configure` (Confluence's URL only on Atlassian Cloud;
+   `jira-work` and other instances are other accounts, so not those).
+   yardo marks each key it filled (`# yardo fills KEY from gh`) and keeps
+   it current on every run; delete that line to keep a value as it is. A
+   token you put in yourself is never replaced: gh's token reaches all you
+   can, so put a fine-grained one there to narrow it.
    **Agent skills** (on by default): yardo's `git-commits`,
    `pr-descriptions` and `jira-tickets` skills, in `~/.agents/skills`
    (Codex, Gemini CLI, OpenCode, Goose, pi, omp) and `~/.claude/skills`

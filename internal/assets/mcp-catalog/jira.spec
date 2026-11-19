@@ -7,6 +7,8 @@ REQUIRED="JIRA_URL JIRA_USERNAME JIRA_API_TOKEN"
 skeleton() {
   cat <<'SKEL'
 # Jira — create an API token at https://id.atlassian.com/manage-profile/security/api-tokens
+# Or leave these empty: after jiractl configure, yardo fills them in on its
+# next run.
 JIRA_URL=
 JIRA_USERNAME=
 JIRA_API_TOKEN=

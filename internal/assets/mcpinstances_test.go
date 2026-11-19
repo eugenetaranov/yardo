@@ -37,7 +37,7 @@ A_MCP_SERVERS="grafana grafana:prod" RUN_MCP_SERVERS="grafana:prod"
 ask_mcp_keys
 mcp_dirs "$H/.mcp" ` + g.Name + `
 echo "names: $(mcp_names)"`
-	out := credShell(t, home, body, "spec_skeleton", "spec_field", "mcp_spec", "mcp_name", "mcp_names", "ask_mcp_keys", "mcp_dirs")
+	out := credShell(t, home, body, "spec_skeleton", "spec_field", "mcp_spec", "mcp_name", "mcp_names", "ask_mcp_keys", "mcp_dirs", "mcp_from_logins", "login_fill", "tomlget")
 	if !strings.Contains(out, "names: grafana grafana-prod\n") {
 		t.Errorf("out = %q", out)
 	}
@@ -52,6 +52,66 @@ echo "names: $(mcp_names)"`
 	}
 	if _, err := os.Lstat(filepath.Join(home, ".mcp/grafana/spec")); err == nil {
 		t.Error("the catalog's own grafana got a spec link")
+	}
+}
+
+// Servers take the logins already made: gh's token for GitHub, jiractl's
+// server, user and token for jira and confluence. Empty keys are filled and
+// marked, marked ones kept current, the rest left alone.
+func TestMCPFromLoginsBash(t *testing.T) {
+	home := t.TempDir()
+	mcp := filepath.Join(home, ".mcp")
+	envs := map[string]string{
+		"github":     "# GitHub\nGITHUB_PERSONAL_ACCESS_TOKEN=\n",
+		"github-ghe": "GITHUB_PERSONAL_ACCESS_TOKEN=\nGITHUB_HOST=https://ghe.example\n",
+		"github-own": "GITHUB_PERSONAL_ACCESS_TOKEN=github_pat_mine\n",
+		"github-old": "GITHUB_PERSONAL_ACCESS_TOKEN=gho_old\n# yardo fills GITHUB_PERSONAL_ACCESS_TOKEN from gh\n",
+		"jira":       "JIRA_URL=\nJIRA_USERNAME=\nJIRA_API_TOKEN=\n",
+		"jira-work":  "JIRA_URL=\nJIRA_USERNAME=\nJIRA_API_TOKEN=\n",
+		"confluence": "CONFLUENCE_URL=\nCONFLUENCE_USERNAME=\nCONFLUENCE_API_TOKEN=\n",
+	}
+	for n, e := range envs {
+		mkdirAll(t, filepath.Join(mcp, n), 0o700)
+		putFile(t, filepath.Join(mcp, n, "env"), []byte(e), 0o600)
+	}
+	putFile(t, filepath.Join(home, ".jiractl.toml"), []byte("server = \"https://acme.atlassian.net/\"\nproject = \"OPS\"\n\n[issue_defaults]\nserver = \"no\"\n"), 0o600)
+	mkdirAll(t, filepath.Join(home, ".config/jiractl"), 0o700)
+	putFile(t, filepath.Join(home, ".config/jiractl/credentials"), []byte("username = 'ada@acme.com'\ntoken = \"atl-1\"\n"), 0o600)
+	body := `gh() { [ "$1 $2" = "auth token" ] && echo gho_new; }
+A_MCP_SERVERS="github github:ghe github:own github:old jira jira:work confluence"
+GH_IN=1
+echo "changed: $(mcp_from_logins "$H/.mcp" | tr '\n' ' ')"
+echo "again: $(mcp_from_logins "$H/.mcp" | tr '\n' ' ')"`
+	out := credShell(t, home, body, "mcp_name", "mcp_from_logins", "login_fill", "tomlget")
+	if want := "changed: github github-old jira confluence \nagain: \n"; out != want {
+		t.Errorf("out = %q, want %q", out, want)
+	}
+	for n, want := range map[string]string{
+		"github":     "# GitHub\nGITHUB_PERSONAL_ACCESS_TOKEN=gho_new\n# yardo fills GITHUB_PERSONAL_ACCESS_TOKEN from gh\n",
+		"github-ghe": envs["github-ghe"],
+		"github-own": envs["github-own"],
+		"github-old": "GITHUB_PERSONAL_ACCESS_TOKEN=gho_new\n# yardo fills GITHUB_PERSONAL_ACCESS_TOKEN from gh\n",
+		"jira": "JIRA_URL=https://acme.atlassian.net\nJIRA_USERNAME=ada@acme.com\nJIRA_API_TOKEN=atl-1\n" +
+			"# yardo fills JIRA_URL from jiractl\n# yardo fills JIRA_USERNAME from jiractl\n# yardo fills JIRA_API_TOKEN from jiractl\n",
+		"jira-work": envs["jira-work"],
+		"confluence": "CONFLUENCE_URL=https://acme.atlassian.net/wiki\nCONFLUENCE_USERNAME=ada@acme.com\nCONFLUENCE_API_TOKEN=atl-1\n" +
+			"# yardo fills CONFLUENCE_URL from jiractl\n# yardo fills CONFLUENCE_USERNAME from jiractl\n# yardo fills CONFLUENCE_API_TOKEN from jiractl\n",
+	} {
+		if got := readFile(t, filepath.Join(mcp, n, "env")); got != want {
+			t.Errorf("%s env = %q, want %q", n, got, want)
+		}
+	}
+
+	// Not logged in, a server of its own: nothing to take, nothing changed.
+	putFile(t, filepath.Join(home, ".jiractl.toml"), []byte("server = \"https://jira.acme.internal\"\n"), 0o600)
+	putFile(t, filepath.Join(mcp, "confluence", "env"), []byte("CONFLUENCE_URL=\n"), 0o600)
+	out = credShell(t, home, `A_MCP_SERVERS="github confluence"
+mcp_from_logins "$H/.mcp"; echo done`, "mcp_name", "mcp_from_logins", "login_fill", "tomlget")
+	if out != "confluence\ndone\n" {
+		t.Errorf("out = %q", out)
+	}
+	if got := readFile(t, filepath.Join(mcp, "confluence", "env")); strings.Contains(got, "CONFLUENCE_URL=http") {
+		t.Errorf("a Server/DC Jira's URL went to Confluence: %q", got)
 	}
 }
 

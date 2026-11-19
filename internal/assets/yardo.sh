@@ -1374,9 +1374,65 @@ mcp_dirs() {
   for key in "${!MCP_KEYS[@]}"; do
     envset "${key#* }" "${MCP_KEYS[$key]}" "$mcp/${key%% *}/env"
   done
+  mcp_from_logins "$mcp" >/dev/null
   for n in $(mcp_names); do
     chown -h "$A_USER:$grp" "$mcp/$n/env"; chmod 600 "$mcp/$n/env"
   done
+}
+
+# tomlget KEY FILE — a top-level KEY = "value" from a TOML file.
+tomlget() {
+  [ -f "$2" ] || return 0
+  sed -n '/^\[/q; s/^'"$1"'[[:space:]]*=[[:space:]]*["'"'"']\(.*\)["'"'"'][[:space:]]*$/\1/p' "$2" | tail -n 1
+}
+
+# login_fill FILE KEY VALUE FROM — KEY in FILE from a CLI login (FROM):
+# set when empty, with a line saying so; refreshed while that line is
+# there (delete it and yardo leaves KEY alone). Fails when unchanged.
+login_fill() {
+  local f=$1 key=$2 v=$3 from=$4 mark cur
+  mark="# yardo fills $key from $from"
+  [ -n "$v" ] && [ -f "$f" ] || return 1
+  cur=$(envget "$key" "$f")
+  if [ -z "$cur" ]; then
+    envset "$key" "$v" "$f"
+    grep -qxF "$mark" "$f" || printf '%s\n' "$mark" >> "$f"
+    return 0
+  fi
+  grep -qxF "$mark" "$f" && [ "$cur" != "$v" ] || return 1
+  envset "$key" "$v" "$f"
+}
+
+# mcp_from_logins DIR — fill the picked servers' keys in DIR from the
+# logins the user has already made: gh's token for GitHub (github.com
+# only), jiractl's server, user and token for jira and confluence (not
+# their other instances: those are other accounts). Prints the names it
+# changed.
+mcp_from_logins() {
+  local mcp=$1 n d f home tok= server= juser= jtok= ch
+  home=$(user_home)
+  if gh_logged_in; then tok=$(as_user gh auth token -h github.com 2>/dev/null || true); fi
+  server=$(tomlget server "$home/.jiractl.toml"); server=${server%/}
+  juser=$(tomlget username "$home/.config/jiractl/credentials")
+  jtok=$(tomlget token "$home/.config/jiractl/credentials")
+  for n in $A_MCP_SERVERS; do
+    d=$(mcp_name "$n"); f="$mcp/$d/env" ch=
+    case "$n" in
+      github|github:*)
+        [ -z "$(envget GITHUB_HOST "$f")" ] || continue
+        login_fill "$f" GITHUB_PERSONAL_ACCESS_TOKEN "$tok" gh && ch=1 ;;
+      jira)
+        login_fill "$f" JIRA_URL "$server" jiractl && ch=1
+        login_fill "$f" JIRA_USERNAME "$juser" jiractl && ch=1
+        login_fill "$f" JIRA_API_TOKEN "$jtok" jiractl && ch=1 ;;
+      confluence)
+        case "$server" in https://*.atlassian.net) login_fill "$f" CONFLUENCE_URL "$server/wiki" jiractl && ch=1 ;; esac
+        login_fill "$f" CONFLUENCE_USERNAME "$juser" jiractl && ch=1
+        login_fill "$f" CONFLUENCE_API_TOKEN "$jtok" jiractl && ch=1 ;;
+    esac
+    [ -z "$ch" ] || echo "$d"
+  done
+  return 0
 }
 
 # wire_agents — register the MCPJungle gateway with each installed agent,
@@ -1764,7 +1820,16 @@ apply() {
   fi
 
   if picked mcpjungle && ! picked_failed mcpjungle; then sync_mcp; fi
-  if picked github && ! picked_failed essentials; then github_login; fi
+  if picked github && ! picked_failed essentials; then
+    github_login
+    # The login just made: the servers that can use it, again.
+    if picked mcpjungle && ! picked_failed mcpjungle; then
+      local again; again=$(mcp_from_logins "$(user_home)/.mcp")
+      # shellcheck disable=SC2086
+      [ -z "$again" ] || as_user env MCP_CATALOG="$CATALOG" MCPJUNGLE_REGISTRY="http://127.0.0.1:$MCPJUNGLE_PORT" \
+        "$BIN/mcp-sync" $again || warn "Some servers did not register (see above)."
+    fi
+  fi
   if picked gitsign && ! picked_failed essentials; then install_gitsign; fi
   if picked registries && ! picked_failed docker; then
     step registries "$(label_of registries)" install_registries
@@ -1813,7 +1878,13 @@ missing_secrets() {
     for n in $A_MCP_SERVERS; do
       spec_file "$(mcp_spec "$n")" >/dev/null || continue
       for k in $(spec_field "$(mcp_spec "$n")" REQUIRED); do
-        [ -z "$(envget "$k" "$home/.mcp/$(mcp_name "$n")/env")" ] && echo "$home/.mcp/$(mcp_name "$n")/env  $k — run: sudo yardo mcp edit $(mcp_name "$n")"
+        [ -z "$(envget "$k" "$home/.mcp/$(mcp_name "$n")/env")" ] || continue
+        case "$n $k" in
+          "github"*" GITHUB_PERSONAL_ACCESS_TOKEN") how="gh auth login, or: sudo yardo mcp edit $(mcp_name "$n")" ;;
+          "jira JIRA_"*|"confluence CONFLUENCE_"*) how="jiractl configure, or: sudo yardo mcp edit $(mcp_name "$n")" ;;
+          *) how="sudo yardo mcp edit $(mcp_name "$n")" ;;
+        esac
+        echo "$home/.mcp/$(mcp_name "$n")/env  $k — run: $how"
       done
     done ;;
   esac
