@@ -55,6 +55,17 @@ func Choose(title string, opts []string, selected string) (string, error) {
 	return v, err
 }
 
+// ChooseMany asks for any of opts, starting with picked.
+func ChooseMany(title string, opts, picked []string) ([]string, error) {
+	v := slices.Clone(picked)
+	o := make([]huh.Option[string], len(opts))
+	for i, s := range opts {
+		o[i] = huh.NewOption(s, s)
+	}
+	err := run(huh.NewMultiSelect[string]().Title(title).Options(o...).Value(&v))
+	return v, err
+}
+
 // Confirm asks yes or no.
 func Confirm(title, desc string, def bool) (bool, error) {
 	v := def

@@ -29,8 +29,12 @@ type kubeContext struct {
 	awsProfile string
 }
 
-// kubeOwnFile is the choice of a kubeconfig the list doesn't have.
-const kubeOwnFile = "Another kubeconfig: open its settings"
+// kubeOwnFile is the choice of a kubeconfig the list doesn't have;
+// kubeFindEKS, of making kubeconfigs for EKS clusters found.
+const (
+	kubeOwnFile = "Another kubeconfig: open its settings"
+	kubeFindEKS = "Find EKS clusters in your AWS accounts…"
+)
 
 // kubeconfig is what's read of one.
 type kubeconfig struct {
@@ -134,11 +138,8 @@ func execAWSProfile(command string, args []string, env []struct{ Name, Value str
 // short is a context's name in a line: an EKS ARN's cluster, with its
 // region.
 func (c kubeContext) short() string {
-	// arn:aws:eks:<region>:<account>:cluster/<name>
-	if f := strings.Split(c.name, ":"); len(f) == 6 && f[2] == "eks" {
-		if n, ok := strings.CutPrefix(f[5], "cluster/"); ok {
-			return n + " (EKS, " + f[3] + ")"
-		}
+	if region, n, ok := eksARN(c.name); ok {
+		return n + " (EKS, " + region + ")"
 	}
 	return c.name
 }
@@ -186,20 +187,42 @@ func (k *asker) askKube(ctx context.Context, name string) (kubeChoice, bool, err
 	}
 	home := homeOf(k.a.User)
 	cs := kubeContexts(home)
+	canFind := len(awsProfiles(home)) > 0
+	if len(cs) == 0 && canFind {
+		fmt.Fprintf(k.out, "%s: no kubeconfigs under ~/.kube yet.\n", name)
+		if err := k.findEKS(ctx, home); err != nil {
+			return kubeChoice{}, false, err
+		}
+		cs = kubeContexts(home)
+	}
 	if len(cs) == 0 {
 		fmt.Fprintf(k.out, "%s: no kubeconfigs under ~/.kube (aws eks update-kubeconfig makes one for EKS); its settings open instead.\n", name)
 		return kubeChoice{}, false, nil
 	}
-	opts := make([]string, 0, len(cs)+1)
-	for _, c := range cs {
-		opts = append(opts, c.label())
+	var c kubeContext
+	for {
+		opts := make([]string, 0, len(cs)+2)
+		for _, c := range cs {
+			opts = append(opts, c.label())
+		}
+		if canFind {
+			opts = append(opts, kubeFindEKS)
+		}
+		opts = append(opts, kubeOwnFile)
+		pick, err := ui.Choose(name+": the Kubernetes context it uses (from ~/.kube)", opts, opts[0])
+		if err != nil || pick == kubeOwnFile {
+			return kubeChoice{}, false, err
+		}
+		if pick == kubeFindEKS {
+			if err := k.findEKS(ctx, home); err != nil {
+				return kubeChoice{}, false, err
+			}
+			cs = kubeContexts(home)
+			continue
+		}
+		c = cs[slices.Index(opts, pick)]
+		break
 	}
-	opts = append(opts, kubeOwnFile)
-	pick, err := ui.Choose(name+": the Kubernetes context it uses (from ~/.kube)", opts, opts[0])
-	if err != nil || pick == kubeOwnFile {
-		return kubeChoice{}, false, err
-	}
-	c := cs[slices.Index(opts, pick)]
 	if c.awsProfile != "" {
 		p := awsProfile{name: c.awsProfile}
 		for _, q := range awsProfiles(home) {
