@@ -25,6 +25,7 @@ type foundServer struct {
 	registered bool
 	own        bool // its own spec, not the catalog's
 	linked     bool // a spec of its own or a link: mcp-sync keeps it on
+	readOnly   bool // registered with --read-only
 }
 
 // mcpOwner is who owns ~/.mcp: the gateway's service user, or the user
@@ -38,14 +39,16 @@ func mcpOwner(login string) string {
 
 // findMCP lists the servers in login's ~/.mcp, as its owner (a symlink
 // planted there then can't show root's files): one line per directory
-// with an env, "<name>\t<spec link or own>\t<registered 0|1>".
+// with an env, "<name>\t<spec link or own>\t<registered 0|1>\t<read-only
+// 0|1>" (read-only: registered with --read-only).
 func findMCP(ctx context.Context, login string, specs map[string]*mcp.Spec) []foundServer {
 	script := `cd -- "$1" 2>/dev/null || exit 0
 for d in */; do
   d=${d%/}; [ -f "$d/env" ] || continue
   t=; if [ -L "$d/spec" ]; then t=$(readlink -- "$d/spec"); elif [ -f "$d/spec" ]; then t=own; fi
   r=0; [ -f "$d/.registered.json" ] && r=1
-  printf '%s\t%s\t%s\n' "$d" "$t" "$r"
+  ro=0; grep -q '"--read-only"' "$d/.registered.json" 2>/dev/null && ro=1
+  printf '%s\t%s\t%s\t%s\n' "$d" "$t" "$r" "$ro"
 done`
 	out, err := exec.CommandContext(ctx, "runuser", "-u", mcpOwner(login), "--", "sh", "-c", script, "_", filepath.Join(homeOf(login), ".mcp")).Output()
 	if err != nil {
@@ -62,7 +65,10 @@ func parseFound(out string, specs map[string]*mcp.Spec) []foundServer {
 	var found []foundServer
 	for _, l := range strings.Split(out, "\n") {
 		f := strings.Split(l, "\t")
-		if len(f) != 3 || !mcp.ValidName(f[0]) {
+		if len(f) == 3 {
+			f = append(f, "0")
+		}
+		if len(f) != 4 || !mcp.ValidName(f[0]) {
 			continue
 		}
 		name, link, reg := f[0], f[1], f[2] == "1"
@@ -92,7 +98,7 @@ func parseFound(out string, specs map[string]*mcp.Spec) []foundServer {
 			}
 		}
 		if entry != "" {
-			found = append(found, foundServer{entry, reg, link == "own", link != ""})
+			found = append(found, foundServer{entry, reg, link == "own", link != "", f[3] == "1"})
 		}
 	}
 	return found
@@ -153,6 +159,9 @@ func mcpRows(entries []string, found []foundServer, inputs []string, specs map[s
 			r.Spec = "" // its own, even named after a catalog one
 		} else if s := specs[spec]; s != nil {
 			r.About = s.Description
+		}
+		if spec == "aws" && !f.own && f.registered {
+			r.Note = awsMode(f.readOnly)
 		}
 		switch {
 		case specs[spec] == nil && !f.own && !yardo:
@@ -254,13 +263,13 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 		adopt()
 		if spec == "aws" && yardo {
 			// A profile of the AWS CLI's, picked, instead of the file.
-			profile, region, ok, err := k.askAWS(ctx, name)
+			c, ok, err := k.askAWS(ctx, name)
 			if err != nil {
 				k.a.MCPServers = before
 				return mcpOutcome{}, err
 			}
 			if ok {
-				if err := k.setEnv(ctx, name, [][2]string{{"AWS_PROFILE", profile}, {"AWS_REGION", region}}); err != nil {
+				if err := k.setEnv(ctx, name, c.env()); err != nil {
 					return mcpOutcome{}, err
 				}
 				return mcpOutcome{sync: name}, nil
@@ -521,17 +530,19 @@ func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Stor
 			return fmt.Errorf("usage: sudo yardo mcp edit <server>; the servers: %s", strings.Join(mcpNames(a.MCPServers), ", "))
 		}
 		k := &asker{a: a, out: stdout}
-		profile, region, ok := "", "", false
+		var c awsChoice
+		ok := false
 		if mcpSpecOf(a.MCPServers, args[1]) == "aws" {
 			var err error
-			if profile, region, ok, err = k.askAWS(ctx, args[1]); err != nil {
+			if c, ok, err = k.askAWS(ctx, args[1]); err != nil {
 				return err
 			}
 		}
 		if ok {
-			if err := k.setEnv(ctx, args[1], [][2]string{{"AWS_PROFILE", profile}, {"AWS_REGION", region}}); err != nil {
+			if err := k.setEnv(ctx, args[1], c.env()); err != nil {
 				return err
 			}
+			fmt.Fprintln(stdout, c.says(args[1]))
 		} else if err := editMCP(ctx, a.User, args[1]); err != nil {
 			return err
 		}

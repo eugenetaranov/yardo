@@ -406,6 +406,11 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		if s.About != "" {
 			add("  " + s.About)
 		}
+		if s.Note != "" {
+			for _, l := range wrap(s.Note, w-4) {
+				add("  " + l)
+			}
+		}
 		if s.From != "" {
 			add("  " + muted.Render(fromLine(s)))
 		}

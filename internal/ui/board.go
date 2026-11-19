@@ -56,8 +56,9 @@ type MCPServer struct {
 	// Instead is what replaces it, when its maker retired it (State
 	// retired): aws for aws-api.
 	Instead string
-	// Detail is why it didn't register (State failed).
-	Detail string
+	// Detail is why it didn't register (State failed); Note, what it may
+	// do, as registered (an AWS server's read-only or not).
+	Detail, Note string
 	// From is where it runs from: its image or URL. Cached is which of
 	// its image is pulled here ("cached: 0.23.1, built 2026-03-02", "not
 	// pulled yet"); "" for a URL.

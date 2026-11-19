@@ -108,13 +108,13 @@ func TestMCPDoAWS(t *testing.T) {
 	pick := true
 	k := &asker{a: &answers.Answers{User: "ada", MCPServers: []string{"aws:prod"}},
 		edit:    func(n string) (bool, error) { edited = append(edited, n); return true, nil },
-		awsPick: func(string) (string, string, bool, error) { return "shared", "eu-west-1", pick, nil },
+		awsPick: func(string) (awsChoice, bool, error) { return awsChoice{"shared", "eu-west-1", true}, pick, nil },
 		mcpEnv:  func(n string, kv [][2]string) error { set = append(set, kv...); return nil }}
 	out, err := k.mcpDo(context.Background(), ui.MCPAct{Do: "edit", Entry: "aws:prod"}, specs)
 	if err != nil || out.sync != "aws-prod" || len(edited) != 0 {
 		t.Errorf("picked: %+v %v, edited %v", out, err, edited)
 	}
-	if len(set) != 2 || set[0] != [2]string{"AWS_PROFILE", "shared"} || set[1] != [2]string{"AWS_REGION", "eu-west-1"} {
+	if len(set) != 3 || set[0] != [2]string{"AWS_PROFILE", "shared"} || set[1] != [2]string{"AWS_REGION", "eu-west-1"} || set[2] != [2]string{"READ_OPERATIONS_ONLY", "false"} {
 		t.Errorf("set %v", set)
 	}
 	pick, set = false, nil
@@ -123,5 +123,25 @@ func TestMCPDoAWS(t *testing.T) {
 	}
 	if mcpSpecOf(k.a.MCPServers, "aws-prod") != "aws" || mcpSpecOf(k.a.MCPServers, "nope") != "" {
 		t.Error("mcpSpecOf")
+	}
+}
+
+// An AWS server's screen says what it may do, as registered: read-only
+// is docs and guides; otherwise the profile's role is the limit.
+func TestAWSMode(t *testing.T) {
+	specs := map[string]*mcp.Spec{"aws": {}, "jira": {}}
+	found := parseFound("aws-prod\t/usr/local/share/mcp-catalog/aws.spec\t1\t1\naws\t/usr/local/share/mcp-catalog/aws.spec\t1\t0\njira\t\t1\t1\n", specs)
+	rows := mcpRows([]string{"aws:prod", "aws", "jira"}, found, nil, specs, true, nil)
+	if len(rows) != 3 || !strings.HasPrefix(rows[0].Note, "Read-only: AWS's docs and guides only") ||
+		!strings.HasPrefix(rows[1].Note, "Calls AWS APIs in your account") || rows[2].Note != "" {
+		t.Errorf("notes: %+v", rows)
+	}
+	// Before the read-only field: three, read as not read-only.
+	if f := parseFound("jira\t\t1\n", specs); len(f) != 1 || f[0].readOnly {
+		t.Errorf("three fields: %+v", f)
+	}
+	c := awsChoice{"shared", "eu-west-1", false}
+	if !strings.Contains(c.says("aws-prod"), "docs and guides only") || c.env()[2] != [2]string{"READ_OPERATIONS_ONLY", "true"} {
+		t.Errorf("read-only choice: %q %v", c.says("aws-prod"), c.env())
 	}
 }

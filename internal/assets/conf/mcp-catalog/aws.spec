@@ -27,7 +27,7 @@ image_args() {
   echo "$endpoint"
   echo --metadata
   echo "AWS_REGION=$region"
-  [ "$(envget READ_OPERATIONS_ONLY "$ENV_FILE")" = false ] || echo --read-only
+  [ "$(envget READ_OPERATIONS_ONLY "$ENV_FILE")" != true ] || echo --read-only
   profile=$(envget AWS_PROFILE "$ENV_FILE")
   if [ -n "$profile" ]; then
     echo --profile
@@ -54,8 +54,12 @@ AWS_REGION=
 #AWS_ACCESS_KEY_ID=
 #AWS_SECRET_ACCESS_KEY=
 
-# Only read operations: write tools are hidden (false shows them).
-READ_OPERATIONS_ONLY=true
+# false: the agent calls AWS APIs as the profile's role, reads and writes
+# alike: what the role allows is the limit (a read-only role,
+# ReadOnlyAccess or ViewOnlyAccess, keeps it to reading).
+# true: AWS's docs, guides and regions only, not your account: the tool
+# that calls AWS APIs (run_script) is hidden, as it can write too.
+READ_OPERATIONS_ONLY=false
 
 # The server's own region, when AWS_REGION isn't one it runs in
 # (us-east-1, us-west-2, eu-west-1, eu-west-2, eu-central-1,

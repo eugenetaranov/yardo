@@ -499,12 +499,14 @@ func TestMenuMCPScroll(t *testing.T) {
 	}
 }
 
-// A server that didn't register says why, and offers Try again first.
+// A server that didn't register says why, and offers Try again first;
+// its note (what it may do) shows too.
 func TestMenuMCPFailed(t *testing.T) {
 	m := mcpMenu()
+	m.info.MCP[3].Note = "Read-only: docs only."
 	onRow(m, "mcp")
 	mk(m, "enter", "down", "down", "down", "enter") // opensearch
-	if v := m.View(); !strings.Contains(v, "Error: connection refused") || !strings.Contains(v, "› Try again") {
+	if v := m.View(); !strings.Contains(v, "Error: connection refused") || !strings.Contains(v, "› Try again") || !strings.Contains(v, "Read-only: docs only.") {
 		t.Fatalf("failed server:\n%s", v)
 	}
 	mk(m, "enter")

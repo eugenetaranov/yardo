@@ -193,7 +193,7 @@ func TestMCPSyncRenameRemove(t *testing.T) {
 }
 
 // aws.spec's image_args: the endpoint in AWS_REGION when the server runs
-// there (else us-east-1), signed for it; read-only unless turned off.
+// there (else us-east-1), signed for it; read-only only when turned on.
 func TestMCPSyncAWSArgs(t *testing.T) {
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("no jq")
@@ -214,8 +214,8 @@ func TestMCPSyncAWSArgs(t *testing.T) {
 	for _, c := range []struct{ env, want string }{
 		{"AWS_REGION=eu-north-1\nREAD_OPERATIONS_ONLY=true\n", `"https://aws-mcp.us-east-1.api.aws/mcp","--region","us-east-1","--metadata","AWS_REGION=eu-north-1","--read-only"]`},
 		{"AWS_REGION=eu-west-1\nREAD_OPERATIONS_ONLY=false\n", `"https://aws-mcp.eu-west-1.api.aws/mcp","--region","eu-west-1","--metadata","AWS_REGION=eu-west-1"]`},
-		{"AWS_REGION=eu-north-1\nAWS_MCP_ENDPOINT_REGION=eu-central-1\n", `"https://aws-mcp.eu-central-1.api.aws/mcp","--region","eu-central-1","--metadata","AWS_REGION=eu-north-1","--read-only"]`},
-		{"AWS_REGION=us-east-1\n#AWS_PROFILE=x\nAWS_PROFILE=prod-ro\n", `"https://aws-mcp.us-east-1.api.aws/mcp","--region","us-east-1","--metadata","AWS_REGION=us-east-1","--read-only","--profile","prod-ro"]`},
+		{"AWS_REGION=eu-north-1\nAWS_MCP_ENDPOINT_REGION=eu-central-1\n", `"https://aws-mcp.eu-central-1.api.aws/mcp","--region","eu-central-1","--metadata","AWS_REGION=eu-north-1"]`},
+		{"AWS_REGION=us-east-1\n#AWS_PROFILE=x\nAWS_PROFILE=prod-ro\n", `"https://aws-mcp.us-east-1.api.aws/mcp","--region","us-east-1","--metadata","AWS_REGION=us-east-1","--profile","prod-ro"]`},
 	} {
 		putFile(t, filepath.Join(mcp, "aws", "env"), []byte(c.env), 0o600)
 		_ = os.Remove(filepath.Join(mcp, "aws", ".registered.json"))

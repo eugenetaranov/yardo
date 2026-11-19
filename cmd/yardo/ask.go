@@ -50,10 +50,9 @@ type asker struct {
 	// has none yet), and mcp-sync (rename, remove) run as its owner.
 	edit    func(name string) (bool, error)
 	mcpSync func(args ...string) error
-	// awsPick and mcpEnv are seams too: askAWS's pick (profile, region;
-	// ok false: its settings open instead), and setting keys in a
-	// server's env.
-	awsPick func(name string) (profile, region string, ok bool, err error)
+	// awsPick and mcpEnv are seams too: askAWS's pick (ok false: its
+	// settings open instead), and setting keys in a server's env.
+	awsPick func(name string) (awsChoice, bool, error)
 	mcpEnv  func(name string, kv [][2]string) error
 }
 

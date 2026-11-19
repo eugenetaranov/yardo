@@ -396,7 +396,10 @@ installed by hand.
    SigV4 proxy, signing with a profile of the AWS CLI's: adding or editing
    it lists your `~/.aws` profiles, checks the one you pick (an SSO login
    run out is renewed there and then, `aws sso login --use-device-code`)
-   and warns of an admin role; the server reads `~/.aws` read-only, as
+   and asks whether the agent may call AWS APIs (yes, the default: what
+   the profile's role allows, said when it's an admin one; no is
+   read-only, AWS's docs and guides only); the server's screen says
+   which; it reads `~/.aws` read-only, as
    you, so a later `aws sso login` reaches it without a sync; it replaces
    the retired AWS API server, `aws-api`, which a
    machine set up before shows as retired, to delete), Azure, Kubernetes,

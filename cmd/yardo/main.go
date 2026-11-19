@@ -1379,15 +1379,15 @@ func (o *options) fillMCP(ctx context.Context, r *run.Runner, a *answers.Answers
 	k := &asker{a: a, out: stdout}
 	for _, n := range names {
 		if mcpSpecOf(a.MCPServers, n) == "aws" {
-			profile, region, ok, err := k.askAWS(ctx, n)
+			c, ok, err := k.askAWS(ctx, n)
 			if err != nil {
 				return err
 			}
 			if ok {
-				if err := k.setEnv(ctx, n, [][2]string{{"AWS_PROFILE", profile}, {"AWS_REGION", region}}); err != nil {
+				if err := k.setEnv(ctx, n, c.env()); err != nil {
 					return err
 				}
-				fmt.Fprintf(stdout, "%s signs with the AWS profile %s, in %s. (Later: sudo yardo mcp edit %s)\n", n, profile, region, n)
+				fmt.Fprintln(stdout, c.says(n))
 				continue
 			}
 		}

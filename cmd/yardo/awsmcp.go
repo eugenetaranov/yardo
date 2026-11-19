@@ -136,64 +136,96 @@ func awsWho(ctx context.Context, user, profile string) (string, error) {
 	return s, nil
 }
 
-// askAWS picks the profile the AWS server signs with, and its region;
-// ok is false for keys of its own (or no profiles to pick from): its
-// settings open instead.
-func (k *asker) askAWS(ctx context.Context, name string) (profile, region string, ok bool, err error) {
+// awsChoice is how the AWS server signs in and what it may do: its
+// profile and region, and apis: AWS's API tool shown (run_script; else
+// read-only, docs and guides only).
+type awsChoice struct {
+	profile, region string
+	apis            bool
+}
+
+// env are the choice's lines in the server's env.
+func (c awsChoice) env() [][2]string {
+	ro := "true"
+	if c.apis {
+		ro = "false"
+	}
+	return [][2]string{{"AWS_PROFILE", c.profile}, {"AWS_REGION", c.region}, {"READ_OPERATIONS_ONLY", ro}}
+}
+
+// says is the choice, in a line.
+func (c awsChoice) says(name string) string {
+	what := "AWS's docs and guides only (read-only)"
+	if c.apis {
+		what = "AWS APIs in your account, as the profile's role allows"
+	}
+	return fmt.Sprintf("%s signs with the AWS profile %s, in %s: %s. (Later: sudo yardo mcp edit %s)", name, c.profile, c.region, what, name)
+}
+
+// awsMode is what an AWS server registered read-only (or not) can do, for
+// its screen.
+func awsMode(readOnly bool) string {
+	if readOnly {
+		return "Read-only: AWS's docs and guides only, not your account (its API tool is hidden). To let the agent call AWS APIs: Edit its settings, and say yes."
+	}
+	return "Calls AWS APIs in your account: whatever its profile's role allows, the agent can do."
+}
+
+// askAWS picks the profile the AWS server signs with, its region, and
+// whether the agent may call AWS APIs; ok is false for keys of its own
+// (or no profiles to pick from): its settings open instead.
+func (k *asker) askAWS(ctx context.Context, name string) (awsChoice, bool, error) {
 	if k.awsPick != nil {
 		return k.awsPick(name)
 	}
 	ps := awsProfiles(homeOf(k.a.User))
 	if len(ps) == 0 {
 		fmt.Fprintf(k.out, "%s: no AWS CLI profiles in ~/.aws (aws configure sso makes one); its settings open instead.\n", name)
-		return "", "", false, nil
+		return awsChoice{}, false, nil
 	}
 	opts := make([]string, 0, len(ps)+1)
 	for _, p := range ps {
 		opts = append(opts, p.label())
 	}
 	opts = append(opts, awsOwnKeys)
-	for {
-		pick, err := ui.Choose(name+": the AWS CLI profile it signs with (from ~/.aws)", opts, opts[0])
-		if err != nil || pick == awsOwnKeys {
-			return "", "", false, err
-		}
-		p := ps[slices.Index(opts, pick)]
-		who, err := awsWho(ctx, k.a.User, p.name)
-		if err != nil && p.kind == "SSO" {
-			fmt.Fprintf(k.out, "%s: %v\n", p.name, err)
-			login, cerr := ui.Confirm("Log in to AWS now?", "aws sso login --profile "+p.name+" --use-device-code: open the link it shows, on any device.", true)
-			if cerr != nil {
-				return "", "", false, cerr
-			}
-			if login {
-				c := asUser(ctx, k.a.User, "aws", "sso", "login", "--profile", p.name, "--use-device-code")
-				c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-				_ = c.Run()
-				who, err = awsWho(ctx, k.a.User, p.name)
-			}
-		}
-		switch {
-		case err != nil:
-			fmt.Fprintf(k.out, "%s doesn't sign in yet (%v): the server won't register until it does. Then: Try again, on its screen.\n", p.name, err)
-		case adminRole.MatchString(who):
-			fmt.Fprintf(k.out, "%s is %s\n", p.name, who)
-			use, cerr := ui.Confirm("Give the agent an admin role?", "It can then do anything the role can: read-only only hides the write tools. A read-only role or permission set (ReadOnlyAccess) is safer.", false)
-			if cerr != nil {
-				return "", "", false, cerr
-			}
-			if !use {
-				continue // another profile
-			}
-		default:
-			fmt.Fprintf(k.out, "%s is %s\n", p.name, who)
-		}
-		region = p.region
-		if region == "" {
-			region = "us-east-1"
-		}
-		return p.name, region, true, nil
+	pick, err := ui.Choose(name+": the AWS CLI profile it signs with (from ~/.aws)", opts, opts[0])
+	if err != nil || pick == awsOwnKeys {
+		return awsChoice{}, false, err
 	}
+	p := ps[slices.Index(opts, pick)]
+	who, err := awsWho(ctx, k.a.User, p.name)
+	if err != nil && p.kind == "SSO" {
+		fmt.Fprintf(k.out, "%s: %v\n", p.name, err)
+		login, cerr := ui.Confirm("Log in to AWS now?", "aws sso login --profile "+p.name+" --use-device-code: open the link it shows, on any device.", true)
+		if cerr != nil {
+			return awsChoice{}, false, cerr
+		}
+		if login {
+			c := asUser(ctx, k.a.User, "aws", "sso", "login", "--profile", p.name, "--use-device-code")
+			c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+			_ = c.Run()
+			who, err = awsWho(ctx, k.a.User, p.name)
+		}
+	}
+	role := "A read-only role (ReadOnlyAccess) keeps it to reading."
+	if err == nil && adminRole.MatchString(who) {
+		role = "This one is an admin role: it can change or delete anything you can."
+	}
+	if err != nil {
+		fmt.Fprintf(k.out, "%s doesn't sign in yet (%v): the server won't register until it does. Then: Try again, on its screen.\n", p.name, err)
+	} else {
+		fmt.Fprintf(k.out, "%s is %s\n", p.name, who)
+	}
+	apis, err := ui.Confirm("Let the agent call AWS APIs in this account?",
+		"Yes: it does what the role allows. "+role+" No: read-only, AWS's docs and guides only.", true)
+	if err != nil {
+		return awsChoice{}, false, err
+	}
+	c := awsChoice{profile: p.name, region: p.region, apis: apis}
+	if c.region == "" {
+		c.region = "us-east-1"
+	}
+	return c, true, nil
 }
 
 // setMCPEnv sets keys in server name's env, as ~/.mcp's owner.

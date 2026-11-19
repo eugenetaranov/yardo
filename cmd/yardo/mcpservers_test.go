@@ -28,8 +28,8 @@ func TestParseFound(t *testing.T) {
 		"bad name\t\t0", "../x\t\t0", // not names
 		"",
 	}, "\n")
-	want := []foundServer{{"jira", false, false, false}, {"opensearch:prod", true, false, true}, {"jira:work", false, false, false},
-		{"aws-api", true, false, false}, {"aws-api:eu", false, false, false}, {"mine", true, true, true}, {"jira", true, false, true}}
+	want := []foundServer{{"jira", false, false, false, false}, {"opensearch:prod", true, false, true, false}, {"jira:work", false, false, false, false},
+		{"aws-api", true, false, false, false}, {"aws-api:eu", false, false, false, false}, {"mine", true, true, true, false}, {"jira", true, false, true, false}}
 	if got := parseFound(out, specs); !reflect.DeepEqual(got, want) {
 		t.Errorf("parseFound =\n%v\nwant\n%v", got, want)
 	}
@@ -40,9 +40,9 @@ func TestParseFound(t *testing.T) {
 func TestMCPRows(t *testing.T) {
 	specs := map[string]*mcp.Spec{"github": {Description: "GitHub"}, "jira": {Description: "Jira"}, "opensearch": {}}
 	entries := []string{"github", "jira", "jira:work", "opensearch", "gone", "docker"}
-	found := []foundServer{{"github", true, false, false}, {"jira:work", true, false, true}, {"jira", false, false, false},
-		{"opensearch", false, false, false}, {"grafana:test", false, false, false}, {"opensearch:old", false, false, false},
-		{"mine", true, true, true}, {"docker2", true, false, false}}
+	found := []foundServer{{"github", true, false, false, false}, {"jira:work", true, false, true, false}, {"jira", false, false, false, false},
+		{"opensearch", false, false, false, false}, {"grafana:test", false, false, false, false}, {"opensearch:old", false, false, false, false},
+		{"mine", true, true, true, false}, {"docker2", true, false, false, false}}
 	specs["docker"], specs["docker2"] = &mcp.Spec{}, &mcp.Spec{}
 	inputs := []string{"~/.mcp/jira/env: JIRA_URL", "~/.mcp/jira/env: JIRA_API_TOKEN", "~/.config/yardo/agent.env: OPENAI_API_KEY"}
 	got := mcpRows(entries, found, inputs, specs, true, nil)
@@ -68,10 +68,10 @@ func TestMCPRows(t *testing.T) {
 		t.Errorf("mine = %+v", mine)
 	}
 	specs["aws-api"] = &mcp.Spec{}
-	if r := mcpRows([]string{"aws-api"}, []foundServer{{"aws-api", true, false, false}}, nil, specs, true, nil); r[0].State != "retired" || r[0].Instead != "aws" {
+	if r := mcpRows([]string{"aws-api"}, []foundServer{{"aws-api", true, false, false, false}}, nil, specs, true, nil); r[0].State != "retired" || r[0].Instead != "aws" {
 		t.Errorf("retired: %+v", r[0])
 	}
-	if r := mcpRows([]string{"github"}, []foundServer{{"github", false, false, false}}, nil, specs, false, nil); r[0].State != "unchecked" {
+	if r := mcpRows([]string{"github"}, []foundServer{{"github", false, false, false, false}}, nil, specs, false, nil); r[0].State != "unchecked" {
 		t.Errorf("unchecked: %+v", r[0])
 	}
 }
@@ -162,7 +162,7 @@ func TestMCPStatus(t *testing.T) {
 	}
 	// What mcp-sync says wins: failed with why, pending, waiting's keys.
 	specs := map[string]*mcp.Spec{"aws": {}, "os": {}, "gh": {}}
-	rows := mcpRows([]string{"aws", "os", "gh"}, []foundServer{{"aws", false, false, false}, {"os", true, false, false}, {"gh", false, false, false}}, nil, specs, true, st)
+	rows := mcpRows([]string{"aws", "os", "gh"}, []foundServer{{"aws", false, false, false, false}, {"os", true, false, false, false}, {"gh", false, false, false, false}}, nil, specs, true, st)
 	if rows[0].State != "failed" || rows[0].Detail != "Error: denied" || rows[1].State != "pending" || rows[2].State != "secret" || strings.Join(rows[2].Keys, " ") != "TOKEN URL" {
 		t.Errorf("rows = %+v", rows)
 	}
