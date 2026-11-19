@@ -284,6 +284,44 @@ func TestMCPSyncAWSMount(t *testing.T) {
 	}
 }
 
+// A server synced after an AWS one gets nothing of its: not ~/.aws, not
+// its user (a spec's variables don't carry over).
+func TestMCPSyncAWSMountNotCarried(t *testing.T) {
+	jq, err := exec.LookPath("jq")
+	if err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	mkdirAll(t, filepath.Join(root, ".aws"), 0o700)
+	mkdirAll(t, cat, 0o755)
+	spec, err := os.ReadFile("conf/mcp-catalog/aws.spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, filepath.Join(cat, "aws.spec"), spec, 0o644)
+	putFile(t, filepath.Join(cat, "zz.spec"), []byte("KIND=docker\nIMAGE=example/zz:1\nIMAGE_ARGS=serve\n"), 0o644)
+	for n, env := range map[string]string{"aws": "AWS_REGION=us-east-1\n", "zz": "X=1\n"} {
+		mkdirAll(t, filepath.Join(mcp, n), 0o700)
+		putFile(t, filepath.Join(mcp, n, "env"), []byte(env), 0o600)
+	}
+	reg := filepath.Join(root, "registered")
+	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" "` + reg + `.$(jq -r .name "$6")"; exit 0`, "docker": "exit 0"})
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	if out, err := mcpSync(t, env, "aws", "zz"); err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	for n, mounted := range map[string]bool{"aws": true, "zz": false} {
+		out, err := exec.Command(jq, "-c", ".args", reg+"."+n).Output()
+		if err != nil {
+			t.Fatalf("%s: %v", n, err)
+		}
+		if got := strings.Contains(string(out), "/aws/.aws") && strings.Contains(string(out), "--user"); got != mounted {
+			t.Errorf("%s: ~/.aws mounted %v: %s", n, got, out)
+		}
+	}
+}
+
 // status says each server's state and changes nothing; a failed
 // registration's reason is kept until it registers, and settings edited
 // after it make it worth trying again.

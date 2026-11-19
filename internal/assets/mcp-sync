@@ -295,7 +295,9 @@ for NAME in $want; do
     echo "$NAME: no spec (not in $CATALOG and no $MCP_DIR/$NAME/spec) — skipped"
     continue
   fi
-  KIND= IMAGE= DOCKER_ARGS= IMAGE_ARGS= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION=
+  # Each spec's variables, none left from the one before (MOUNT_AWS
+  # would give a server after an AWS one your ~/.aws).
+  KIND= IMAGE= DOCKER_ARGS= IMAGE_ARGS= MOUNT_AWS= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION=
   unset -f skeleton image_args 2>/dev/null || true
   # shellcheck disable=SC1090
   . "$spec"
