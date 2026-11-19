@@ -20,7 +20,7 @@ import (
 // home searches the tools. Each row opens one focused screen, or does its
 // thing at once; esc (or q) comes back. On the home, q quits.
 
-// Paste starts a Remote connection line that's typed or put in a file,
+// Paste starts a Connection line that's typed or put in a file,
 // not said; the screen shows it apart. Unmark takes it out for a terminal.
 const Paste = "\x1f"
 
@@ -302,7 +302,7 @@ func (m *Menu) rows() []menuRow {
 		}
 		out = append(out, menuRow{id: "mcp", label: "MCP servers", note: note})
 	}
-	out = append(out, menuRow{id: "connect", label: "Remote connection", note: "from a laptop: SSH, Docker, the MCP gateway (mcpjungle), copy and paste"})
+	out = append(out, menuRow{id: "connect", label: "Connection", note: "from a laptop: SSH, Docker, the MCP gateway (mcpjungle), copy and paste"})
 	return append(out, menuRow{id: "settings", label: "Settings", note: "network access, git, prompt, look, updates"})
 }
 
@@ -813,7 +813,7 @@ func (m *Menu) View() string {
 		add("  " + apply)
 		keys = strings.Join([]string{k("↑↓", "setting"), k("←→", "choose"), k("a", "apply"), k("q", "back")}, "   ")
 	case "connect":
-		title = "Remote connection"
+		title = "Connection"
 		for _, l := range m.connect {
 			if p, ok := strings.CutPrefix(l, Paste); ok {
 				add("  " + keyOn.Render(p))

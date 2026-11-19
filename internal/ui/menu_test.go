@@ -226,7 +226,7 @@ func TestMenuAccess(t *testing.T) {
 }
 
 // The home's How to connect panel: what to type, and where a secret is
-// kept; Go to › Remote connection opens every step, and esc comes back home.
+// kept; Go to › Connection opens every step, and esc comes back home.
 func TestHomeConnect(t *testing.T) {
 	m := testMenu(true)
 	m.info.Connect = []ConnectRow{
@@ -235,14 +235,14 @@ func TestHomeConnect(t *testing.T) {
 	}
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"How to connect", "ssh vm", "http://vm.ts.net:8081/mcp", "sudo cat ~/.mcp/clients/client.token", "Go to › Remote connection"} {
+	for _, want := range []string{"How to connect", "ssh vm", "http://vm.ts.net:8081/mcp", "sudo cat ~/.mcp/clients/client.token", "Go to › Connection"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("home lacks %q:\n%s", want, v)
 		}
 	}
 	onRow(m, "connect")
 	mk(m, "enter")
-	if v := m.View(); !strings.Contains(v, "Home  ›  Remote connection") {
+	if v := m.View(); !strings.Contains(v, "Home  ›  Connection") {
 		t.Errorf("connect from home:\n%s", v)
 	}
 	mk(m, "esc")
@@ -877,7 +877,7 @@ func TestMenuTab(t *testing.T) {
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	if id := m.rows()[m.sel].id; id != "tools" {
-		t.Errorf("shift+tab from Remote connection: on %s", id)
+		t.Errorf("shift+tab from Connection: on %s", id)
 	}
 	m = testMenu(true)
 	got = nil

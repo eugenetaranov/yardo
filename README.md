@@ -88,7 +88,7 @@ all ticked: space unticks, enter fixes the ticked in one run),
 updates** (asks, then updates just those: `mise up` for the tools, apt
 for the packages). Below them, rows that never move: **Tools**
 (the full screen, below), **MCP servers** (the gateway's list: add one,
-or another instance of one; **d** deletes one, asking first), **Remote connection**
+or another instance of one; **d** deletes one, asking first), **Connection**
 (every step to reach this machine from a laptop) and **Settings**: **Network access** (the
 MCP gateway and containers' published ports, each a row
 of choices with a sentence saying what it means), the **Look** (theme and accent colour),
@@ -637,7 +637,7 @@ once the VM is on the tailnet.
 **Reaching this machine from a laptop.** The home's **How to connect**
 panel has the short version: `ssh vm`, `docker context use vm`, and the
 gateway's URL with where its token is (`sudo cat ~/.mcp/clients/client.token`,
-never the token). `sudo yardo connect` (or Go to → Remote connection, on the
+never the token). `sudo yardo connect` (or Go to → Connection, on the
 screen) prints it all, with this machine's addresses (VPNs
 first): Docker over SSH, which opens no port and needs no certificate
 (`docker context create vm --docker "host=ssh://you@vm"`; bind mounts are

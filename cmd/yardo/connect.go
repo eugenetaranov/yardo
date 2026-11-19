@@ -200,6 +200,8 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 	fmt.Fprintln(w, "\nDocker, over SSH (no port to open; your SSH key is the login). On the laptop:")
 	paste(w, "  ", fmt.Sprintf("docker context create %s --docker \"host=ssh://%s@%s\"", ctxName, a.User, addr),
 		fmt.Sprintf("docker context use %s        # back: docker context use default", ctxName))
+	fmt.Fprintf(w, "  docker context use makes it the default: every docker command, in every terminal, until you\n")
+	fmt.Fprintf(w, "  switch back. Just one terminal: export DOCKER_CONTEXT=%s. Just one command: docker --context %s ps.\n", ctxName, ctxName)
 	ports := map[string]string{"": "everywhere (Docker's way)", "vpn": "this machine and the VPNs", "local": "this machine only"}[a.DockerPorts]
 	fmt.Fprintf(w, "  -v paths are this machine's; -p ports open here, reachable from %s.\n", ports)
 

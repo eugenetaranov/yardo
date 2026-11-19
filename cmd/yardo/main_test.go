@@ -444,7 +444,7 @@ func TestPrintConnect(t *testing.T) {
 	var out bytes.Buffer
 	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}, addrs, nil, "", nil)
 	got := out.String()
-	for _, want := range []string{`docker context create`, `"host=ssh://ada@100.64.1.7"`, "reachable from this machine and the VPNs",
+	for _, want := range []string{`docker context create`, `"host=ssh://ada@100.64.1.7"`, "reachable from this machine and the VPNs", "docker context use makes it the default", "export DOCKER_CONTEXT=",
 		"sudo cat /home/ada/.mcp/clients/client.token", "http://100.64.1.7:8081/mcp --header \"Authorization: Bearer <token>\"", "tailscale0 · Tailscale"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("vpn: lacks %q:\n%s", want, got)
