@@ -395,7 +395,7 @@ installed by hand.
    a sandbox; both are told never to rewrite pushed history; merged
    into your settings, not replacing them), agent API keys (Anthropic,
    OpenAI, Gemini), and MCP servers on the MCPJungle gateway (GitHub,
-   Jira and Confluence, Linear, Slack, Figma; Postgres, MySQL,
+   Jira, Confluence, Bitbucket, Linear, Slack, Figma; Postgres, MySQL,
    Supabase, OpenSearch; AWS (AWS's managed AWS MCP Server, through its
    SigV4 proxy; it replaces the retired AWS API server, `aws-api`, which a
    machine set up before shows as retired, to delete), Azure, Kubernetes,
