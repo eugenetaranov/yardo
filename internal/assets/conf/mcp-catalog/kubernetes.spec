@@ -1,19 +1,27 @@
 # Kubernetes — resources, logs, events, Helm releases, through a kubeconfig
-# you put next to the env file (Flux159/mcp-server-kubernetes; Docker).
+# of yours under ~/.kube (Flux159/mcp-server-kubernetes; Docker).
 # https://github.com/Flux159/mcp-server-kubernetes
 DESCRIPTION="Kubernetes: pods, deployments, logs, events and Helm (read-only)"
 KIND=docker
 IMAGE=flux159/mcp-server-kubernetes:v4.2.1
-# Root in the container: ~/.mcp/kubernetes is readable by the gateway's
-# user only, not by the image's own user.
+# Your ~/.kube and ~/.aws, read-only: the kubeconfig, and for EKS what its
+# aws eks get-token reads (profiles, SSO logins: aws sso login here renews
+# them for the server too).
+MOUNT_KUBE=1
+MOUNT_AWS=1
+# Root in the container (it wins over your user, the mounts': files in
+# ~/.mcp/kubernetes, the gateway's user's only, stay readable for a
+# KUBECONFIG=/mcp/... of before).
 DOCKER_ARGS="--user 0:0"
 REQUIRED="KUBECONFIG"
 skeleton() {
   cat <<'SKEL'
-# Kubernetes — copy a kubeconfig to ~/.mcp/kubernetes/config, ideally for a
-# read-only service account
-# (https://kubernetes.io/docs/reference/access-authn-authz/rbac/), then set
-# KUBECONFIG=/mcp/config here (the folder is mounted at /mcp). The image has
+# Kubernetes — a kubeconfig of yours under ~/.kube, ideally a read-only
+# service account's or role's
+# (https://kubernetes.io/docs/reference/access-authn-authz/rbac/), e.g.
+# KUBECONFIG=~/.kube/config. ~/.kube and ~/.aws are mounted read-only, so
+# EKS's aws eks get-token works with your AWS CLI profiles and SSO logins
+# (when one runs out: aws sso login --profile <it>, here). The image has
 # kubectl, helm, and the gcloud and aws auth plugins.
 KUBECONFIG=
 

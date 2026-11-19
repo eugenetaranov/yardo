@@ -284,6 +284,53 @@ func TestMCPSyncAWSMount(t *testing.T) {
 	}
 }
 
+// kubernetes.spec's MOUNT_KUBE and MOUNT_AWS: ~/.kube and ~/.aws (EKS's
+// get-token), read-only; a KUBECONFIG under ~/.kube made the container's
+// path, any other left be; root in the container all the same.
+func TestMCPSyncKubeMount(t *testing.T) {
+	jq, err := exec.LookPath("jq")
+	if err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	mkdirAll(t, filepath.Join(mcp, "kubernetes"), 0o700)
+	mkdirAll(t, filepath.Join(root, ".kube"), 0o700)
+	mkdirAll(t, filepath.Join(root, ".aws"), 0o700)
+	mkdirAll(t, cat, 0o755)
+	spec, err := os.ReadFile("conf/mcp-catalog/kubernetes.spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, filepath.Join(cat, "kubernetes.spec"), spec, 0o644)
+	reg := filepath.Join(root, "registered")
+	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	fi, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := fmt.Sprintf("%d:%d", fi.Sys().(*syscall.Stat_t).Uid, fi.Sys().(*syscall.Stat_t).Gid)
+	mounts := `"-v","` + root + `/.aws:/aws/.aws:ro","-v","` + root + `/.kube:/aws/.kube:ro",`
+	user := `"-e","HOME=/aws","--user","` + ids + `","--user","0:0","flux159/`
+	for kc, want := range map[string]string{
+		"~/.kube/config/dev1":                         mounts + `"-e","KUBECONFIG=/aws/.kube/config/dev1",` + user,
+		root + "/.kube/a:$HOME/.kube/b":               mounts + `"-e","KUBECONFIG=/aws/.kube/a:/aws/.kube/b",` + user,
+		"/mcp/config":                                 mounts + user,
+		"~/.kube/../../etc/passwd:/elsewhere/.kube/x": mounts + `"-e","KUBECONFIG=/aws/.kube/../../etc/passwd:/elsewhere/.kube/x",` + user,
+	} {
+		putFile(t, filepath.Join(mcp, "kubernetes", "env"), []byte("KUBECONFIG="+kc+"\n"), 0o600)
+		_ = os.Remove(filepath.Join(mcp, "kubernetes", ".registered.json"))
+		if out, err := mcpSync(t, env, "kubernetes"); err != nil {
+			t.Fatalf("%v:\n%s", err, out)
+		}
+		out, err := exec.Command(jq, "-c", ".args", reg).Output()
+		if err != nil || !strings.Contains(string(out), want) {
+			t.Errorf("%s: args %s\nwant %s", kc, out, want)
+		}
+	}
+}
+
 // A server synced after an AWS one gets nothing of its: not ~/.aws, not
 // its user (a spec's variables don't carry over).
 func TestMCPSyncAWSMountNotCarried(t *testing.T) {
@@ -435,11 +482,16 @@ func TestMCPSyncClient(t *testing.T) {
 }
 
 // source says where each server runs from: an image (and, pulled here,
-// its version), or a URL made from its env; it leaves the saved list be.
+// its version: none for one with no labels), or a URL made from its env;
+// it leaves the saved list be.
 func TestMCPSyncSource(t *testing.T) {
+	jq, err := exec.LookPath("jq")
+	if err != nil {
+		t.Skip("no jq")
+	}
 	root := t.TempDir()
 	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
-	for _, d := range []string{mcp + "/jira", mcp + "/seq", mcp + "/jenkins", cat} {
+	for _, d := range []string{mcp + "/jira", mcp + "/seq", mcp + "/k8s", mcp + "/jenkins", cat} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -447,6 +499,7 @@ func TestMCPSyncSource(t *testing.T) {
 	files := map[string]string{
 		cat + "/jira.spec":    "KIND=docker\nIMAGE=img/jira:1.2\n",
 		cat + "/seq.spec":     "KIND=docker\nIMAGE=img/seq:latest\n",
+		cat + "/k8s.spec":     "KIND=docker\nIMAGE=img/k8s:4\n",
 		cat + "/jenkins.spec": "KIND=http\nURL_VAR=JENKINS_URL\nURL_SUFFIX=/mcp-server/mcp\n",
 		mcp + "/jenkins/env":  "JENKINS_URL=https://ci.example/\n",
 		mcp + "/servers":      "jira\n",
@@ -457,14 +510,18 @@ func TestMCPSyncSource(t *testing.T) {
 		}
 	}
 	bin := fakeBin(t, map[string]string{
-		"docker": `[ "$5" = img/jira:1.2 ] || exit 1; printf '1.2\tsha256:abc\t2026-03-02T00:00:00Z\n'`,
+		"docker": `case "$5" in
+  img/jira:1.2) echo '{"Id":"sha256:abc","Created":"2026-03-02T00:00:00Z","Config":{"Labels":{"org.opencontainers.image.version":"1.2"}}}' ;;
+  img/k8s:4) echo '{"Id":"sha256:def","Created":"2026-10-26T18:10:20Z","Config":{}}' ;;
+  *) exit 1 ;;
+esac`,
 	})
-	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
-	out, err := mcpSync(t, env, "source", "jira", "seq", "jenkins", "nope")
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	out, err := mcpSync(t, env, "source", "jira", "seq", "k8s", "jenkins", "nope")
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	want := "jira\timg/jira:1.2\t1.2\tsha256:abc\t2026-03-02T00:00:00Z\nseq\timg/seq:latest\njenkins\thttps://ci.example/mcp-server/mcp\n"
+	want := "jira\timg/jira:1.2\t1.2\tsha256:abc\t2026-03-02T00:00:00Z\nseq\timg/seq:latest\nk8s\timg/k8s:4\t\tsha256:def\t2026-10-26T18:10:20Z\njenkins\thttps://ci.example/mcp-server/mcp\n"
 	if out != want {
 		t.Errorf("out %q, want %q", out, want)
 	}

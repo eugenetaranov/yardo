@@ -27,7 +27,8 @@
 # Each server gets ~/.mcp/<name>/ (mode 700) holding its credentials in `env`
 # (KEY=value lines, no quotes). Docker servers read that file at start; it is
 # also mounted read-only at /mcp for servers that need extra files, and a
-# spec's MOUNT_AWS=1 mounts your ~/.aws (AWS). A server is registered once its required keys are filled in, and
+# spec's MOUNT_AWS=1 mounts your ~/.aws (AWS), MOUNT_KUBE=1 your ~/.kube
+# (Kubernetes). A server is registered once its required keys are filled in, and
 # re-registered when its generated config changes. Servers dropped from the
 # list are deregistered.
 set -eu
@@ -198,6 +199,18 @@ enabled() {
   done
 }
 
+# kube_path KUBECONFIG HOME — KUBECONFIG (paths split by ':') with each
+# path under ~/.kube (~/, $HOME/ or HOME/) the one it has in the container.
+kube_path() {
+  printf '%s\n' "$1" | tr ':' '\n' | while IFS= read -r p; do
+    case "$p" in
+      '~/.kube/'*|'$HOME/.kube/'*|'${HOME}/.kube/'*) p="/aws/.kube/${p#*/.kube/}" ;;
+      "$2/.kube/"*) p="/aws/.kube/${p#"$2"/.kube/}" ;;
+    esac
+    printf '%s\n' "$p"
+  done | paste -sd: -
+}
+
 # render NAME — print the MCPJungle JSON config for NAME (spec vars in scope).
 render() {
   dir="$MCP_DIR/$1"
@@ -211,11 +224,20 @@ render() {
       # is in, never a path from the env file: that's the user's to edit,
       # and docker would mount anything. No ~/.aws, no mount (docker would
       # make one, root's).
-      if [ "${MOUNT_AWS:-}" = 1 ]; then
-        home=$(dirname "$MCP_DIR")
-        if [ -d "$home/.aws" ]; then
-          set -- "$@" -v "$home/.aws:/aws/.aws:ro" -e HOME=/aws --user "$(ls -nd "$home" | awk '{print $3 ":" $4}')"
-        fi
+      # MOUNT_KUBE: their ~/.kube the same way, and a KUBECONFIG of the env
+      # file's under it (~/.kube/...) made the path it has in there.
+      home=$(dirname "$MCP_DIR") as_home=
+      if [ "${MOUNT_AWS:-}" = 1 ] && [ -d "$home/.aws" ]; then
+        set -- "$@" -v "$home/.aws:/aws/.aws:ro"; as_home=1
+      fi
+      if [ "${MOUNT_KUBE:-}" = 1 ] && [ -d "$home/.kube" ]; then
+        set -- "$@" -v "$home/.kube:/aws/.kube:ro"; as_home=1
+        kc=$(envget KUBECONFIG "$dir/env")
+        kin=$(kube_path "$kc" "$home")
+        [ "$kin" = "$kc" ] || set -- "$@" -e "KUBECONFIG=$kin"
+      fi
+      if [ -n "$as_home" ]; then
+        set -- "$@" -e HOME=/aws --user "$(ls -nd "$home" | awk '{print $3 ":" $4}')"
       fi
       # shellcheck disable=SC2086 # both are intentionally word-split
       set -- "$@" ${DOCKER_ARGS:-} "$IMAGE" ${IMAGE_ARGS:-}
@@ -265,7 +287,9 @@ if [ -n "$SOURCE" ]; then
     . "$spec"
     case "$KIND" in
       docker)
-        here=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}	{{.Id}}	{{.Created}}' "$IMAGE" 2>/dev/null) || here=
+        # jq, not a template: one with no labels at all would fail it.
+        here=$(docker image inspect --format '{{json .}}' "$IMAGE" 2>/dev/null |
+          jq -r '[(.Config.Labels // {})["org.opencontainers.image.version"] // "", .Id, .Created] | @tsv' 2>/dev/null) || here=
         if [ -n "$here" ]; then printf '%s\t%s\t%s\n' "$NAME" "$IMAGE" "$here"; else printf '%s\t%s\n' "$NAME" "$IMAGE"; fi ;;
       http)
         url="${URL:-}"
@@ -297,7 +321,7 @@ for NAME in $want; do
   fi
   # Each spec's variables, none left from the one before (MOUNT_AWS
   # would give a server after an AWS one your ~/.aws).
-  KIND= IMAGE= DOCKER_ARGS= IMAGE_ARGS= MOUNT_AWS= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION=
+  KIND= IMAGE= DOCKER_ARGS= IMAGE_ARGS= MOUNT_AWS= MOUNT_KUBE= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION=
   unset -f skeleton image_args 2>/dev/null || true
   # shellcheck disable=SC1090
   . "$spec"
