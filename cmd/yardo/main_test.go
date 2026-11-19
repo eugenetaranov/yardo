@@ -692,3 +692,37 @@ func TestThemeFlag(t *testing.T) {
 		t.Errorf("--theme neon: %v", err)
 	}
 }
+
+// tsExec answers tailscale status with out.
+type tsExec struct{ out string }
+
+func (x tsExec) Run(_ context.Context, c steps.Cmd) ([]byte, error) {
+	if c.Name == "tailscale" {
+		return []byte(x.out), nil
+	}
+	return nil, nil
+}
+
+// Tailscale's address comes first, with its name, even with no tailscale0
+// (userspace networking, in an LXC container); down, the LAN's stays.
+func TestWithNames(t *testing.T) {
+	up := `{"BackendState":"Running","Self":{"DNSName":"alice.tail1234.ts.net.","TailscaleIPs":["100.64.1.7","fd7a:115c:a1e0::7"]}}`
+	lan := []address{{"192.168.0.105", "eth0", "", ""}}
+	got, ts := withNames(context.Background(), tsExec{up}, slices.Clone(lan))
+	if ts == nil || len(got) != 2 || got[0] != (address{"100.64.1.7", tsUserspace, "Tailscale", "alice.tail1234.ts.net"}) {
+		t.Errorf("userspace: %+v", got)
+	}
+	var b strings.Builder
+	printConnect(&b, &answers.Answers{User: "ubuntu"}, got, ts, "", nil)
+	if !strings.Contains(b.String(), `host=ssh://ubuntu@alice.tail1234.ts.net"`) {
+		t.Errorf("connect:\n%s", b.String())
+	}
+	got, _ = withNames(context.Background(), tsExec{up}, []address{{"192.168.0.105", "eth0", "", ""}, {"100.64.1.7", "tailscale0", "Tailscale", ""}})
+	if len(got) != 2 || got[0].iface != "tailscale0" || got[0].name != "alice.tail1234.ts.net" {
+		t.Errorf("tailscale0: %+v", got)
+	}
+	got, ts = withNames(context.Background(), tsExec{`{"BackendState":"NeedsLogin"}`}, slices.Clone(lan))
+	if ts != nil || len(got) != 1 || got[0].ip != "192.168.0.105" {
+		t.Errorf("logged out: %+v", got)
+	}
+}

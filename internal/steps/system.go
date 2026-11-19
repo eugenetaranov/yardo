@@ -118,9 +118,10 @@ func authKey(e *Env) string {
 type TSStatus struct {
 	BackendState string
 	Self         struct {
-		DNSName   string
-		Tags      []string
-		KeyExpiry *time.Time
+		DNSName      string
+		TailscaleIPs []string
+		Tags         []string
+		KeyExpiry    *time.Time
 	}
 }
 

@@ -390,9 +390,9 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	}
 	settings = append(settings, look)
 	var buf strings.Builder
-	addrs := addresses()
+	addrs, ts := withNames(ctx, steps.OSExec{}, addresses())
 	tokens := laptopTokens(a.User)
-	printConnect(&buf, a, addrs, withNames(ctx, steps.OSExec{}, addrs), os.Getenv("LC_TERMINAL"), tokens)
+	printConnect(&buf, a, addrs, ts, os.Getenv("LC_TERMINAL"), tokens)
 	host, _ := os.Hostname()
 	sub := osName()
 	if len(addrs) > 0 {

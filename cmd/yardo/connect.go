@@ -53,14 +53,21 @@ func vpnOf(iface, ip string) (name, kind string) {
 // rank orders addresses for a laptop: a mesh VPN's, yardo's servers', the
 // local network's, then connections out.
 func (x address) rank() int {
-	_, kind := vpnOf(x.iface, x.ip)
-	return map[string]int{vpnMesh: 0, vpnServer: 1, "": 2, vpnClient: 3}[kind]
+	return map[string]int{vpnMesh: 0, vpnServer: 1, "": 2, vpnClient: 3}[x.kind()]
 }
 
+// kind is the VPN kind of x: Tailscale's, whatever the interface, is a mesh.
 func (x address) kind() string {
+	if x.vpn == "Tailscale" {
+		return vpnMesh
+	}
 	_, k := vpnOf(x.iface, x.ip)
 	return k
 }
+
+// tsUserspace stands for the interface of a Tailscale address with none:
+// tailscaled's userspace networking (an LXC container without /dev/net/tun).
+const tsUserspace = "userspace"
 
 // addresses are this machine's IPv4 addresses a laptop could reach, in
 // rank order; not loopback or Docker's bridges.
@@ -85,20 +92,31 @@ func addresses() []address {
 }
 
 // withNames fills in the VPNs' DNS names for their addresses (Tailscale's
-// MagicDNS name), and returns Tailscale's status when it's up.
-func withNames(ctx context.Context, x steps.Execer, addrs []address) *steps.TSStatus {
-	for i := range addrs {
-		if addrs[i].iface != "tailscale0" {
-			continue
-		}
-		st, ok := steps.TailscaleStatus(ctx, x)
-		if !ok || st.BackendState != "Running" {
-			return nil
-		}
-		addrs[i].name = strings.TrimSuffix(st.Self.DNSName, ".")
-		return &st
+// MagicDNS name), adds Tailscale's address when no interface has it
+// (userspace networking), and returns Tailscale's status when it's up.
+func withNames(ctx context.Context, x steps.Execer, addrs []address) ([]address, *steps.TSStatus) {
+	st, ok := steps.TailscaleStatus(ctx, x)
+	if !ok || st.BackendState != "Running" {
+		return addrs, nil
 	}
-	return nil
+	name := strings.TrimSuffix(st.Self.DNSName, ".")
+	found := false
+	for i := range addrs {
+		if addrs[i].iface == "tailscale0" || slices.Contains(st.Self.TailscaleIPs, addrs[i].ip) {
+			addrs[i].vpn, addrs[i].name = "Tailscale", name
+			found = true
+		}
+	}
+	if !found {
+		for _, ip := range st.Self.TailscaleIPs {
+			if p := net.ParseIP(ip); p != nil && p.To4() != nil {
+				addrs = append(addrs, address{ip: ip, iface: tsUserspace, vpn: "Tailscale", name: name})
+				break
+			}
+		}
+	}
+	slices.SortStableFunc(addrs, func(a, b address) int { return a.rank() - b.rank() })
+	return addrs, &st
 }
 
 // printConnect writes how to reach Docker and the MCP gateway from a
@@ -158,7 +176,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		fmt.Fprintln(w, "\nYour laptop's ~/.ssh/config (then: ssh "+ctxName+", and VS Code Remote-SSH to "+ctxName+"):")
 		fmt.Fprintf(w, "  Host %s\n    HostName %s\n    User %s\n    HostKeyAlias %s\n    ServerAliveInterval 15\n    ServerAliveCountMax 8\n",
 			ctxName, addr, a.User, ctxName)
-		if addrs[0].iface == "tailscale0" && addrs[0].name == "" {
+		if addrs[0].vpn == "Tailscale" && addrs[0].name == "" {
 			fmt.Fprintln(w, "  (Tailscale gave no name: MagicDNS off? Its address works the same.)")
 		}
 	} else if len(addrs) > 0 {
@@ -297,8 +315,8 @@ func (o *options) connect(stdout io.Writer, st *answers.Store) error {
 		return err
 	}
 	a.User = u
-	addrs := addresses()
-	printConnect(stdout, a, addrs, withNames(context.Background(), steps.OSExec{}, addrs), os.Getenv("LC_TERMINAL"), laptopTokens(u))
+	addrs, ts := withNames(context.Background(), steps.OSExec{}, addresses())
+	printConnect(stdout, a, addrs, ts, os.Getenv("LC_TERMINAL"), laptopTokens(u))
 	return nil
 }
 
