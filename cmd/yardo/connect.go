@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -166,7 +165,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		}
 		fmt.Fprintf(w, "  %-15s %s\n", x.ip, where)
 		if i == 0 {
-			addr = cmp.Or(x.name, x.ip)
+			addr = x.ip // a name needs the laptop to resolve it (MagicDNS); the address doesn't
 		}
 	}
 	if len(addrs) == 0 {
@@ -181,6 +180,10 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		}
 		fmt.Fprintln(w, "the address stays the same when your laptop changes network. Not the local address:")
 		fmt.Fprintln(w, "VPN-only services (the MCP gateway, container ports) aren't open there.")
+		if addrs[0].name != "" {
+			fmt.Fprintf(w, "Its name, %s, works too where the laptop resolves %s's names\n", addrs[0].name, addrs[0].vpn)
+			fmt.Fprintln(w, "(another VPN's DNS can take them over); the address always does.")
+		}
 		fmt.Fprintln(w, "\nSSH: add to your laptop's ~/.ssh/config (then: ssh "+ctxName+", and VS Code Remote-SSH to "+ctxName+"):")
 		paste(w, "  ", "Host "+ctxName, "  HostName "+addr, "  User "+a.User, "  HostKeyAlias "+ctxName,
 			"  ServerAliveInterval 15", "  ServerAliveCountMax 8")
@@ -200,6 +203,8 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 	fmt.Fprintln(w, "\nDocker, over SSH (no port to open; your SSH key is the login). On the laptop:")
 	paste(w, "  ", fmt.Sprintf("docker context create %s --docker \"host=ssh://%s@%s\"", ctxName, a.User, addr),
 		fmt.Sprintf("docker context use %s        # back: docker context use default", ctxName))
+	fmt.Fprintf(w, "  With a Host for it in ~/.ssh/config (the one above, or yours with its own key), use that:\n")
+	fmt.Fprintf(w, "  \"host=ssh://%s\": ssh takes its address, user and key from there.\n", ctxName)
 	fmt.Fprintf(w, "  docker context use makes it the default: every docker command, in every terminal, until you\n")
 	fmt.Fprintf(w, "  switch back. Just one terminal: export DOCKER_CONTEXT=%s. Just one command: docker --context %s ps.\n", ctxName, ctxName)
 	ports := map[string]string{"": "everywhere (Docker's way)", "vpn": "this machine and the VPNs", "local": "this machine only"}[a.DockerPorts]
@@ -275,7 +280,7 @@ func connectRows(a *answers.Answers, addrs []address, tokens []string, gateway b
 	ctxName := strings.SplitN(host, ".", 2)[0]
 	addr := host
 	if len(addrs) > 0 {
-		addr = cmp.Or(addrs[0].name, addrs[0].ip)
+		addr = addrs[0].ip // see printConnect
 	}
 	ssh := a.User + "@" + addr
 	if len(addrs) > 0 && addrs[0].vpn != "" && addrs[0].kind() != vpnClient {

@@ -413,8 +413,8 @@ func TestConnectRows(t *testing.T) {
 		got = append(got, r.What+"|"+r.Use+"|"+r.Note)
 	}
 	all := strings.Join(got, "\n")
-	for _, want := range []string{"SSH|ssh ", "ada@vm.tail.ts.net over Tailscale", "Docker|docker context use ", "host=ssh://ada@vm.tail.ts.net · -p ports from the VPNs",
-		"MCP|http://vm.tail.ts.net:8081/mcp|mcpjungle, with a token: sudo cat ~/.mcp/clients/client.token"} {
+	for _, want := range []string{"SSH|ssh ", "ada@100.64.1.7 over Tailscale", "Docker|docker context use ", "host=ssh://ada@100.64.1.7 · -p ports from the VPNs",
+		"MCP|http://100.64.1.7:8081/mcp|mcpjungle, with a token: sudo cat ~/.mcp/clients/client.token"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("rows lack %q:\n%s", want, all)
 		}
@@ -478,8 +478,8 @@ func TestPrintConnectNames(t *testing.T) {
 	var out bytes.Buffer
 	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081}, addrs, ts, "", nil)
 	got := ui.Unmark(out.String())
-	for _, want := range []string{"Use payzoff.tail1234.ts.net at home and away", "Host " + short + "\n    HostName payzoff.tail1234.ts.net\n    User ada\n    HostKeyAlias " + short,
-		"ServerAliveInterval 15", `"host=ssh://ada@payzoff.tail1234.ts.net"`, "http://payzoff.tail1234.ts.net:8081/mcp", "expires on 2027-04-28"} {
+	for _, want := range []string{"Use 100.64.1.7 at home and away", "Its name, payzoff.tail1234.ts.net, works too", "Host " + short + "\n    HostName 100.64.1.7\n    User ada\n    HostKeyAlias " + short,
+		"ServerAliveInterval 15", `"host=ssh://ada@100.64.1.7"`, `"host=ssh://` + short + `"`, "http://100.64.1.7:8081/mcp", "expires on 2027-04-28"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("tailscale: lacks %q:\n%s", want, got)
 		}
@@ -715,7 +715,7 @@ func TestWithNames(t *testing.T) {
 	}
 	var b strings.Builder
 	printConnect(&b, &answers.Answers{User: "ubuntu"}, got, ts, "", nil)
-	if !strings.Contains(b.String(), `host=ssh://ubuntu@alice.tail1234.ts.net"`) {
+	if !strings.Contains(b.String(), `host=ssh://ubuntu@100.64.1.7"`) {
 		t.Errorf("connect:\n%s", b.String())
 	}
 	got, _ = withNames(context.Background(), tsExec{up}, []address{{"192.168.0.105", "eth0", "", ""}, {"100.64.1.7", "tailscale0", "Tailscale", ""}})
