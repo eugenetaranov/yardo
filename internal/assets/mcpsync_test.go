@@ -278,7 +278,7 @@ func TestMCPSyncAWSMount(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids := fmt.Sprintf("%d:%d", fi.Sys().(*syscall.Stat_t).Uid, fi.Sys().(*syscall.Stat_t).Gid)
-	want := `"-v","` + mcp + `/aws:/mcp:ro","-v","` + root + `/.aws:/aws/.aws:ro","-e","HOME=/aws","--user","` + ids + `","public.ecr.aws/`
+	want := `"-v","` + mcp + `/aws:/mcp:ro","-v","` + root + `/.aws:/aws/.aws:ro","-e","HOME=/aws","--user","` + ids + `","--no-healthcheck","public.ecr.aws/`
 	if a := args(); !strings.Contains(a, want) || strings.Contains(a, "/etc") {
 		t.Errorf("args %s\nwant %s", a, want)
 	}

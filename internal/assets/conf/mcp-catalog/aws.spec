@@ -7,6 +7,10 @@ DESCRIPTION="AWS: call AWS APIs, search the docs and follow AWS's guides (AWS's 
 KIND=docker
 IMAGE=public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:1.7.0
 REQUIRED="AWS_REGION"
+# The image's healthcheck looks for a process named aws.* holding a socket;
+# the proxy, run over stdio, is mcp-proxy-for-aws-cli: it would always say
+# unhealthy, working or not.
+DOCKER_ARGS="--no-healthcheck"
 # Your ~/.aws, read-only: the AWS CLI's profiles and its SSO logins (aws
 # sso login here renews them for the server too, as it runs).
 MOUNT_AWS=1
