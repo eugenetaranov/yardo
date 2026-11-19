@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/eugenetaranov/yardo/internal/mcp"
@@ -448,22 +447,17 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		specs := m.info.MCPSpecs
 		var lines []string
 		for n, s := range specs {
-			note := ""
-			if have := m.using(s.Name); len(have) > 0 {
-				note = "   " + accent.Render("you have "+strings.Join(have, ", "))
-			}
-			about := muted.Render(runewidth.Truncate(s.About, max(10, w-50), "…"))
+			// One line each, the chosen one too: a long description
+			// wrapped would move the rows below as the choice moves.
+			about := muted.Render(runewidth.Truncate(s.About, max(10, w-27), "…"))
 			if n == m.sel {
-				head := "  " + rowOn.Render(padTo(" › "+s.Name, 21)) + "  "
-				ls := beside(head, 25, w-2-lipgloss.Width(note), muted, s.About)
-				ls[0] += note
-				lines = append(lines, ls...)
+				lines = append(lines, "  "+rowOn.Render(padTo(" › "+s.Name, 21))+"  "+about)
 			} else {
-				lines = append(lines, "     "+padTo(s.Name, 18)+"  "+about+note)
+				lines = append(lines, "     "+padTo(s.Name, 18)+"  "+about)
 			}
 		}
 		add(window(lines, m.sel, room-3)...)
-		add("", "  "+muted.Render("Adding one you have makes another: a second Jira, another AWS account."))
+		add("", "  "+muted.Render("Adding one again makes another: a second Jira, another AWS account."))
 		return "MCP servers  ›  Add a server", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "next"), k("q", "back")}, "   ")
 	case "mcp:name":
 		title, verb := "MCP servers  ›  Add "+m.nameFor, "add"

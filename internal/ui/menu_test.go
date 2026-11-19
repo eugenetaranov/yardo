@@ -355,9 +355,18 @@ func TestMenuMCPAdd(t *testing.T) {
 	m := mcpMenu()
 	onRow(m, "mcp")
 	mk(m, "enter", "a")
-	if v := m.View(); !strings.Contains(v, "Add a server") || !strings.Contains(v, "you have jira, jira-work") || !strings.Contains(v, "you have github") {
+	if v := m.View(); !strings.Contains(v, "Add a server") || strings.Contains(v, "you have") {
 		t.Fatalf("catalog:\n%s", v)
 	}
+	// A long description stays on its line, chosen or not: the rows
+	// below don't move as the choice does.
+	m.info.MCPSpecs[1].About = strings.Repeat("GitHub: repositories, issues, pull requests and Actions ", 6)
+	before := strings.Count(m.View(), "\n")
+	mk(m, "down")
+	if after := strings.Count(m.View(), "\n"); after != before {
+		t.Errorf("on the long one: %d lines, %d before:\n%s", after, before, m.View())
+	}
+	mk(m, "up")
 	mk(m, "down", "down", "down", "enter") // jira: one there, no name given
 	if v := m.View(); !strings.Contains(v, "Add jira") || !strings.Contains(v, "There's a jira already") {
 		t.Fatalf("name:\n%s", v)
