@@ -11,8 +11,17 @@ skeleton() {
   cat <<'SKEL'
 # Bitbucket Cloud — an API token with scopes (Jira's token won't do):
 # https://id.atlassian.com/manage-profile/security/api-tokens
-#   Create API token with scopes → Bitbucket → repository, workspace
-#   (and pullrequest to comment on or open pull requests)
+#   Create API token with scopes → Bitbucket, and tick each of these
+#   (none implies another: without read:pullrequest no pull request
+#   shows, 403, though the repository does):
+#     read:user:bitbucket          who you are ("my pull requests")
+#     read:workspace:bitbucket     your workspaces
+#     read:repository:bitbucket    repositories, code, commits, diffs
+#     read:pullrequest:bitbucket   pull requests, and commenting on them
+#   To open, approve or merge pull requests too:
+#     write:pullrequest:bitbucket
+#   Missed one: make a new token with all of them, then
+#   sudo yardo mcp edit bitbucket.
 ATLASSIAN_USER_EMAIL=
 ATLASSIAN_API_TOKEN=
 
