@@ -51,9 +51,6 @@ const (
 	// MenuUpgrade installs the newer versions the Updates screen lists
 	// (mise up, apt's only-upgrade), once confirmed.
 	MenuUpgrade
-	// MenuChoices asks the first run's choices again (the prompt,
-	// languages, Docker, …), then adds and uninstalls what changed.
-	MenuChoices
 )
 
 // MCPAct is what to do to an MCP server: Do (add, edit, on, rename,
@@ -284,7 +281,6 @@ func (m *Menu) todo() []menuRow {
 // Tools, MCP servers (with the gateway) and Settings.
 func (m *Menu) rows() []menuRow {
 	out := m.todo()
-	out = append(out, menuRow{id: "choices", label: "Choices", note: "prompt, languages, Docker, Kubernetes, Terraform, clouds, agents, git hosts, Jira, VPN"})
 	out = append(out, menuRow{id: "tools", label: "Tools", note: "yours: fix, add or uninstall · or just start typing"})
 	if m.hasMCP() {
 		var names []string
@@ -568,8 +564,6 @@ func (m *Menu) key(k string) tea.Cmd {
 			return m.quit(MenuResult{Kind: MenuEdit, ID: r.item.ID, Inputs: []string{r.input}})
 		case k == "enter" && r.id == "tools":
 			return m.quit(MenuResult{Kind: MenuTools})
-		case k == "enter" && r.id == "choices":
-			return m.quit(MenuResult{Kind: MenuChoices})
 		case k == "enter" && (strings.HasPrefix(r.id, "mcp:") || strings.HasPrefix(r.id, "mcpkey:")):
 			// The MCP servers, on this one.
 			_, name, _ := strings.Cut(r.id, ":")

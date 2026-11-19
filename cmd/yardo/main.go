@@ -548,46 +548,6 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						}
 						board = &ui.BoardResult{Kind: ui.BoardApply, Settings: res.Settings}
 						break loop
-					case ui.MenuChoices:
-						r, err := askChoices(cat, a, false)
-						if errors.Is(err, ui.ErrQuit) {
-							continue // back home, nothing changed
-						} else if err != nil {
-							return err
-						}
-						if len(r.forget) > 0 {
-							gone := labels(cat, planRemoval(cat, a.Picks, r.forget).Order)
-							if ok, err := ui.Confirm("Uninstall "+strings.Join(gone, ", ")+"?", "What needs them goes too.", true); err != nil || !ok {
-								continue
-							}
-							upd.wait(io.Discard)
-							u, err := o.uninstall(ctx, cat, st, a, r.forget, stdout)
-							if err != nil {
-								return err
-							}
-							for _, l := range u.Lines {
-								fmt.Fprintln(stdout, l)
-							}
-						}
-						restyle := r.prompt != a.Prompt && slices.Contains(a.Picks, "zsh")
-						a.Prompt, chose = r.prompt, true
-						switch {
-						case len(r.adds) > 0:
-							board = &ui.BoardResult{Kind: ui.BoardApply, Adds: r.adds}
-							break loop
-						case restyle:
-							fix, changed = []string{"zsh"}, true
-							break loop
-						}
-						d, reopen, toast = nil, "home", "Nothing changed."
-						if len(r.forget) > 0 {
-							toast = "Uninstalled what you turned off."
-						}
-						if !o.dryRun {
-							if err := st.Save(a); err != nil {
-								return err
-							}
-						}
 					case ui.MenuMCP:
 						k := &asker{cat: cat, a: a, share: o.share(), out: io.Discard, installed: func(t string) bool { return userHas(a.User, t) },
 							port: func() int { p, _ := st.Port(user); return p }}
@@ -623,7 +583,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				if first && !chose {
 					// A first run asks the choices, shows all they install,
 					// and installs it, or opens the board with it queued.
-					r, err := askChoices(cat, a, true)
+					r, err := askChoices(cat, a)
 					if errors.Is(err, ui.ErrQuit) {
 						return lastErr
 					} else if err != nil {

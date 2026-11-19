@@ -67,7 +67,6 @@ account is created). Once something is set up, it opens on the home:
    Fill in JIRA_API_TOKEN         MCP server jira-work needs it · opens its file
    Install 3 updates              node 22.12 → 24.11 · gh 2.80 → 2.83 · uv 0.5.9 → 0.9.1
   ──────────────────────────────────────────────
-   Choices                        prompt, languages, Docker, Kubernetes, Terraform, clouds, agents, git hosts, Jira, VPN
    Tools                          add or uninstall: languages, AI, cloud… or just start typing
    MCP servers                    github, jira-work
    Settings                       network access, git, prompt, look, updates
@@ -87,9 +86,7 @@ not a problem; three or more are one **Fix 3 things** row, a checklist,
 all ticked: space unticks, enter fixes the ticked in one run),
 **Fill in** a value (opens its file in your editor), **Install 3
 updates** (asks, then updates just those: `mise up` for the tools, apt
-for the packages). Below them, rows that never move: **Choices** (the
-first run's questions again: what you turn off is uninstalled, asking
-first; what you turn on, installed), **Tools**
+for the packages). Below them, rows that never move: **Tools**
 (the full screen, below), **MCP servers** (the gateway's list: add one,
 or another instance of one; **d** deletes one, asking first), **Remote connection**
 (every step to reach this machine from a laptop) and **Settings**: **Network access** (the

@@ -861,12 +861,12 @@ func TestMenuTab(t *testing.T) {
 		mk(m, "tab")
 		got = append(got, m.rows()[m.sel].id)
 	}
-	if strings.Join(got, " ") != "choices tools connect settings fix:docker choices" {
+	if strings.Join(got, " ") != "tools connect settings fix:docker tools connect" {
 		t.Errorf("tab: %v", got)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if id := m.rows()[m.sel].id; id != "fix:docker" {
-		t.Errorf("shift+tab from Choices: on %s", id)
+	if id := m.rows()[m.sel].id; id != "tools" {
+		t.Errorf("shift+tab from Remote connection: on %s", id)
 	}
 	m = testMenu(true)
 	got = nil
@@ -874,7 +874,7 @@ func TestMenuTab(t *testing.T) {
 		mk(m, "tab")
 		got = append(got, m.rows()[m.sel].id)
 	}
-	if strings.Join(got, " ") != "tools connect settings choices" {
+	if strings.Join(got, " ") != "connect settings tools connect" {
 		t.Errorf("tab, nothing to do: %v", got)
 	}
 }

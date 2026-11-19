@@ -28,22 +28,21 @@ func answer(t *testing.T, cat *catalog.Catalog, qs []*ui.Question, id string, pi
 	t.Fatalf("no choice %q", id)
 }
 
-// A first run: each choice's on, and the base, all added; nothing to
-// uninstall.
+// A first run: each choice's on, and the base, all added.
 func TestChoicesFirstRun(t *testing.T) {
 	cat, err := catalog.Load(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a := &answers.Answers{}
-	qs := choiceQuestions(cat, a, true)
+	qs := choiceQuestions(cat, a)
 	if qs[0].Picked[0] != "p10k" {
 		t.Errorf("prompt starts on %v", qs[0].Picked)
 	}
 	answer(t, cat, qs, "prompt", "starship")
-	r := choiceChange(cat, a, true, qs)
-	if r.prompt != "starship" || len(r.forget) != 0 {
-		t.Errorf("prompt %q, forget %v", r.prompt, r.forget)
+	r := choiceChange(cat, a, qs)
+	if r.prompt != "starship" {
+		t.Errorf("prompt %q", r.prompt)
 	}
 	for _, id := range append(cat.Base(), "docker", "mcpjungle", "claude", "github") {
 		if !slices.Contains(r.adds, id) {
@@ -56,51 +55,6 @@ func TestChoicesFirstRun(t *testing.T) {
 			t.Errorf("first run adds %s, off by default", id)
 		}
 	}
-}
-
-// Later: the answers start from the picks, and only the change is made:
-// turned off is uninstalled, turned on added; the base isn't touched.
-func TestChoicesChange(t *testing.T) {
-	cat, err := catalog.Load(nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := &answers.Answers{Prompt: "starship", Picks: []string{"zsh", "k8s", "k8stools", "aws", "tailscale-install", "tailscale", "claude"}}
-	qs := choiceQuestions(cat, a, false)
-	if qs[0].Picked[0] != "starship" {
-		t.Errorf("prompt starts on %v", qs[0].Picked)
-	}
-	for id, want := range map[string]string{"k8s": "on", "cloud": "aws", "vpn": "tailscale", "agents": "claude", "lang": "", "githost": ""} {
-		if got := strings.Join(held(*choiceByID(cat, id), a.Picks), " "); got != want {
-			t.Errorf("%s holds %q, want %q", id, got, want)
-		}
-	}
-	// Unchanged, nothing changes, though a toggle's other items aren't
-	// installed (k8s on, with k8s alone).
-	a.Picks = slices.DeleteFunc(a.Picks, func(id string) bool { return id == "k8stools" })
-	if r := choiceChange(cat, a, false, choiceQuestions(cat, a, false)); len(r.adds)+len(r.forget) != 0 {
-		t.Errorf("unchanged: adds %v forget %v", r.adds, r.forget)
-	}
-	a.Picks = append(a.Picks, "k8stools")
-	answer(t, cat, qs, "k8s")
-	answer(t, cat, qs, "cloud", "aws", "doctl")
-	answer(t, cat, qs, "vpn", "netbird")
-	r := choiceChange(cat, a, false, qs)
-	if !slices.Equal(r.adds, []string{"doctl", "netbird-install", "netbird"}) {
-		t.Errorf("adds %v", r.adds)
-	}
-	if !slices.Equal(r.forget, []string{"k8s", "k8stools", "tailscale-install", "tailscale"}) {
-		t.Errorf("forget %v", r.forget)
-	}
-}
-
-func choiceByID(cat *catalog.Catalog, id string) *catalog.Choice {
-	for i := range cat.Choices {
-		if cat.Choices[i].ID == id {
-			return &cat.Choices[i]
-		}
-	}
-	return nil
 }
 
 // A machine set up before the base: what's new in it is added, once.
