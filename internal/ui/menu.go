@@ -20,6 +20,12 @@ import (
 // home searches the tools. Each row opens one focused screen, or does its
 // thing at once; esc (or q) comes back. On the home, q quits.
 
+// Paste starts a Remote connection line that's typed or put in a file,
+// not said; the screen shows it apart. Unmark takes it out for a terminal.
+const Paste = "\x1f"
+
+func Unmark(s string) string { return strings.ReplaceAll(s, Paste, "") }
+
 // MenuKind is what the menu was left with.
 type MenuKind int
 
@@ -815,8 +821,8 @@ func (m *Menu) View() string {
 	case "connect":
 		title = "Remote connection"
 		for _, l := range m.connect {
-			if strings.HasPrefix(l, "  ") {
-				add("  " + keyOn.Render(l))
+			if p, ok := strings.CutPrefix(l, Paste); ok {
+				add("  " + keyOn.Render(p))
 			} else {
 				add("  " + l)
 			}

@@ -918,7 +918,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			// Newly set up Neovim or tmux: how their copies reach the laptop.
 			if has := planHas(items); (has("neovim") && !before("neovim")) || (has("tmux") && !before("tmux")) {
 				for _, l := range clipboardHint(os.Getenv("LC_TERMINAL")) {
-					fmt.Fprintln(stdout, l)
+					fmt.Fprintln(stdout, ui.Unmark(l))
 				}
 			}
 			if h := newShellHint(res.Changed); h != "" {

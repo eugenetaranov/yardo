@@ -129,12 +129,20 @@ func clipboardHint(term string) []string {
 	out := []string{
 		"Copy and paste (y in Neovim, a drag in tmux) reach your laptop's clipboard through the terminal.",
 		"  iTerm2, once on your laptop (then quit and reopen it):",
-		"    defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true",
+		ui.Paste + "    defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true",
 	}
 	if term != "iTerm2" {
 		out = append(out, "  Ghostty, kitty, WezTerm, Alacritty: nothing to do · Terminal.app can't (hold fn to select).")
 	}
 	return out
+}
+
+// paste writes lines to type, or to put in a file, indented; marked
+// ui.Paste, the screen shows them apart from what's said about them.
+func paste(w io.Writer, indent string, lines ...string) {
+	for _, l := range lines {
+		fmt.Fprintln(w, ui.Paste+indent+l)
+	}
 }
 
 // printConnect says how to reach this machine from a laptop; term is the
@@ -173,9 +181,9 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		}
 		fmt.Fprintln(w, "the address stays the same when your laptop changes network. Not the local address:")
 		fmt.Fprintln(w, "VPN-only services (the MCP gateway, container ports) aren't open there.")
-		fmt.Fprintln(w, "\nYour laptop's ~/.ssh/config (then: ssh "+ctxName+", and VS Code Remote-SSH to "+ctxName+"):")
-		fmt.Fprintf(w, "  Host %s\n    HostName %s\n    User %s\n    HostKeyAlias %s\n    ServerAliveInterval 15\n    ServerAliveCountMax 8\n",
-			ctxName, addr, a.User, ctxName)
+		fmt.Fprintln(w, "\nSSH: add to your laptop's ~/.ssh/config (then: ssh "+ctxName+", and VS Code Remote-SSH to "+ctxName+"):")
+		paste(w, "  ", "Host "+ctxName, "  HostName "+addr, "  User "+a.User, "  HostKeyAlias "+ctxName,
+			"  ServerAliveInterval 15", "  ServerAliveCountMax 8")
 		if addrs[0].vpn == "Tailscale" && addrs[0].name == "" {
 			fmt.Fprintln(w, "  (Tailscale gave no name: MagicDNS off? Its address works the same.)")
 		}
@@ -189,9 +197,9 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		fmt.Fprintln(w, "the admin console (Machines → … → Disable key expiry), or join with a tagged auth key.")
 	}
 
-	fmt.Fprintln(w, "\nDocker, over SSH (no port to open; your SSH key is the login):")
-	fmt.Fprintf(w, "  docker context create %s --docker \"host=ssh://%s@%s\"\n", ctxName, a.User, addr)
-	fmt.Fprintf(w, "  docker context use %s        # back: docker context use default\n", ctxName)
+	fmt.Fprintln(w, "\nDocker, over SSH (no port to open; your SSH key is the login). On the laptop:")
+	paste(w, "  ", fmt.Sprintf("docker context create %s --docker \"host=ssh://%s@%s\"", ctxName, a.User, addr),
+		fmt.Sprintf("docker context use %s        # back: docker context use default", ctxName))
 	ports := map[string]string{"": "everywhere (Docker's way)", "vpn": "this machine and the VPNs", "local": "this machine only"}[a.DockerPorts]
 	fmt.Fprintf(w, "  -v paths are this machine's; -p ports open here, reachable from %s.\n", ports)
 
@@ -205,22 +213,23 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 	if url, who, ok := gatewayURL(a, addr); ok {
 		fmt.Fprintf(w, "  reachable from %s, with the gateway's token for your laptop.\n", who)
 		if len(tokens) > 0 {
-			fmt.Fprintln(w, "  Read it here (it isn't shown):")
+			fmt.Fprintln(w, "  1. Read the token here (it isn't shown):")
 			for _, t := range tokens {
-				fmt.Fprintf(w, "    sudo cat %s\n", t)
+				paste(w, "       ", "sudo cat "+t)
 			}
 		} else {
-			fmt.Fprintln(w, "  yardo makes it on its next run (sudo yardo --yes), in a file, not on the screen:")
-			fmt.Fprintf(w, "    sudo cat %s\n", laptopToken(a.User, "client"))
+			fmt.Fprintln(w, "  1. yardo makes the token on its next run (sudo yardo --yes), in a file, not on the screen; read it here:")
+			paste(w, "       ", "sudo cat "+laptopToken(a.User, "client"))
 		}
-		fmt.Fprintln(w, "  then on the laptop:")
-		fmt.Fprintf(w, "    claude mcp add --transport http %s %s --header \"Authorization: Bearer <token>\"\n", ctxName, url)
-		fmt.Fprintf(w, "    Codex, in ~/.codex/config.toml:\n      [mcp_servers.%s]\n      url = %q\n      http_headers = { \"Authorization\" = \"Bearer <token>\" }\n", ctxName, url)
+		fmt.Fprintln(w, "  2. On the laptop, for Claude Code (<token> is the token):")
+		paste(w, "       ", fmt.Sprintf("claude mcp add --transport http %s %s --header \"Authorization: Bearer <token>\"", ctxName, url))
+		fmt.Fprintln(w, "     or for Codex, add to ~/.codex/config.toml:")
+		paste(w, "       ", "[mcp_servers."+ctxName+"]", fmt.Sprintf("url = %q", url), `http_headers = { "Authorization" = "Bearer <token>" }`)
 	} else {
 		fmt.Fprintln(w, "  this machine only: in 'sudo yardo', Settings → Network access opens it to your VPNs or")
-		fmt.Fprintln(w, "  the internet. Or, with nothing to change, through SSH:")
-		fmt.Fprintf(w, "    ssh -N -L %d:127.0.0.1:%d %s@%s\n", port, port, a.User, addr)
-		fmt.Fprintf(w, "    claude mcp add --transport http %s http://127.0.0.1:%d/mcp\n", ctxName, port)
+		fmt.Fprintln(w, "  the internet. Or, with nothing to change, through SSH, on the laptop:")
+		paste(w, "    ", fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s@%s", port, port, a.User, addr),
+			fmt.Sprintf("claude mcp add --transport http %s http://127.0.0.1:%d/mcp", ctxName, port))
 	}
 }
 
@@ -316,8 +325,10 @@ func (o *options) connect(stdout io.Writer, st *answers.Store) error {
 	}
 	a.User = u
 	addrs, ts := withNames(context.Background(), steps.OSExec{}, addresses())
-	printConnect(stdout, a, addrs, ts, os.Getenv("LC_TERMINAL"), laptopTokens(u))
-	return nil
+	var b strings.Builder
+	printConnect(&b, a, addrs, ts, os.Getenv("LC_TERMINAL"), laptopTokens(u))
+	_, err = io.WriteString(stdout, ui.Unmark(b.String()))
+	return err
 }
 
 // userFor is whose answers a command is about: --user, the sudo user, or

@@ -18,6 +18,7 @@ import (
 	"github.com/eugenetaranov/yardo/internal/plan"
 	"github.com/eugenetaranov/yardo/internal/profile"
 	"github.com/eugenetaranov/yardo/internal/steps"
+	"github.com/eugenetaranov/yardo/internal/ui"
 )
 
 func TestMain(m *testing.M) {
@@ -476,7 +477,7 @@ func TestPrintConnectNames(t *testing.T) {
 	ts.Self.KeyExpiry = &exp
 	var out bytes.Buffer
 	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081}, addrs, ts, "", nil)
-	got := out.String()
+	got := ui.Unmark(out.String())
 	for _, want := range []string{"Use payzoff.tail1234.ts.net at home and away", "Host " + short + "\n    HostName payzoff.tail1234.ts.net\n    User ada\n    HostKeyAlias " + short,
 		"ServerAliveInterval 15", `"host=ssh://ada@payzoff.tail1234.ts.net"`, "http://payzoff.tail1234.ts.net:8081/mcp", "expires on 2027-04-28"} {
 		if !strings.Contains(got, want) {
