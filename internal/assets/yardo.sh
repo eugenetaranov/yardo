@@ -356,12 +356,16 @@ envget() { [ -f "$2" ] || return 0; sed -n "s/^$1=//p" "$2" | tail -n 1; }
 # all there is), or append it.
 envset() {
   local tmp; tmp=$(mktemp)
+  # Its first KEY= line (the others go), else its first #KEY= one when
+  # it has none: the file is read twice, first for a KEY= line.
   K="$1" V="$2" awk '
-    BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"]; done = 0 }
-    !done && ($0 ~ "^" k "=" || $0 ~ "^#[ ]*" k "=") { print k "=" v; done = 1; next }
+    BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"]; done = 0; active = 0 }
+    NR == FNR { if ($0 ~ "^" k "=") active = 1; next }
+    $0 ~ "^" k "=" { if (!done) print k "=" v; done = 1; next }
+    !active && !done && $0 ~ "^#[ ]*" k "=" { print k "=" v; done = 1; next }
     { print }
     END { if (!done) print k "=" v }
-  ' "$3" > "$tmp"
+  ' "$3" "$3" > "$tmp"
   cat "$tmp" > "$3"; rm -f "$tmp"
 }
 

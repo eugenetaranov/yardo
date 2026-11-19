@@ -960,26 +960,36 @@ func EnvGet(b []byte, key string) string {
 	return v
 }
 
-// EnvSet sets KEY in an env file: in place of its first KEY= line (or of
-// a commented "#KEY=" one), else appended. As the bash installer's envset.
+// EnvSet sets KEY in an env file: in place of its first KEY= line (the
+// others go: the last would win), else of its first commented "#KEY="
+// one when it has none (a comment that only reads like one stays, when
+// there's a KEY= line), else appended. As the bash installer's envset.
 func EnvSet(b []byte, key, value string) []byte {
 	lines := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
 	if len(b) == 0 {
 		lines = nil
 	}
 	set := key + "=" + value
+	active := slices.ContainsFunc(lines, func(l string) bool { return strings.HasPrefix(l, key+"=") })
 	done := false
-	for i, l := range lines {
+	out := lines[:0]
+	for _, l := range lines {
 		commented := strings.HasPrefix(l, "#") && strings.HasPrefix(strings.TrimLeft(l[1:], " "), key+"=")
-		if strings.HasPrefix(l, key+"=") || commented {
-			lines[i], done = set, true
-			break
+		switch {
+		case strings.HasPrefix(l, key+"="):
+			if done {
+				continue
+			}
+			l, done = set, true
+		case commented && !active && !done:
+			l, done = set, true
 		}
+		out = append(out, l)
 	}
 	if !done {
-		lines = append(lines, set)
+		out = append(out, set)
 	}
-	return []byte(strings.Join(lines, "\n") + "\n")
+	return []byte(strings.Join(out, "\n") + "\n")
 }
 
 // --- go:mcp_wire: the gateway in each installed agent ------------------------

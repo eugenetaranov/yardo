@@ -16,13 +16,13 @@ DOCKER_ARGS="--user 0:0"
 REQUIRED="KUBECONFIG"
 skeleton() {
   cat <<'SKEL'
-# Kubernetes — a kubeconfig of yours under ~/.kube, ideally a read-only
-# service account's or role's
-# (https://kubernetes.io/docs/reference/access-authn-authz/rbac/), e.g.
-# KUBECONFIG=~/.kube/config. ~/.kube and ~/.aws are mounted read-only, so
-# EKS's aws eks get-token works with your AWS CLI profiles and SSO logins
-# (when one runs out: aws sso login --profile <it>, here). The image has
-# kubectl, helm, and the gcloud and aws auth plugins.
+# Kubernetes — a kubeconfig of yours under ~/.kube (~/.kube/config, say),
+# ideally a read-only service account's or role's
+# (https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
+# ~/.kube and ~/.aws are mounted read-only, so EKS's aws eks get-token
+# works with your AWS CLI profiles and SSO logins (when one runs out: aws
+# sso login --profile <it>, here). The image has kubectl, helm, and the
+# gcloud and aws auth plugins.
 KUBECONFIG=
 
 # Read-only tools only; set to false to let agents apply, scale and delete

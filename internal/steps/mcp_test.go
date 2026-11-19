@@ -34,6 +34,9 @@ func TestEnvSetMatchesBash(t *testing.T) {
 		{"# GITHUB_TOKEN=\n", "GITHUB_TOKEN", "v w"},
 		{"A=1\nA=2\n", "A", "3"},
 		{"B=1", "A", "x"},
+		{"# KUBECONFIG=~/.kube/config. More words\nKUBECONFIG=\n", "KUBECONFIG", "~/.kube/x"},
+		{"KUBECONFIG=~/.kube/a\nKUBECONFIG=\nZ=1\n", "KUBECONFIG", "~/.kube/b"},
+		{"#A=1\n#A=2\n", "A", "3"},
 	} {
 		f := filepath.Join(t.TempDir(), "env")
 		if err := os.WriteFile(f, []byte(tc.in), 0o600); err != nil {
@@ -752,6 +755,21 @@ func TestMCPServersRenamedSpec(t *testing.T) {
 		apply(t, e, step(t, catalog.Step{Type: "go:mcp_servers"}))
 		if strings.Contains(strings.Join(x.commands(), "\n"), "rename") {
 			t.Errorf("%s: renamed again: %v", old, x.commands())
+		}
+	}
+}
+
+// A KEY= line wins over a comment that reads like one (a skeleton's
+// prose); duplicate KEY= lines go, the last would win.
+func TestEnvSet(t *testing.T) {
+	for _, tc := range []struct{ in, key, val, want string }{
+		{"# KUBECONFIG=~/.kube/config. More words\nKUBECONFIG=\n", "KUBECONFIG", "~/.kube/x", "# KUBECONFIG=~/.kube/config. More words\nKUBECONFIG=~/.kube/x\n"},
+		{"KUBECONFIG=~/.kube/a\nKUBECONFIG=\nZ=1\n", "KUBECONFIG", "~/.kube/b", "KUBECONFIG=~/.kube/b\nZ=1\n"},
+		{"#A=1\n#A=2\n", "A", "3", "A=3\n#A=2\n"},
+		{"B=1\n", "A", "x", "B=1\nA=x\n"},
+	} {
+		if got := string(EnvSet([]byte(tc.in), tc.key, tc.val)); got != tc.want {
+			t.Errorf("EnvSet(%q, %s): %q, want %q", tc.in, tc.key, got, tc.want)
 		}
 	}
 }
