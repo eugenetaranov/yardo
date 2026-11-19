@@ -211,7 +211,15 @@ func TestMCPSyncAWSArgs(t *testing.T) {
 	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
 	jq, _ := exec.LookPath("jq")
 	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	// A new server's env, as the skeleton makes it (its region filled in):
+	// it calls AWS APIs, not read-only.
+	skel, err := exec.Command("sh", "-c", `. "$1"; skeleton`, "_", filepath.Join(cat, "aws.spec")).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh := strings.Replace(string(skel), "\nAWS_REGION=\n", "\nAWS_REGION=eu-west-1\n", 1)
 	for _, c := range []struct{ env, want string }{
+		{fresh, `"https://aws-mcp.eu-west-1.api.aws/mcp","--region","eu-west-1","--metadata","AWS_REGION=eu-west-1"]`},
 		{"AWS_REGION=eu-north-1\nREAD_OPERATIONS_ONLY=true\n", `"https://aws-mcp.us-east-1.api.aws/mcp","--region","us-east-1","--metadata","AWS_REGION=eu-north-1","--read-only"]`},
 		{"AWS_REGION=eu-west-1\nREAD_OPERATIONS_ONLY=false\n", `"https://aws-mcp.eu-west-1.api.aws/mcp","--region","eu-west-1","--metadata","AWS_REGION=eu-west-1"]`},
 		{"AWS_REGION=eu-north-1\nAWS_MCP_ENDPOINT_REGION=eu-central-1\n", `"https://aws-mcp.eu-central-1.api.aws/mcp","--region","eu-central-1","--metadata","AWS_REGION=eu-north-1"]`},
