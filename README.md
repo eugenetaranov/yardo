@@ -393,7 +393,12 @@ installed by hand.
    OpenAI, Gemini), and MCP servers on the MCPJungle gateway (GitHub,
    Jira, Confluence, Bitbucket, Linear, Slack, Figma; Postgres, MySQL,
    Supabase, OpenSearch; AWS (AWS's managed AWS MCP Server, through its
-   SigV4 proxy; it replaces the retired AWS API server, `aws-api`, which a
+   SigV4 proxy, signing with a profile of the AWS CLI's: adding or editing
+   it lists your `~/.aws` profiles, checks the one you pick (an SSO login
+   run out is renewed there and then, `aws sso login --use-device-code`)
+   and warns of an admin role; the server reads `~/.aws` read-only, as
+   you, so a later `aws sso login` reaches it without a sync; it replaces
+   the retired AWS API server, `aws-api`, which a
    machine set up before shows as retired, to delete), Azure, Kubernetes,
    Docker, Grafana, Jenkins;
    Playwright, context7, …; read-only where the server allows it, and

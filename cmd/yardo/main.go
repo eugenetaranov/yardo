@@ -564,7 +564,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							_ = o.mcpSyncNow(ctx, a, io.Discard)
 							s, _ := o.mcpStatus(ctx, a)
 							v, ok := s[out.sync]
-							reopen, toast, fromBoard, d = "mcp", mcpSays(out.sync, v, ok), wasFromBoard, nil
+							reopen, toast, fromBoard, d = "mcp", mcpSays(out.sync, mcpSpecOf(a.MCPServers, out.sync), v, ok), wasFromBoard, nil
 							continue
 						}
 						if out.apply {
@@ -1376,7 +1376,21 @@ func asRoot(args []string) error {
 // settings, the optional ones commented out) in the editor, then applies
 // the MCP servers again, which registers those filled in.
 func (o *options) fillMCP(ctx context.Context, r *run.Runner, a *answers.Answers, items []*catalog.Item, names []string, stdout io.Writer) error {
+	k := &asker{a: a, out: stdout}
 	for _, n := range names {
+		if mcpSpecOf(a.MCPServers, n) == "aws" {
+			profile, region, ok, err := k.askAWS(ctx, n)
+			if err != nil {
+				return err
+			}
+			if ok {
+				if err := k.setEnv(ctx, n, [][2]string{{"AWS_PROFILE", profile}, {"AWS_REGION", region}}); err != nil {
+					return err
+				}
+				fmt.Fprintf(stdout, "%s signs with the AWS profile %s, in %s. (Later: sudo yardo mcp edit %s)\n", n, profile, region, n)
+				continue
+			}
+		}
 		fmt.Fprintf(stdout, "\n%s: its settings open in the editor. Fill in the values, uncomment the options you want, save and quit. (Later: sudo yardo mcp edit %s)\n", n, n)
 		if err := editMCP(ctx, a.User, n); err != nil {
 			return err
@@ -1389,7 +1403,7 @@ func (o *options) fillMCP(ctx context.Context, r *run.Runner, a *answers.Answers
 	s, _ := o.mcpStatus(ctx, a)
 	for _, n := range names {
 		v, ok := s[n]
-		fmt.Fprintln(stdout, mcpSays(n, v, ok))
+		fmt.Fprintln(stdout, mcpSays(n, mcpSpecOf(a.MCPServers, n), v, ok))
 	}
 	return nil
 }

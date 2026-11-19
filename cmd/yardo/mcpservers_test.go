@@ -156,7 +156,7 @@ func TestMCPStatus(t *testing.T) {
 	}
 	for name, want := range map[string]string{"jira": "✓ jira: registered", "aws": "✗ aws didn't register: Error: denied",
 		"gh": "not registered until TOKEN URL is filled in (sudo yardo mcp edit gh)"} {
-		if got := mcpSays(name, st[name], true); !strings.Contains(got, want) {
+		if got := mcpSays(name, name, st[name], true); !strings.Contains(got, want) {
 			t.Errorf("%s: %q", name, got)
 		}
 	}

@@ -7,9 +7,9 @@ DESCRIPTION="AWS: call AWS APIs, search the docs and follow AWS's guides (AWS's 
 KIND=docker
 IMAGE=public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:1.7.0
 REQUIRED="AWS_REGION"
-# Files in ~/.mcp/aws/ are mounted at /mcp: a config/credentials pair
-# dropped there is picked up via AWS_PROFILE.
-DOCKER_ARGS="-e AWS_CONFIG_FILE=/mcp/config -e AWS_SHARED_CREDENTIALS_FILE=/mcp/credentials"
+# Your ~/.aws, read-only: the AWS CLI's profiles and its SSO logins (aws
+# sso login here renews them for the server too, as it runs).
+MOUNT_AWS=1
 # The server's endpoint: in AWS_REGION when it has one there, else
 # AWS_MCP_ENDPOINT_REGION's or us-east-1 (requests are signed for it);
 # AWS_REGION is the default region of what the agent does.
@@ -28,22 +28,31 @@ image_args() {
   echo --metadata
   echo "AWS_REGION=$region"
   [ "$(envget READ_OPERATIONS_ONLY "$ENV_FILE")" = false ] || echo --read-only
+  profile=$(envget AWS_PROFILE "$ENV_FILE")
+  if [ -n "$profile" ]; then
+    echo --profile
+    echo "$profile"
+  fi
 }
 skeleton() {
   cat <<'SKEL'
 # AWS — AWS's managed MCP server. What the agent calls is checked against
-# these credentials' own permissions: use a least-privilege (ideally
-# read-only, e.g. the ReadOnlyAccess policy) IAM user or role:
-# https://console.aws.amazon.com/iam/home#/users
+# the credentials' own permissions, nothing else: use a read-only role or
+# permission set (ReadOnlyAccess, ViewOnlyAccess), not an admin one.
 # The region your agent works in by default:
 AWS_REGION=
 
-# Either static keys here ...
+# A profile of the AWS CLI's (~/.aws/config: an SSO login, a role, keys);
+# commented out: its default. When an SSO login runs out: aws sso login
+# --profile <it>, here; the server takes the new one as it runs. To make
+# one: aws configure sso
+# https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html
+#AWS_PROFILE=
+
+# Or keys of their own, here (a dedicated IAM user's, read-only), which
+# win over the profile:
 #AWS_ACCESS_KEY_ID=
 #AWS_SECRET_ACCESS_KEY=
-# ... or put `config` and `credentials` files next to this env file and pick
-# a profile:
-#AWS_PROFILE=
 
 # Only read operations: write tools are hidden (false shows them).
 READ_OPERATIONS_ONLY=true

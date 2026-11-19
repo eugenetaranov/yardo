@@ -26,8 +26,8 @@
 #
 # Each server gets ~/.mcp/<name>/ (mode 700) holding its credentials in `env`
 # (KEY=value lines, no quotes). Docker servers read that file at start; it is
-# also mounted read-only at /mcp for servers that need extra files (e.g. AWS
-# config). A server is registered once its required keys are filled in, and
+# also mounted read-only at /mcp for servers that need extra files, and a
+# spec's MOUNT_AWS=1 mounts your ~/.aws (AWS). A server is registered once its required keys are filled in, and
 # re-registered when its generated config changes. Servers dropped from the
 # list are deregistered.
 set -eu
@@ -205,8 +205,20 @@ render() {
     docker)
       # DOCKER_ARGS go before the image, IMAGE_ARGS (the server's command
       # or flags) after it.
+      set -- run -i --rm --env-file "$dir/env" -v "$dir:/mcp:ro"
+      # MOUNT_AWS: the owner's ~/.aws (profiles, SSO logins), read-only,
+      # as them (its files are theirs, 0600). The home is the one ~/.mcp
+      # is in, never a path from the env file: that's the user's to edit,
+      # and docker would mount anything. No ~/.aws, no mount (docker would
+      # make one, root's).
+      if [ "${MOUNT_AWS:-}" = 1 ]; then
+        home=$(dirname "$MCP_DIR")
+        if [ -d "$home/.aws" ]; then
+          set -- "$@" -v "$home/.aws:/aws/.aws:ro" -e HOME=/aws --user "$(ls -nd "$home" | awk '{print $3 ":" $4}')"
+        fi
+      fi
       # shellcheck disable=SC2086 # both are intentionally word-split
-      set -- run -i --rm --env-file "$dir/env" -v "$dir:/mcp:ro" ${DOCKER_ARGS:-} "$IMAGE" ${IMAGE_ARGS:-}
+      set -- "$@" ${DOCKER_ARGS:-} "$IMAGE" ${IMAGE_ARGS:-}
       # A spec's image_args: more of them, made from its env file (one a
       # line; ENV_FILE is the file), e.g. an endpoint in the server's region.
       if command -v image_args >/dev/null 2>&1; then

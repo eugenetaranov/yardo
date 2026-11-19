@@ -181,7 +181,7 @@ func mcpRows(entries []string, found []foundServer, inputs []string, specs map[s
 			case "waiting":
 				r.State, r.Keys = "secret", strings.Fields(s.detail)
 			case "failed":
-				r.State, r.Detail = "failed", s.detail
+				r.State, r.Detail = "failed", awsHint(spec, s.detail)
 			case "changed", "unregistered":
 				r.State = "pending"
 			case "noenv":
@@ -252,6 +252,20 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 	case "edit":
 		yardo := slices.Contains(k.a.MCPServers, act.Entry)
 		adopt()
+		if spec == "aws" && yardo {
+			// A profile of the AWS CLI's, picked, instead of the file.
+			profile, region, ok, err := k.askAWS(ctx, name)
+			if err != nil {
+				k.a.MCPServers = before
+				return mcpOutcome{}, err
+			}
+			if ok {
+				if err := k.setEnv(ctx, name, [][2]string{{"AWS_PROFILE", profile}, {"AWS_REGION", region}}); err != nil {
+					return mcpOutcome{}, err
+				}
+				return mcpOutcome{sync: name}, nil
+			}
+		}
 		edited, err := k.editNow(ctx, name)
 		if err != nil {
 			k.a.MCPServers = before
@@ -290,6 +304,14 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 		return mcpOutcome{toast: name + " deleted."}, nil
 	}
 	return mcpOutcome{}, fmt.Errorf("nothing to do for %q", act.Do)
+}
+
+// setEnv sets keys in server name's env.
+func (k *asker) setEnv(ctx context.Context, name string, kv [][2]string) error {
+	if k.mcpEnv != nil {
+		return k.mcpEnv(name, kv)
+	}
+	return setMCPEnv(ctx, k.a.User, name, kv)
 }
 
 // editNow opens name's env in the editor, if there's one yet (else the
@@ -434,7 +456,7 @@ func (o *options) mcpSyncNow(ctx context.Context, a *answers.Answers, w io.Write
 
 // mcpSays is what a server's state reads as, in a line: what happened
 // after it was synced.
-func mcpSays(name string, s syncState, ok bool) string {
+func mcpSays(name, spec string, s syncState, ok bool) string {
 	switch {
 	case !ok:
 		return name + ": yardo can't tell how it is (sudo yardo mcp status)."
@@ -443,7 +465,7 @@ func mcpSays(name string, s syncState, ok bool) string {
 	case s.state == "waiting":
 		return "○ " + name + ": not registered until " + s.detail + " is filled in (sudo yardo mcp edit " + name + ")."
 	case s.state == "failed":
-		return "✗ " + name + " didn't register: " + s.detail
+		return "✗ " + name + " didn't register: " + awsHint(spec, s.detail)
 	case s.state == "nospec":
 		return "✗ " + name + ": no longer in the catalog."
 	}
@@ -487,7 +509,7 @@ func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Stor
 		src := o.mcpSources(ctx, a, names)
 		for _, n := range names {
 			v, ok := s[n]
-			fmt.Fprintln(stdout, mcpSays(n, v, ok))
+			fmt.Fprintln(stdout, mcpSays(n, mcpSpecOf(a.MCPServers, n), v, ok))
 			if f, ok := src[n]; ok {
 				fmt.Fprintln(stdout, "    from "+f.says())
 			}
@@ -498,7 +520,19 @@ func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Stor
 		if len(args) != 2 || !slices.Contains(mcpNames(a.MCPServers), args[1]) {
 			return fmt.Errorf("usage: sudo yardo mcp edit <server>; the servers: %s", strings.Join(mcpNames(a.MCPServers), ", "))
 		}
-		if err := editMCP(ctx, a.User, args[1]); err != nil {
+		k := &asker{a: a, out: stdout}
+		profile, region, ok := "", "", false
+		if mcpSpecOf(a.MCPServers, args[1]) == "aws" {
+			var err error
+			if profile, region, ok, err = k.askAWS(ctx, args[1]); err != nil {
+				return err
+			}
+		}
+		if ok {
+			if err := k.setEnv(ctx, args[1], [][2]string{{"AWS_PROFILE", profile}, {"AWS_REGION", region}}); err != nil {
+				return err
+			}
+		} else if err := editMCP(ctx, a.User, args[1]); err != nil {
 			return err
 		}
 		fmt.Fprintf(stdout, "Registering %s…\n", args[1])

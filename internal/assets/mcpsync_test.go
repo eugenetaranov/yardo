@@ -1,10 +1,12 @@
 package assets
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -213,6 +215,7 @@ func TestMCPSyncAWSArgs(t *testing.T) {
 		{"AWS_REGION=eu-north-1\nREAD_OPERATIONS_ONLY=true\n", `"https://aws-mcp.us-east-1.api.aws/mcp","--region","us-east-1","--metadata","AWS_REGION=eu-north-1","--read-only"]`},
 		{"AWS_REGION=eu-west-1\nREAD_OPERATIONS_ONLY=false\n", `"https://aws-mcp.eu-west-1.api.aws/mcp","--region","eu-west-1","--metadata","AWS_REGION=eu-west-1"]`},
 		{"AWS_REGION=eu-north-1\nAWS_MCP_ENDPOINT_REGION=eu-central-1\n", `"https://aws-mcp.eu-central-1.api.aws/mcp","--region","eu-central-1","--metadata","AWS_REGION=eu-north-1","--read-only"]`},
+		{"AWS_REGION=us-east-1\n#AWS_PROFILE=x\nAWS_PROFILE=prod-ro\n", `"https://aws-mcp.us-east-1.api.aws/mcp","--region","us-east-1","--metadata","AWS_REGION=us-east-1","--read-only","--profile","prod-ro"]`},
 	} {
 		putFile(t, filepath.Join(mcp, "aws", "env"), []byte(c.env), 0o600)
 		_ = os.Remove(filepath.Join(mcp, "aws", ".registered.json"))
@@ -223,6 +226,53 @@ func TestMCPSyncAWSArgs(t *testing.T) {
 		if err != nil || !strings.HasSuffix(strings.TrimSpace(string(out)), `"public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:1.7.0",`+c.want) {
 			t.Errorf("%q: args %s", c.env, out)
 		}
+	}
+}
+
+// aws.spec's MOUNT_AWS: the home's ~/.aws, read-only, as the home's owner,
+// when there is one; never a path from the env file.
+func TestMCPSyncAWSMount(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	mkdirAll(t, filepath.Join(mcp, "aws"), 0o700)
+	mkdirAll(t, cat, 0o755)
+	spec, err := os.ReadFile("conf/mcp-catalog/aws.spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, filepath.Join(cat, "aws.spec"), spec, 0o644)
+	putFile(t, filepath.Join(mcp, "aws", "env"), []byte("AWS_REGION=us-east-1\nHOME=/etc\n"), 0o600)
+	reg := filepath.Join(root, "registered")
+	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
+	jq, _ := exec.LookPath("jq")
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	args := func() string {
+		t.Helper()
+		_ = os.Remove(filepath.Join(mcp, "aws", ".registered.json"))
+		if out, err := mcpSync(t, env, "aws"); err != nil {
+			t.Fatalf("%v:\n%s", err, out)
+		}
+		out, err := exec.Command(jq, "-c", ".args", reg).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}
+	if a := args(); strings.Contains(a, "/aws/.aws") || strings.Contains(a, "--user") {
+		t.Errorf("no ~/.aws, yet mounted: %s", a)
+	}
+	mkdirAll(t, filepath.Join(root, ".aws"), 0o700)
+	fi, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := fmt.Sprintf("%d:%d", fi.Sys().(*syscall.Stat_t).Uid, fi.Sys().(*syscall.Stat_t).Gid)
+	want := `"-v","` + mcp + `/aws:/mcp:ro","-v","` + root + `/.aws:/aws/.aws:ro","-e","HOME=/aws","--user","` + ids + `","public.ecr.aws/`
+	if a := args(); !strings.Contains(a, want) || strings.Contains(a, "/etc") {
+		t.Errorf("args %s\nwant %s", a, want)
 	}
 }
 

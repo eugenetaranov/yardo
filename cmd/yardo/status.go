@@ -494,7 +494,7 @@ func (o *options) fillIn(ctx context.Context, a *answers.Answers, inputs []strin
 		_ = o.mcpSyncNow(ctx, a, io.Discard)
 		s, _ := o.mcpStatus(ctx, a)
 		v, ok := s[name]
-		return nil, mcpSays(name, v, ok), nil
+		return nil, mcpSays(name, mcpSpecOf(a.MCPServers, name), v, ok), nil
 	}
 	args := append([]string{"-u", a.User, "--", "sh", "-c", steps.UserShell, "_"}, editorFor(ctx, a.User, home)...)
 	c := exec.CommandContext(ctx, "runuser", append(args, strings.Replace(path, "~", home, 1))...)
