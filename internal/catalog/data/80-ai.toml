@@ -221,21 +221,21 @@ name = "ANTHROPIC_API_KEY"
 prompt = "Anthropic API key (empty: log in with 'claude' instead)"
 how = "https://console.anthropic.com/settings/keys"
 when = "claude"
-logged_in = "~/.claude/.credentials.json"
+optional = true
 
 [[item.step.key]]
 name = "OPENAI_API_KEY"
 prompt = "OpenAI API key (Codex)"
 how = "https://platform.openai.com/api-keys"
 when = "codex"
-logged_in = "~/.codex/auth.json"
+optional = true
 
 [[item.step.key]]
 name = "GEMINI_API_KEY"
 prompt = "Gemini API key"
 how = "https://aistudio.google.com/apikey"
 when = "gemini"
-logged_in = "~/.gemini/oauth_creds.json"
+optional = true
 
 # Exported by interactive shells only.
 [[item.step]]

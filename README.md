@@ -64,7 +64,7 @@ account is created). Once something is set up, it opens on the home:
   Services    ssh (22/tcp) · docker (8080/tcp VPN only) · tailscale (443/tcp, 41641/udp) · fail2ban + 2 more
 
  › Start Docker Engine + Compose  stopped: docker isn't running
-   Fill in OPENAI_API_KEY         Agent API keys needs it · opens its file
+   Fill in JIRA_API_TOKEN         MCP server jira-work needs it · opens its file
    Install 3 updates              node 22.12 → 24.11 · gh 2.80 → 2.83 · uv 0.5.9 → 0.9.1
   ──────────────────────────────────────────────
    Choices                        prompt, languages, Docker, Kubernetes, Terraform, clouds, agents, git hosts, Jira, VPN
@@ -515,7 +515,8 @@ survives `sudo yardo --yes`.
 
 yardo never stores or ships a credential. An item that needs one
 (agent API keys, MCP server keys, a GitHub token) asks for it once and writes it straight into that tool's own
-config file, readable only by you (0600). Leave a value empty, or run with
+config file, readable only by you (0600). The agent keys are optional:
+Claude Code, Codex and Gemini can each log in by themselves instead. Leave a value empty, or run with
 `--yes`, and the file is still written, with each key left empty and a
 comment saying where to get it. Either way, `~/yardo.txt` ends with
 **Secrets to fill in**: one line per value still missing, with its file,

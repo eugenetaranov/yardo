@@ -1,6 +1,7 @@
 package steps
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -84,5 +85,18 @@ GEMINI_API_KEY=
 	}
 	if got := answers.ReadCreated(e.State); len(got) != 1 || got[0].Value != "/home/ada/.config/yardo/agent.env" {
 		t.Errorf("created = %+v", got)
+	}
+}
+
+// The agent keys are optional: each tool logs in by itself instead, so an
+// empty one never needs you.
+func TestCredOptional(t *testing.T) {
+	e := credEnv(t, &fakeExec{})
+	st := credOf(t, "agentkeys")
+	apply(t, e, st)
+	if m := st.(interface {
+		Missing(context.Context, *Env) []string
+	}).Missing(context.Background(), e); len(m) != 0 {
+		t.Errorf("missing: %v", m)
 	}
 }

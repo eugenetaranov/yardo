@@ -106,9 +106,9 @@ type CredKey struct {
 	How    string `toml:"how"` // where to get it
 	// When: asked only if this item is picked or this tool installed.
 	When string `toml:"when"`
-	// LoggedIn is a file whose presence means the tool has its own login,
-	// so an empty key isn't missing.
-	LoggedIn string `toml:"logged_in"`
+	// Optional: the tool can log in by itself instead ('claude' and /login,
+	// 'codex login'), so an empty key isn't missing.
+	Optional bool `toml:"optional"`
 }
 
 var keyNameRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
