@@ -23,8 +23,9 @@ func init() { RegisterGo("agentsafe", func(catalog.Step) Step { return agentSafe
 //     of the MCP tokens, SSH keys and agent API keys; no attribution in
 //     commits and pull requests;
 //   - Codex: an approval policy and a workspace sandbox;
-//   - both: "Commits" and "Pushing" sections in their notes (CLAUDE.md,
-//     AGENTS.md).
+//   - both: "Commits", "Pushing" and "MCP servers" sections in their
+//     notes (CLAUDE.md, AGENTS.md): MCP tools first, the CLI only as a
+//     fallback, said.
 type agentSafeStep struct{}
 
 // ClaudeDeny are the rules added to permissions.deny.
@@ -53,6 +54,23 @@ const (
 ## Pushing
 
 - Never force-push or rewrite history that was pushed.
+
+## MCP servers
+
+- When yardo's MCP gateway is set up, its servers' tools are named
+  <server>__<tool> (aws-prod__aws___run_script, github__..., jira__...).
+- For a task one of them covers (AWS, GitHub, Jira, Confluence, a
+  database...), use its tools first, not the CLI.
+- Fall back to the CLI (aws, gh, jiractl, ...) only when no tool does it
+  or the call fails, and say so in the answer: which server, why (its
+  error, or the tool it lacks), and that the result came from the CLI.
+- AWS: the tool that calls AWS APIs is <server>__aws___run_script. Without
+  it the server is read-only (AWS's docs and guides only): say so; the
+  user turns that off with sudo yardo mcp edit <server>. A missing or
+  expired login: the user runs aws sso login --profile <profile>, then
+  you try again.
+- Don't try to change the gateway or read ~/.mcp: they're the gateway
+  user's, and its token isn't yours.
 ` + pushEnd + "\n"
 )
 
@@ -60,7 +78,7 @@ func (agentSafeStep) Plan(*Env) []Action {
 	return []Action{
 		{"file", "~/.claude/settings.json (permissions.deny: force-push, sudo, ~/.mcp, ~/.ssh, agent.env; no commit or PR attribution)"},
 		{"file", "~/.codex/config.toml (approval_policy, sandbox_mode)"},
-		{"file", "~/.claude/CLAUDE.md, ~/.codex/AGENTS.md (Commits and Pushing sections)"},
+		{"file", "~/.claude/CLAUDE.md, ~/.codex/AGENTS.md (Commits, Pushing and MCP servers sections)"},
 	}
 }
 

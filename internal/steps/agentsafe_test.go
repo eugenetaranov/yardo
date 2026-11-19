@@ -38,6 +38,12 @@ func TestAgentSafe(t *testing.T) {
 	if !strings.HasPrefix(md, "# This machine\n\n"+pushBegin) || !strings.HasSuffix(md, pushEnd+"\n") {
 		t.Errorf("CLAUDE.md = %q", md)
 	}
+	// MCP servers first, the CLI a fallback that's said.
+	for _, want := range []string{"## MCP servers", "use its tools first, not the CLI", "say so in the answer", "aws___run_script"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("CLAUDE.md lacks %q", want)
+		}
+	}
 	if got := read(t, e.Path("~/.codex/AGENTS.md")); got != pushing {
 		t.Errorf("AGENTS.md = %q", got)
 	}
