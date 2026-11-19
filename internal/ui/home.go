@@ -494,7 +494,7 @@ func (m *Menu) connectLines(w int) []string {
 		out = append(out, ansi.Truncate(l, w, "…"))
 	}
 	if len(out) > 0 {
-		out = append(out, muted.Render("Go to › Connect: every step, ready to paste"))
+		out = append(out, muted.Render("Go to › Remote connection: every step, ready to paste"))
 	}
 	return out
 }

@@ -70,7 +70,7 @@ account is created). Once something is set up, it opens on the home:
    Choices                        prompt, languages, Docker, Kubernetes, Terraform, clouds, agents, git hosts, Jira, VPN
    Tools                          add or uninstall: languages, AI, cloud… or just start typing
    MCP servers                    github, jira-work
-   Settings                       network access, git, prompt, look, laptop, updates
+   Settings                       network access, git, prompt, look, updates
 ```
 
 How the machine is, in words; a dashboard (everything installed, on as
@@ -91,13 +91,12 @@ for the packages). Below them, rows that never move: **Choices** (the
 first run's questions again: what you turn off is uninstalled, asking
 first; what you turn on, installed), **Tools**
 (the full screen, below), **MCP servers** (the gateway's list: add one,
-or another instance of one; **d** deletes one, asking first), **Connect**
+or another instance of one; **d** deletes one, asking first), **Remote connection**
 (every step to reach this machine from a laptop) and **Settings**: **Network access** (the
 MCP gateway and containers' published ports, each a row
 of choices with a sentence saying what it means), the **Look** (theme and accent colour),
 your **Git name and email**, **Shell prompt** and **Dotfiles repo**
-(asked again, then applied), **Connect from a laptop** and **Check for
-updates**. Typing on the home searches the tools.
+(asked again, then applied) and **Check for updates**. Typing on the home searches the tools.
 
 yardo looks for newer versions (apt and mise) in the background while
 the home is up, once a day; a run waits for it, as both use apt. After a
@@ -632,7 +631,7 @@ once the VM is on the tailnet.
 **Reaching this machine from a laptop.** The home's **How to connect**
 panel has the short version: `ssh vm`, `docker context use vm`, and the
 gateway's URL with where its token is (`sudo cat ~/.mcp/clients/client.token`,
-never the token). `sudo yardo connect` (or Go to → Connect, on the
+never the token). `sudo yardo connect` (or Go to → Remote connection, on the
 screen) prints it all, with this machine's addresses (VPNs
 first): Docker over SSH, which opens no port and needs no certificate
 (`docker context create vm --docker "host=ssh://you@vm"`; bind mounts are

@@ -67,7 +67,7 @@ func TestMenuHome(t *testing.T) {
 			t.Errorf("home lacks %q:\n%s", want, v)
 		}
 	}
-	for _, gone := range []string{"Network access", "Connect from a laptop", "Check for updates", "What would you like to do?"} {
+	for _, gone := range []string{"Network access", "Check for updates", "What would you like to do?"} {
 		if strings.Contains(v, gone) {
 			t.Errorf("home has %q:\n%s", gone, v)
 		}
@@ -137,8 +137,8 @@ func TestMenuTyping(t *testing.T) {
 	}
 }
 
-// Settings lists network access, the look, the answers to change, how to
-// connect from a laptop and the update check; esc goes home onto it.
+// Settings lists network access, the look, the answers to change and the
+// update check; esc goes home onto it.
 func TestMenuSettings(t *testing.T) {
 	m := testMenu(false)
 	m.items = append(m.items, &BoardItem{ID: "gitid", Label: "Git: name, email and defaults", Tab: "git", Picked: true, State: "ok", Changes: [][2]string{{"git name and email", "git"}}})
@@ -146,7 +146,7 @@ func TestMenuSettings(t *testing.T) {
 	mk(m, "enter")
 	v := m.View()
 	for _, want := range []string{"Home  ›  Settings", "Network access", "MCP gateway: this machine only", "Accent colour", "Blue",
-		"Git name and email", "asks, then applies it again", "Connect from a laptop", "Check for updates"} {
+		"Git name and email", "asks, then applies it again", "Check for updates"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("settings lacks %q:\n%s", want, v)
 		}
@@ -225,23 +225,8 @@ func TestMenuAccess(t *testing.T) {
 	}
 }
 
-func TestMenuConnect(t *testing.T) {
-	m := testMenu(false)
-	onRow(m, "settings")
-	mk(m, "enter")
-	onSetting(m, "connect")
-	mk(m, "enter")
-	if v := m.View(); !strings.Contains(v, "Home  ›  Settings  ›  Connect from a laptop") || !strings.Contains(v, "docker context create vm") {
-		t.Errorf("connect:\n%s", v)
-	}
-	mk(m, "esc")
-	if m.screen != "settings" || m.settingsRows()[m.sel].id != "connect" {
-		t.Errorf("back on %s, row %d", m.screen, m.sel)
-	}
-}
-
 // The home's How to connect panel: what to type, and where a secret is
-// kept; Go to › Connect opens every step, and esc comes back home.
+// kept; Go to › Remote connection opens every step, and esc comes back home.
 func TestHomeConnect(t *testing.T) {
 	m := testMenu(true)
 	m.info.Connect = []ConnectRow{
@@ -250,14 +235,14 @@ func TestHomeConnect(t *testing.T) {
 	}
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"How to connect", "ssh vm", "http://vm.ts.net:8081/mcp", "sudo cat ~/.mcp/clients/client.token", "Go to › Connect"} {
+	for _, want := range []string{"How to connect", "ssh vm", "http://vm.ts.net:8081/mcp", "sudo cat ~/.mcp/clients/client.token", "Go to › Remote connection"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("home lacks %q:\n%s", want, v)
 		}
 	}
 	onRow(m, "connect")
 	mk(m, "enter")
-	if v := m.View(); !strings.Contains(v, "Connect from a laptop") || strings.Contains(v, "Settings  ›  Connect") {
+	if v := m.View(); !strings.Contains(v, "Home  ›  Remote connection") {
 		t.Errorf("connect from home:\n%s", v)
 	}
 	mk(m, "esc")
@@ -605,7 +590,7 @@ func TestMenuEscQ(t *testing.T) {
 		if m.screen != "home" || m.rows()[m.sel].id != "settings" {
 			t.Errorf("%s on settings: on %s, row %d", k, m.screen, m.sel)
 		}
-		for _, id := range []string{"access", "look", "connect"} {
+		for _, id := range []string{"access", "look"} {
 			m := testMenu(false)
 			onRow(m, "settings")
 			mk(m, "enter")
