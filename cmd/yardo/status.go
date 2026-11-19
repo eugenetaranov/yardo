@@ -391,13 +391,14 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	settings = append(settings, look)
 	var buf strings.Builder
 	addrs := addresses()
-	printConnect(&buf, a, addrs, withNames(ctx, steps.OSExec{}, addrs), os.Getenv("LC_TERMINAL"))
+	tokens := laptopTokens(a.User)
+	printConnect(&buf, a, addrs, withNames(ctx, steps.OSExec{}, addrs), os.Getenv("LC_TERMINAL"), tokens)
 	host, _ := os.Hostname()
 	sub := osName()
 	if len(addrs) > 0 {
 		sub += "  ·  " + addrs[0].ip
 	}
-	info := ui.HomeInfo{Host: host, User: a.User}
+	info := ui.HomeInfo{Host: host, User: a.User, Connect: connectRows(a, addrs, tokens, picked("mcpjungle"))}
 	if !first {
 		info.Dash = dashboard(ctx)
 	}

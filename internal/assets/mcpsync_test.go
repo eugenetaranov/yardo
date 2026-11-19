@@ -299,6 +299,45 @@ esac; exit 0`,
 	}
 }
 
+// client makes a laptop's token in a file the gateway reads, and says
+// where it is: never the token itself.
+func TestMCPSyncClient(t *testing.T) {
+	root := t.TempDir()
+	mcp := filepath.Join(root, "mcp")
+	if err := os.MkdirAll(mcp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mcp+"/.mcpjungle.conf", []byte("access_token: x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(root, "conf-seen")
+	bin := fakeBin(t, map[string]string{
+		"mcpjungle": `[ "$3 $4 $5" = "create mcp-client --conf" ] || exit 1; cp "$6" ` + conf,
+	})
+	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	out, err := mcpSync(t, env, "client", "laptop")
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	tokFile := mcp + "/clients/laptop.token"
+	tok, err := os.ReadFile(tokFile)
+	if err != nil || len(strings.TrimSpace(string(tok))) != 64 {
+		t.Fatalf("token %q, %v", tok, err)
+	}
+	if fi, _ := os.Stat(tokFile); fi.Mode().Perm() != 0o600 {
+		t.Errorf("token mode %v", fi.Mode().Perm())
+	}
+	if strings.Contains(out, strings.TrimSpace(string(tok))) || !strings.Contains(out, "sudo cat "+tokFile) {
+		t.Errorf("out:\n%s", out)
+	}
+	if b, _ := os.ReadFile(conf); !strings.Contains(string(b), `"access_token_ref": {"file": "`+tokFile+`"}`) || !strings.Contains(string(b), `"allowed_servers": ["*"]`) {
+		t.Errorf("client conf: %s", b)
+	}
+	if out, err := mcpSync(t, env, "client", "laptop"); err == nil || !strings.Contains(out, "there's a laptop already") {
+		t.Errorf("again: %v: %s", err, out)
+	}
+}
+
 // source says where each server runs from: an image (and, pulled here,
 // its version), or a URL made from its env; it leaves the saved list be.
 func TestMCPSyncSource(t *testing.T) {

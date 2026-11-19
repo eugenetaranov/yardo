@@ -13,7 +13,8 @@
 #                          <name> TAB <image or URL> [TAB <version> TAB <id> TAB <built>]
 #                          (the last three for an image pulled here)
 #   mcp-sync client <name> make a token for another MCP client (a laptop's agent), allowed
-#                          every server; only when the gateway listens beyond this machine
+#                          every server, in ~/.mcp/clients/<name>.token (not printed);
+#                          only when the gateway listens beyond this machine
 #
 # When yardo runs the gateway as a service user (mcp-<you>, which
 # owns ~/.mcp so agents running as you can't read the tokens), this re-runs
@@ -107,7 +108,19 @@ if [ "${1:-}" = client ]; then
     echo "mcp-sync: the gateway listens on this machine only, with no tokens: choose another address in 'sudo yardo' first" >&2
     exit 1
   }
-  mj --registry "$REGISTRY" create mcp-client "$2" --allow "*"
+  # The token goes to a file, never the screen: from there the CLI reads it
+  # (on the command line, ps would show it), and you, with sudo.
+  tok="$MCP_DIR/clients/$2.token"
+  [ ! -e "$tok" ] || { echo "mcp-sync: there's a $2 already; its token: sudo cat $tok" >&2; exit 1; }
+  (umask 077; mkdir -p "$MCP_DIR/clients"; od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$tok"; echo >> "$tok")
+  printf '{"name": "%s", "description": "%s (mcp-sync client)", "allowed_servers": ["*"], "access_token_ref": {"file": "%s"}}\n' \
+    "$2" "$2" "$tok" > "$MCP_DIR/clients/$2.json"
+  if ! mj --registry "$REGISTRY" create mcp-client --conf "$MCP_DIR/clients/$2.json" >/dev/null; then
+    rm -f "$tok" "$MCP_DIR/clients/$2.json"
+    echo "mcp-sync: the gateway didn't make $2" >&2
+    exit 1
+  fi
+  echo "$2's token is in $tok (read it with: sudo cat $tok)."
   echo "Send it as the header 'Authorization: Bearer <token>' to $REGISTRY/mcp (from another machine, use this machine's address)."
   exit 0
 fi

@@ -240,6 +240,37 @@ func TestMenuConnect(t *testing.T) {
 	}
 }
 
+// The home's How to connect panel: what to type, and where a secret is
+// kept; Go to › Connect opens every step, and esc comes back home.
+func TestHomeConnect(t *testing.T) {
+	m := testMenu(true)
+	m.info.Connect = []ConnectRow{
+		{What: "SSH", Use: "ssh vm", Note: "ada@vm.ts.net"},
+		{What: "MCP", Use: "http://vm.ts.net:8081/mcp", Note: "mcpjungle, with a token: sudo cat ~/.mcp/clients/laptop.token"},
+	}
+	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
+	v := ansi.Strip(m.View())
+	for _, want := range []string{"How to connect", "ssh vm", "http://vm.ts.net:8081/mcp", "sudo cat ~/.mcp/clients/laptop.token", "Go to › Connect"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("home lacks %q:\n%s", want, v)
+		}
+	}
+	onRow(m, "connect")
+	mk(m, "enter")
+	if v := m.View(); !strings.Contains(v, "Connect from a laptop") || strings.Contains(v, "Settings  ›  Connect") {
+		t.Errorf("connect from home:\n%s", v)
+	}
+	mk(m, "esc")
+	if m.screen != "home" || m.rows()[m.sel].id != "connect" {
+		t.Errorf("back on %s, row %d", m.screen, m.sel)
+	}
+	// Narrow: a line.
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Connect   ssh vm") {
+		t.Errorf("narrow:\n%s", v)
+	}
+}
+
 func mcpMenu() *Menu {
 	m := testMenu(true)
 	m.items = append(m.items, &BoardItem{ID: "mcpjungle", Label: "MCP servers on MCPJungle", Tab: "agents", Picked: true, State: "ok"})
@@ -841,11 +872,11 @@ func TestMenuAccessApply(t *testing.T) {
 func TestMenuTab(t *testing.T) {
 	m := testMenu(false) // two rows need you
 	var got []string
-	for range 5 {
+	for range 6 {
 		mk(m, "tab")
 		got = append(got, m.rows()[m.sel].id)
 	}
-	if strings.Join(got, " ") != "choices tools settings fix:docker choices" {
+	if strings.Join(got, " ") != "choices tools connect settings fix:docker choices" {
 		t.Errorf("tab: %v", got)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
@@ -854,11 +885,11 @@ func TestMenuTab(t *testing.T) {
 	}
 	m = testMenu(true)
 	got = nil
-	for range 3 {
+	for range 4 {
 		mk(m, "tab")
 		got = append(got, m.rows()[m.sel].id)
 	}
-	if strings.Join(got, " ") != "tools settings choices" {
+	if strings.Join(got, " ") != "tools connect settings choices" {
 		t.Errorf("tab, nothing to do: %v", got)
 	}
 }

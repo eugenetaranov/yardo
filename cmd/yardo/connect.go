@@ -8,11 +8,13 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/steps"
+	"github.com/eugenetaranov/yardo/internal/ui"
 )
 
 // address is one of this machine's IPv4 addresses, and which interface
@@ -119,7 +121,7 @@ func clipboardHint(term string) []string {
 
 // printConnect says how to reach this machine from a laptop; term is the
 // laptop's terminal when it says (see clipboardHint).
-func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TSStatus, term string) {
+func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TSStatus, term string, tokens []string) {
 	host, _ := os.Hostname()
 	ctxName := strings.SplitN(host, ".", 2)[0]
 	fmt.Fprintf(w, "Connecting to %s from your laptop (as %s)\n\n", host, a.User)
@@ -180,32 +182,108 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		fmt.Fprintln(w, l)
 	}
 
-	port := a.MCPPort
-	if port == 0 {
-		port = answers.FirstMCPPort
-	}
-	fmt.Fprintln(w, "\nMCP gateway:")
-	switch a.MCPListen {
-	case "vpn", "tailscale", "0.0.0.0", "public":
-		who := "this machine and the VPNs"
-		url := fmt.Sprintf("http://%s:%d/mcp", addr, port)
-		switch a.MCPListen {
-		case "0.0.0.0":
-			who = "everywhere (plain HTTP)"
-		case "public":
-			who, url = "the internet, over HTTPS", "https://"+a.MCPDomain+"/mcp"
+	port := mcpPort(a)
+	fmt.Fprintln(w, "\nMCP gateway (mcpjungle; the servers' own tokens stay here):")
+	if url, who, ok := gatewayURL(a, addr); ok {
+		fmt.Fprintf(w, "  reachable from %s, with the gateway's token for your laptop.\n", who)
+		if len(tokens) > 0 {
+			fmt.Fprintln(w, "  Read it here (it isn't shown):")
+			for _, t := range tokens {
+				fmt.Fprintf(w, "    sudo cat %s\n", t)
+			}
+		} else {
+			fmt.Fprintln(w, "  Make it once, here (it goes to a file, not the screen):")
+			fmt.Fprintln(w, "    mcp-sync client laptop")
+			fmt.Fprintf(w, "    sudo cat %s\n", laptopToken(a.User, "laptop"))
 		}
-		fmt.Fprintf(w, "  reachable from %s, with a token. Make your laptop's (once, here):\n", who)
-		fmt.Fprintln(w, "    mcp-sync client laptop")
 		fmt.Fprintln(w, "  then on the laptop:")
 		fmt.Fprintf(w, "    claude mcp add --transport http %s %s --header \"Authorization: Bearer <token>\"\n", ctxName, url)
 		fmt.Fprintf(w, "    Codex, in ~/.codex/config.toml:\n      [mcp_servers.%s]\n      url = %q\n      http_headers = { \"Authorization\" = \"Bearer <token>\" }\n", ctxName, url)
-	default:
+	} else {
 		fmt.Fprintln(w, "  this machine only: in 'sudo yardo', Settings → Network access opens it to your VPNs or")
 		fmt.Fprintln(w, "  the internet. Or, with nothing to change, through SSH:")
 		fmt.Fprintf(w, "    ssh -N -L %d:127.0.0.1:%d %s@%s\n", port, port, a.User, addr)
 		fmt.Fprintf(w, "    claude mcp add --transport http %s http://127.0.0.1:%d/mcp\n", ctxName, port)
 	}
+}
+
+func mcpPort(a *answers.Answers) int {
+	if a.MCPPort == 0 {
+		return answers.FirstMCPPort
+	}
+	return a.MCPPort
+}
+
+// gatewayURL is the MCP gateway's URL from a laptop, at addr, and who can
+// reach it; ok is false when it's this machine's only.
+func gatewayURL(a *answers.Answers, addr string) (url, who string, ok bool) {
+	switch a.MCPListen {
+	case "vpn", "tailscale":
+		return fmt.Sprintf("http://%s:%d/mcp", addr, mcpPort(a)), "this machine and the VPNs", true
+	case "0.0.0.0":
+		return fmt.Sprintf("http://%s:%d/mcp", addr, mcpPort(a)), "everywhere (plain HTTP)", true
+	case "public":
+		return "https://" + a.MCPDomain + "/mcp", "the internet, over HTTPS", true
+	}
+	return "", "", false
+}
+
+// laptopToken is where mcp-sync client keeps name's gateway token.
+func laptopToken(user, name string) string {
+	return filepath.Join(homeOf(user), ".mcp", "clients", name+".token")
+}
+
+// laptopTokens are the gateway tokens mcp-sync client made, by file.
+func laptopTokens(user string) []string {
+	ts, _ := filepath.Glob(laptopToken(user, "*"))
+	return ts
+}
+
+// connectRows are the home's How to connect panel: what to type on the
+// laptop, and where it goes or where its secret is kept (never the
+// secret); gateway: the MCP gateway is picked.
+func connectRows(a *answers.Answers, addrs []address, tokens []string, gateway bool) []ui.ConnectRow {
+	host, _ := os.Hostname()
+	ctxName := strings.SplitN(host, ".", 2)[0]
+	addr := host
+	if len(addrs) > 0 {
+		addr = cmp.Or(addrs[0].name, addrs[0].ip)
+	}
+	ssh := a.User + "@" + addr
+	if len(addrs) > 0 && addrs[0].vpn != "" && addrs[0].kind() != vpnClient {
+		ssh += " over " + addrs[0].vpn
+	}
+	ports := map[string]string{"": "-p ports open everywhere", "vpn": "-p ports from the VPNs", "local": "-p ports here only"}[a.DockerPorts]
+	rows := []ui.ConnectRow{
+		{What: "SSH", Use: "ssh " + ctxName, Note: ssh + ", your SSH key (Host " + ctxName + " in ~/.ssh/config)"},
+		{What: "Docker", Use: "docker context use " + ctxName, Note: "host=ssh://" + a.User + "@" + addr + " · " + ports},
+	}
+	if !gateway {
+		return rows
+	}
+	mcp := ui.ConnectRow{What: "MCP"}
+	if url, _, ok := gatewayURL(a, addr); ok {
+		mcp.Use = url
+		switch {
+		case len(tokens) > 0:
+			mcp.Note = "mcpjungle, with a token: sudo cat " + tildeOf(a.User, tokens[0])
+		default:
+			mcp.Note = "mcpjungle, with a token: make one with mcp-sync client laptop"
+		}
+	} else {
+		p := mcpPort(a)
+		mcp.Use = fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s", p, p, ctxName)
+		mcp.Note = fmt.Sprintf("mcpjungle, this machine only: then http://127.0.0.1:%d/mcp", p)
+	}
+	return append(rows, mcp)
+}
+
+// tildeOf is path with user's home as ~.
+func tildeOf(user, path string) string {
+	if rest, ok := strings.CutPrefix(path, homeOf(user)+"/"); ok {
+		return "~/" + rest
+	}
+	return path
 }
 
 // connect is `yardo connect`: how to reach this machine from a laptop, for
@@ -221,7 +299,7 @@ func (o *options) connect(stdout io.Writer, st *answers.Store) error {
 	}
 	a.User = u
 	addrs := addresses()
-	printConnect(stdout, a, addrs, withNames(context.Background(), steps.OSExec{}, addrs), os.Getenv("LC_TERMINAL"))
+	printConnect(stdout, a, addrs, withNames(context.Background(), steps.OSExec{}, addrs), os.Getenv("LC_TERMINAL"), laptopTokens(u))
 	return nil
 }
 

@@ -88,7 +88,9 @@ type Menu struct {
 	items    []*BoardItem
 	settings []*BoardSetting
 	connect  []string
-	checked  bool // updates were checked
+	// connectFrom is the screen Connect was opened from (home, settings).
+	connectFrom string
+	checked     bool // updates were checked
 	// wait waits for a check for updates running in the background (nil
 	// for none).
 	wait func() UpdatesMsg
@@ -300,6 +302,7 @@ func (m *Menu) rows() []menuRow {
 		}
 		out = append(out, menuRow{id: "mcp", label: "MCP servers", note: note})
 	}
+	out = append(out, menuRow{id: "connect", label: "Connect", note: "from a laptop: SSH, Docker, the MCP gateway (mcpjungle), copy and paste"})
 	return append(out, menuRow{id: "settings", label: "Settings", note: "network access, git, prompt, look, laptop, updates"})
 }
 
@@ -488,6 +491,9 @@ func (m *Menu) quit(r MenuResult) tea.Cmd {
 
 // open goes to screen, at its first row.
 func (m *Menu) open(screen string) {
+	if screen == "connect" {
+		m.connectFrom = m.screen
+	}
 	m.screen, m.sel, m.btn, m.sure = screen, 0, 0, false
 	switch screen {
 	case "access", "look":
@@ -504,8 +510,12 @@ func (m *Menu) back() {
 	m.screen, m.sel, m.btn, m.sure = "home", 0, 0, false
 	rows := m.rows
 	switch from {
-	case "access", "look", "connect":
+	case "access", "look":
 		m.screen, rows = "settings", m.settingsRows
+	case "connect":
+		if m.connectFrom == "settings" {
+			m.screen, rows = "settings", m.settingsRows
+		}
 	}
 	for n, r := range rows() {
 		if r.id == from {
@@ -813,7 +823,10 @@ func (m *Menu) View() string {
 		add("  " + apply)
 		keys = strings.Join([]string{k("↑↓", "setting"), k("←→", "choose"), k("a", "apply"), k("esc", "back")}, "   ")
 	case "connect":
-		title = "Settings  ›  Connect from a laptop"
+		title = "Connect from a laptop"
+		if m.connectFrom == "settings" {
+			title = "Settings  ›  " + title
+		}
 		for _, l := range m.connect {
 			if strings.HasPrefix(l, "  ") {
 				add("  " + keyOn.Render(l))

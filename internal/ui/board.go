@@ -32,7 +32,14 @@ type HomeInfo struct {
 	MCPDown  bool
 	// Dash is the home's dashboard.
 	Dash Dashboard
+	// Connect is the home's How to connect panel.
+	Connect []ConnectRow
 }
+
+// ConnectRow is one way a laptop reaches this machine: What (SSH, Docker,
+// the MCP gateway), the Use to type, and a Note: where it goes, or where
+// a secret it needs is kept (never the secret).
+type ConnectRow struct{ What, Use, Note string }
 
 // MCPServer is one MCP server on the menu's MCP servers screen.
 type MCPServer struct {

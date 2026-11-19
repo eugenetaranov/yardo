@@ -91,7 +91,8 @@ for the packages). Below them, rows that never move: **Choices** (the
 first run's questions again: what you turn off is uninstalled, asking
 first; what you turn on, installed), **Tools**
 (the full screen, below), **MCP servers** (the gateway's list: add one,
-or another instance of one; **d** deletes one, asking first) and **Settings**: **Network access** (the
+or another instance of one; **d** deletes one, asking first), **Connect**
+(every step to reach this machine from a laptop) and **Settings**: **Network access** (the
 MCP gateway and containers' published ports, each a row
 of choices with a sentence saying what it means), the **Look** (theme and accent colour),
 your **Git name and email**, **Shell prompt** and **Dotfiles repo**
@@ -410,7 +411,10 @@ installed by hand.
    (MCPJungle's enterprise mode): yardo makes the admin token (kept in
    `~/.mcp`, the gateway user's) and one for the agents on the VM, wired
    into them; `mcp-sync client <name>` makes one for a laptop's agent,
-   sent as `Authorization: Bearer <token>`. On this machine only, there
+   sent as `Authorization: Bearer <token>`. It never shows the token: it
+   goes to `~/.mcp/clients/<name>.token`, read with `sudo cat`. The
+   laptop only ever talks to the gateway: the servers' own tokens
+   (GitHub, Jira…) stay on this machine. On this machine only, there
    are no tokens: anything on the VM can use the gateway.
    **The servers** are the menu's **MCP servers**: each one you have, by
    name and type (`jira-work` · jira), with how it is (ready, needs
@@ -619,8 +623,11 @@ yardo sets Tailscale to accept no subnet routes on the VM and makes you
 its operator (`tailscale serve` without sudo), and doesn't log in again
 once the VM is on the tailnet.
 
-**Reaching this machine from a laptop.** `sudo yardo connect` (or This
-VM → Connect from a laptop, on the screen) prints it all, with this machine's addresses (VPNs
+**Reaching this machine from a laptop.** The home's **How to connect**
+panel has the short version: `ssh vm`, `docker context use vm`, and the
+gateway's URL with where its token is (`sudo cat ~/.mcp/clients/laptop.token`,
+never the token). `sudo yardo connect` (or Go to → Connect, on the
+screen) prints it all, with this machine's addresses (VPNs
 first): Docker over SSH, which opens no port and needs no certificate
 (`docker context create vm --docker "host=ssh://you@vm"`; bind mounts are
 this machine's paths, `-p` ports open here); and the MCP gateway's URL,

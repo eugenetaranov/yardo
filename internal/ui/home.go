@@ -15,7 +15,8 @@ import (
 )
 
 // The home is a board of panels: Machine and Needs you on top, Services
-// & containers and MCP servers under them, and a Go to strip. The cursor
+// & containers and MCP servers under them, How to connect, and a Go to
+// strip. The cursor
 // walks Needs you's rows, then Go to's; tab jumps between the two. Under
 // homeWide columns, the panels stack and the bottom two fold to a line.
 
@@ -53,6 +54,14 @@ func (m *Menu) homeView(w, h int) string {
 		top := beside2(box("Machine", "", machineL, pw, th, false), box("Needs you", fmt.Sprint(len(todo)), needL, pw, th, needOn))
 		add(top...)
 		room := h - len(b) - 1 - 2 - 1 - 4 - 2
+		// How to connect, when there's room for it and a line of the two
+		// above.
+		conL := m.connectLines(2*pw - 2)
+		if len(conL) > 0 && room-len(conL)-3 >= 1 {
+			room -= len(conL) + 3
+		} else {
+			conL = nil
+		}
 		if bh := min(max(len(svcL), len(mcpL)), room); bh >= 1 {
 			add("")
 			if m.hasMCP() {
@@ -60,6 +69,10 @@ func (m *Menu) homeView(w, h int) string {
 			} else {
 				add(box("Services & containers", "", cut(svcL, bh), 2*pw+2, bh, false)...)
 			}
+		}
+		if len(conL) > 0 {
+			add("")
+			add(box("How to connect", "from a laptop", conL, 2*pw+2, len(conL), false)...)
 		}
 	} else {
 		pw := w - 2
@@ -70,6 +83,13 @@ func (m *Menu) homeView(w, h int) string {
 		}
 		if m.hasMCP() {
 			add(" " + muted.Render(padTo("MCP", 10)) + m.mcpSummary())
+		}
+		if len(m.info.Connect) > 0 {
+			var uses []string
+			for _, r := range m.info.Connect {
+				uses = append(uses, r.Use)
+			}
+			add(" " + muted.Render(padTo("Connect", 10)) + fit(uses, pw-12))
 		}
 	}
 	add("")
@@ -458,6 +478,23 @@ func (m *Menu) mcpLines() []string {
 	}
 	if others > 0 {
 		out = append(out, muted.Render(fmt.Sprintf("+ %d more in ~/.mcp", others)))
+	}
+	return out
+}
+
+// connectLines are the How to connect panel's, w wide: what to type on
+// the laptop, then where it goes or where its secret is kept.
+func (m *Menu) connectLines(w int) []string {
+	var out []string
+	for _, r := range m.info.Connect {
+		l := muted.Render(padTo(r.What, 8)) + " " + keyOn.Render(r.Use)
+		if r.Note != "" {
+			l += muted.Render("  ·  " + r.Note)
+		}
+		out = append(out, ansi.Truncate(l, w, "…"))
+	}
+	if len(out) > 0 {
+		out = append(out, muted.Render("Go to › Connect: every step, ready to paste"))
 	}
 	return out
 }
