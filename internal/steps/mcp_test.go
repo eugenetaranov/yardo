@@ -657,3 +657,60 @@ func TestMCPInstances(t *testing.T) {
 		t.Error("Check after dropping = false")
 	}
 }
+
+// An AWS server's env still as v0.22.0 made it (read-only, which hid its
+// API tool) gets the new default; read-only picked since, or another
+// server's, stays.
+func TestUpgradedAWSEnv(t *testing.T) {
+	old := []byte("AWS_REGION=us-east-1\nAWS_PROFILE=shared\n\n" + oldAWSReadOnly + "\n#AWS_MCP_ENDPOINT_REGION=\n")
+	got := upgraded(mcpServer{name: "aws-prod", spec: "aws"}, old)
+	if EnvGet(got, "READ_OPERATIONS_ONLY") != "false" || EnvGet(got, "AWS_PROFILE") != "shared" || strings.Contains(string(got), "Only read operations") {
+		t.Errorf("upgraded:\n%s", got)
+	}
+	if again := upgraded(mcpServer{name: "aws-prod", spec: "aws"}, got); string(again) != string(got) {
+		t.Error("not once")
+	}
+	picked := []byte(strings.Replace(newAWSReadOnly, "READ_OPERATIONS_ONLY=false", "READ_OPERATIONS_ONLY=true", 1))
+	if got := upgraded(mcpServer{name: "aws-x", spec: "aws"}, picked); string(got) != string(picked) {
+		t.Errorf("picked read-only changed:\n%s", got)
+	}
+	if got := upgraded(mcpServer{name: "jira", spec: "jira"}, old); string(got) != string(old) {
+		t.Error("another server's changed")
+	}
+	// The same words as the skeleton's.
+	spec, err := os.ReadFile("../assets/conf/mcp-catalog/aws.spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(spec), newAWSReadOnly) {
+		t.Error("newAWSReadOnly isn't aws.spec's skeleton's")
+	}
+}
+
+// A run brings an AWS server's old read-only env up to date: Check says
+// so, Apply changes just that.
+func TestMCPServersUpgradeAWS(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("no bash (specs are shell)")
+	}
+	e := mcpEnv(t, &fakeExec{})
+	put(t, filepath.Join(e.Share, "conf", "mcp-catalog", "aws.spec"), "KIND=docker\nskeleton() { echo 'AWS_REGION='; }\n")
+	e.Answers.MCPServers = []string{"aws:prod"}
+	st := step(t, catalog.Step{Type: "go:mcp_servers"})
+	apply(t, e, st)
+	p := e.Path("~/.mcp/aws-prod/env")
+	put(t, p, "AWS_REGION=us-east-1\n"+oldAWSReadOnly)
+	if err := os.Chmod(p, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if check(t, e, st) {
+		t.Fatal("Check with the old read-only default = true")
+	}
+	apply(t, e, st)
+	if got := read(t, p); got != "AWS_REGION=us-east-1\n"+newAWSReadOnly {
+		t.Errorf("env = %q", got)
+	}
+	if !check(t, e, st) {
+		t.Error("Check after Apply = false")
+	}
+}

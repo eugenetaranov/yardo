@@ -775,9 +775,35 @@ func typed(e *Env, n string) map[string]string {
 	return out
 }
 
+// oldAWSReadOnly is how an AWS server's env was made before v0.23.0:
+// read-only, which hid its API tool. Still as it was made, it becomes
+// the default now (one picked read-only since says it in other words).
+const (
+	oldAWSReadOnly = "# Only read operations: write tools are hidden (false shows them).\nREAD_OPERATIONS_ONLY=true\n"
+	newAWSReadOnly = `# false: the agent calls AWS APIs as the profile's role, reads and writes
+# alike: what the role allows is the limit (a read-only role,
+# ReadOnlyAccess or ViewOnlyAccess, keeps it to reading).
+# true: AWS's docs, guides and regions only, not your account: the tool
+# that calls AWS APIs (run_script) is hidden, as it can write too.
+READ_OPERATIONS_ONLY=false
+`
+)
+
+// upgraded is server s's env b brought up to date: an AWS one's old
+// read-only default, the new one.
+func upgraded(s mcpServer, b []byte) []byte {
+	if s.spec != "aws" || !bytes.Contains(b, []byte(oldAWSReadOnly)) {
+		return b
+	}
+	return bytes.Replace(b, []byte(oldAWSReadOnly), []byte(newAWSReadOnly), 1)
+}
+
 func (mcpServersStep) Check(ctx context.Context, e *Env) (bool, error) {
 	for _, s := range pickedServers(e) {
 		if rel, target := specLink(s); s.instance() && mcpReadLink(ctx, e, rel) != target {
+			return false, nil
+		}
+		if b, _ := mcpRead(ctx, e, s.name+"/env"); b != nil && !bytes.Equal(upgraded(s, b), b) {
 			return false, nil
 		}
 	}
@@ -855,6 +881,7 @@ func (mcpServersStep) Apply(ctx context.Context, e *Env) error {
 				return err
 			}
 		}
+		b = upgraded(srv, b)
 		keys := typed(e, n)
 		names := make([]string, 0, len(keys))
 		for k := range keys {
