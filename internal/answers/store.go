@@ -230,6 +230,7 @@ func (s *Store) Load(name string) (*Answers, []string, error) {
 		a.Layers = nil
 	}
 	a.clean()
+	a.MCPServers = MigrateMCPServers(a.MCPServers)
 	more := a.migrateGitKey()
 	var mp []string
 	a.Picks, mp = MigratePicks(a.Picks)

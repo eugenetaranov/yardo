@@ -197,7 +197,7 @@ func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnin
 		}
 	}
 	if p.MCP != nil {
-		a.MCPServers = answers.Merge(a.MCPServers, p.MCP.Servers)
+		a.MCPServers = answers.Merge(a.MCPServers, answers.MigrateMCPServers(p.MCP.Servers))
 		if p.MCP.Listen != "" {
 			a.MCPListen = p.MCP.Listen
 		}

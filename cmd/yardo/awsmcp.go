@@ -247,7 +247,7 @@ func (k *asker) askPick(ctx context.Context, spec, name string) (env [][2]string
 	case "aws":
 		c, ok, err := k.askAWS(ctx, name)
 		return c.env(), c.says(name), ok, err
-	case "kubernetes":
+	case "k8s":
 		c, ok, err := k.askKube(ctx, name)
 		return c.env(), c.says(name), ok, err
 	}

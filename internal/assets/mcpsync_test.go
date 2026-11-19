@@ -284,7 +284,7 @@ func TestMCPSyncAWSMount(t *testing.T) {
 	}
 }
 
-// kubernetes.spec's MOUNT_KUBE and MOUNT_AWS: ~/.kube and ~/.aws (EKS's
+// k8s.spec's MOUNT_KUBE and MOUNT_AWS: ~/.kube and ~/.aws (EKS's
 // get-token), read-only; a KUBECONFIG under ~/.kube made the container's
 // path, any other left be; root in the container all the same.
 func TestMCPSyncKubeMount(t *testing.T) {
@@ -294,15 +294,15 @@ func TestMCPSyncKubeMount(t *testing.T) {
 	}
 	root := t.TempDir()
 	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
-	mkdirAll(t, filepath.Join(mcp, "kubernetes"), 0o700)
+	mkdirAll(t, filepath.Join(mcp, "k8s"), 0o700)
 	mkdirAll(t, filepath.Join(root, ".kube"), 0o700)
 	mkdirAll(t, filepath.Join(root, ".aws"), 0o700)
 	mkdirAll(t, cat, 0o755)
-	spec, err := os.ReadFile("conf/mcp-catalog/kubernetes.spec")
+	spec, err := os.ReadFile("conf/mcp-catalog/k8s.spec")
 	if err != nil {
 		t.Fatal(err)
 	}
-	putFile(t, filepath.Join(cat, "kubernetes.spec"), spec, 0o644)
+	putFile(t, filepath.Join(cat, "k8s.spec"), spec, 0o644)
 	reg := filepath.Join(root, "registered")
 	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
 	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
@@ -319,9 +319,9 @@ func TestMCPSyncKubeMount(t *testing.T) {
 		"/mcp/config":                                 mounts + user,
 		"~/.kube/../../etc/passwd:/elsewhere/.kube/x": mounts + `"-e","KUBECONFIG=/aws/.kube/../../etc/passwd:/elsewhere/.kube/x",` + user,
 	} {
-		putFile(t, filepath.Join(mcp, "kubernetes", "env"), []byte("KUBECONFIG="+kc+"\n"), 0o600)
-		_ = os.Remove(filepath.Join(mcp, "kubernetes", ".registered.json"))
-		if out, err := mcpSync(t, env, "kubernetes"); err != nil {
+		putFile(t, filepath.Join(mcp, "k8s", "env"), []byte("KUBECONFIG="+kc+"\n"), 0o600)
+		_ = os.Remove(filepath.Join(mcp, "k8s", ".registered.json"))
+		if out, err := mcpSync(t, env, "k8s"); err != nil {
 			t.Fatalf("%v:\n%s", err, out)
 		}
 		out, err := exec.Command(jq, "-c", ".args", reg).Output()

@@ -714,3 +714,44 @@ func TestMCPServersUpgradeAWS(t *testing.T) {
 		t.Error("Check after Apply = false")
 	}
 }
+
+// A server whose spec was renamed (kubernetes is k8s): its settings move
+// to its new name through mcp-sync rename, from either name it had
+// (kubernetes-k8s-dev1 or kubernetes-dev1 for k8s-dev1); one already
+// there stays.
+func TestMCPServersRenamedSpec(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("no bash (specs are shell)")
+	}
+	for _, old := range []string{"kubernetes-k8s-dev1", "kubernetes-dev1"} {
+		x := &fakeExec{}
+		e := mcpEnv(t, x)
+		x.reply = func(c Cmd) ([]byte, error) {
+			if n := len(c.Args); n >= 3 && c.Args[n-3] == "rename" {
+				return nil, os.Rename(e.Path("~/.mcp/"+c.Args[n-2]), e.Path("~/.mcp/"+c.Args[n-1]))
+			}
+			return nil, nil
+		}
+		put(t, filepath.Join(e.Share, "conf", "mcp-catalog", "k8s.spec"), "KIND=docker\nskeleton() { echo 'KUBECONFIG='; }\n")
+		e.Answers.MCPServers = []string{"k8s:dev1"}
+		put(t, e.Path("~/.mcp/"+old+"/env"), "KUBECONFIG=~/.kube/config\n")
+		apply(t, e, step(t, catalog.Step{Type: "go:mcp_servers"}))
+		if got := read(t, e.Path("~/.mcp/k8s-dev1/env")); got != "KUBECONFIG=~/.kube/config\n" {
+			t.Errorf("%s: env = %q (ran %v)", old, got, x.commands())
+		}
+		renames := 0
+		for _, c := range x.commands() {
+			if strings.Contains(c, "mcp-sync rename "+old+" k8s-dev1") {
+				renames++
+			}
+		}
+		if renames != 1 {
+			t.Errorf("%s: ran %v", old, x.commands())
+		}
+		x.ran = nil
+		apply(t, e, step(t, catalog.Step{Type: "go:mcp_servers"}))
+		if strings.Contains(strings.Join(x.commands(), "\n"), "rename") {
+			t.Errorf("%s: renamed again: %v", old, x.commands())
+		}
+	}
+}

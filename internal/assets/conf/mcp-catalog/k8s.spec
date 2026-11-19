@@ -10,7 +10,7 @@ IMAGE=flux159/mcp-server-kubernetes:v4.2.1
 MOUNT_KUBE=1
 MOUNT_AWS=1
 # Root in the container (it wins over your user, the mounts': files in
-# ~/.mcp/kubernetes, the gateway's user's only, stay readable for a
+# ~/.mcp/<name>, the gateway's user's only, stay readable for a
 # KUBECONFIG=/mcp/... of before).
 DOCKER_ARGS="--user 0:0"
 REQUIRED="KUBECONFIG"

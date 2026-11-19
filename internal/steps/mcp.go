@@ -192,9 +192,9 @@ func mcpInstance(e *Env) string { return "mcpjungle@" + e.User }
 type mcpFilesStep struct{}
 
 // RetiredSpecs are catalog servers yardo no longer ships (their makers
-// retired them): their installed specs go. aws-api: AWS's managed AWS MCP
-// Server (aws) replaces it.
-var RetiredSpecs = []string{"aws-api"}
+// retired them, or they were renamed): their installed specs go. aws-api:
+// AWS's managed AWS MCP Server (aws) replaces it; kubernetes is k8s.
+var RetiredSpecs = []string{"aws-api", "kubernetes"}
 
 // retired are the retired specs still installed (a team's stay).
 func (mcpFilesStep) retired(e *Env) []string {
@@ -849,7 +849,55 @@ func (mcpServersStep) Missing(ctx context.Context, e *Env) []string {
 	return out
 }
 
+// renamedFrom are the names server s had before its spec was renamed
+// (answers.MCPRenamed): kubernetes-k8s-dev1 or kubernetes-dev1 for
+// k8s-dev1.
+func renamedFrom(s mcpServer) []string {
+	var out []string
+	for old, to := range answers.MCPRenamed {
+		if to != s.spec {
+			continue
+		}
+		if label := strings.TrimPrefix(s.name, s.spec+"-"); s.instance() {
+			out = append(out, old+"-"+label, old+"-"+to+"-"+label)
+		} else {
+			out = append(out, old, old+"-"+to)
+		}
+	}
+	return out
+}
+
+// mcpSyncRun runs mcp-sync args as ~/.mcp's owner.
+func mcpSyncRun(ctx context.Context, e *Env, args ...string) error {
+	args = append([]string{"MCP_DIR=" + filepath.Join(e.Home, ".mcp"), "MCP_CATALOG=" + mcpCatalog, "MCPJUNGLE_REGISTRY=" + mcpURL(e), mcpSync}, args...)
+	c := Cmd{Name: "env", Args: args, As: MCPUser(e)}
+	if !mcpAsService(e) {
+		c = Cmd{Name: "env", Args: args, AsUser: true}
+	}
+	_, err := e.run(ctx, c)
+	return err
+}
+
 func (mcpServersStep) Apply(ctx context.Context, e *Env) error {
+	// A server whose spec was renamed: its settings move to its new name
+	// (mcp-sync deregisters the old one).
+	for _, srv := range pickedServers(e) {
+		olds := renamedFrom(srv)
+		if len(olds) == 0 {
+			continue
+		}
+		if b, _ := mcpRead(ctx, e, srv.name+"/env"); b != nil {
+			continue
+		}
+		for _, old := range olds {
+			if b, _ := mcpRead(ctx, e, old+"/env"); b != nil {
+				if err := mcpSyncRun(ctx, e, "rename", old, srv.name); err != nil {
+					return err
+				}
+				break
+			}
+		}
+	}
 	// Instances dropped since: their spec link goes (mcp-sync then
 	// deregisters them); their env, with what was typed, stays.
 	want := instanceNames(e)
@@ -1188,12 +1236,7 @@ func (mcpSyncStep) Apply(ctx context.Context, e *Env) error {
 			return err
 		}
 	}
-	args := append([]string{"MCP_DIR=" + filepath.Join(e.Home, ".mcp"), "MCP_CATALOG=" + mcpCatalog, "MCPJUNGLE_REGISTRY=" + mcpURL(e), mcpSync}, servers(e)...)
-	c := Cmd{Name: "env", Args: args, As: MCPUser(e)}
-	if !mcpAsService(e) {
-		c = Cmd{Name: "env", Args: args, AsUser: true}
-	}
-	if _, err := e.run(ctx, c); err != nil {
+	if err := mcpSyncRun(ctx, e, servers(e)...); err != nil {
 		return fmt.Errorf("some MCP servers did not register (see the log); sudo yardo mcp status says why; sudo yardo mcp edit <server> fixes one: %w", err)
 	}
 	return nil

@@ -85,23 +85,23 @@ users:
 // file under ~/.kube, the context, read-only or not), and registered now;
 // another kubeconfig opens the file instead.
 func TestMCPDoKube(t *testing.T) {
-	specs := map[string]*mcp.Spec{"kubernetes": {Keys: []string{"KUBECONFIG"}}}
+	specs := map[string]*mcp.Spec{"k8s": {Keys: []string{"KUBECONFIG"}}}
 	var set [][2]string
 	var edited []string
 	pick := true
-	k := &asker{a: &answers.Answers{User: "ada", MCPServers: []string{"kubernetes:k8s-dev1"}},
+	k := &asker{a: &answers.Answers{User: "ada", MCPServers: []string{"k8s:dev1"}},
 		edit:     func(n string) (bool, error) { edited = append(edited, n); return true, nil },
 		kubePick: func(string) (kubeChoice, bool, error) { return kubeChoice{"config/dev1", "arn:x", false}, pick, nil },
 		mcpEnv:   func(n string, kv [][2]string) error { set = append(set, kv...); return nil }}
-	out, err := k.mcpDo(context.Background(), ui.MCPAct{Do: "edit", Entry: "kubernetes:k8s-dev1"}, specs)
-	if err != nil || out.sync != "kubernetes-k8s-dev1" || len(edited) != 0 {
+	out, err := k.mcpDo(context.Background(), ui.MCPAct{Do: "edit", Entry: "k8s:dev1"}, specs)
+	if err != nil || out.sync != "k8s-dev1" || len(edited) != 0 {
 		t.Errorf("picked: %+v %v, edited %v", out, err, edited)
 	}
 	if len(set) != 3 || set[0] != [2]string{"KUBECONFIG", "~/.kube/config/dev1"} || set[1] != [2]string{"K8S_CONTEXT", "arn:x"} || set[2] != [2]string{"ALLOW_ONLY_READONLY_TOOLS", "true"} {
 		t.Errorf("set %v", set)
 	}
 	pick, set = false, nil
-	if out, err := k.mcpDo(context.Background(), ui.MCPAct{Do: "edit", Entry: "kubernetes:k8s-dev1"}, specs); err != nil || out.sync != "kubernetes-k8s-dev1" || len(edited) != 1 || set != nil {
+	if out, err := k.mcpDo(context.Background(), ui.MCPAct{Do: "edit", Entry: "k8s:dev1"}, specs); err != nil || out.sync != "k8s-dev1" || len(edited) != 1 || set != nil {
 		t.Errorf("another kubeconfig: %+v %v, edited %v, set %v", out, err, edited, set)
 	}
 	c := kubeChoice{"config/dev1", "arn:x", true}

@@ -274,6 +274,36 @@ func MigratePicks(picks []string) (out, notes []string) {
 	return out, notes
 }
 
+// MCPRenamed are catalog MCP servers renamed, to their new names.
+var MCPRenamed = map[string]string{"kubernetes": "k8s"}
+
+// MigrateMCP is an MCP server entry under its spec's new name, when the
+// spec was renamed; a label that led with the new name drops it
+// (kubernetes:k8s-dev1 is k8s:dev1, named k8s-dev1 as before).
+func MigrateMCP(entry string) string {
+	spec, label, ok := strings.Cut(entry, ":")
+	to, renamed := MCPRenamed[spec]
+	if !renamed {
+		return entry
+	}
+	if label = strings.TrimPrefix(label, to+"-"); !ok || label == to {
+		return to
+	}
+	return to + ":" + label
+}
+
+// MigrateMCPServers applies MigrateMCP, keeping order and dropping
+// duplicates.
+func MigrateMCPServers(entries []string) []string {
+	var out []string
+	for _, e := range entries {
+		if e = MigrateMCP(e); !slices.Contains(out, e) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // Read loads the saved answers from state, migrated. A missing file is
 // empty answers. A legacy shell-format file is decoded (never run),
 // converted to answers.json and kept as answers.old when state is
@@ -312,6 +342,7 @@ func Read(state string) (a *Answers, notes []string, err error) {
 		return nil, nil, err
 	}
 	a.clean()
+	a.MCPServers = MigrateMCPServers(a.MCPServers)
 	more := a.migrateGitKey()
 	var mp []string
 	a.Picks, mp = MigratePicks(a.Picks)

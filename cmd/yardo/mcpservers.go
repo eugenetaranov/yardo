@@ -129,7 +129,7 @@ func (k *asker) mcpSyncAs(ctx context.Context, args ...string) error {
 // retiredMCP are catalog servers their makers retired (yardo ships them
 // no more: steps.RetiredSpecs), and what replaces each: one set up before
 // says so on the menu, to delete.
-var retiredMCP = map[string]string{"aws-api": "aws"}
+var retiredMCP = map[string]string{"aws-api": "aws", "kubernetes": "k8s"}
 
 // mcpRows are the menu's MCP servers: yardo's (entries), then the others
 // found in ~/.mcp, each with its state. inputs are the MCP servers' empty

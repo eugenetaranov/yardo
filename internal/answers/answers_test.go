@@ -259,3 +259,23 @@ func TestUninstalledDeclined(t *testing.T) {
 		t.Errorf("still declined: %q", a.Declined)
 	}
 }
+
+// An entry of a renamed spec is the new one's, its name kept: a label
+// that led with the new name drops it.
+func TestMigrateMCP(t *testing.T) {
+	for in, want := range map[string]string{
+		"kubernetes":          "k8s",
+		"kubernetes:k8s":      "k8s",
+		"kubernetes:k8s-dev1": "k8s:dev1",
+		"kubernetes:prod":     "k8s:prod",
+		"k8s:dev1":            "k8s:dev1",
+		"jira":                "jira",
+	} {
+		if got := MigrateMCP(in); got != want {
+			t.Errorf("%s: %s, want %s", in, got, want)
+		}
+	}
+	if got := MigrateMCPServers([]string{"k8s:dev1", "kubernetes:k8s-dev1", "jira"}); strings.Join(got, " ") != "k8s:dev1 jira" {
+		t.Errorf("servers: %v", got)
+	}
+}
