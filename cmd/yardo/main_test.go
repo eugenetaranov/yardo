@@ -405,7 +405,7 @@ func TestCachedStatus(t *testing.T) {
 func TestConnectRows(t *testing.T) {
 	addrs := []address{{"100.64.1.7", "tailscale0", "Tailscale", "vm.tail.ts.net"}}
 	a := &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}
-	tok := laptopToken("ada", "laptop")
+	tok := laptopToken("ada", "client")
 	rows := connectRows(a, addrs, []string{tok}, true)
 	var got []string
 	for _, r := range rows {
@@ -413,12 +413,12 @@ func TestConnectRows(t *testing.T) {
 	}
 	all := strings.Join(got, "\n")
 	for _, want := range []string{"SSH|ssh ", "ada@vm.tail.ts.net over Tailscale", "Docker|docker context use ", "host=ssh://ada@vm.tail.ts.net · -p ports from the VPNs",
-		"MCP|http://vm.tail.ts.net:8081/mcp|mcpjungle, with a token: sudo cat ~/.mcp/clients/laptop.token"} {
+		"MCP|http://vm.tail.ts.net:8081/mcp|mcpjungle, with a token: sudo cat ~/.mcp/clients/client.token"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("rows lack %q:\n%s", want, all)
 		}
 	}
-	if r := connectRows(a, addrs, nil, true); !strings.Contains(r[2].Note, "~/.mcp/clients/laptop.token") {
+	if r := connectRows(a, addrs, nil, true); !strings.Contains(r[2].Note, "~/.mcp/clients/client.token") {
 		t.Errorf("no token yet: %+v", r[2])
 	}
 	a.MCPListen = ""
@@ -444,7 +444,7 @@ func TestPrintConnect(t *testing.T) {
 	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}, addrs, nil, "", nil)
 	got := out.String()
 	for _, want := range []string{`docker context create`, `"host=ssh://ada@100.64.1.7"`, "reachable from this machine and the VPNs",
-		"sudo cat /home/ada/.mcp/clients/laptop.token", "http://100.64.1.7:8081/mcp --header \"Authorization: Bearer <token>\"", "tailscale0 · Tailscale"} {
+		"sudo cat /home/ada/.mcp/clients/client.token", "http://100.64.1.7:8081/mcp --header \"Authorization: Bearer <token>\"", "tailscale0 · Tailscale"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("vpn: lacks %q:\n%s", want, got)
 		}

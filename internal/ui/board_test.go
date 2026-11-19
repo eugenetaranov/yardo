@@ -282,7 +282,7 @@ func TestBoardFromMenu(t *testing.T) {
 		t.Errorf("standalone footer: %s", f)
 	}
 	b.SetFromMenu(true)
-	if f := b.footer(nil); !strings.Contains(f, "esc home") || strings.Contains(f, "quit") {
+	if f := b.footer(nil); !strings.Contains(f, "q home") || strings.Contains(f, "quit") {
 		t.Errorf("from the menu footer: %s", f)
 	}
 	b.Open("group:System")
@@ -471,5 +471,25 @@ func TestBoardFilter(t *testing.T) {
 	press2(b, "esc")
 	if b.search != nil || b.out {
 		t.Errorf("esc didn't clear the filter")
+	}
+}
+
+// q is the key the screens show for going back: it clears a filter (once
+// you're out of typing it, where q types) before it leaves.
+func TestBoardQClearsFilter(t *testing.T) {
+	b := testBoard(false)
+	press2(b, "/", "w", "i", "r", "e", "q")
+	if b.search == nil || *b.search != "wireq" {
+		t.Fatalf("typing: q goes into the filter: %v", b.search)
+	}
+	press2(b, "backspace", "enter")
+	if b.search == nil || b.typing {
+		t.Fatalf("into the list: filter %v, typing %v", b.search, b.typing)
+	}
+	if cmd := press2(b, "q"); b.search != nil || cmd != nil {
+		t.Errorf("q after typing: filter %v, left %v", b.search, cmd != nil)
+	}
+	if cmd := press2(b, "q"); cmd == nil {
+		t.Error("q with no filter doesn't leave")
 	}
 }

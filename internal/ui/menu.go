@@ -725,7 +725,7 @@ func (m *Menu) View() string {
 		for n, r := range rs {
 			add(m.row(n == m.sel, r, col, w)...)
 		}
-		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("esc", "back")}, "   ")
+		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("q", "back")}, "   ")
 	case "fix":
 		ps := m.filter(problem)
 		title = "Fix " + plural(len(ps), "thing", "things")
@@ -755,7 +755,7 @@ func (m *Menu) View() string {
 			}
 		}
 		n := len(m.ticked())
-		keys = strings.Join([]string{k("↑↓", "choose"), k("space", "tick"), k("→", "details"), k("enter", "fix "+fmt.Sprint(n)), k("esc", "back")}, "   ")
+		keys = strings.Join([]string{k("↑↓", "choose"), k("space", "tick"), k("→", "details"), k("enter", "fix "+fmt.Sprint(n)), k("q", "back")}, "   ")
 	case "secrets":
 		ss := m.filter(secret)
 		title = "Fill in " + plural(len(ss), "value", "values")
@@ -769,7 +769,7 @@ func (m *Menu) View() string {
 			add("  "+label+"  "+accent.Render(strings.Join(i.Inputs, ", ")), "")
 		}
 		add("  " + muted.Render("Enter opens the file in your editor; yardo never stores the value."))
-		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "fill in"), k("esc", "back")}, "   ")
+		keys = strings.Join([]string{k("↑↓", "choose"), k("enter", "fill in"), k("q", "back")}, "   ")
 	case "access", "look":
 		title = "Settings  ›  Network access"
 		if m.screen == "look" {
@@ -813,15 +813,15 @@ func (m *Menu) View() string {
 		apply := muted.Render("[ Apply ]   nothing changed yet: ←→ picks a choice")
 		if n > 0 {
 			label := "Apply " + plural(n, "change", "changes")
-			apply = accentBd.Render("[ "+label+" ]") + "   " + muted.Render("a applies from anywhere · esc leaves without changing anything")
+			apply = accentBd.Render("[ "+label+" ]") + "   " + muted.Render("a applies from anywhere · q leaves without changing anything")
 			if m.sel == len(as) {
-				apply = rowOn.Render("  "+label+"  ") + "   " + muted.Render("esc leaves without changing anything")
+				apply = rowOn.Render("  "+label+"  ") + "   " + muted.Render("q leaves without changing anything")
 			}
 		} else if m.sel == len(as) {
 			apply = rowOn.Render(" Apply ") + "   " + muted.Render("nothing changed yet: ←→ picks a choice")
 		}
 		add("  " + apply)
-		keys = strings.Join([]string{k("↑↓", "setting"), k("←→", "choose"), k("a", "apply"), k("esc", "back")}, "   ")
+		keys = strings.Join([]string{k("↑↓", "setting"), k("←→", "choose"), k("a", "apply"), k("q", "back")}, "   ")
 	case "connect":
 		title = "Connect from a laptop"
 		if m.connectFrom == "settings" {
@@ -834,7 +834,7 @@ func (m *Menu) View() string {
 				add("  " + l)
 			}
 		}
-		keys = k("esc", "back")
+		keys = k("q", "back")
 	case "mcp", "mcp:server", "mcp:delete", "mcp:add", "mcp:name":
 		var lines []string
 		title, lines, keys = m.mcpView(w, h-len(b)-6)
@@ -848,11 +848,11 @@ func (m *Menu) View() string {
 		add("")
 		if m.sure {
 			add("  " + bold.Render("Update "+plural(n, "item", "items")+"?") + "  " + muted.Render("mise up for the tools, apt for the packages; nothing else changes"))
-			keys = strings.Join([]string{k("enter", "yes, update"), k("esc", "no")}, "   ")
+			keys = strings.Join([]string{k("enter", "yes, update"), k("q", "no")}, "   ")
 		} else {
 			add("  "+rowOn.Render(" Update all "),
 				"", "  "+muted.Render("yardo doesn't upgrade on its own."))
-			keys = strings.Join([]string{k("enter", "update"), k("esc", "back")}, "   ")
+			keys = strings.Join([]string{k("enter", "update"), k("q", "back")}, "   ")
 		}
 	}
 	if title != "" {

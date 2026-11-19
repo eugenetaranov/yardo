@@ -389,11 +389,11 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		add("")
 		add(about...)
 		add("", "  "+muted.Render("Agents reach their tools through the gateway as <name>__<tool>."))
-		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("e", "edit its settings"), k("d", "delete"), k("a", "add"), k("esc", "back")}, "   ")
+		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("e", "edit its settings"), k("d", "delete"), k("a", "add"), k("q", "back")}, "   ")
 	case "mcp:server", "mcp:delete":
 		s := m.mcpServer()
 		if s == nil { // normalize goes back to the list first
-			return "MCP servers", nil, k("esc", "back")
+			return "MCP servers", nil, k("q", "back")
 		}
 		what := "a " + s.Spec + " server"
 		if s.Spec == "" {
@@ -438,7 +438,7 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 				add("     " + padTo(a.label, 21) + "  " + muted.Render(a.note))
 			}
 		}
-		return title, b, strings.Join([]string{k("↑↓", "choose"), k("enter", "do it"), k("esc", "back")}, "   ")
+		return title, b, strings.Join([]string{k("↑↓", "choose"), k("enter", "do it"), k("q", "back")}, "   ")
 	case "mcp:add":
 		specs := m.info.MCPSpecs
 		var lines []string
@@ -459,7 +459,7 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		}
 		add(window(lines, m.sel, room-3)...)
 		add("", "  "+muted.Render("Adding one you have makes another: a second Jira, another AWS account."))
-		return "MCP servers  ›  Add a server", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "next"), k("esc", "back")}, "   ")
+		return "MCP servers  ›  Add a server", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "next"), k("q", "back")}, "   ")
 	case "mcp:name":
 		title, verb := "MCP servers  ›  Add "+m.nameFor, "add"
 		if m.renaming {

@@ -102,6 +102,25 @@ func mcpWrite(ctx context.Context, e *Env, rel string, b []byte) error {
 	return err
 }
 
+// mcpRemove removes files in ~/.mcp (rels), as the service user; gone
+// already is fine.
+func mcpRemove(ctx context.Context, e *Env, rels ...string) error {
+	var ps []string
+	for _, rel := range rels {
+		ps = append(ps, filepath.Join(e.Home, ".mcp", rel))
+	}
+	if !mcpAsService(e) {
+		for _, p := range ps {
+			if err := os.Remove(e.Path(p)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+		}
+		return nil
+	}
+	_, err := e.run(ctx, Cmd{Name: "rm", Args: append([]string{"-f", "--"}, ps...), As: MCPUser(e)})
+	return err
+}
+
 // --- go:mcp_user: the gateway's service user, owning ~/.mcp -----------------
 
 type mcpUserStep struct{}
@@ -483,7 +502,7 @@ func randomToken() (string, error) {
 // ~/.mcp/.mcpjungle.conf, for mcp-sync) and creates its clients, each
 // allowed every server: the VM's own agents (token in ~/.mcp/agent-token,
 // which reaches the agents' configs) and your laptop (token in
-// ~/.mcp/clients/laptop.token, read with sudo: Connect points there). All
+// ~/.mcp/clients/client.token, read with sudo: Connect points there). All
 // stay with the service user.
 type mcpAuthStep struct{}
 
@@ -491,16 +510,28 @@ const (
 	mcpAdminConf  = ".mcpjungle.conf"
 	mcpAgentToken = "agent-token"
 	mcpAgentName  = "yardo-agents"
-	// LaptopToken is the laptop's token in ~/.mcp; mcp-sync client
+	// ClientToken is your laptop's token in ~/.mcp; mcp-sync client
 	// makes more alongside it.
-	LaptopToken = "clients/laptop.token"
+	ClientToken = "clients/client.token"
 )
+
+// hasMCPClient reports whether mcpjungle's list mcp-clients has name: its
+// "1. name" line (the descriptions under it say laptop, client, …).
+func hasMCPClient(list []byte, name string) bool {
+	for _, l := range strings.Split(string(list), "\n") {
+		n, rest, ok := strings.Cut(strings.TrimSpace(l), ". ")
+		if ok && rest == name && strings.Trim(n, "0123456789") == "" && n != "" {
+			return true
+		}
+	}
+	return false
+}
 
 // mcpClients are the gateway's clients yardo makes: name, what it is, its
 // token's file and its config's, in ~/.mcp.
 var mcpClients = []struct{ name, about, token, conf string }{
 	{mcpAgentName, "the coding agents on this machine (yardo)", mcpAgentToken, "agent-client.json"},
-	{"laptop", "your laptop (yardo)", LaptopToken, "clients/laptop.json"},
+	{"client", "your laptop (yardo)", ClientToken, "clients/client.json"},
 }
 
 func (mcpAuthStep) Plan(e *Env) []Action {
@@ -508,7 +539,7 @@ func (mcpAuthStep) Plan(e *Env) []Action {
 		return nil
 	}
 	return []Action{{"run", "mcpjungle init-server; create mcp-client " + mcpAgentName + " (token in ~/.mcp/" + mcpAgentToken +
-		") and laptop (token in ~/.mcp/" + LaptopToken + ")"}}
+		") and client (token in ~/.mcp/" + ClientToken + ")"}}
 }
 
 // mj runs the mcpjungle CLI against the user's gateway, as the service
@@ -536,7 +567,7 @@ func (mcpAuthStep) Check(ctx context.Context, e *Env) (bool, error) {
 	}
 	for _, c := range mcpClients {
 		tok, err := mcpRead(ctx, e, c.token)
-		if err != nil || len(bytes.TrimSpace(tok)) == 0 || !bytes.Contains(out, []byte(c.name)) {
+		if err != nil || len(bytes.TrimSpace(tok)) == 0 || !hasMCPClient(out, c.name) {
 			return false, nil
 		}
 	}
@@ -556,6 +587,15 @@ func (mcpAuthStep) Apply(ctx context.Context, e *Env) error {
 			return fmt.Errorf("mcpjungle init-server: %w: %s", err, out)
 		}
 	}
+	// yardo 0.17 named your laptop's client laptop: client replaces it.
+	if old, _ := mcpRead(ctx, e, "clients/laptop.json"); bytes.Contains(old, []byte("your laptop (yardo)")) {
+		if out, err := mj(ctx, e, "delete", "mcp-client", "laptop"); err != nil {
+			return fmt.Errorf("mcpjungle delete mcp-client laptop: %w: %s", err, out)
+		}
+		if err := mcpRemove(ctx, e, "clients/laptop.json", "clients/laptop.token"); err != nil {
+			return err
+		}
+	}
 	list, _ := mj(ctx, e, "list", "mcp-clients")
 	for _, c := range mcpClients {
 		tok, err := mcpRead(ctx, e, c.token)
@@ -572,7 +612,7 @@ func (mcpAuthStep) Apply(ctx context.Context, e *Env) error {
 				return err
 			}
 		}
-		listed := bytes.Contains(list, []byte(c.name))
+		listed := hasMCPClient(list, c.name)
 		if listed && !fresh {
 			continue
 		}

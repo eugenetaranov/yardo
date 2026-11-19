@@ -102,8 +102,11 @@ updates**. Typing on the home searches the tools.
 yardo looks for newer versions (apt and mise) in the background while
 the home is up, once a day; a run waits for it, as both use apt. After a
 fix or an install, yardo comes back to the home and says how it went;
-the run's output is under the screen when you quit. Esc or q goes back
-from any screen; on the home, q quits.
+the run's output is under the screen when you quit. **q** goes back a
+screen, and on the home quits; it's the key every screen shows. Esc does
+the same, but over SSH, in tmux or zellij it can arrive late or not at
+all, so it's kept for leaving a field you're typing in, where q types a
+q.
 
 **The first run** asks a few questions, a page each (shift+tab goes
 back): the zsh prompt (Powerlevel10k or Starship), then the choices:
@@ -156,7 +159,8 @@ yardo (this one ships newer files; Fix applies them), `○` needs a value,
   tools](#removing-tools)), uninstalls, then asks what the new items
   need (git name, prompt, MCP servers, keys) and installs.
 - **Typing**, here or on the home, filters every tab; **enter** goes into
-  the list with the filter kept, **esc** clears it. For a tool the catalog
+  the list with the filter kept, **esc** clears it while you type, **q**
+  after. For a tool the catalog
   doesn't have, ctrl-a adds it as an extra mise tool.
 - **AI** has Agent setup (agent notes, safety settings, skills), under
   its own heading. A VPN's login is part of its row: enter on Tailscale
@@ -191,7 +195,7 @@ MCPJungle gateway, git (name and email, defaults, lazygit, GitHub) and
 the two agent items. Space takes off what you don't want; a installs.
 Later runs show what's installed ticked and checked, and ask only about
 what's new. `sudo yardo --ui board` opens on this screen instead of the
-home (esc goes to the home).
+home (q goes to the home).
 
 The run follows the same order: everything is installed first (the extra
 mise tools at the end of that), then configured, with your dotfiles last.
@@ -410,7 +414,7 @@ installed by hand.
    HTTP. Beyond this machine it needs a token
    (MCPJungle's enterprise mode): yardo makes the admin token (kept in
    `~/.mcp`, the gateway user's) and one for the agents on the VM, wired
-   into them, and one for your laptop, in `~/.mcp/clients/laptop.token`
+   into them, and one for your laptop, in `~/.mcp/clients/client.token`
    (read it with `sudo cat`; the home's How to connect says where). More
    laptops: `mcp-sync client <name>`, sent as `Authorization: Bearer
    <token>`. Neither shows a token: it goes to
@@ -627,7 +631,7 @@ once the VM is on the tailnet.
 
 **Reaching this machine from a laptop.** The home's **How to connect**
 panel has the short version: `ssh vm`, `docker context use vm`, and the
-gateway's URL with where its token is (`sudo cat ~/.mcp/clients/laptop.token`,
+gateway's URL with where its token is (`sudo cat ~/.mcp/clients/client.token`,
 never the token). `sudo yardo connect` (or Go to → Connect, on the
 screen) prints it all, with this machine's addresses (VPNs
 first): Docker over SSH, which opens no port and needs no certificate

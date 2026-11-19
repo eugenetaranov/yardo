@@ -575,7 +575,7 @@ func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 		b.search, b.typing = &s, true
 		delete(b.cursor, "?search")
 	case "esc", "q", "ctrl+c":
-		if m.String() == "esc" && b.search != nil {
+		if m.String() != "ctrl+c" && b.search != nil {
 			b.search = nil // the filter goes first
 			return nil
 		}
@@ -1093,12 +1093,12 @@ func (b *Board) footer(r *row) string {
 	switch {
 	case b.panel != nil:
 		if len(b.panel.opts) > 0 {
-			keys = []string{k("↑↓", "choose"), k("enter", "do it"), k("esc", "back")}
+			keys = []string{k("↑↓", "choose"), k("enter", "do it"), k("q", "back")}
 			if b.panel.yn {
 				keys = append(keys, k("y/n", "yes or no"))
 			}
 		} else {
-			keys = []string{k("esc", "close")}
+			keys = []string{k("q", "close")}
 		}
 	case b.search != nil && b.typing:
 		keys = []string{k("enter", "into the list"), k("space", "add/uninstall"), k("esc", "clear")}
@@ -1126,9 +1126,9 @@ func (b *Board) footer(r *row) string {
 		}
 		leave := k("q", "quit")
 		if b.search != nil {
-			leave = k("esc", "clear the filter")
+			leave = k("q", "clear the filter")
 		} else if b.fromMenu {
-			leave = k("esc", "home")
+			leave = k("q", "home")
 		}
 		keys = append(keys, k("←→", "tabs"), k("/", "search"), leave)
 	}

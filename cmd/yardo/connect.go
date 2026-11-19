@@ -193,7 +193,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 			}
 		} else {
 			fmt.Fprintln(w, "  yardo makes it on its next run (sudo yardo --yes), in a file, not on the screen:")
-			fmt.Fprintf(w, "    sudo cat %s\n", laptopToken(a.User, "laptop"))
+			fmt.Fprintf(w, "    sudo cat %s\n", laptopToken(a.User, "client"))
 		}
 		fmt.Fprintln(w, "  then on the laptop:")
 		fmt.Fprintf(w, "    claude mcp add --transport http %s %s --header \"Authorization: Bearer <token>\"\n", ctxName, url)
@@ -267,7 +267,7 @@ func connectRows(a *answers.Answers, addrs []address, tokens []string, gateway b
 		case len(tokens) > 0:
 			mcp.Note = "mcpjungle, with a token: sudo cat " + tildeOf(a.User, tokens[0])
 		default:
-			mcp.Note = "mcpjungle, with a token: sudo yardo --yes makes it, in ~/.mcp/clients/laptop.token"
+			mcp.Note = "mcpjungle, with a token: sudo yardo --yes makes it, in ~/.mcp/clients/client.token"
 		}
 	} else {
 		p := mcpPort(a)

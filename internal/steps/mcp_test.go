@@ -3,6 +3,7 @@ package steps
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -423,11 +424,12 @@ func TestDockerPorts(t *testing.T) {
 
 // Beyond this machine the gateway needs tokens: yardo initializes it (the
 // admin token lands in ~/.mcp for mcp-sync) and creates the agents' and
-// the laptop's clients from files, so no token is on a command line. A
-// laptop made before its token had a file is replaced.
+// the laptop's (client) from files, so no token is on a command line. A
+// client made before its token had a file is replaced, and 0.17's laptop
+// removed.
 func TestMCPAuth(t *testing.T) {
 	var e *Env
-	clients := "laptop\n" // made by hand once, its token printed
+	clients := "client\nlaptop\n" // client: made by hand once, its token printed; laptop: 0.17's
 	deleted := ""
 	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
 		args := strings.Join(c.Args, " ")
@@ -439,11 +441,18 @@ func TestMCPAuth(t *testing.T) {
 		case strings.Contains(args, " delete mcp-client "):
 			deleted += c.Args[len(c.Args)-1] + " "
 		case strings.HasSuffix(args, " list mcp-clients"):
-			return []byte(strings.ReplaceAll(clients, "agent-client", "yardo-agents")), nil
+			// As mcpjungle says it: the descriptions name laptop and client too.
+			var out []string
+			for i, n := range strings.Fields(strings.ReplaceAll(clients, "agent-client", "yardo-agents")) {
+				out = append(out, fmt.Sprintf("%d. %s\nDescription:  your laptop (yardo)\nThis client does not have access to any MCP servers.", i+1, n))
+			}
+			return []byte(strings.Join(out, "\n\n") + "\n"), nil
 		}
 		return nil, nil
 	}}
 	e = mcpEnv(t, x)
+	put(t, e.Path("~/.mcp/clients/laptop.json"), `{"name": "laptop", "description": "your laptop (yardo)"}`)
+	put(t, e.Path("~/.mcp/clients/laptop.token"), "old\n")
 	st := step(t, catalog.Step{Type: "go:mcp_auth"})
 	if !check(t, e, st) {
 		t.Error("this machine only: no tokens, Check = false")
@@ -469,15 +478,18 @@ func TestMCPAuth(t *testing.T) {
 			t.Errorf("mcpjungle without ~/.mcp as its home: %s", c)
 		}
 	}
-	lap := strings.TrimSpace(read(t, e.Path("~/.mcp/clients/laptop.token")))
+	lap := strings.TrimSpace(read(t, e.Path("~/.mcp/clients/client.token")))
 	if len(lap) != 64 || lap == tok {
 		t.Errorf("laptop token = %q", lap)
 	}
-	if c := read(t, e.Path("~/.mcp/clients/laptop.json")); !strings.Contains(c, `"name": "laptop"`) || !strings.Contains(c, "/home/ada/.mcp/clients/laptop.token") {
+	if c := read(t, e.Path("~/.mcp/clients/client.json")); !strings.Contains(c, `"name": "client"`) || !strings.Contains(c, "/home/ada/.mcp/clients/client.token") {
 		t.Errorf("laptop config = %s", c)
 	}
-	if deleted != "laptop " {
-		t.Errorf("deleted %q: the old laptop, only", deleted)
+	if deleted != "laptop client " {
+		t.Errorf("deleted %q: 0.17's laptop, then the old client", deleted)
+	}
+	if _, err := os.Stat(e.Path("~/.mcp/clients/laptop.token")); err == nil {
+		t.Error("0.17's laptop token is still there")
 	}
 	if !check(t, e, st) {
 		t.Error("Check = false after the tokens")

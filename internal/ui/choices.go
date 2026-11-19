@@ -215,6 +215,6 @@ func (c *checklist) View() string {
 		body = append(body, "")
 	}
 	k := func(key, what string) string { return keyOn.Render(key) + " " + what }
-	keys := strings.Join([]string{k("↑↓", "choose"), k("space", "tick"), k("enter", "done"), k("esc", "cancel")}, "   ")
+	keys := strings.Join([]string{k("↑↓", "choose"), k("space", "tick"), k("enter", "done"), k("q", "cancel")}, "   ")
 	return strings.Join(append(append(head, body...), "", "  "+keys), "\n")
 }

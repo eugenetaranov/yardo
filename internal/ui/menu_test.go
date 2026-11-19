@@ -246,11 +246,11 @@ func TestHomeConnect(t *testing.T) {
 	m := testMenu(true)
 	m.info.Connect = []ConnectRow{
 		{What: "SSH", Use: "ssh vm", Note: "ada@vm.ts.net"},
-		{What: "MCP", Use: "http://vm.ts.net:8081/mcp", Note: "mcpjungle, with a token: sudo cat ~/.mcp/clients/laptop.token"},
+		{What: "MCP", Use: "http://vm.ts.net:8081/mcp", Note: "mcpjungle, with a token: sudo cat ~/.mcp/clients/client.token"},
 	}
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"How to connect", "ssh vm", "http://vm.ts.net:8081/mcp", "sudo cat ~/.mcp/clients/laptop.token", "Go to › Connect"} {
+	for _, want := range []string{"How to connect", "ssh vm", "http://vm.ts.net:8081/mcp", "sudo cat ~/.mcp/clients/client.token", "Go to › Connect"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("home lacks %q:\n%s", want, v)
 		}
