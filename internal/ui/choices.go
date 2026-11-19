@@ -146,8 +146,9 @@ func (c *checklist) lines(w int) ([]string, int) {
 			out = append(out, "")
 		}
 		if r.head {
-			// In line with a toggle's box; its options under it.
-			l := "     " + bold.Render(tui.Title(r.q.Title))
+			// Left of the boxes: every box, a toggle's or an option's, is
+			// in one column.
+			l := "  " + bold.Render(tui.Title(r.q.Title))
 			if r.q.Note != "" {
 				l += "  " + muted.Render(runewidth.Truncate(r.q.Note, max(10, w-runewidth.StringWidth(r.q.Title)-6), "…"))
 			}
@@ -164,9 +165,9 @@ func (c *checklist) lines(w int) ([]string, int) {
 				box = "(•)"
 			}
 		}
-		label, note, indent := r.q.Title, r.q.Note, ""
+		label, note := r.q.Title, r.q.Note
 		if r.q.Kind != "toggle" {
-			label, note, indent = "None", "", "   "
+			label, note = "None", ""
 			for _, o := range r.q.Options {
 				if o[0] == r.key {
 					label = o[1]
@@ -178,13 +179,13 @@ func (c *checklist) lines(w int) ([]string, int) {
 			name = box + " " + padTo(label, col)
 		}
 		name = runewidth.Truncate(name, max(10, w-10), "…")
-		l := "  " + indent + "   " + bold.Render(name) + " "
+		l := "     " + bold.Render(name) + " "
 		if !c.on(r) {
-			l = "  " + indent + "   " + muted.Render(name) + " "
+			l = "     " + muted.Render(name) + " "
 		}
 		if n == c.sel {
 			cur = len(out)
-			l = "  " + indent + rowOn.Render(" › "+name+" ")
+			l = "  " + rowOn.Render(" › "+name+" ")
 		}
 		if note != "" {
 			l += "  " + muted.Render(runewidth.Truncate(note, max(10, w-col-16), "…"))

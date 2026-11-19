@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/mattn/go-runewidth"
 )
 
 func ckKeys(c *checklist, keys ...string) {
@@ -55,5 +56,35 @@ func TestChecklist(t *testing.T) {
 	ckKeys(c, "q")
 	if !c.quit {
 		t.Error("q doesn't cancel")
+	}
+}
+
+// Every box, a toggle's or an option's, selected or not, is in one column;
+// headings are left of it.
+func TestChecklistLinesUp(t *testing.T) {
+	lang := &Question{Title: "Languages", Kind: "multi", Options: [][2]string{{"py", "Python"}, {"go", "Go"}}, Picked: []string{"py"}}
+	docker := &Question{Title: "Docker", Note: "and the MCP gateway", Kind: "toggle", Picked: []string{"on"}}
+	jira := &Question{Title: "Jira", Kind: "toggle"}
+	vpn := &Question{Title: "VPN", Kind: "one", Options: [][2]string{{"tailscale", "Tailscale"}}}
+	c := newChecklist([]*Question{lang, docker, jira, vpn})
+	ckKeys(c, "down", "down")
+	lines, _ := c.lines(100)
+	col := -1
+	for _, l := range lines {
+		l = ansi.Strip(l)
+		i := strings.IndexAny(l, "[(")
+		if i < 0 {
+			if h := strings.TrimSpace(l); h != "" && col >= 0 && strings.Index(l, h) >= col {
+				t.Errorf("heading %q not left of the boxes", h)
+			}
+			continue
+		}
+		i = runewidth.StringWidth(l[:i]) // › is one column, three bytes
+		if col < 0 {
+			col = i
+		}
+		if i != col {
+			t.Errorf("box at %d, not %d: %q", i, col, l)
+		}
 	}
 }
