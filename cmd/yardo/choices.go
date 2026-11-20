@@ -70,9 +70,9 @@ type choiceRun struct {
 	adds   []string
 }
 
-// askChoices asks the first run's choices.
-func askChoices(cat *catalog.Catalog, a *answers.Answers) (*choiceRun, error) {
-	qs := choiceQuestions(cat, a)
+// askChoices asks the first run's choices, qs (choiceQuestions): asked
+// again, they keep what was ticked.
+func askChoices(cat *catalog.Catalog, a *answers.Answers, qs []*ui.Question) (*choiceRun, error) {
 	if err := ui.Ask(qs); err != nil {
 		return nil, err
 	}

@@ -80,7 +80,7 @@ func TestBoardNeedsYou(t *testing.T) {
 		}
 	}
 	press2(b, "enter") // Docker: the fix panel
-	if b.panel == nil || !strings.Contains(b.View(), "Fix it (start it again)") {
+	if b.dialog == nil || !strings.Contains(b.View(), "Fix it (start it again)") {
 		t.Fatalf("no fix panel:\n%s", b.View())
 	}
 	press2(b, "enter")
@@ -89,7 +89,7 @@ func TestBoardNeedsYou(t *testing.T) {
 	}
 	b = testBoard(false)
 	press2(b, "right", "right", "down", "enter") // System, VPN logins: Agent API keys: fill in first, or change
-	if b.panel == nil || !strings.Contains(b.View(), "Fill in 1 value") || !strings.Contains(b.View(), "Change the keys") {
+	if b.dialog == nil || !strings.Contains(b.View(), "Fill in 1 value") || !strings.Contains(b.View(), "Change the keys") {
 		t.Fatalf("no fill-in panel:\n%s", b.View())
 	}
 	press2(b, "enter")
@@ -140,12 +140,12 @@ func TestBoardQueueAndApply(t *testing.T) {
 	}
 	press2(b, "space")
 	press2(b, "left", "down", "down", "space") // DevOps: Ansible
-	if v := b.View(); b.queued() != 2 || !strings.Contains(v, "2 changes queued") || !strings.Contains(v, "APPLY 2") ||
+	if v := b.View(); b.queued() != 2 || !strings.Contains(v, "APPLY 2") ||
 		!strings.Contains(v, "Queued: install Ansible · install WireGuard server") {
 		t.Errorf("queue:\n%s", v)
 	}
 	press2(b, "a")
-	if b.panel == nil || !strings.Contains(b.View(), "+ Install WireGuard server") || strings.Contains(b.View(), "Queued:") {
+	if b.dialog == nil || !strings.Contains(b.View(), "+ Install WireGuard server") || strings.Contains(b.View(), "Queued:") {
 		t.Fatalf("no confirm:\n%s", b.View())
 	}
 	press2(b, "enter")
@@ -163,10 +163,10 @@ func TestBoardFirstRun(t *testing.T) {
 		t.Errorf("first run:\n%s", v)
 	}
 	press2(b, "q")
-	if b.result.Kind != BoardQuit || b.out || !strings.Contains(b.View(), "not applied yet") {
+	if b.result.Kind != BoardQuit || b.ended || !strings.Contains(b.View(), "not applied yet") {
 		t.Errorf("q with a queue quit at once:\n%s", b.View())
 	}
-	if cmd := press2(b, "q"); cmd == nil || b.result.Kind != BoardQuit {
+	if press2(b, "q"); !b.ended || b.result.Kind != BoardQuit {
 		t.Error("q again didn't quit")
 	}
 }
@@ -188,7 +188,7 @@ func TestBoardSearch(t *testing.T) {
 		t.Errorf("no extra offer:\n%s", b.View())
 	}
 	press2(b, "ctrl+a")
-	if b.queued() != 2 || !strings.Contains(b.tabBar(110), "Extra") {
+	if b.queued() != 2 || !strings.Contains(b.tabBar(110, 0), "Extra") {
 		t.Errorf("extra not queued: %d", b.queued())
 	}
 }
@@ -204,7 +204,7 @@ func TestBoardChange(t *testing.T) {
 		t.Errorf("footer lacks enter change:\n%s", b.View())
 	}
 	press2(b, "enter")
-	if b.panel == nil || !strings.Contains(b.View(), "Change git name and email") {
+	if b.dialog == nil || !strings.Contains(b.View(), "Change git name and email") {
 		t.Fatalf("no change option:\n%s", b.View())
 	}
 	press2(b, "down") // past Reinstall
@@ -275,20 +275,20 @@ func TestBoardOpen(t *testing.T) {
 	}
 }
 
-// From the menu, the footer and the queue's warning say esc goes back.
+// From the menu, q goes home, the queue kept; alone, q asks first.
 func TestBoardFromMenu(t *testing.T) {
 	b := testBoard(false)
-	if f := b.footer(nil); !strings.Contains(f, "quit") || strings.Contains(f, "home") {
-		t.Errorf("standalone footer: %s", f)
+	if v := b.View(); !strings.Contains(v, "q quit") || strings.Contains(v, "q home") {
+		t.Errorf("standalone footer:\n%s", v)
 	}
 	b.SetFromMenu(true)
-	if f := b.footer(nil); !strings.Contains(f, "q home") || strings.Contains(f, "quit") {
-		t.Errorf("from the menu footer: %s", f)
+	if v := b.View(); !strings.Contains(v, "q home") || strings.Contains(v, "q quit") {
+		t.Errorf("from the menu footer:\n%s", v)
 	}
 	b.Open("group:System")
-	press2(b, "space", "esc")
-	if !strings.Contains(b.flash, "esc again goes back without them") {
-		t.Errorf("flash %q", b.flash)
+	press2(b, "space", "q")
+	if b.flash != "" || !b.ended || b.result.Kind != BoardQuit || b.queued() != 1 {
+		t.Errorf("q from the menu: flash %q ended %v queued %d", b.flash, b.ended, b.queued())
 	}
 }
 
@@ -372,7 +372,7 @@ func TestBoardUninstall(t *testing.T) {
 		t.Errorf("marks:\n%s", v)
 	}
 	press2(b, "down", "space") // ECC: can't; forget instead?
-	if v := b.View(); b.panel == nil || !strings.Contains(v, "yardo can't uninstall ECC for Claude Code") || !strings.Contains(v, "Its files sit among yours.") {
+	if v := b.View(); b.dialog == nil || !strings.Contains(v, "yardo can't uninstall ECC for Claude Code") || !strings.Contains(v, "Its files sit among yours.") {
 		t.Fatalf("no forget offer:\n%s", v)
 	}
 	press2(b, "y")
@@ -380,7 +380,7 @@ func TestBoardUninstall(t *testing.T) {
 		t.Errorf("ecc: %q\n%s", items[3].Pending, b.View())
 	}
 	press2(b, "down", "space") // zsh: says why, nothing queued
-	if items[4].Pending != "" || b.panel != nil || !strings.Contains(b.View(), "it's the shell you log in with") {
+	if items[4].Pending != "" || b.dialog != nil || !strings.Contains(b.View(), "it's the shell you log in with") {
 		t.Errorf("zsh: %q\n%s", items[4].Pending, b.View())
 	}
 	var asked []string
@@ -421,7 +421,7 @@ func TestBoardUninstall(t *testing.T) {
 		t.Errorf("d:\n%s", v)
 	}
 	press2(b, "n")
-	if b.panel != nil || b.result.Kind == BoardApply {
+	if b.dialog != nil || b.result.Kind == BoardApply {
 		t.Error("n applied")
 	}
 
@@ -431,7 +431,7 @@ func TestBoardUninstall(t *testing.T) {
 	if !strings.Contains(b.View(), "Log out (NetBird stays)") {
 		t.Fatalf("no log out:\n%s", b.View())
 	}
-	for b.panel.opts[b.panel.sel][0] != "Log out (NetBird stays)" {
+	for b.dialog.Opts[b.dialog.Sel][0] != "Log out (NetBird stays)" {
 		press2(b, "down")
 	}
 	press2(b, "enter")
@@ -446,7 +446,7 @@ func TestBoardUninstall(t *testing.T) {
 		t.Fatalf("result:\n%s", v)
 	}
 	press2(b, "right") // a key outside the panel's doesn't close it
-	if b.panel == nil {
+	if b.dialog == nil {
 		t.Fatal("the result went on a key")
 	}
 	press2(b, "down", "enter")
@@ -469,7 +469,7 @@ func TestBoardFilter(t *testing.T) {
 		t.Errorf("space in the filtered list queued %d", n)
 	}
 	press2(b, "esc")
-	if b.search != nil || b.out {
+	if b.search != nil || b.ended {
 		t.Errorf("esc didn't clear the filter")
 	}
 }
@@ -486,10 +486,10 @@ func TestBoardQClearsFilter(t *testing.T) {
 	if b.search == nil || b.typing {
 		t.Fatalf("into the list: filter %v, typing %v", b.search, b.typing)
 	}
-	if cmd := press2(b, "q"); b.search != nil || cmd != nil {
-		t.Errorf("q after typing: filter %v, left %v", b.search, cmd != nil)
+	if press2(b, "q"); b.search != nil || b.ended {
+		t.Errorf("q after typing: filter %v, left %v", b.search, b.ended)
 	}
-	if cmd := press2(b, "q"); cmd == nil {
+	if press2(b, "q"); !b.ended {
 		t.Error("q with no filter doesn't leave")
 	}
 }
@@ -512,5 +512,18 @@ func TestBoardLongNoteStays(t *testing.T) {
 	press2(b, "up")
 	if on := at(); on != away || on < 0 {
 		t.Errorf("Terraform at line %d on the long note, %d off it:\n%s", on, away, b.View())
+	}
+}
+
+// d is in the footer on an installed tool, not on one that isn't.
+func TestBoardFooterD(t *testing.T) {
+	b := testBoard(false)
+	b.Open("group:DevOps")
+	if v := b.View(); !strings.Contains(v, "d uninstall") {
+		t.Errorf("installed:\n%s", v)
+	}
+	press2(b, "down", "down")
+	if v := b.View(); strings.Contains(v, "d uninstall") {
+		t.Errorf("not installed (Ansible):\n%s", v)
 	}
 }

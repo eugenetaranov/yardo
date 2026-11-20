@@ -37,7 +37,7 @@ func TestChecklist(t *testing.T) {
 	c := newChecklist([]*Question{prompt, lang, cloud, vpn})
 	c.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	v := ansi.Strip(c.View())
-	for _, want := range []string{"Choices", "(•) Powerlevel10k", "( ) Starship", "[x] Languages", "Python, Node.js, Go", "[ ] AWS", "[x] Google Cloud", "( ) None", "(•) Tailscale"} {
+	for _, want := range []string{"Choices", "The questions they need come next", "Install there needs nothing more", "(•) Powerlevel10k", "( ) Starship", "[x] Languages", "Python, Node.js, Go", "[ ] AWS", "[x] Google Cloud", "( ) None", "(•) Tailscale"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("lacks %q:\n%s", want, v)
 		}

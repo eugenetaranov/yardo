@@ -14,10 +14,11 @@ import (
 )
 
 // The MCP servers screens: the list (yardo's servers, then the ones found
-// in ~/.mcp, then Add a server), one server's actions, deleting one, the
-// catalog to add from, and a new server's name (or a renamed one's).
+// in ~/.mcp, then Add a server), one server's actions, the catalog to add
+// from, and a new server's name (or a renamed one's). Deleting one asks
+// in a dialog.
 
-// Open shows screen first (the MCP servers), with toast; fromBoard: esc
+// Open shows screen first (the MCP servers), with toast; fromBoard: q
 // on it goes back to the board.
 func (m *Menu) Open(screen, toast string, fromBoard bool) *Menu {
 	m.screen, m.toast, m.fromBoard = screen, toast, fromBoard
@@ -82,7 +83,7 @@ type mcpSwitched struct {
 	err     error
 }
 
-// stage marks act to save (Save, or s): the screen shows it at once.
+// stage marks act to apply (a): the screen shows it at once.
 // Marking a server back as it's saved unmarks it.
 func (m *Menu) stage(act MCPAct) {
 	if m.pend == nil {
@@ -137,7 +138,7 @@ func (m *Menu) staged() []MCPAct {
 func (m *Menu) save() tea.Cmd {
 	switch {
 	case len(m.pend) == 0:
-		m.toast = "Nothing to save: space turns a server off or on."
+		m.toast = "Nothing to apply: space turns a server off or on."
 		return nil
 	case m.switching:
 		m.toast = "Saving: a moment."
@@ -208,14 +209,8 @@ func (m *Menu) switched(v mcpSwitched) {
 	m.normalize()
 }
 
-// lastRow is the list's last row: Save (with changes to save), else
-// Add a server.
-func (m *Menu) lastRow() int {
-	if len(m.pend) > 0 {
-		return len(m.mcpServers()) + 1
-	}
-	return len(m.mcpServers())
-}
+// lastRow is the list's last row: Add a server.
+func (m *Menu) lastRow() int { return len(m.mcpServers()) }
 
 // hasAll says whether the list has its All servers row (above the
 // servers, m.sel -1): there's a server of yardo's to turn off.
@@ -366,14 +361,14 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 		switch {
 		case (k == "esc" || k == "q") && len(m.pend) > 0 && !leaving:
 			m.leaving = true
-			m.toast = plural(len(m.pend), "change isn't saved", "changes aren't saved") + ": s saves, q again leaves without them."
+			m.toast = plural(len(m.pend), "change isn't applied", "changes aren't applied") + ": a applies, q again leaves without them."
 		case k == "esc" || k == "q":
 			m.unstage()
 			if m.fromBoard {
 				return m.quit(MenuResult{Kind: MenuTools})
 			}
 			m.back()
-		case k == "s" || (k == "enter" && m.sel > n):
+		case k == "a":
 			return m.save()
 		case up:
 			m.sel = max(top, m.sel-1)
@@ -395,14 +390,14 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 			s := m.mcpServers()[m.sel]
 			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "edit", Entry: s.Entry}})
 		case k == "d" && m.sel < n:
-			// Delete, asked first (Keep it chosen); esc comes back here.
+			// Delete, asked first (Keep it chosen); q comes back here.
 			if !slices.ContainsFunc(m.mcpActions(m.mcpServers()[m.sel]), func(a mcpAction) bool { return a.id == "delete" }) {
 				m.toast = "The gateway is stopped: start it first (Fix), then delete."
 				return nil
 			}
 			m.mcpSel = m.sel
-			m.screen, m.btn, m.delList = "mcp:delete", 1, true
-		case k == "a" || (k == "enter" && m.sel == n):
+			m.askDelete(m.mcpServers()[m.sel])
+		case k == "n" || (k == "enter" && m.sel == n):
 			m.mcpSel = n
 			m.screen, m.sel = "mcp:add", m.addSel
 		case k == "enter":
@@ -430,7 +425,7 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 			case "rename":
 				m.screen, m.nameFor, m.renaming, m.name, m.nameErr = "mcp:name", s.Entry, true, []rune(s.Name), ""
 			case "delete":
-				m.screen, m.btn, m.delList = "mcp:delete", 1, false // Keep it, first
+				m.askDelete(s)
 			case "off", "on":
 				m.stage(MCPAct{Do: as[m.sel].id, Entry: s.Entry})
 				m.screen, m.sel = "mcp", m.mcpSel
@@ -438,32 +433,12 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 				return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: as[m.sel].id, Entry: s.Entry}})
 			}
 		}
-	case "mcp:delete":
-		s := m.mcpServer()
-		keep := func() {
-			m.screen = "mcp:server"
-			if m.delList {
-				m.screen, m.sel = "mcp", m.mcpSel
-			}
-		}
-		switch {
-		case k == "esc" || k == "q" || k == "n":
-			keep()
-		case left:
-			m.btn = 0
-		case right:
-			m.btn = 1
-		case (k == "y" || k == "enter" && m.btn == 0) && s != nil:
-			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "delete", Entry: s.Entry}})
-		case k == "enter":
-			keep()
-		}
 	case "mcp:add":
 		specs := m.info.MCPSpecs
 		switch {
 		case k == "esc" || k == "q":
 			m.addSel = m.sel
-			m.screen, m.sel = "mcp", len(m.mcpServers())
+			m.screen, m.sel = "mcp", m.lastRow()
 		case up:
 			m.sel = max(0, m.sel-1)
 		case down:
@@ -479,6 +454,20 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// askDelete asks before deleting s (Keep it chosen first).
+func (m *Menu) askDelete(s *MCPServer) {
+	entry := s.Entry
+	m.dialog = &Dialog{Title: "Delete " + s.Name + "?", YN: true, Sel: 1,
+		Lines: []string{"It leaves the gateway, and ~/.mcp/" + s.Name + " (its settings and keys) is deleted.", "This can't be undone."},
+		Opts:  [][2]string{{"Delete (y)", "yes"}, {"Keep it (n)", "no"}},
+		On: func(v string) tea.Cmd {
+			if v != "yes" {
+				return nil
+			}
+			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "delete", Entry: entry}})
+		}}
 }
 
 // nameKey types the name: every key is text but enter, esc, backspace.
@@ -537,21 +526,66 @@ func sentence(msg string) string {
 
 // window keeps line sel of lines in view, at most n of them.
 func window(lines []string, sel, n int) []string {
-	if len(lines) <= n || n <= 0 {
+	start := windowStart(len(lines), sel, n)
+	if start == 0 && (len(lines) <= n || n <= 0) {
 		return lines
 	}
-	start := min(max(0, sel-n/2), len(lines)-n)
 	return lines[start : start+n]
+}
+
+// windowStart is the first of l lines window shows, keeping sel in view.
+func windowStart(l, sel, n int) int {
+	if l <= n || n <= 0 {
+		return 0
+	}
+	return min(max(0, sel-n/2), l-n)
 }
 
 // mcpAbout is how many lines the MCP servers screen keeps for the chosen
 // server's details.
 const mcpAbout = 3
 
-// mcpView is the MCP screens' title, lines and keys; room is how many
-// lines the screen has for them.
-func (m *Menu) mcpView(w, room int) (string, []string, string) {
-	k := func(key, what string) string { return keyOn.Render(key) + " " + what }
+// mcpPath is where an MCP screen is, from the home.
+func (m *Menu) mcpPath() string {
+	switch m.screen {
+	case "mcp:server":
+		if s := m.mcpServer(); s != nil {
+			return "MCP servers › " + s.Name
+		}
+	case "mcp:add":
+		return "MCP servers › Add a server"
+	case "mcp:name":
+		if m.renaming {
+			_, n, _ := mcp.Instance(m.nameFor)
+			return "MCP servers › Rename " + n
+		}
+		return "MCP servers › Add " + m.nameFor
+	}
+	return "MCP servers"
+}
+
+// mcpKeys are an MCP screen's keys.
+func (m *Menu) mcpKeys() []Key {
+	switch m.screen {
+	case "mcp:server":
+		return []Key{{Key: "↑↓", What: "choose"}, {Key: "enter", What: "do it"}}
+	case "mcp:add":
+		return []Key{{Key: "↑↓", What: "choose"}, {Key: "enter", What: "next"}}
+	case "mcp:name":
+		return []Key{{Key: "enter", What: map[bool]string{true: "rename", false: "add"}[m.renaming]}, {Key: "esc", What: "back"}}
+	}
+	apply := "apply"
+	if n := len(m.pend); n > 0 {
+		apply = fmt.Sprintf("apply %d", n)
+	}
+	return []Key{{Key: "↑↓", What: "choose"}, {Key: "space", What: "on/off"}, {Key: "a", What: apply, On: len(m.pend) > 0},
+		{Key: "enter", What: "open"}, {Key: "e", What: "edit its settings"}, {Key: "d", What: "delete"}, {Key: "n", What: "add"}}
+}
+
+// mcpView is the MCP screens' lines; room is how many lines the screen
+// has for them. Its rows' hits are recorded from body line top.
+func (m *Menu) mcpView(w, room int) []string {
+	top := 1 // under the body's blank first line
 	var b []string
 	add := func(s ...string) { b = append(b, s...) }
 	switch m.screen {
@@ -564,6 +598,14 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			add("  No MCP servers yet. Each one gives your coding agents tools:", "  "+m.examples()+".", "")
 		}
 		var lines []string
+		var rowOf []int
+		row := func(n int, l string) {
+			for len(rowOf) < len(lines) {
+				rowOf = append(rowOf, -2)
+			}
+			rowOf = append(rowOf, n)
+			lines = append(lines, l)
+		}
 		selLine := 0
 		if m.hasAll() {
 			on, all := 0, 0
@@ -583,9 +625,9 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 				word += accent.Render("  · not saved")
 			}
 			if m.sel < 0 {
-				lines = append(lines, "  "+rowOn.Render(padTo(" › All servers", 21))+"  "+word)
+				row(-1, "  "+rowOn.Render(padTo(" › All servers", 21))+"  "+word)
 			} else {
-				lines = append(lines, "     "+padTo("All servers", 18)+"  "+word)
+				row(-1, "     "+padTo("All servers", 18)+"  "+word)
 			}
 			lines = append(lines, "")
 		}
@@ -606,28 +648,24 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			}
 			if n == m.sel {
 				selLine = len(lines)
-				lines = append(lines, "  "+rowOn.Render(padTo(" › "+s.Name, 21))+"  "+cols)
+				row(n, "  "+rowOn.Render(padTo(" › "+s.Name, 21))+"  "+cols)
 			} else {
-				lines = append(lines, "     "+name+"  "+cols)
+				row(n, "     "+name+"  "+cols)
 			}
 		}
 		lines = append(lines, "")
 		if m.sel == len(ss) {
 			selLine = len(lines)
-			lines = append(lines, "  "+rowOn.Render(padTo(" › + Add a server", 21))+"  "+muted.Render(m.examples()))
+			row(len(ss), "  "+rowOn.Render(padTo(" › + Add a server", 21))+"  "+muted.Render(m.examples()))
 		} else {
-			lines = append(lines, "     "+padTo("+ Add a server", 18)+"  "+muted.Render(m.examples()))
+			row(len(ss), "     "+padTo("+ Add a server", 18)+"  "+muted.Render(m.examples()))
 		}
 		if len(m.pend) > 0 {
-			// The button: what's marked takes effect when it's pressed.
-			label := "Save " + plural(len(m.pend), "change", "changes")
-			lines = append(lines, "")
-			if m.sel > len(ss) {
-				selLine = len(lines)
-				lines = append(lines, "  "+rowOn.Render(" "+label+" ")+"  "+muted.Render("or s, from anywhere here"))
-			} else {
-				lines = append(lines, "  "+muted.Render("[ ")+label+muted.Render(" ]")+"  "+muted.Render("s"))
-			}
+			// What's marked takes effect with a.
+			lines = append(lines, "", "  "+accentBd.Render("a applies "+plural(len(m.pend), "change", "changes"))+"  "+muted.Render("q leaves without them"))
+		}
+		for len(rowOf) < len(lines) {
+			rowOf = append(rowOf, -2)
 		}
 		// The chosen server's details, under the list, in lines that don't
 		// change in number: the rows never move.
@@ -652,20 +690,22 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 				about[n] = "     " + muted.Render(l)
 			}
 		}
-		add(window(lines, selLine, room-len(b)-3-mcpAbout)...)
+		n := room - len(b) - 3 - mcpAbout
+		start := windowStart(len(lines), selLine, n)
+		for c, l := range window(lines, selLine, n) {
+			if r := rowOf[start+c]; r > -2 {
+				m.hit(top+len(b), 0, 0, m.selects(r))
+			}
+			add(l)
+		}
 		add("")
 		add(about...)
 		add("", "  "+muted.Render("Agents reach their tools through the gateway as <name>__<tool>."))
-		keys := []string{k("↑↓", "choose"), k("space", "on/off")}
-		if len(m.pend) > 0 {
-			keys = append(keys, k("s", "save"))
-		}
-		keys = append(keys, k("enter", "open"), k("e", "edit its settings"), k("d", "delete"), k("a", "add"), k("q", "back"))
-		return "MCP servers", b, strings.Join(keys, "   ")
-	case "mcp:server", "mcp:delete":
+		return b
+	case "mcp:server":
 		s := m.mcpServer()
 		if s == nil { // normalize goes back to the list first
-			return "MCP servers", nil, k("q", "back")
+			return nil
 		}
 		what := "a " + s.Spec + " server"
 		if s.Spec == "" {
@@ -693,29 +733,16 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			}
 		}
 		add("  "+muted.Render("Settings in ~/.mcp/"+s.Name+"/env · tools show as "+s.Name+"__<tool>"), "")
-		title := "MCP servers  ›  " + s.Name
-		if m.screen == "mcp:delete" {
-			btn := func(n int, label string) string {
-				if m.btn == n {
-					return rowOn.Render(" " + label + " ")
-				}
-				return muted.Render("[ ") + label + muted.Render(" ]")
-			}
-			add("  "+bold.Render("Delete "+s.Name+"?"),
-				"  It leaves the gateway, and ~/.mcp/"+s.Name+" (its settings and keys) is deleted.",
-				"  This can't be undone.", "",
-				"  "+btn(0, "Delete (y)")+"   "+btn(1, "Keep it (n)"))
-			return title, b, strings.Join([]string{k("y", "delete"), k("n", "keep it"), k("←→", "choose"), k("enter", "do it")}, "   ")
-		}
 		as := m.mcpActions(s)
 		for n, a := range as {
+			m.hit(top+len(b), 0, 0, m.selects(n))
 			if n == m.sel {
 				add("  " + rowOn.Render(padTo(" › "+a.label, 24)) + "  " + muted.Render(a.note))
 			} else {
 				add("     " + padTo(a.label, 21) + "  " + muted.Render(a.note))
 			}
 		}
-		return title, b, strings.Join([]string{k("↑↓", "choose"), k("enter", "do it"), k("q", "back")}, "   ")
+		return b
 	case "mcp:add":
 		specs := m.info.MCPSpecs
 		var lines []string
@@ -729,15 +756,14 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 				lines = append(lines, "     "+padTo(s.Name, 18)+"  "+about)
 			}
 		}
-		add(window(lines, m.sel, room-3)...)
-		add("", "  "+muted.Render("Adding one again makes another: a second Jira, another AWS account."))
-		return "MCP servers  ›  Add a server", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "next"), k("q", "back")}, "   ")
-	case "mcp:name":
-		title, verb := "MCP servers  ›  Add "+m.nameFor, "add"
-		if m.renaming {
-			_, n, _ := mcp.Instance(m.nameFor)
-			title, verb = "MCP servers  ›  Rename "+n, "rename"
+		start := windowStart(len(lines), m.sel, room-3)
+		for c, l := range window(lines, m.sel, room-3) {
+			m.hit(top+len(b), 0, 0, m.selects(start+c))
+			add(l)
 		}
+		add("", "  "+muted.Render("Adding one again makes another: a second Jira, another AWS account."))
+		return b
+	case "mcp:name":
 		add("  "+bold.Render("Name it"), "  "+accentBd.Render("› ")+string(m.name)+accent.Render("_"))
 		if entry, err := m.nameEntry(); err == nil {
 			_, n, _ := mcp.Instance(entry)
@@ -753,7 +779,7 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		} else if !m.renaming {
 			add("  " + muted.Render("Enter keeps "+m.nameFor+"; another name, such as work, makes it "+m.nameFor+"-work."))
 		}
-		return title, b, strings.Join([]string{k("enter", verb), k("esc", "back")}, "   ")
+		return b
 	}
-	return "", nil, ""
+	return nil
 }

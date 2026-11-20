@@ -14,104 +14,89 @@ import (
 	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
-// The home is a board of panels: Machine and Needs you on top, Services
-// & containers and MCP servers under them, How to connect, and a Go to
-// strip. The cursor
-// walks Needs you's rows, then Go to's; tab jumps between the two. Under
-// homeWide columns, the panels stack and the bottom two fold to a line.
+// The home is a board of panels: Needs you, the width of the screen, then
+// Machine in two lines, Services & containers and MCP servers side by
+// side, Connection, and a Go to strip. The cursor walks Needs you's rows,
+// Connection, then Go to's; tab jumps between the three. Under homeWide
+// columns, Services and MCP servers fold to a line each.
 
 const homeWide = 96
 
-// homeView is the home, w by h.
+// homeView is the home's body, w by h.
 func (m *Menu) homeView(w, h int) string {
 	todo := m.todo()
 	rs := m.rows()
 	var b []string
 	add := func(s ...string) { b = append(b, s...) }
 
-	left := " " + accentBd.Render(tui.Cur.Brand) + muted.Render("  ·  "+m.info.Host+"  ·  "+m.info.User)
-	add(left + strings.Repeat(" ", max(2, w-1-lipgloss.Width(left)-lipgloss.Width(m.sub))) + muted.Render(m.sub))
-	if n := len(todo); n > 0 {
-		add(" " + yellow.Render("▲ "+plural(n, "thing needs you", "things need you")) + muted.Render("  ·  everything else is working"))
-	} else {
-		add(" " + green.Render(tui.Cur.Mark.OK+" All good") + muted.Render("  ·  nothing needs you"))
+	status := " " + green.Render(tui.Cur.Mark.OK+" All good") + muted.Render("  ·  nothing needs you")
+	if n := len(slices.DeleteFunc(slices.Clone(todo), func(r menuRow) bool { return r.id == "check" })); n > 0 {
+		status = " " + yellow.Render("▲ "+plural(n, "thing needs you", "things need you")) + muted.Render("  ·  everything else is working")
 	}
+	add(status + strings.Repeat(" ", max(2, w-1-lipgloss.Width(status)-lipgloss.Width(m.sub))) + muted.Render(m.sub))
 	add("")
 
+	at := m.gotoAt()
+	con := slices.IndexFunc(rs, func(r menuRow) bool { return r.id == "connect" })
 	needOn := m.sel < len(todo)
-	// nw: the Needs you panel's inside.
-	nw := w - 6
-	if w >= homeWide {
-		nw = (w-3)/2 - 4
+	// fw: a panel the width of the screen; pw: one of two side by side.
+	fw, pw := w-2, (w-3)/2
+	wide := w >= homeWide
+	if wide {
+		fw = 2*pw + 2
 	}
-	machineL, needL := m.machineLines(), m.needLines(todo, nw)
+	needL := m.needLines(todo, fw-4)
+	top := len(b)
+	for n := range todo {
+		y := top + 1 + n
+		m.hit(y, 0, fw, m.selects(n))
+	}
+	add(box("Needs you", fmt.Sprint(len(todo)), needL, fw, len(needL), needOn)...)
+	add(box("Machine", "", m.machineShort(), fw, 2, false)...)
+
+	conL := m.connectLines(fw - 4)
+	if con >= 0 && len(conL) == 0 {
+		conL = []string{muted.Render("Enter: every way in from a laptop, ready to paste")}
+	}
+	// What's left for Services and Connection: Go to (4 and a gap) and a
+	// line under it.
+	room := h - len(b) - 5
 	svcL, mcpL := m.serviceLines(), m.mcpLines()
-	// What's left over: the header, the boxes' borders and gaps, Go to and
-	// the keys.
-	if w >= homeWide {
-		pw := (w - 3) / 2
-		th := max(len(machineL), len(needL))
-		top := beside2(box("Machine", "", machineL, pw, th, false), box("Needs you", fmt.Sprint(len(todo)), needL, pw, th, needOn))
-		add(top...)
-		room := h - len(b) - 1 - 2 - 1 - 4 - 2
-		// How to connect, when there's room for it and a line of the two
-		// above.
-		conL := m.connectLines(2*pw - 2)
-		if len(conL) > 0 && room-len(conL)-3 >= 1 {
-			room -= len(conL) + 3
-		} else {
-			conL = nil
+	if wide {
+		need := 0
+		if con >= 0 {
+			need = min(len(conL), max(1, room-6)) + 3
 		}
-		if bh := min(max(len(svcL), len(mcpL)), room); bh >= 1 {
+		if bh := min(max(len(svcL), len(mcpL)), room-need-3); bh >= 1 {
 			add("")
 			if m.hasMCP() {
 				add(beside2(box("Services & containers", "", cut(svcL, bh), pw, bh, false), box("MCP servers", "", cut(mcpL, bh), pw, bh, false))...)
 			} else {
-				add(box("Services & containers", "", cut(svcL, bh), 2*pw+2, bh, false)...)
+				add(box("Services & containers", "", cut(svcL, bh), fw, bh, false)...)
 			}
 		}
-		if len(conL) > 0 {
-			add("")
-			add(box("How to connect", "from a laptop", conL, 2*pw+2, len(conL), false)...)
-		}
 	} else {
-		pw := w - 2
-		add(box("Needs you", fmt.Sprint(len(todo)), needL, pw, len(needL), needOn)...)
-		add(box("Machine", "", m.machineShort(), pw, 2, false)...)
 		if s := services(m.info.Dash); len(s) > 0 {
-			add(" " + muted.Render(padTo("Services", 10)) + fit(s, pw-12))
+			add(" " + muted.Render(padTo("Services", 10)) + fit(s, fw-12))
 		}
 		if m.hasMCP() {
 			add(" " + muted.Render(padTo("MCP", 10)) + m.mcpSummary())
 		}
-		if len(m.info.Connect) > 0 {
-			var uses []string
-			for _, r := range m.info.Connect {
-				uses = append(uses, r.Use)
-			}
-			add(" " + muted.Render(padTo("Connect", 10)) + fit(uses, pw-12))
-		}
+	}
+	if con >= 0 {
+		n := min(len(conL), max(1, h-len(b)-5-3))
+		add("")
+		y := len(b)
+		m.hits = append(m.hits, Hit{Y0: y, Y1: y + n + 1, X0: 0, X1: fw, Do: m.selects(con)})
+		add(box("Connection", "from a laptop", cut(conL, n), fw, n, m.sel == con)...)
 	}
 	add("")
-	gw := w - 2
-	if w >= homeWide {
-		gw = (w-3)/2*2 + 2
+	gy := len(b) + 1
+	gl, xs := m.gotoLines(rs[at:], fw-4)
+	for n, x := range xs {
+		m.hit(gy, 2+x[0], 2+x[1], m.selects(at+n))
 	}
-	add(box("Go to", "", m.gotoLines(rs[len(todo):], gw-4), gw, 2, !needOn)...)
-
-	for len(b) < h-2 {
-		b = append(b, "")
-	}
-	if len(b) > h-2 {
-		b = b[:h-2]
-	}
-	if m.toast != "" {
-		b = append(b, "  "+green.Render(m.toast))
-	} else {
-		b = append(b, "")
-	}
-	k := func(key, what string) string { return keyOn.Render(key) + " " + what }
-	b = append(b, " "+strings.Join([]string{k("↑↓←→", "choose"), k("tab", "next"), k("enter", "open"), k("type", "search tools"), k("q", "quit")}, "   "))
+	add(box("Go to", "", gl, fw, 2, !needOn && m.sel >= at)...)
 	return strings.Join(b, "\n")
 }
 
@@ -341,6 +326,8 @@ func needMark(id string) (string, lipgloss.Style) {
 	switch {
 	case id == "updates":
 		return mk.Update, yellow
+	case id == "check":
+		return mk.Update, muted
 	case strings.HasPrefix(id, "key:") || id == "secrets":
 		return mk.Need, accent
 	case strings.HasPrefix(id, "mcpkey:"):
@@ -497,8 +484,15 @@ func (m *Menu) connectLines(w int) []string {
 		}
 		out = append(out, ansi.Truncate(l, w, "…"))
 	}
+	if n := len(m.info.Keys); n > 0 {
+		var fors []string
+		for _, k := range m.info.Keys {
+			fors = append(fors, k.For())
+		}
+		out = append(out, accent.Render(tui.Cur.Mark.Need+" "+plural(n, "key", "keys")+" to add: "+strings.Join(fors, ", ")))
+	}
 	if len(out) > 0 {
-		out = append(out, muted.Render("Go to › Connection: every step, ready to paste"))
+		out = append(out, muted.Render("Enter: every step, ready to paste"))
 	}
 	return out
 }
@@ -531,8 +525,9 @@ func (m *Menu) mcpSummary() string {
 }
 
 // gotoLines are Go to's: its entries in a line (the cursor on one), then
-// what the one under the cursor holds.
-func (m *Menu) gotoLines(nav []menuRow, w int) []string {
+// what the one under the cursor holds; and where each entry is on the
+// line (from, to).
+func (m *Menu) gotoLines(nav []menuRow, w int) ([]string, [][2]int) {
 	count := map[string]string{}
 	count["tools"] = fmt.Sprint(len(m.filter(func(i *BoardItem) bool { return i.Picked })))
 	n := 0
@@ -543,13 +538,20 @@ func (m *Menu) gotoLines(nav []menuRow, w int) []string {
 	}
 	count["mcp"] = fmt.Sprint(n)
 	var parts []string
+	var xs [][2]int
+	x := 0
 	note := muted.Render("or just start typing to search the tools")
-	at := m.sel - len(m.todo())
+	at := m.sel - m.gotoAt()
 	for i, r := range nav {
 		l := r.label
 		if c := count[r.id]; c != "" {
 			l += " " + c
 		}
+		if i > 0 {
+			x += 3
+		}
+		xs = append(xs, [2]int{x, x + lipgloss.Width(l) + 2})
+		x += lipgloss.Width(l) + 2
 		if i == at {
 			parts = append(parts, rowOn.Render(" "+l+" "))
 			note = muted.Render(ansi.Truncate(r.note, w, "…"))
@@ -557,7 +559,7 @@ func (m *Menu) gotoLines(nav []menuRow, w int) []string {
 			parts = append(parts, " "+l+" ")
 		}
 	}
-	return []string{strings.Join(parts, "   "), note}
+	return []string{strings.Join(parts, "   "), note}, xs
 }
 
 // setting is the setting with key, if there is one.

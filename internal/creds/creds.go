@@ -41,6 +41,35 @@ func New() *Secrets {
 		GitKeys: map[string][]byte{}, GitReplace: map[string]bool{}}
 }
 
+// Merge adds what o has and s doesn't: answers typed earlier in the same
+// run.
+func (s *Secrets) Merge(o *Secrets) {
+	if o == nil {
+		return
+	}
+	for _, m := range []struct{ to, from map[string]string }{{s.Cred, o.Cred}, {s.MCP, o.MCP}, {s.RegUser, o.RegUser}, {s.RegPass, o.RegPass}} {
+		for k, v := range m.from {
+			if _, ok := m.to[k]; !ok {
+				m.to[k] = v
+			}
+		}
+	}
+	for k, v := range o.GitKeys {
+		if _, ok := s.GitKeys[k]; !ok {
+			s.GitKeys[k], s.GitReplace[k] = v, o.GitReplace[k]
+		}
+	}
+	for _, f := range []struct{ to, from *string }{{&s.TSAuthKey, &o.TSAuthKey}, {&s.NBSetupKey, &o.NBSetupKey},
+		{&s.NBManagementURL, &o.NBManagementURL}, {&s.GHToken, &o.GHToken}, {&s.GHPassphrase, &o.GHPassphrase}} {
+		if *f.to == "" {
+			*f.to = *f.from
+		}
+	}
+	if len(s.GitKey) == 0 {
+		s.GitKey = o.GitKey
+	}
+}
+
 // Encode is the stdin the bash installer's --secrets reads: NUL-separated
 // name/value pairs.
 func (s *Secrets) Encode() []byte {

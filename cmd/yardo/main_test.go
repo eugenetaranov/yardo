@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"github.com/eugenetaranov/yardo/internal/creds"
 	"github.com/eugenetaranov/yardo/internal/plan"
 	"github.com/eugenetaranov/yardo/internal/profile"
+	"github.com/eugenetaranov/yardo/internal/run"
 	"github.com/eugenetaranov/yardo/internal/steps"
 	"github.com/eugenetaranov/yardo/internal/ui"
 )
@@ -345,16 +345,70 @@ func TestPrintKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	printKeys(&out, state, "/home/ada")
+	printKeys(&out, readKeys(state), "/home/ada")
 	want := "\nSSH key to add\n  github.com: on GitHub\n  git.acme.io: there\n\nssh-ed25519 AAAA1 ada@vm (git)\n\nShow it again: cat /home/ada/.ssh/yardo_git_key.pub\n" +
 		"\nSSH key to add\n  bitbucket.org: on Bitbucket\n\nssh-ed25519 BBBB2 ada@vm\n\nShow it again: cat /home/ada/.ssh/id_ed25519.pub\n"
 	if out.String() != want {
 		t.Errorf("got:\n%s\nwant:\n%s", out.String(), want)
 	}
 	out.Reset()
-	printKeys(&out, t.TempDir(), "/home/ada")
+	printKeys(&out, readKeys(t.TempDir()), "/home/ada")
 	if out.Len() != 0 {
 		t.Errorf("no keys: %q", out.String())
+	}
+	// A run prints only the keys it made.
+	before := readKeys(state)[:1]
+	out.Reset()
+	printKeys(&out, newKeys(before, readKeys(state)), "/home/ada")
+	if strings.Contains(out.String(), "AAAA1") || !strings.Contains(out.String(), "BBBB2") {
+		t.Errorf("this run's: %q", out.String())
+	}
+}
+
+// Keys to add: kept across runs, one per key; a git host's goes once its
+// item reads working, and d (dropKey) takes one off.
+func TestKeysToAdd(t *testing.T) {
+	state := t.TempDir()
+	rows := "github.com\tgithub.com/settings/keys\t~/.ssh/identities/github.pub\tssh-ed25519 GH ada@vm\n" +
+		"github.com\tgithub.com/settings/keys\t~/.ssh/identities/github.pub\tssh-ed25519 GH ada@vm\n" +
+		"bitbucket.org\tbitbucket.org/account/settings/ssh-keys\t~/.ssh/identities/bitbucket.pub\tssh-ed25519 BB ada@vm\n"
+	if err := os.WriteFile(filepath.Join(state, keysFile), []byte(rows), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := &answers.Answers{User: "ada"}
+	ks := keysToAdd(state, a, func(string) bool { return false })
+	if len(ks) != 2 || len(ks[0].Where) != 1 || ks[0].Where[0] != "github.com: github.com/settings/keys" {
+		t.Fatalf("keys: %+v", ks)
+	}
+	ks = keysToAdd(state, a, func(id string) bool { return id == "github" })
+	if len(ks) != 1 || ks[0].Pub != "ssh-ed25519 BB ada@vm" || len(readKeys(state)) != 1 {
+		t.Errorf("github working: %+v, file %+v", ks, readKeys(state))
+	}
+	if err := dropKey(state, "ssh-ed25519 BB ada@vm"); err != nil || len(readKeys(state)) != 0 {
+		t.Errorf("dismissed: %v, %+v", err, readKeys(state))
+	}
+}
+
+// Last run: kept for the home, a failed step with its output's tail.
+func TestLastRun(t *testing.T) {
+	cat, err := catalog.Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	res := &run.Result{Failed: []string{"docker"}, Errors: map[string]string{"docker": "exit status 100\nE: Unable to locate package\nE: apt failed"}}
+	lines := []run.Line{{Status: "ok", Text: "Go"}, {Status: "fail", Text: cat.Item("docker").Label}}
+	l := &lastRun{When: time.Date(2026, 11, 20, 14, 5, 0, 0, time.Local), Failed: res.Failed, Lines: failTails(cat, lines, res), Notes: []string{"a note"}}
+	if err := l.save(state, "ada"); err != nil {
+		t.Fatal(err)
+	}
+	got := loadLastRun(state, "ada", "/var/log/yardo.log", time.Date(2026, 11, 21, 9, 0, 0, 0, time.Local))
+	if got == nil || got.OK || got.When != "yesterday at 14:05" || len(got.Lines) != 2 || strings.Join(got.Lines[1].Tail, "|") != "E: Unable to locate package|E: apt failed" ||
+		got.Log != "/var/log/yardo.log" || got.Notes[0] != "a note" {
+		t.Errorf("last run: %+v", got)
+	}
+	if loadLastRun(t.TempDir(), "ada", "", time.Now()) != nil {
+		t.Error("a last run with none")
 	}
 }
 
@@ -689,20 +743,20 @@ func TestGHLogin(t *testing.T) {
 	}
 }
 
-// After a run, the menu says how it went: what was fixed, or what failed,
-// and that the run's output is under the screen.
+// After a run, the home says how it went: what was fixed, or what
+// failed, naming Last run; never to quit to see the output.
 func TestRanSays(t *testing.T) {
 	cat, err := catalog.Load(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ranSays(cat, []string{"docker"}, nil); !strings.HasPrefix(got, "✓ Done: Docker") || !strings.Contains(got, "q quits") {
+	if got := ranSays(cat, []string{"docker"}, nil); !strings.HasPrefix(got, "✓ Done: Docker") || strings.Contains(got, "q quits") {
 		t.Errorf("fixed: %q", got)
 	}
-	if got := ranSays(cat, nil, nil); !strings.HasPrefix(got, "✓ Done ·") {
+	if got := ranSays(cat, nil, nil); got != "✓ Done" {
 		t.Errorf("applied: %q", got)
 	}
-	if got := ranSays(cat, nil, errors.New("failed: docker — fix and re-run yardo")); !strings.HasPrefix(got, "✗ Failed: docker ·") {
+	if got := ranSays(cat, nil, &runFailed{ids: []string{"docker"}}); got != "✗ "+ui.Short(cat.Item("docker").Label)+" failed · Last run shows what happened" {
 		t.Errorf("failed: %q", got)
 	}
 	if got := ranSays(cat, nil, errCancelled); got != "Cancelled: nothing changed." {

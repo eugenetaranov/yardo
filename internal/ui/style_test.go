@@ -48,7 +48,7 @@ func TestSetLook(t *testing.T) {
 	onRow(m, "settings")
 	mk(m, "enter")
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"◢◤ YARDO ◥◣", "HOME  ▸  SETTINGS"} {
+	for _, want := range []string{"◢◤ YARDO ◥◣", "HOME ▸ SETTINGS"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("bridge lacks %q:\n%s", want, v)
 		}

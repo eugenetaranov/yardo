@@ -449,6 +449,8 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		info.MCPDown = down || st == "down" || st == "missing"
 		info.MCPAllOff = sync["*"].state == "off"
 	}
+	info.LastRun = loadLastRun(o.state, a.User, o.log, now)
+	info.Keys = keysToAdd(o.state, a, func(id string) bool { return status[id].State == "ok" })
 	return &screen{info: info, sub: sub, first: first,
 		tabs: tabs, items: items, settings: settings, connect: strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")}, nil
 }
@@ -478,13 +480,6 @@ func osName() string {
 		}
 	}
 	return "Linux"
-}
-
-// forget drops what the board queued and didn't apply.
-func (d *screen) forget() {
-	for _, i := range d.items {
-		i.Pending = ""
-	}
 }
 
 // fillIn opens the file holding the first of an item's empty values

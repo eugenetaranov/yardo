@@ -376,3 +376,43 @@ func TestVerifyStates(t *testing.T) {
 		t.Errorf("dpkg-query ran %d times, want once: %v", n, x.ran)
 	}
 }
+
+// starts records each Start's label and each Done's text.
+type starts struct{ start, done []string }
+
+func (s *starts) Start(title string)         { s.start = append(s.start, title) }
+func (s *starts) Done(status, detail string) { s.done = append(s.done, detail) }
+
+// The progress line counts the steps: each item, the apt batch as one,
+// each extra mise tool, and the caller's; the result lines don't.
+func TestStepCount(t *testing.T) {
+	x := &fakeExec{installed: map[string]bool{}}
+	r, _ := runner(t, x)
+	p := &starts{}
+	r.Progress, r.More = p, 1
+	r.Run(context.Background(), []*catalog.Item{aptItem("a", "jq"), aptItem("b", "tmux")}, []string{"starship", "ag"})
+	r.Step("zsh completions")
+	want := []string{"1 of 6 · apt: updating the package lists", "1 of 6 · apt: installing 2 packages (jq tmux)",
+		"2 of 6 · a", "3 of 6 · b", "4 of 6 · mise: starship", "5 of 6 · mise: ag", "6 of 6 · zsh completions"}
+	if strings.Join(p.start, "|") != strings.Join(want, "|") {
+		t.Errorf("starts:\n%s\nwant\n%s", strings.Join(p.start, "\n"), strings.Join(want, "\n"))
+	}
+	for _, d := range p.done {
+		if strings.Contains(d, " of 6") {
+			t.Errorf("a result line counts: %q", d)
+		}
+	}
+}
+
+// Record keeps each result line, a failure's tail apart, and passes
+// them on.
+func TestRecord(t *testing.T) {
+	var out bytes.Buffer
+	r := &Record{P: Plain{&out}}
+	r.Start("a")
+	r.Done("ok", "a")
+	r.Done("fail", "apt: one transaction failed\nE: nope")
+	if len(r.Lines) != 2 || r.Lines[1].Text != "apt: one transaction failed" || strings.Join(r.Lines[1].Tail, "") != "E: nope" || !strings.Contains(out.String(), "✓ a") {
+		t.Errorf("lines %+v out %q", r.Lines, out.String())
+	}
+}

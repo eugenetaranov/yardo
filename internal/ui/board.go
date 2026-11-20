@@ -18,8 +18,9 @@ import (
 // Space ticks a tool to install or unticks one to uninstall, d asks to
 // uninstall the row now, enter acts on the row (fix it, fill in its value,
 // change an answer, reinstall, log in, forget it), a applies the queue,
-// which shows on a line above the keys. Typing filters the list. The machine's settings are the
-// menu's (Settings).
+// which shows on a line above the keys. Typing filters the list. The
+// machine's settings are the menu's (Settings). It's one of the app's
+// views (see App).
 
 // HomeInfo is what the board's header says.
 type HomeInfo struct {
@@ -33,8 +34,12 @@ type HomeInfo struct {
 	MCPAllOff bool
 	// Dash is the home's dashboard.
 	Dash Dashboard
-	// Connect is the home's How to connect panel.
+	// Connect is the home's Connection panel; Keys the public keys runs
+	// made, to add on their hosts (Connection's Keys to add).
 	Connect []ConnectRow
+	Keys    []AddKey
+	// LastRun is how the last run went (nil: none yet).
+	LastRun *LastRun
 }
 
 // ConnectRow is one way a laptop reaches this machine: What (SSH, Docker,
@@ -210,13 +215,16 @@ type Board struct {
 	// search filters the rows; typing: keys go to it.
 	search    *string
 	typing    bool
-	panel     *panel
+	dialog    *Dialog
 	flash     string
 	width     int
 	height    int
 	result    BoardResult
-	out       bool
 	quitAsked bool
+	// ended: the board was left, with result; hits are where the last
+	// Body drew what a click selects.
+	ended bool
+	hits  []Hit
 	// plan says what the queued uninstalls do (see SetPlanner).
 	plan Planner
 }
@@ -229,19 +237,6 @@ type Planner func(uninstalls, adds []string) map[string]UninstallPlan
 // SetPlanner sets what the question before applying says about each
 // uninstall; without one it says the item's RemoveSay.
 func (b *Board) SetPlanner(p Planner) { b.plan = p }
-
-// panel is the box under the list for a row's choices or text.
-type panel struct {
-	title string
-	lines []string
-	// opts are the choices (label, value); sel the selected one; yn: y
-	// and n choose "yes" and "no" too.
-	opts [][2]string
-	sel  int
-	yn   bool
-	// on is what a choice does.
-	on func(value string) tea.Cmd
-}
 
 // LookSection is the look's settings' Section (the accent colour).
 const LookSection = "__look__"
@@ -266,6 +261,9 @@ func NewBoard(info HomeInfo, first bool, tabs []Tab, items []*BoardItem) *Board 
 	return b
 }
 
+// Items are the board's items (the queue is their Pending).
+func (b *Board) Items() []*BoardItem { return b.items }
+
 // Search opens the board filtered by q, typing it, as typing does.
 func (b *Board) Search(q string) { b.search, b.typing = &q, true }
 
@@ -277,11 +275,11 @@ func (b *Board) Open(tabID string) {
 	}
 }
 
-// Flash shows s on the footer's line until the next key.
+// Flash shows s on the toast line until the next key.
 func (b *Board) Flash(s string) { b.flash = s }
 
-// SetFromMenu says the board was opened from the menu: esc goes back to
-// it, rather than quitting.
+// SetFromMenu says the board has the menu to go back to: q goes home
+// (the queue kept), rather than quitting.
 func (b *Board) SetFromMenu(on bool) { b.fromMenu = on }
 
 // current is the current tab's index in tabs (the visible ones): found by
@@ -463,14 +461,23 @@ func (b *Board) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.WindowSizeMsg:
 		b.width, b.height = m.Width, m.Height
+	case MoveMsg:
+		b.flash = ""
+		if b.dialog == nil {
+			b.typing = false
+			b.move(b.rows(), m.N)
+		}
 	case tea.KeyMsg:
 		if m.Type != tea.KeyEsc && m.String() != "q" {
 			b.quitAsked = false
 		}
 		b.flash = ""
 		switch {
-		case b.panel != nil:
-			return b, b.panelKey(m)
+		case b.dialog != nil:
+			if m.String() == "ctrl+c" {
+				return b, b.done(BoardQuit, "")
+			}
+			return b, dialogKey(&b.dialog, m.String())
 		case b.search != nil && b.typing:
 			return b, b.searchKey(m)
 		}
@@ -491,7 +498,8 @@ func (b *Board) done(k BoardKind, id string) tea.Cmd {
 			b.result.Uninstalls = append(b.result.Uninstalls, i.ID)
 		}
 	}
-	return tea.Quit
+	b.ended = true
+	return nil
 }
 
 // toggle ticks i (queues installing it) or unticks it (queues
@@ -519,10 +527,10 @@ func (b *Board) untick(i *BoardItem) {
 		if why == "" {
 			why = "its own installer or settings set it up"
 		}
-		b.panel = &panel{title: "yardo can't uninstall " + short(i.Label), yn: true, sel: 1,
-			lines: []string{capital(why) + ".", "Forget it instead? It stays installed, and yardo stops checking it."},
-			opts:  [][2]string{{"Forget it (y)", "yes"}, {"Keep it (n)", "no"}},
-			on: func(v string) tea.Cmd {
+		b.dialog = &Dialog{Title: "yardo can't uninstall " + short(i.Label), YN: true, Sel: 1,
+			Lines: []string{capital(why) + ".", "Forget it instead? It stays installed, and yardo stops checking it."},
+			Opts:  [][2]string{{"Forget it (y)", "yes"}, {"Keep it (n)", "no"}},
+			On: func(v string) tea.Cmd {
 				if v == "yes" {
 					i.Pending = "forget"
 				}
@@ -546,10 +554,6 @@ func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 		b.move(rs, -1)
 	case "down", "j":
 		b.move(rs, 1)
-	case "pgup":
-		b.move(rs, -10)
-	case "pgdown":
-		b.move(rs, 10)
 	case "left", "h", "shift+tab":
 		b.tabID = tabs[(cur+len(tabs)-1)%len(tabs)].ID
 	case "right", "l", "tab":
@@ -569,7 +573,7 @@ func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 		} else if i.Pending == "" {
 			b.untick(i)
 		}
-		if b.panel == nil && b.count(func(i *BoardItem) bool { return i.Pending == "uninstall" }) > 0 {
+		if b.dialog == nil && b.count(func(i *BoardItem) bool { return i.Pending == "uninstall" }) > 0 {
 			b.confirm(false)
 		}
 	case "a":
@@ -587,13 +591,11 @@ func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 			b.search = nil // the filter goes first
 			return nil
 		}
-		if m.String() != "ctrl+c" && b.queued() > 0 && !b.quitAsked {
+		// From the menu, the queue goes home with it; with none, quitting
+		// drops it: asked once.
+		if m.String() != "ctrl+c" && b.queued() > 0 && !b.quitAsked && !b.fromMenu {
 			b.quitAsked = true
-			leave := "quits"
-			if b.fromMenu {
-				leave = "goes back"
-			}
-			b.flash = fmt.Sprintf("%s not applied yet. a applies; %s again %s without them.", plural(b.queued(), "change", "changes"), m.String(), leave)
+			b.flash = fmt.Sprintf("%s not applied yet. a applies; %s again quits without them.", plural(b.queued(), "change", "changes"), m.String())
 			return nil
 		}
 		return b.done(BoardQuit, "")
@@ -648,34 +650,6 @@ func (b *Board) searchKey(m tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func (b *Board) panelKey(m tea.KeyMsg) tea.Cmd {
-	p := b.panel
-	switch k := m.String(); {
-	case p.yn && (k == "y" || k == "n"):
-		b.panel = nil
-		if k == "y" && p.on != nil {
-			return p.on("yes")
-		}
-		return nil
-	}
-	switch m.String() {
-	case "esc", "q":
-		b.panel = nil
-	case "up", "k":
-		p.sel = max(0, p.sel-1)
-	case "down", "j":
-		p.sel = min(max(0, len(p.opts)-1), p.sel+1)
-	case "enter", " ":
-		b.panel = nil
-		if len(p.opts) > 0 && p.on != nil {
-			return p.on(p.opts[p.sel][1])
-		}
-	case "ctrl+c":
-		return b.done(BoardQuit, "")
-	}
-	return nil
-}
-
 // act is enter on a row.
 func (b *Board) act(r *row) tea.Cmd {
 	if r == nil {
@@ -688,13 +662,13 @@ func (b *Board) act(r *row) tea.Cmd {
 		case i.Pending != "" || !i.Picked:
 			b.toggle(i)
 		case fixable(i):
-			b.panel = b.itemPanel(i, []string{i.Detail}, [2]string{fixLabel(i.State), "fix"}, func() tea.Cmd {
+			b.dialog = b.itemPanel(i, []string{i.Detail}, [2]string{fixLabel(i.State), "fix"}, func() tea.Cmd {
 				return b.done(BoardFix, i.ID)
 			})
 		case secret(i):
 			// Filling in comes first; its answers (the MCP servers) can
 			// still be changed.
-			b.panel = b.itemPanel(i, []string{"Empty: " + strings.Join(i.Inputs, ", ")}, [2]string{"Fill in " + plural(len(i.Inputs), "value", "values"), "edit"}, func() tea.Cmd {
+			b.dialog = b.itemPanel(i, []string{"Empty: " + strings.Join(i.Inputs, ", ")}, [2]string{"Fill in " + plural(len(i.Inputs), "value", "values"), "edit"}, func() tea.Cmd {
 				cmd := b.done(BoardEdit, i.ID)
 				b.result.Inputs = i.Inputs
 				return cmd
@@ -710,7 +684,7 @@ func (b *Board) act(r *row) tea.Cmd {
 			if i.State == "unchecked" {
 				lines = append(lines, "yardo can't check this one yet (the bash installer runs it).")
 			}
-			b.panel = b.itemPanel(i, lines, [2]string{"Reinstall (rewrites its files, installs what's missing)", "fix"}, func() tea.Cmd {
+			b.dialog = b.itemPanel(i, lines, [2]string{"Reinstall (rewrites its files, installs what's missing)", "fix"}, func() tea.Cmd {
 				return b.done(BoardFix, i.ID)
 			})
 		}
@@ -721,7 +695,7 @@ func (b *Board) act(r *row) tea.Cmd {
 // itemPanel is a picked item's panel: lines, then first (choosing it calls
 // do), changing each of its answers, logging in or out (its parts),
 // uninstalling it and forgetting it. Any other value does nothing.
-func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func() tea.Cmd) *panel {
+func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func() tea.Cmd) *Dialog {
 	opts := append([][2]string{first}, changeOpts(i)...)
 	parts := b.parts(i)
 	for n, p := range parts {
@@ -746,8 +720,8 @@ func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func
 	if !i.Protected {
 		opts = append(opts, [2]string{"Forget it: stays installed, yardo stops checking it", "forget"})
 	}
-	return &panel{title: short(i.Label) + ": " + stateWord(i.State), lines: lines, opts: opts,
-		on: func(v string) tea.Cmd {
+	return &Dialog{Title: short(i.Label) + ": " + stateWord(i.State), Lines: lines, Opts: opts,
+		On: func(v string) tea.Cmd {
 			switch v {
 			case first[1]:
 				return do()
@@ -861,9 +835,9 @@ func (b *Board) confirm(full bool) {
 	if !full && everything > 0 {
 		opts = append(opts, [2]string{fmt.Sprintf("List everything that goes (%d)", everything), "list"})
 	}
-	b.panel = &panel{title: title, lines: lines, yn: true,
-		opts: append(opts, [2]string{keep, "no"}),
-		on: func(v string) tea.Cmd {
+	b.dialog = &Dialog{Title: title, Lines: lines, YN: true,
+		Opts: append(opts, [2]string{keep, "no"}),
+		On: func(v string) tea.Cmd {
 			switch v {
 			case "yes":
 				return b.done(BoardApply, "")
@@ -891,8 +865,8 @@ func (b *Board) ShowResult(title string, lines, retry []string) {
 		}
 		opts = append(opts, [2]string{"Retry " + strings.Join(names, ", "), "retry"})
 	}
-	b.panel = &panel{title: title, lines: lines, opts: opts,
-		on: func(v string) tea.Cmd {
+	b.dialog = &Dialog{Title: title, Lines: lines, Opts: opts,
+		On: func(v string) tea.Cmd {
 			if v == "retry" {
 				for _, i := range again {
 					i.Pending = "uninstall"
@@ -995,40 +969,37 @@ func padTo(s string, w int) string {
 	return s + strings.Repeat(" ", max(0, w-runewidth.StringWidth(s)))
 }
 
-func (b *Board) header(w int) string {
-	left := " " + accentBd.Render(tui.Cur.Brand) + muted.Render(" · "+b.info.Host+" · "+b.info.User)
-	var right []string
-	if n := b.queued(); n > 0 {
-		right = append(right, accentBd.Render(plural(n, "change", "changes")+" queued"))
-	}
+// health is how the installed tools are, in a few words.
+func (b *Board) health() string {
 	if b.first {
-		right = append(right, muted.Render("nothing installed yet: a installs what's queued"))
-	} else {
-		// Health counts its rows: a part's is in its tool's.
-		own := func(f func(*BoardItem) bool) func(*BoardItem) bool {
-			return func(i *BoardItem) bool { return !b.inRow(i) && f(i) }
-		}
-		if n := b.count(own(fixable)); n > 0 {
-			right = append(right, red.Render(fmt.Sprintf("%s %d to fix", tui.Cur.Mark.Down, n)))
-		}
-		if n := b.count(own(secret)); n > 0 {
-			right = append(right, accent.Render(fmt.Sprintf("%s %d to fill in", tui.Cur.Mark.Need, n)))
-		}
-		if n := b.count(own(newer)); n > 0 {
-			right = append(right, yellow.Render(fmt.Sprintf("%s %d with updates", tui.Cur.Mark.Update, n)))
-		}
-		if len(right) == 0 {
-			right = append(right, green.Render(tui.Cur.Mark.OK+" all well"))
-		}
-		if b.info.Checked != "" {
-			right = append(right, muted.Render("updates checked "+b.info.Checked))
-		}
+		return muted.Render("nothing installed yet: a installs what's queued")
 	}
-	r := strings.Join(right, muted.Render(" · ")) + " "
-	return left + strings.Repeat(" ", max(1, w-lipgloss.Width(left)-lipgloss.Width(r))) + r
+	var right []string
+	// Health counts its rows: a part's is in its tool's.
+	own := func(f func(*BoardItem) bool) func(*BoardItem) bool {
+		return func(i *BoardItem) bool { return !b.inRow(i) && f(i) }
+	}
+	if n := b.count(own(fixable)); n > 0 {
+		right = append(right, red.Render(fmt.Sprintf("%s %d to fix", tui.Cur.Mark.Down, n)))
+	}
+	if n := b.count(own(secret)); n > 0 {
+		right = append(right, accent.Render(fmt.Sprintf("%s %d to fill in", tui.Cur.Mark.Need, n)))
+	}
+	if n := b.count(own(newer)); n > 0 {
+		right = append(right, yellow.Render(fmt.Sprintf("%s %d with updates", tui.Cur.Mark.Update, n)))
+	}
+	if len(right) == 0 {
+		right = append(right, green.Render(tui.Cur.Mark.OK+" all well"))
+	}
+	if b.info.Checked != "" {
+		right = append(right, muted.Render("updates checked "+b.info.Checked))
+	}
+	return strings.Join(right, muted.Render(" · "))
 }
 
-func (b *Board) tabBar(w int) string {
+// tabBar is the tabs, each with its worst mark, and the health at the
+// right; a click on a tab opens it.
+func (b *Board) tabBar(w, y int) string {
 	// Each tab's worst: 3 something to fix, 2 to fill in, 1 an update.
 	tabOf := map[string]string{}
 	for _, t := range b.tabs {
@@ -1056,78 +1027,146 @@ func (b *Board) tabBar(w int) string {
 	}
 	tabs := b.visibleTabs()
 	cur := b.current(tabs)
-	var parts []string
+	line, x := " ", 1
 	for n, t := range tabs {
 		m := tui.Cur.Mark
 		label := " " + tui.Title(t.Title) + [...]string{"", " " + m.Update, " " + m.Need, " " + m.Down}[worst[t.ID]] + " "
+		lw := runewidth.StringWidth(label)
+		if x+lw > w-1 {
+			break
+		}
+		if n > 0 {
+			line += " "
+			x++
+		}
 		if n == cur && b.search == nil {
-			parts = append(parts, tabOn.Render(label))
+			line += tabOn.Render(label)
 		} else {
-			parts = append(parts, muted.Render(label))
+			line += muted.Render(label)
 		}
+		id := t.ID
+		b.hits = append(b.hits, Hit{Y0: y, Y1: y, X0: x, X1: x + lw, Do: func() {
+			b.search, b.typing, b.tabID = nil, false, id
+		}})
+		x += lw
 	}
-	return " " + runewidth.Truncate(strings.Join(parts, " "), w, "")
+	if h := b.health(); lipgloss.Width(line)+2+lipgloss.Width(h) < w {
+		line += strings.Repeat(" ", w-1-lipgloss.Width(line)-lipgloss.Width(h)) + h
+	}
+	return line
 }
 
-func (b *Board) footer(r *row) string {
-	k := func(key, what string) string { return keyOn.Render(key) + " " + what }
-	var keys []string
+// queueSay is the queue in words: install Java · uninstall NetBird.
+func (b *Board) queueSay() string {
+	var q []string
+	for _, i := range b.items {
+		switch i.Pending {
+		case "add":
+			q = append(q, "install "+short(i.Label))
+		case "forget":
+			q = append(q, "forget "+short(i.Label))
+		case "uninstall":
+			q = append(q, "uninstall "+short(i.Label))
+		}
+	}
+	return strings.Join(q, " · ")
+}
+
+// Path is where the board is: Home › Tools › its tab (or the search).
+func (b *Board) Path() string {
+	p := "Tools › "
+	if b.fromMenu {
+		p = "Home › " + p
+	}
+	if b.search != nil {
+		return p + "Search"
+	}
+	tabs := b.visibleTabs()
+	return p + tabs[b.current(tabs)].Title
+}
+
+// Back is what q does.
+func (b *Board) Back() string {
 	switch {
-	case b.panel != nil:
-		if len(b.panel.opts) > 0 {
-			keys = []string{k("↑↓", "choose"), k("enter", "do it"), k("q", "back")}
-			if b.panel.yn {
-				keys = append(keys, k("y/n", "yes or no"))
-			}
-		} else {
-			keys = []string{k("q", "close")}
-		}
+	case b.dialog != nil:
+		return "cancel"
 	case b.search != nil && b.typing:
-		keys = []string{k("enter", "into the list"), k("space", "add/uninstall"), k("esc", "clear")}
-	default:
-		first := k("enter", "details")
-		switch {
-		case r == nil:
-		case r.item.Pending != "":
-			first = k("space", "cancel")
-		case !r.item.Picked:
-			first = k("space", "add")
-		case fixable(r.item):
-			first = k("enter", "fix")
-		case secret(r.item):
-			first = k("enter", "fill in")
-		case len(r.item.Changes) > 0:
-			first = k("enter", "change")
-		}
-		keys = append(keys, first)
-		if r != nil && r.item != nil && r.item.Picked && r.item.Pending == "" {
-			keys = append(keys, k("space", "uninstall"))
-		}
-		if n := b.queued(); n > 0 {
-			keys = append(keys, accentBd.Render("a")+" "+accentBd.Render(fmt.Sprintf("APPLY %d", n)))
-		}
-		leave := k("q", "quit")
-		if b.search != nil {
-			leave = k("q", "clear the filter")
-		} else if b.fromMenu {
-			leave = k("q", "home")
-		}
-		keys = append(keys, k("←→", "tabs"), k("/", "search"), leave)
+		return ""
+	case b.search != nil:
+		return "clear the filter"
+	case b.fromMenu:
+		return "home"
 	}
-	if b.flash != "" {
-		return " " + yellow.Render(b.flash)
-	}
-	return " " + strings.Join(keys, "   ")
+	return "quit"
 }
 
-func (b *Board) View() string {
-	if b.out {
-		return ""
+// Keys are the footer's: what each key does on the row.
+func (b *Board) Keys() []Key {
+	if b.dialog != nil {
+		return dialogKeys(b.dialog)
 	}
-	w, h := max(50, b.width), max(12, b.height)
+	if b.search != nil && b.typing {
+		return []Key{{Key: "enter", What: "into the list"}, {Key: "space", What: "add/uninstall"}, {Key: "esc", What: "clear"}}
+	}
+	_, r := b.selected(b.rows())
+	var keys []Key
+	first := Key{Key: "enter", What: "details"}
+	switch {
+	case r == nil:
+	case r.item.Pending != "":
+		first = Key{Key: "space", What: "cancel"}
+	case !r.item.Picked:
+		first = Key{Key: "space", What: "add"}
+	case fixable(r.item):
+		first = Key{Key: "enter", What: "fix"}
+	case secret(r.item):
+		first = Key{Key: "enter", What: "fill in"}
+	case len(r.item.Changes) > 0:
+		first = Key{Key: "enter", What: "change"}
+	}
+	keys = append(keys, first)
+	if r != nil && r.item != nil && r.item.Picked && r.item.Pending == "" {
+		keys = append(keys, Key{Key: "space", What: "uninstall"}, Key{Key: "d", What: "uninstall"})
+	}
+	if n := b.queued(); n > 0 {
+		keys = append(keys, Key{Key: "a", What: fmt.Sprintf("APPLY %d", n), On: true})
+	}
+	return append(keys, Key{Key: "←→", What: "tabs"}, Key{Key: "/", What: "search"})
+}
+
+// Help are every key the board takes, for the keys screen.
+func (b *Board) Help() []Key {
+	return []Key{
+		{Key: "space", What: "tick a tool to install, untick one to uninstall; again takes it off the queue"},
+		{Key: "enter", What: "the row's details: fix, fill in, change, reinstall, log in, forget"},
+		{Key: "a", What: "apply the queue, asked first"},
+		{Key: "d", What: "uninstall the row, asked first"},
+		{Key: "/", What: "search (or just type, from the home)"},
+		{Key: "←→ h l", What: "the previous or next tab"},
+		{Key: "tab", What: "the next tab"},
+		{Key: "ctrl+a", What: "in a search with no match: add it as an extra mise tool"},
+	}
+}
+
+// Toast is the line the board says above its keys.
+func (b *Board) Toast() string { return b.flash }
+
+// Hits are where the last Body drew what a click selects.
+func (b *Board) Hits() []Hit { return b.hits }
+
+// Typing: the search field has the keys.
+func (b *Board) Typing() bool { return b.search != nil && b.typing && b.dialog == nil }
+
+// View is the board drawn alone, as the app draws it.
+func (b *Board) View() string { return standalone(b, b.info, b.width, b.height) }
+
+// Body is the board under the header, w by h: the tabs, the search, the
+// list, a dialog, the queue.
+func (b *Board) Body(w, h int) string {
+	b.hits = nil
 	rule := muted.Render(strings.Repeat("─", w-1))
 	var out []string
-	out = append(out, b.header(w), b.tabBar(w))
+	out = append(out, b.tabBar(w, 0))
 	rs := b.rows()
 	// The search, at the top, by what it found.
 	if b.search != nil {
@@ -1148,52 +1187,19 @@ func (b *Board) View() string {
 			muted.Render(plural(found, "match", "matches")+" · "+hint))
 	}
 	out = append(out, rule)
+	head := len(out)
 
-	cur, r := b.selected(rs)
+	cur, _ := b.selected(rs)
 	var pl []string
-	if p := b.panel; p != nil {
-		pl = append(pl, " "+accentBd.Render("┌ "+p.title+" "+strings.Repeat("─", max(0, w-6-runewidth.StringWidth(p.title)))))
-		for _, l := range p.lines {
-			// An indented line stays indented, wrapped.
-			body := strings.TrimLeft(l, " ")
-			pad := strings.Repeat(" ", len(l)-len(body))
-			if body == "" {
-				pl = append(pl, " "+accentBd.Render("│"))
-				continue
-			}
-			for _, wl := range wrap(body, w-8-len(pad)) {
-				pl = append(pl, " "+accentBd.Render("│")+"  "+pad+wl)
-			}
-		}
-		for n, o := range p.opts {
-			line := "  " + o[0]
-			if n == p.sel {
-				line = "› " + rowOn.Render(padTo(o[0], w-14))
-			}
-			pl = append(pl, " "+accentBd.Render("│")+" "+line)
-		}
-		pl = append(pl, " "+accentBd.Render("└"+strings.Repeat("─", max(0, w-4))))
-	}
 	// The queue, on a line of its own above the keys.
 	var ql []string
-	if b.queued() > 0 && b.panel == nil {
-		var q []string
-		for _, i := range b.items {
-			switch i.Pending {
-			case "add":
-				q = append(q, "install "+short(i.Label))
-			case "forget":
-				q = append(q, "forget "+short(i.Label))
-			case "uninstall":
-				q = append(q, "uninstall "+short(i.Label))
-			}
-		}
-		ql = append(ql, " "+accentBd.Render("Queued: ")+runewidth.Truncate(strings.Join(q, " · "), max(10, w-24), "…")+muted.Render("   a applies"))
+	if b.queued() > 0 && b.dialog == nil {
+		ql = append(ql, " "+accentBd.Render("Queued: ")+runewidth.Truncate(b.queueSay(), max(10, w-24), "…")+muted.Render("   a applies"))
 	}
-	listH := max(1, h-5-len(pl)-len(ql))
-	if b.search != nil {
-		listH = max(1, listH-1)
+	if b.dialog != nil {
+		pl = dialogLines(b.dialog, w, 0, nil)
 	}
+	listH := max(1, h-head-len(pl)-len(ql))
 	// Labels as wide as the longest one, leaving the notes beside them
 	// room (up to 2/5 of the screen) when any row has one.
 	// Each row's note, worked out once.
@@ -1220,7 +1226,7 @@ func (b *Board) View() string {
 	if cur >= listH {
 		top = cur - listH + 1
 	}
-	for n := top; n < len(rs) && len(out) < 3+listH; n++ {
+	for n := top; n < len(rs) && len(out) < head+listH; n++ {
 		x := rs[n]
 		switch {
 		case x.head != "":
@@ -1244,35 +1250,32 @@ func (b *Board) View() string {
 		}
 		mk, ms := mark(i)
 		note, ns := notes[n].text, notes[n].style
-		pointer := " "
-		if n == cur && b.panel == nil {
-			pointer = ">"
+		// One cursor, as the menu's: the row in the accent colour, › at
+		// its start.
+		lead := "   "
+		if n == cur && b.dialog == nil {
+			lead = " › "
 		}
-		plain := fmt.Sprintf(" %s%s %s %s  ", pointer, box, mk, padTo(label, labelW))
+		plain := fmt.Sprintf("%s%s %s %s  ", lead, box, mk, padTo(label, labelW))
 		noteW := max(4, w-runewidth.StringWidth(plain)-1)
+		k := n
+		b.hits = append(b.hits, Hit{Y0: len(out), Y1: len(out), Do: func() { b.cursor[b.key()], b.typing = k, false }})
 		// Each row a line, the selected one's note cut too: wrapped, it
 		// would move the rows below as the selection moves.
-		if n == cur && b.panel == nil {
+		if n == cur && b.dialog == nil {
 			out = append(out, rowOn.Render(padTo(plain+runewidth.Truncate(note, noteW, "…"), w-1)))
 		} else {
-			out = append(out, fmt.Sprintf(" %s%s %s %s  ", pointer, box, ms.Render(mk), padTo(label, labelW))+ns.Render(runewidth.Truncate(note, noteW, "…")))
+			out = append(out, fmt.Sprintf("%s%s %s %s  ", lead, box, ms.Render(mk), padTo(label, labelW))+ns.Render(runewidth.Truncate(note, noteW, "…")))
 		}
 	}
-	for len(out) < 3+listH {
+	for len(out) < head+listH {
 		out = append(out, "")
+	}
+	if b.dialog != nil {
+		b.hits = nil // the dialog's options only
+		pl = dialogLines(b.dialog, w, len(out), &b.hits)
 	}
 	out = append(out, pl...)
 	out = append(out, ql...)
-	out = append(out, rule, b.footer(r))
 	return strings.Join(out, "\n")
-}
-
-// Run shows the board; it returns what it was left with.
-func (b *Board) Run() (BoardResult, error) {
-	b.out = false
-	if _, err := tea.NewProgram(b, tea.WithAltScreen()).Run(); err != nil {
-		return BoardResult{Kind: BoardQuit}, err
-	}
-	b.out = true
-	return b.result, nil
 }

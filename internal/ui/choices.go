@@ -201,7 +201,7 @@ func (c *checklist) View() string {
 	}
 	w, h := max(50, c.width), max(12, c.height)
 	head := []string{"", "  " + accentBd.Render(tui.Cur.Brand) + muted.Render("  ·  ") + bold.Render(tui.Title("Choices")),
-		"  " + muted.Render("Tick what this machine should have. Nothing changes until you confirm.")}
+		"  " + muted.Render("Tick what this machine should have. The questions they need come next, then a review: Install there needs nothing more.")}
 	body, cur := c.lines(w)
 	room := max(3, h-len(head)-3)
 	if cur < c.top+1 {

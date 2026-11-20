@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os/exec"
 	"os/user"
 	"slices"
@@ -61,6 +63,31 @@ type asker struct {
 	choose   func(title string, opts []string, sel string) (string, error)
 	password func(title, placeholder string) (string, error)
 	home     string
+	// asked are the first run's choices whose questions were asked (before
+	// its review), and secrets what they typed: Customize… then asks only
+	// what the board adds.
+	asked   []string
+	secrets *creds.Secrets
+	// pickChoices and reviewOf are seams: the choices screen, and the
+	// review's answer (askChoices and review).
+	pickChoices func(qs []*ui.Question) (*choiceRun, error)
+	reviewOf    func(c *choices, options ...string) string
+}
+
+// pickFirst asks the first run's choices.
+func (k *asker) pickFirst(qs []*ui.Question) (*choiceRun, error) {
+	if k.pickChoices != nil {
+		return k.pickChoices(qs)
+	}
+	return askChoices(k.cat, k.a, qs)
+}
+
+// reviewer shows the review and asks which of options.
+func (k *asker) reviewer(c *choices, options ...string) string {
+	if k.reviewOf != nil {
+		return k.reviewOf(c, options...)
+	}
+	return k.review(c, options...)
 }
 
 // ask is a run with profiles: their picks, reviewed, and what they can't
@@ -76,10 +103,55 @@ func (k *asker) ask(ctx context.Context) (*choices, error) {
 	return c, nil
 }
 
-// fromBoard turns what the board queued into this run's choices (picks
-// added and removed, extra mise tools, access settings), then asks what
-// the new items need.
+// fromBoard turns what the board queued into this run's choices, then
+// asks what the new items need: on a first run, all of it, but what the
+// first review's choices (k.asked) were asked already.
 func (k *asker) fromBoard(ctx context.Context, res ui.BoardResult, first bool) (*choices, error) {
+	saved := append(slices.Clone(k.a.Picks), k.asked...)
+	c := k.boardChoices(res)
+	if len(k.asked) > 0 {
+		first = false
+	}
+	if err := k.questions(ctx, c, first, saved); err != nil {
+		return nil, err
+	}
+	if k.secrets != nil {
+		c.secrets.Merge(k.secrets)
+	}
+	return c, nil
+}
+
+// firstRun is a first run's questions, all before its review: the
+// choices (one screen), every question they need, then the review, which
+// says what they set. pick is the review's answer: Install (c is ready
+// to run, nothing more to ask), Customize… (the board, with adds queued)
+// or Quit. shift+tab on the first question goes back to the choices,
+// their ticks kept.
+func (k *asker) firstRun(ctx context.Context) (c *choices, adds []string, pick string, err error) {
+	qs := choiceQuestions(k.cat, k.a)
+	for {
+		r, err := k.pickFirst(qs)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		k.a.Prompt, k.promptSet = r.prompt, true
+		c = k.boardChoices(ui.BoardResult{Adds: r.adds})
+		ui.AllowBack(true)
+		err = k.questions(ctx, c, true, nil)
+		ui.AllowBack(false)
+		if errors.Is(err, ui.ErrBack) {
+			continue
+		}
+		if err != nil {
+			return nil, nil, "", err
+		}
+		return c, r.adds, k.reviewer(c, "Install", "Customize…", "Quit"), nil
+	}
+}
+
+// boardChoices are this run's choices from what the board queued (picks
+// added and removed, extra mise tools, access settings), nothing asked.
+func (k *asker) boardChoices(res ui.BoardResult) *choices {
 	saved := slices.Clone(k.a.Picks)
 	picks := slices.DeleteFunc(slices.Clone(saved), func(id string) bool { return slices.Contains(res.Forgets, id) })
 	extras := slices.DeleteFunc(slices.Clone(k.a.MiseExtra), func(t string) bool { return slices.Contains(res.Forgets, "mise:"+t) })
@@ -111,8 +183,7 @@ func (k *asker) fromBoard(ctx context.Context, res ui.BoardResult, first bool) (
 			k.a.SSHAcceptNew = map[string]string{"on": "on"}[v]
 		}
 	}
-	c := &choices{secrets: creds.New(), picks: picks, miseExtra: extras, dropped: dropped}
-	return c, k.questions(ctx, c, first, saved)
+	return &choices{secrets: creds.New(), picks: picks, miseExtra: extras, dropped: dropped}
 }
 
 // change asks the question for key (see changes) again, for an item
@@ -563,19 +634,8 @@ func (k *asker) review(c *choices, options ...string) string {
 			fmt.Fprintln(k.out, "  (nothing)")
 		}
 	}
-	if len(k.a.MCPServers) > 0 {
-		port := k.a.MCPPort
-		if port == 0 && k.port != nil {
-			port = k.port()
-		}
-		host := k.a.MCPListen
-		if host == "tailscale" {
-			host = "<tailscale address>"
-		}
-		fmt.Fprintf(k.out, "  MCPJungle: http://%s:%d/mcp · servers: %s\n", host, port, strings.Join(mcpNames(k.a.MCPServers), " "))
-	}
-	if k.a.Git.Name+k.a.Git.Email != "" {
-		fmt.Fprintf(k.out, "  Git: %s <%s>\n", k.a.Git.Name, k.a.Git.Email)
+	for _, l := range k.answered(c) {
+		fmt.Fprintf(k.out, "  %s\n", l)
 	}
 	listDropped(k.out, k.cat, k.dropped)
 	ch, err := ui.Choose("Ready?", options, options[0])
@@ -583,6 +643,78 @@ func (k *asker) review(c *choices, options ...string) string {
 		return "Quit"
 	}
 	return ch
+}
+
+// answered are the review's lines for the answers c's questions took:
+// the prompt, the timezone, git, the gateway's address, Docker's ports,
+// the dotfiles repo, the git hosts' keys, and which keys were given (the
+// names, never the values).
+func (k *asker) answered(c *choices) []string {
+	a, has := k.a, planHas(c.items)
+	var out []string
+	if has("zsh") {
+		out = append(out, "Prompt: "+map[string]string{"starship": "Starship"}[a.Prompt]+map[bool]string{true: "Powerlevel10k"}[a.Prompt != "starship"])
+	}
+	if a.TZ != "" {
+		out = append(out, "Timezone: "+a.TZ)
+	}
+	if a.Git.Name+a.Git.Email != "" {
+		out = append(out, fmt.Sprintf("Git: %s <%s>", a.Git.Name, a.Git.Email))
+	}
+	if has("mcpjungle-install") {
+		port := a.MCPPort
+		if port == 0 && k.port != nil {
+			port = k.port()
+		}
+		who := map[string]string{"vpn": "this machine and your VPNs", "tailscale": "this machine and your VPNs", "public": "the internet, at " + a.MCPDomain, "0.0.0.0": "everywhere"}[a.MCPListen]
+		if who == "" {
+			who = "this machine only"
+		}
+		l := fmt.Sprintf("MCP gateway: port %d, reached from %s", port, who)
+		if len(a.MCPServers) > 0 {
+			l += " · servers: " + strings.Join(mcpNames(a.MCPServers), " ")
+		}
+		out = append(out, l)
+	}
+	if has("docker-ports") {
+		out = append(out, "Docker's published ports: reached from "+map[string]string{"local": "this machine only"}[a.DockerPorts]+map[bool]string{true: "this machine and your VPNs"}[a.DockerPorts != "local"])
+	}
+	if a.Dotfiles != "" && has("dotfiles") {
+		out = append(out, "Dotfiles: "+a.Dotfiles)
+	}
+	var hosts []string
+	for _, id := range answers.GitProviders {
+		g := a.GitHostOf(id)
+		if !has(id) || g == nil || g.Key == "" {
+			continue
+		}
+		key := g.Key
+		if key == answers.NoKey {
+			key = "no key here (your laptop's agent, or HTTPS)"
+		}
+		hosts = append(hosts, map[string]string{"github": "GitHub", "gitlab": "GitLab", "bitbucket": "Bitbucket"}[id]+": "+key)
+	}
+	if len(hosts) > 0 {
+		out = append(out, "Git hosts' keys: "+strings.Join(hosts, " · "))
+	}
+	if c.secrets != nil {
+		var given []string
+		for _, k := range slices.Sorted(maps.Keys(c.secrets.Cred)) {
+			if c.secrets.Cred[k] != "" {
+				_, name, _ := strings.Cut(k, " ")
+				given = append(given, name)
+			}
+		}
+		for _, x := range []struct{ name, v string }{{"Tailscale auth key", c.secrets.TSAuthKey}, {"NetBird setup key", c.secrets.NBSetupKey}, {"GitHub token", c.secrets.GHToken}} {
+			if x.v != "" {
+				given = append(given, x.name)
+			}
+		}
+		if len(given) > 0 {
+			out = append(out, "Keys given: "+strings.Join(given, ", ")+" (kept out of yardo's files)")
+		}
+	}
+	return out
 }
 
 // beforeApt reports whether the item is applied before anything installs

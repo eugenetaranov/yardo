@@ -11,6 +11,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/eugenetaranov/yardo/internal/catalog"
 	"github.com/eugenetaranov/yardo/internal/plan"
@@ -41,6 +42,63 @@ type Runner struct {
 	Progress Progress
 	// TailLines of a failed item's output are shown with the failure.
 	TailLines int
+	// More are the steps the caller runs after Run with Step (the zsh
+	// completions): counted in the total.
+	More int
+	// n is the step on, of total: the progress line says "n of total".
+	n, total int
+}
+
+// begin starts the progress line of the step on, counted.
+func (r *Runner) begin(title string) {
+	if r.total > 0 {
+		title = fmt.Sprintf("%d of %d · %s", r.n, r.total, title)
+	}
+	r.Progress.Start(title)
+}
+
+// Step starts one of the More steps: counted, as Run's are; its Done is
+// the caller's.
+func (r *Runner) Step(title string) {
+	r.n++
+	r.begin(title)
+}
+
+// Record is a Progress that keeps each result line (for the home's Last
+// run) and passes everything on to P.
+type Record struct {
+	P     Progress
+	mu    sync.Mutex
+	Lines []Line
+}
+
+// Line is a step's result line: its status (ok, done, fail, skip) and
+// text; a failure's Tail is the end of what it printed.
+type Line struct {
+	Status string   `json:"status"`
+	Text   string   `json:"text"`
+	Tail   []string `json:"tail,omitempty"`
+}
+
+func (r *Record) Start(title string) { r.P.Start(title) }
+
+func (r *Record) Done(status, detail string) {
+	r.mu.Lock()
+	text, tail, _ := strings.Cut(detail, "\n")
+	l := Line{Status: status, Text: text}
+	if tail != "" {
+		l.Tail = strings.Split(tail, "\n")
+	}
+	r.Lines = append(r.Lines, l)
+	r.mu.Unlock()
+	r.P.Done(status, detail)
+}
+
+// Pause pauses P, when it's Live.
+func (r *Record) Pause() {
+	if l, ok := r.P.(*Live); ok {
+		l.Pause()
+	}
 }
 
 // Result is what happened to each item.
@@ -90,9 +148,13 @@ func (r *Runner) Run(ctx context.Context, items []*catalog.Item, extraMise []str
 		res.Errors[id] = msg
 	}
 	b := build(items)
+	// The steps: each item, each extra mise tool, the apt batch as one,
+	// and the caller's.
+	r.n, r.total = 1, len(b)+len(extraMise)+1+r.More
 	pkgDone := r.batchApt(ctx, b, failed, fail)
 
 	apply := func(x built) {
+		r.n++
 		it := x.item
 		title := label(it)
 		if failed[it.ID] {
@@ -110,7 +172,7 @@ func (r *Runner) Run(ctx context.Context, items []*catalog.Item, extraMise []str
 			r.Progress.Done("fail", title+": "+x.err.Error())
 			return
 		}
-		r.Progress.Start(title)
+		r.begin(title)
 		var out bytes.Buffer
 		changed, err := r.applyItem(ctx, x, pkgDone, &out)
 		switch {
@@ -130,13 +192,14 @@ func (r *Runner) Run(ctx context.Context, items []*catalog.Item, extraMise []str
 	// others, and its failure names it.
 	extra := func() {
 		for _, tool := range extraMise {
+			r.n++
 			id, title := "mise:"+steps.MiseName(tool), "mise: "+tool
 			if failed[plan.MiseID] {
 				res.Skipped = append(res.Skipped, id)
 				r.Progress.Done("skip", title+" (skipped: mise failed)")
 				continue
 			}
-			r.Progress.Start(title)
+			r.begin(title)
 			if done, _ := steps.MiseHas(ctx, r.Env, []string{tool}); done {
 				res.Unchanged = append(res.Unchanged, id)
 				r.Progress.Done("done", title+" (already done)")
@@ -269,7 +332,7 @@ func (r *Runner) batchApt(ctx context.Context, b []built, failed map[string]bool
 			if repo {
 				title = label(x.item) + ": adding its apt repository"
 			}
-			r.Progress.Start(title)
+			r.begin(title)
 			out.Reset()
 			if err := r.withLog(&out, func() error { return st.Apply(ctx, r.Env) }); err != nil {
 				r.Progress.Done("fail", title)
@@ -316,12 +379,12 @@ func (r *Runner) batchApt(ctx context.Context, b []built, failed map[string]bool
 		return settled
 	}
 	out.Reset()
-	r.Progress.Start("apt: updating the package lists")
+	r.begin("apt: updating the package lists")
 	err := r.withLog(&out, func() error { return steps.AptUpdate(ctx, r.Env) })
 	if err == nil {
 		r.Progress.Done("ok", "apt: package lists updated")
 		if len(all) > 0 {
-			r.Progress.Start(fmt.Sprintf("apt: installing %d packages (%s)", len(all), strings.Join(all, " ")))
+			r.begin(fmt.Sprintf("apt: installing %d packages (%s)", len(all), strings.Join(all, " ")))
 			err = r.withLog(&out, func() error { return steps.AptInstall(ctx, r.Env, all) })
 		}
 	}

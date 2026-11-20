@@ -22,9 +22,35 @@ func keys() *huh.KeyMap {
 	return km
 }
 
+// ErrBack is returned when the user goes back (shift+tab) from a prompt
+// AllowBack armed.
+var ErrBack = errors.New("back")
+
+// back: the next prompt goes back on shift+tab.
+var back bool
+
+// AllowBack has the next prompt (only it) return ErrBack on shift+tab:
+// the first question after a screen goes back to it.
+func AllowBack(on bool) { back = on }
+
 func run(f huh.Field) error {
-	err := huh.NewForm(huh.NewGroup(f)).WithTheme(tui.Theme()).WithKeyMap(keys()).WithShowHelp(false).Run()
-	if errors.Is(err, huh.ErrUserAborted) {
+	form := huh.NewForm(huh.NewGroup(f)).WithTheme(tui.Theme()).WithKeyMap(keys()).WithShowHelp(false)
+	wentBack := false
+	if back {
+		back = false
+		form = form.WithProgramOptions(tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
+			if k, ok := msg.(tea.KeyMsg); ok && k.Type == tea.KeyShiftTab {
+				wentBack = true
+				return tea.QuitMsg{}
+			}
+			return msg
+		}))
+	}
+	err := form.Run()
+	switch {
+	case wentBack:
+		return ErrBack
+	case errors.Is(err, huh.ErrUserAborted):
 		return ErrQuit
 	}
 	return err

@@ -56,58 +56,129 @@ apply|verify|gitkey`).
 account is created). Once something is set up, it opens on the home:
 
 ```
-  Needs you: 1 thing to fix, 1 value to fill in
-  41 tools working · 3 updates · checked 09:12
+ yardo  ·  vm  ·  ada                                                                          Home
+ ▲ 3 things need you  ·  everything else is working                     Ubuntu 24.04  ·  100.64.0.7
 
-  Installed   43: zsh · Neovim · tmux · Go · Python · Docker Engine + Compose + 37 more
-  Containers  2: postgres:16 (myapp-db-1) :5432 · redis:7
-  Services    ssh (22/tcp) · docker (8080/tcp VPN only) · tailscale (443/tcp, 41641/udp) · fail2ban + 2 more
+┌─ Needs you ───────────────────────────────────────────────────────────────────────────────── 3 ┐
+│  ○ Fill in jira                                                                                │
+│  ▲ Check opensearch  didn't register: check its settings                                       │
+│  ↑ Install 1 update  node 22.12 → 24.11, gh 2.80 → 2.83                                        │
+│    JIRA_API_TOKEN                                                                              │
+│                                                                                                │
+│                                                                                                │
+│ ✓ 4 of 4 tools working                                                                         │
+│   1 update · checked 09:12                                                                     │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Machine ──────────────────────────────────────────────────────────────────────────────────────┐
+│ CPU   3%   ▁▂▁▁▃▁  now  ·  0.12 0.08 0.05 on 4 cores                                           │
+│ Mem   ▰▰▱▱▱▱▱▱▱▱ 23%   1.8 GB of 7.8 GB  ·  Disk  ▰▰▰▱▱▱▱▱▱▱ 31%   of 78 GB  ·  Up    3d 4h     │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
 
- › Start Docker Engine + Compose  stopped: docker isn't running
-   Fill in JIRA_API_TOKEN         MCP server jira-work needs it · opens its file
-   Install 3 updates              node 22.12 → 24.11 · gh 2.80 → 2.83 · uv 0.5.9 → 0.9.1
-  ──────────────────────────────────────────────
-   Tools                          add or uninstall: languages, AI, cloud… or just start typing
-   MCP servers                    github, jira-work
-   Settings                       network access, git, prompt, look, updates
+┌─ Services & containers ──────────────────────┐  ┌─ MCP servers ────────────────────────────────┐
+│ ● ssh          22/tcp         anyone         │  │ Gateway ● up  this machine only              │
+│ ● fail2ban     up                            │  │                                              │
+│ ● tailscale    41641/udp      anyone         │  │ ● github            ● jira-work              │
+│ ● docker       8080/tcp       VPN            │  │ ○ jira             needs JIRA_API_TOKEN      │
+│ ─ containers ─────────────                   │  │ ▲ opensearch       didn't register: check i… │
+│ ● postgres:16    myapp-db-1     :5432        │  │ + 1 more in ~/.mcp                           │
+└──────────────────────────────────────────────┘  └──────────────────────────────────────────────┘
+
+┌─ Connection ──────────────────────────────────────────────────────────────────── from a laptop ┐
+│ SSH      ssh vm  ·  ada@vm.tail1234.ts.net                                                     │
+│ MCP      http://vm.tail1234.ts.net:8081/mcp  ·  token: sudo cat ~/.mcp/clients/laptop.token    │
+│ Enter: every step, ready to paste                                                              │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Go to ────────────────────────────────────────────────────────────────────────────────────────┐
+│  Tools 4     MCP servers 4     Settings     Last run                                           │
+│ or just start typing to search the tools                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ ↑↓←→ choose   tab next   enter open   u updates   type search   ? keys   q quit
 ```
 
-How the machine is, in words; a dashboard (everything installed, on as
-many lines as the screen has room for, the
-containers running, by image (and name, when it isn't one docker made
-up), and the ports they publish, and the services up or
-failed, each with the ports it listens on beyond this machine and who
-can reach them);
-then a row for each thing that needs doing, named by what it does, one
-key each: **Start** something stopped, **Restore** a file edited by hand
-(putting back yardo's version) or **Update** what an older yardo set up
-(only what yardo set up: an item picked but never installed is on Tools,
-not a problem; three or more are one **Fix 3 things** row, a checklist,
-all ticked: space unticks, enter fixes the ticked in one run),
-**Fill in** a value (opens its file in your editor), **Install 3
-updates** (asks, then updates just those: `mise up` for the tools, apt
-for the packages). Below them, rows that never move: **Tools**
-(the full screen, below), **MCP servers** (the gateway's list: add one,
-or another instance of one; **space** turns one off or on; **d** deletes
-one, asking first), **Connection**
-(every step to reach this machine from a laptop) and **Settings**: **Network access** (the
-MCP gateway and containers' published ports, each a row
-of choices with a sentence saying what it means), **Accept new hosts' SSH
-keys**, the **Look** (theme and accent colour),
-your **Git name and email**, each git host's **SSH key**, **Shell prompt** and **Dotfiles repo**
-(asked again, then applied) and **Check for updates**. Typing on the home searches the tools.
+**Needs you**, the width of the screen, has a row for each thing that
+needs doing, named by what it does: **Start** something stopped,
+**Restore** a file edited by hand (putting back yardo's version) or
+**Update** what an older yardo set up (only what yardo set up: an item
+picked but never installed is on Tools, not a problem; three or more are
+one **Fix 3 things** row, a checklist with each one's details under it,
+all ticked: space unticks, enter fixes the ticked in one run), **Fill
+in** a value (opens its file in your editor), **Install 3 updates**
+(enter opens the list, enter there updates: `mise up` for the tools, apt
+for the packages; q backs out), **Check for updates** (while it was never
+done; **u** does it from anywhere on the home), and **See why the last
+run failed**. Under it, the **Machine** in two lines, **Services &
+containers** (what's up or failed, the ports it listens on beyond this
+machine and who can reach them; the containers by image) and the **MCP
+servers**; then **Connection**, a panel tab reaches: enter opens every
+step to reach this machine from a laptop, ready to paste, and the **Keys
+to add** a run made (a git host's key, with where to add it and the key
+alone on a line), until the host reads working on Tools or you dismiss
+one with **d**. **Go to** has what never moves: **Tools** (the full
+screen, below; with changes queued there, it says how many), **MCP
+servers** (the gateway's list: **space** marks one, or All servers, off
+or on, **a** applies what's marked, **n** adds one, or another instance
+of one, **e** edits its settings, **d** deletes one, asking first),
+**Settings** (**Network access**: the MCP gateway and containers'
+published ports, each a row of choices with a sentence saying what it
+means; **Accept new hosts' SSH keys**; the **Look**, theme and accent
+colour; your **Git name and email**, each git host's **SSH key**, the
+**Shell prompt** and the **Dotfiles repo**, asked again, then applied)
+and **Last run**. Typing on the home searches the tools, live on the
+Tools screen.
 
 yardo looks for newer versions (apt and mise) in the background while
-the home is up, once a day; a run waits for it, as both use apt. After a
-fix or an install, yardo comes back to the home and says how it went;
-the run's output is under the screen when you quit. **q** goes back a
-screen, and on the home quits; it's the key every screen shows. Esc does
-the same, but over SSH, in tmux or zellij it can arrive late or not at
-all, so it's kept for leaving a field you're typing in, where q types a
-q.
+the home is up, once a day; a run waits for it, as both use apt.
 
-**The first run** asks a few questions, a page each (shift+tab goes
-back): the zsh prompt (Powerlevel10k or Starship), then the choices:
+**One program, one key map.** The home, Tools, Settings, Fix, Updates,
+Connection, Last run and the MCP servers are one screen that changes,
+without a flicker: Tools keeps its queue, its tab, each tab's row and
+its filter while you go home and back (q on the home with changes queued
+asks once). Only a question that needs typing (a name, a key) and a run
+leave the screen. Every screen has the same top line (who and where,
+then the path: `Home › Tools › Dev`) and the same bottom line, listing
+every key that screen takes (zellij's status bar, Midnight Commander's
+key bar); the line above it says what just happened. The keys mean the
+same everywhere:
+
+| Key | Does |
+|---|---|
+| ↑↓ (`j` `k`) | move |
+| ←→ (`h` `l`) | switch tabs on Tools; pick a choice on a setting; on the home, to and along Go to |
+| tab | the next panel (home) or tab (Tools) |
+| enter | open the row, or do what it says |
+| space | tick: queue a tool, tick a fix, turn a server off or on |
+| `a` | apply what's queued or changed (Tools, Network access, Look, MCP servers) |
+| `n` | add (an MCP server) |
+| `d` | delete or uninstall, asked first |
+| `e` | edit (an MCP server's settings) |
+| `/` | search |
+| `u` | check for updates (the home) |
+| PgUp PgDn, Home End, `g` `G` | a screenful up or down, the first or last row |
+| `?` | every key of the screen, then the ones every screen shares (as in tmux) |
+| `q` | back; on the home, quit |
+| ctrl+c | quit, from anywhere |
+
+Every question (apply, uninstall, delete, quit with a queue) is the same
+framed box over the screen: enter, `y` or `n` answers it, `q` leaves it.
+The mouse works too, over SSH and in tmux or zellij with their mouse on:
+a click selects a row, a double-click opens it, a click on a tab, a Go
+to entry or a key in the bottom line does what it says, and the wheel
+scrolls. Nothing needs the mouse. Esc goes back too, but over SSH, in
+tmux or zellij it can arrive late or not at all, so it's kept for leaving
+a field you're typing in, where q types a q.
+
+**After a run** yardo comes back to the home, saying how it went on the
+line above the keys: `✓ Done: Docker Engine`, or `✗ Docker Engine failed ·
+Last run shows what happened`. **Last run** (Go to, and a Needs you row
+while it failed) keeps what the run printed, from one session to the
+next: each step's result, the last lines of a failing step's output, the
+notes and hints, and the log's path. While a run is on, its line counts
+the steps: `12 of 43 · Docker Engine (1m20s)`.
+
+**The first run** asks everything before it installs anything: the
+choices (one screen: the zsh prompt, Powerlevel10k or Starship, then):
 
 | Choice | What it installs | Starts |
 |---|---|---|
@@ -124,9 +195,16 @@ Everything else in the base comes without asking: zsh, Neovim, tmux,
 zellij, mosh, shell helpers, dev CLIs and linters, DB clients, admin and
 debug tools, etckeeper, OpenSpec, agent setup and
 skills, git name and email; and what every machine gets (security
-updates, SSH keys only, fail2ban, zram, …). Then the whole list, item by
-item, and **Install**, **Customize…** (the full screen below, with it
-all queued) or **Quit**. The rest (Java, Rust, Podman, NFS/SMB clients, Ollama, jiractl,
+updates, SSH keys only, fail2ban, zram, …). Then every question the
+choices need, a page each: git name and email, timezone, who can reach
+the MCP gateway, Docker's published ports, wiring the agents, the
+dotfiles repo, API keys, a key per git host (shift+tab on the first goes
+back to the choices, ticks kept; esc on any quits, nothing saved). Then
+the review: the whole list, item by item, and every answer (keys by name,
+never shown), and **Install** (it starts at once: nothing more to ask),
+**Customize…** (the full screen below, with it all queued; **a** there
+asks only what the added items need, then the review again) or **Quit**
+(nothing is saved; the next `sudo yardo` starts over). The rest (Java, Rust, Podman, NFS/SMB clients, Ollama, jiractl,
 restic, your dotfiles, commit signing, more agent add-ons) is on Tools.
 A machine set up before the base had all it has installs what's new in
 it on its next run, once, before the home opens.
@@ -153,12 +231,13 @@ yardo (this one ships newer files; Fix applies them), `○` needs a value,
   rds-mysql, are fetched again too), Uninstall, and Forget it (it stays
   installed, and yardo stops checking it). On a row not installed, enter
   queues adding it, as space does.
+- **d** is in the bottom line on an installed tool.
 - **a** applies the queue: it asks first (see [Removing
   tools](#removing-tools)), uninstalls, then asks what the new items
   need (git name, prompt, MCP servers, keys) and installs.
-- **Typing**, here or on the home, filters every tab; **enter** goes into
-  the list with the filter kept, **esc** clears it while you type, **q**
-  after. For a tool the catalog
+- **Typing**, here or on the home, filters every tab as you type;
+  **enter** goes into the list with the filter kept, **esc** clears it
+  while you type, **q** after. For a tool the catalog
   doesn't have, ctrl-a adds it as an extra mise tool.
 - **AI** has Agent setup (agent notes, safety settings, skills), under
   its own heading. A VPN's login is part of its row: enter on Tailscale
@@ -193,7 +272,7 @@ MCPJungle gateway, git (name and email, defaults, lazygit, GitHub) and
 the two agent items. Space takes off what you don't want; a installs.
 Later runs show what's installed ticked and checked, and ask only about
 what's new. `sudo yardo --ui board` opens on this screen instead of the
-home (q goes to the home).
+home (q goes to the home, the queue kept).
 
 The run follows the same order: everything is installed first (the extra
 mise tools at the end of that), then configured, with your dotfiles last.
@@ -421,7 +500,7 @@ installed by hand.
    (MCPJungle's enterprise mode): yardo makes the admin token (kept in
    `~/.mcp`, the gateway user's) and one for the agents on the VM, wired
    into them, and one for your laptop, in `~/.mcp/clients/client.token`
-   (read it with `sudo cat`; the home's How to connect says where). More
+   (read it with `sudo cat`; the home's Connection says where). More
    laptops: `mcp-sync client <name>`, sent as `Authorization: Bearer
    <token>`. Neither shows a token: it goes to
    `~/.mcp/clients/<name>.token`. The
@@ -660,7 +739,7 @@ yardo sets Tailscale to accept no subnet routes on the VM and makes you
 its operator (`tailscale serve` without sudo), and doesn't log in again
 once the VM is on the tailnet.
 
-**Reaching this machine from a laptop.** The home's **How to connect**
+**Reaching this machine from a laptop.** The home's **Connection**
 panel has the short version: `ssh vm`, `docker context use vm`, and the
 gateway's URL with where its token is (`sudo cat ~/.mcp/clients/client.token`,
 never the token). `sudo yardo connect` (or Go to → Connection, on the

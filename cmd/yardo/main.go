@@ -411,10 +411,6 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	// lastErr is the last run's, returned then.
 	stay := interactive && len(profs) == 0
 	var lastErr error
-	// The menu first (the board on a first run, or with --ui board, esc
-	// on it going to the menu); the board from the menu's Tools.
-	menu := !first
-	onBoard := o.ui == "board" || first
 	// upd: the check for newer versions, the last one's while it holds,
 	// else one run in the background while the menu is up.
 	var upd *updateCheck
@@ -423,25 +419,40 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			upd = o.checkUpdates(ctx, cat, a)
 		}
 	}
-	var d *screen
-	// reopen: the menu screen to come back to (the MCP servers, after
-	// deleting one, or from the board), with toast.
-	var reopen, toast string
-	fromBoard := false
-	// search: what the board opens searching for (typed on the menu).
-	var search *string
-	// flash: the board's line after a run, when it's the board that comes
-	// back.
-	var flash string
+	// One program for every screen: app, showing d (read again after a
+	// run, not as the screens change). open is the view to show when it
+	// comes back (a menu screen, or the board), toast what it says.
+	var d, shown *screen
+	var app *ui.App
+	var open, toast string
 	// done: how the last uninstall went, shown on the board until
 	// dismissed.
 	var done *uninstalled
-	// chose: the first run's choices were asked (their prompt is a's);
-	// preset: what they turned on, queued on the board (Customize…).
+	// chose: the first run's choices were asked; ready: its review said
+	// Install (nothing more to ask); customized: it said Customize…,
+	// what it chose queued on the board; firstAsk: its asker, with what
+	// was asked.
 	chose := false
-	var preset []string
-	if stay && o.startMCP && !first {
-		menu, onBoard, reopen = true, false, "mcp"
+	var ready *choices
+	var customized []string
+	var firstAsk *asker
+	switch {
+	case stay && o.startMCP && !first:
+		open = "mcp"
+	case stay && o.ui == "board" && !first:
+		open = "board"
+	}
+	prep := func(x *ui.App) {
+		x.Menu.Switching(o.mcpSwitcher(ctx, a))
+		x.Menu.Checker(func() func() ui.UpdatesMsg {
+			upd = o.checkUpdates(ctx, cat, a)
+			return upd.msg
+		})
+		x.Menu.KeyDropper(func(pub string) error { return dropKey(o.state, pub) })
+		if upd != nil && !upd.ready() {
+			x.Menu.Checking(upd.msg)
+		}
+		x.Board.SetPlanner(func(ids, adds []string) map[string]ui.UninstallPlan { return o.plans(ctx, cat, a, ids, adds) })
 	}
 	for {
 		var items []*catalog.Item
@@ -460,41 +471,76 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		if stay && fix == nil {
 		loop:
 			for {
+				if first && !chose {
+					// A first run asks everything, then shows it all; Install
+					// runs it, Customize… opens the board with it queued.
+					firstAsk = &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) },
+						port: func() int { p, _ := st.Port(user); return p }}
+					c, adds, pick, err := firstAsk.firstRun(ctx)
+					if errors.Is(err, ui.ErrQuit) {
+						return lastErr // nothing saved
+					} else if err != nil {
+						return err
+					}
+					chose = true
+					switch pick {
+					case "Install":
+						ready = c
+						break loop
+					case "Customize…":
+						customized = adds
+						firstAsk.asked, firstAsk.secrets = c.picks, c.secrets
+					default:
+						return lastErr
+					}
+				}
 				if d == nil {
 					if d, err = o.screenData(ctx, cat, a, first); err != nil {
 						return err
 					}
 				}
 				d.withUpdates(upd)
-				if !onBoard {
-					m := ui.NewMenu(d.info, d.sub, d.items, d.settings, d.connect, d.updates)
-					if upd != nil && !upd.ready() {
-						m.Checking(upd.msg)
+				if app == nil || shown != d {
+					if app == nil {
+						app = ui.NewApp(d.appData(), prep)
+					} else {
+						app.Reload(d.appData())
 					}
-					m.Switching(o.mcpSwitcher(ctx, a))
-					wasFromBoard := fromBoard
-					if reopen != "" {
-						m.Open(reopen, toast, fromBoard)
-						reopen, toast, fromBoard = "", "", false
-					}
-					res, err := m.Run()
-					if err != nil {
-						return err
-					}
-					switch res.Kind {
-					case ui.MenuQuit:
-						return lastErr
-					case ui.MenuTools:
-						onBoard = true
-						if res.Search != "" {
-							search = &res.Search
+					shown = d
+				}
+				if customized != nil {
+					for _, it := range app.Board.Items() {
+						if !it.Picked && slices.Contains(customized, it.ID) {
+							it.Pending = "add"
 						}
+					}
+					customized, open = nil, "board"
+				}
+				if done != nil {
+					app.Board.ShowResult(done.Title(), done.Lines, done.Failed)
+					done, open = nil, "board"
+				}
+				if open != "" {
+					app.Open(open)
+					open = ""
+				}
+				app.Toast(toast)
+				toast = ""
+				out, err := app.Run()
+				if err != nil {
+					return err
+				}
+				switch {
+				case out.Quit:
+					return lastErr
+				case out.Menu != nil:
+					res := *out.Menu
+					switch res.Kind {
 					case ui.MenuChange:
 						k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) }}
 						before := *a
 						if sec, err = k.change(ctx, res.Change); errors.Is(err, ui.ErrQuit) {
 							*a, sec = before, creds.New()
-							reopen = "settings"
 							continue // back to Settings, nothing changed
 						} else if err != nil {
 							return err
@@ -503,7 +549,8 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						break loop
 					case ui.MenuUpdates:
 						upd = o.checkUpdates(ctx, cat, a)
-						reopen, toast = "settings", "Checking for updates in the background: what it finds shows on the home."
+						app.Menu.Checking(upd.msg)
+						toast = "Checking for updates in the background: what it finds shows here."
 					case ui.MenuUpgrade:
 						upd.wait(stdout)
 						said, err := o.upgrade(ctx, cat, a)
@@ -513,7 +560,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						// What was newer is installed now.
 						upd = (&updateCheck{At: time.Now(), ByID: map[string][]string{}}).finished()
 						_ = upd.save(o.state, a.User)
-						d, reopen, toast = nil, "home", said
+						d, open, toast = nil, "home", said
 					case ui.MenuFix:
 						// Fix all: every problem, in one run.
 						fix = res.IDs
@@ -531,7 +578,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						}
 						d = nil
 						if said != "" {
-							reopen, toast = "home", said
+							open, toast = "home", said
 						}
 					case ui.MenuApply:
 						// The theme is yardo's own: kept, and shown, without a run.
@@ -546,7 +593,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							}
 							if len(res.Settings) == 0 {
 								l, _ := tui.LookOf(v)
-								d, reopen, toast = nil, "settings", "Theme: "+l.Name+"."
+								d, open, toast = nil, "settings", "Theme: "+l.Name+"."
 								break
 							}
 						}
@@ -557,7 +604,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							port: func() int { p, _ := st.Port(user); return p }}
 						out, err := k.mcpDo(ctx, res.MCP, o.mcpSpecs(ctx))
 						if err != nil {
-							reopen, toast, fromBoard, d = "mcp", "✗ "+err.Error(), wasFromBoard, nil
+							toast, d = "✗ "+err.Error(), nil
 							continue
 						}
 						if out.sync != "" {
@@ -568,7 +615,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							_ = o.mcpSyncNow(ctx, a, io.Discard)
 							s, _ := o.mcpStatus(ctx, a)
 							v, ok := s[out.sync]
-							reopen, toast, fromBoard, d = "mcp", mcpSays(out.sync, mcpSpecOf(a.MCPServers, out.sync), v, ok), wasFromBoard, nil
+							toast, d = mcpSays(out.sync, mcpSpecOf(a.MCPServers, out.sync), v, ok), nil
 							continue
 						}
 						if out.apply {
@@ -580,117 +627,56 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						if err := st.Save(a); err != nil {
 							return err
 						}
-						reopen, toast, fromBoard, d = "mcp", out.toast, wasFromBoard, nil
+						toast, d = out.toast, nil
 					}
-					continue
-				}
-				if first && !chose {
-					// A first run asks the choices, shows all they install,
-					// and installs it, or opens the board with it queued.
-					r, err := askChoices(cat, a)
-					if errors.Is(err, ui.ErrQuit) {
-						return lastErr
-					} else if err != nil {
-						return err
-					}
-					a.Prompt, chose = r.prompt, true
-					items, err := plan.Resolve(cat, r.adds, false)
-					if err != nil {
-						return err
-					}
-					k := &asker{cat: cat, a: a, out: stdout}
-					switch k.review(&choices{picks: r.adds, items: items}, "Install", "Customize…", "Quit") {
-					case "Install":
-						board = &ui.BoardResult{Kind: ui.BoardApply, Adds: r.adds}
+				case out.Board != nil:
+					res := *out.Board
+					switch res.Kind {
+					case ui.BoardFix:
+						// A tool's parts (its login) are fixed with it.
+						fix = append([]string{res.ID}, partsOf(cat, a.Picks, res.ID)...)
 						break loop
-					case "Customize…":
-						preset = r.adds
-					default:
-						return lastErr
-					}
-				}
-				if preset != nil {
-					for _, it := range d.items {
-						if !it.Picked {
-							it.Pending = map[bool]string{true: "add"}[slices.Contains(preset, it.ID)]
-						}
-					}
-					preset = nil
-				}
-				b := ui.NewBoard(d.info, first, d.tabs, d.items)
-				// From the menu: esc goes back to it.
-				b.SetFromMenu(menu)
-				b.SetPlanner(func(ids, adds []string) map[string]ui.UninstallPlan { return o.plans(ctx, cat, a, ids, adds) })
-				b.Flash(flash)
-				flash = ""
-				if done != nil {
-					b.ShowResult(done.Title(), done.Lines, done.Failed)
-					done = nil
-				}
-				if search != nil {
-					b.Search(*search)
-					search = nil
-				}
-				res, err := b.Run()
-				if err != nil {
-					return err
-				}
-				switch res.Kind {
-				case ui.BoardQuit:
-					if !menu {
-						return lastErr
-					}
-					d.forget()
-					onBoard = false
-				case ui.BoardFix:
-					// A tool's parts (its login) are fixed with it.
-					fix = append([]string{res.ID}, partsOf(cat, a.Picks, res.ID)...)
-					break loop
-				case ui.BoardEdit:
-					if fix, _, err = o.fillIn(ctx, a, res.Inputs); err != nil {
-						return err
-					}
-					if fix != nil {
-						break loop
-					}
-					d = nil
-				case ui.BoardChange:
-					if res.Change == "mcp" {
-						// The MCP servers are the menu's screen; esc there comes back.
-						onBoard, reopen, fromBoard = false, "mcp", true
-						continue
-					}
-					k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) }}
-					before := *a
-					if sec, err = k.change(ctx, res.Change); errors.Is(err, ui.ErrQuit) {
-						*a, sec = before, creds.New()
-						continue // back to the board, nothing changed
-					} else if err != nil {
-						return err
-					}
-					fix, changed = append([]string{res.ID}, partsOf(cat, a.Picks, res.ID)...), true
-					break loop
-				case ui.BoardApply:
-					// Uninstalls first; then the rest of the queue, if any.
-					if len(res.Uninstalls) > 0 {
-						if upd != nil && !upd.ready() {
-							fmt.Fprintln(stdout, "Waiting for the check for updates to finish (it holds apt)…")
-						}
-						upd.wait(io.Discard)
-						r, err := o.uninstall(ctx, cat, st, a, res.Uninstalls, stdout)
-						if err != nil {
+					case ui.BoardEdit:
+						if fix, _, err = o.fillIn(ctx, a, res.Inputs); err != nil {
 							return err
 						}
-						if len(res.Adds) == 0 && len(res.Forgets) == 0 && len(res.Settings) == 0 {
-							done, d = &r, nil // back to the board, checked again
-							continue
+						if fix != nil {
+							break loop
 						}
-						for _, l := range r.Lines {
-							fmt.Fprintln(stdout, l)
+						d = nil
+					case ui.BoardChange:
+						k := &asker{cat: cat, a: a, share: o.share(), out: stdout, installed: func(t string) bool { return userHas(a.User, t) }}
+						before := *a
+						if sec, err = k.change(ctx, res.Change); errors.Is(err, ui.ErrQuit) {
+							*a, sec = before, creds.New()
+							continue // back to the board, nothing changed
+						} else if err != nil {
+							return err
 						}
+						fix, changed = append([]string{res.ID}, partsOf(cat, a.Picks, res.ID)...), true
+						break loop
+					case ui.BoardApply:
+						// Uninstalls first; then the rest of the queue, if any.
+						if len(res.Uninstalls) > 0 {
+							if upd != nil && !upd.ready() {
+								fmt.Fprintln(stdout, "Waiting for the check for updates to finish (it holds apt)…")
+							}
+							upd.wait(io.Discard)
+							r, err := o.uninstall(ctx, cat, st, a, res.Uninstalls, stdout)
+							if err != nil {
+								return err
+							}
+							if len(res.Adds) == 0 && len(res.Forgets) == 0 && len(res.Settings) == 0 {
+								done, d = &r, nil // back to the board, checked again
+								continue
+							}
+							for _, l := range r.Lines {
+								fmt.Fprintln(stdout, l)
+							}
+						}
+						board = &res
+						break loop
 					}
-					board = &res
-					break loop
 				}
 			}
 		}
@@ -701,9 +687,23 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					profile: len(profs) > 0, dropped: dropped, port: func() int { p, _ := st.Port(user); return p }, promptSet: chose}
 				var c *choices
 				var err error
-				if board != nil {
+				switch {
+				case ready != nil:
+					// The first run's review said Install: asked already.
+					c, ready = ready, nil
+				case board != nil && firstAsk != nil:
+					// Customize…: what the board added is asked, then the
+					// review again.
+					k.asked, k.secrets = firstAsk.asked, firstAsk.secrets
+					if c, err = k.fromBoard(ctx, *board, first); err == nil && k.review(c, "Install", "Quit") != "Install" {
+						return errQuitFirst
+					}
+					if errors.Is(err, ui.ErrQuit) {
+						return errQuitFirst
+					}
+				case board != nil:
 					c, err = k.fromBoard(ctx, *board, first)
-				} else {
+				default:
 					c, err = k.ask(ctx)
 				}
 				if errors.Is(err, ui.ErrQuit) {
@@ -802,7 +802,8 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			if created {
 				env.Note(fmt.Sprintf("Created user %s (passwordless sudo, no password or SSH key): add a key to %s/.ssh/authorized_keys, or use 'sudo -iu %s'.", a.User, env.Home, a.User))
 			}
-			prog := progressFor(stdout)
+			rec := &run.Record{P: progressFor(stdout)}
+			var prog run.Progress = rec
 			bash := legacyRunner(env, o.legacy, o.state)
 			if bash != nil {
 				stdin := sec.Encode()
@@ -811,9 +812,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					// terminal when one of them is new or being fixed, not on
 					// every apply (else gh waits for a login nobody asked for).
 					if interactive && (id == "github" || id == "gitsign") && ghLogin(items, before, fix) {
-						if l, ok := prog.(*run.Live); ok {
-							l.Pause()
-						}
+						rec.Pause()
 						c := exec.CommandContext(ctx, "bash", o.legacy, "--only", id, "--secrets")
 						c.Env = append(os.Environ(), legacyCmd(o.legacy, o.state).Env...)
 						c.Stdin, c.Stdout, c.Stderr = bytes.NewReader(stdin), os.Stdout, os.Stderr
@@ -834,24 +833,34 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			notesFile := filepath.Join(o.state, ".notes")
 			if bash == nil {
 				_ = os.Remove(notesFile) // bash's --begin does this when it runs
-				_ = os.Remove(filepath.Join(o.state, keysFile))
 			}
+			// The keys file is kept across runs (Connection lists what's
+			// in it); keysBefore: the keys there before this run.
+			keysBefore := readKeys(o.state)
 			r := &run.Runner{Env: env, Progress: prog, TailLines: 25}
+			if zshPrime(env) {
+				r.More = 1
+			}
 			res := r.Run(ctx, items, extra)
 			if err := markApplied(o.state, a.User, slices.Concat(res.Changed, res.Unchanged), time.Now()); err != nil {
 				fmt.Fprintf(stderr, "yardo: %v\n", err)
 			}
-			if err := primeZshCompletions(ctx, env, r.Progress); err != nil {
+			if err := primeZshCompletions(ctx, env, r); err != nil {
 				res.Failed = append(res.Failed, "zshcomp")
 				res.Errors["zshcomp"] = err.Error()
 			}
 			// While bash runs steps, its notes (with "Secrets to fill in") are the
 			// fuller ~/yardo.txt.
+			// last: what the run did, for the home's Last run.
+			last := &lastRun{When: time.Now(), OK: res.OK(), Failed: res.Failed}
 			if bash != nil {
 				if out, err := bashOut(ctx, env, o.legacy, o.state, "--finish"); err != nil {
 					fmt.Fprintf(stderr, "yardo: notes: %v\n", err)
 				} else {
 					_, _ = stdout.Write(out)
+					if t := strings.TrimSpace(string(out)); t != "" {
+						last.Notes = append(last.Notes, strings.Split(t, "\n")...)
+					}
 					if err := appendUnverified(env, items); err != nil {
 						fmt.Fprintf(stderr, "yardo: %s/yardo.txt: %v\n", env.Home, err)
 					}
@@ -860,6 +869,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				if b, err := os.ReadFile(notesFile); err == nil && len(b) > 0 {
 					for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
 						fmt.Fprintf(stdout, "! %s\n", l)
+						last.Notes = append(last.Notes, l)
 					}
 				}
 				if o.only != "" {
@@ -874,29 +884,37 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				}
 			}
 			fmt.Fprintf(stdout, "How each tool was installed and how to update it: %s/yardo.txt\nLog: %s\n", env.Home, o.log)
-			printKeys(stdout, o.state, env.Home)
+			printKeys(stdout, newKeys(keysBefore, readKeys(o.state)), env.Home)
+			hint := func(l string) {
+				fmt.Fprintln(stdout, l)
+				last.Hints = append(last.Hints, l)
+			}
 			if planHas(items)("mcpjungle") && !before("mcpjungle") && len(a.MCPServers) == 0 {
-				fmt.Fprintln(stdout, "MCP servers: add GitHub, Jira, Grafana and more from 'sudo yardo' → MCP servers.")
+				hint("MCP servers: add GitHub, Jira, Grafana and more from 'sudo yardo' → MCP servers.")
 			}
 			// Newly set up Neovim or tmux: how their copies reach the laptop.
 			if has := planHas(items); (has("neovim") && !before("neovim")) || (has("tmux") && !before("tmux")) {
 				for _, l := range clipboardHint(os.Getenv("LC_TERMINAL")) {
-					fmt.Fprintln(stdout, ui.Unmark(l))
+					hint(ui.Unmark(l))
 				}
 			}
 			if h := newShellHint(res.Changed); h != "" {
-				fmt.Fprintln(stdout, h)
+				hint(h)
+			}
+			last.Lines = failTails(cat, rec.Lines, res)
+			if err := last.save(o.state, a.User); err != nil {
+				fmt.Fprintf(stderr, "yardo: %v\n", err)
 			}
 			if !res.OK() {
 				for _, id := range res.Failed {
 					fmt.Fprintf(stderr, "✗ %s: %s\n", id, res.Errors[id])
 				}
-				return fmt.Errorf("failed: %s — fix and re-run yardo", strings.Join(res.Failed, " "))
+				return &runFailed{ids: res.Failed}
 			}
 			return nil
 		}()
-		if !stay || o.dryRun || o.verify {
-			if errors.Is(err, errCancelled) {
+		if !stay || o.dryRun || o.verify || errors.Is(err, errQuitFirst) {
+			if errors.Is(err, errCancelled) || errors.Is(err, errQuitFirst) {
 				return nil
 			}
 			return err
@@ -910,14 +928,12 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		if had, err := plan.Resolve(cat, a.Picks, false); err == nil {
 			before = planHas(had)
 		}
-		changed, dropped, d = false, nil, nil
+		changed, dropped, d, firstAsk = false, nil, nil, nil
 		first = len(a.Picks) == 0
-		menu = !first
-		onBoard, reopen = o.ui == "board" || first, ""
-		if onBoard {
-			flash = toast
-		} else {
-			reopen = "home"
+		chose = chose && !first
+		open = "home"
+		if o.ui == "board" {
+			open = "board"
 		}
 	}
 }
@@ -925,27 +941,45 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 // errCancelled is a run left at its questions: nothing changed.
 var errCancelled = errors.New("cancelled")
 
-// ranSays is the menu's line after a run of fix (or of what was queued),
-// which ended in err.
+// errQuitFirst is a first run quit at its questions or its review: yardo
+// ends, nothing saved.
+var errQuitFirst = errors.New("quit")
+
+// runFailed is a run in which ids failed.
+type runFailed struct{ ids []string }
+
+func (e *runFailed) Error() string {
+	return "failed: " + strings.Join(e.ids, " ") + " — fix and re-run yardo"
+}
+
+// ranSays is the home's line after a run of fix (or of what was queued),
+// which ended in err: what it did, or what failed.
 func ranSays(cat *catalog.Catalog, fix []string, err error) string {
-	const out = " · q quits and shows the run's output"
+	names := func(ids []string) string {
+		var out []string
+		for _, id := range ids {
+			if it := cat.Item(id); it == nil {
+				out = append(out, strings.TrimPrefix(id, "mise:"))
+			} else if !it.Hidden() {
+				out = append(out, ui.Short(it.Label))
+			}
+		}
+		return strings.Join(out, ", ")
+	}
+	var failed *runFailed
 	switch {
 	case errors.Is(err, errCancelled):
 		return "Cancelled: nothing changed."
+	case errors.As(err, &failed):
+		return "✗ " + names(failed.ids) + " failed · Last run shows what happened"
 	case err != nil:
-		msg := strings.TrimSuffix(err.Error(), " — fix and re-run yardo")
-		return "✗ " + strings.ToUpper(msg[:1]) + msg[1:] + out
+		msg := err.Error()
+		return "✗ " + strings.ToUpper(msg[:1]) + msg[1:]
 	}
-	var names []string
-	for _, id := range fix {
-		if it := cat.Item(id); it != nil && !it.Hidden() {
-			names = append(names, ui.Short(it.Label))
-		}
+	if n := names(fix); n != "" {
+		return "✓ Done: " + n
 	}
-	if len(names) == 0 {
-		return "✓ Done" + out
-	}
-	return "✓ Done: " + strings.Join(names, ", ") + out
+	return "✓ Done"
 }
 
 // gitKeyArgs reads `yardo gitkey [github|gitlab|bitbucket] [--host h]...
@@ -1027,23 +1061,31 @@ func progressFor(w io.Writer) run.Progress {
 	return run.Plain{W: w}
 }
 
-// primeZshCompletions fills the zsh completion cache once every tool of
-// the run is installed, so the first login doesn't pay for it.
-func primeZshCompletions(ctx context.Context, env *steps.Env, p run.Progress) error {
+// zshPrime reports whether primeZshCompletions has work: the completions
+// file and zsh are there.
+func zshPrime(env *steps.Env) bool {
 	if _, err := os.Stat(env.Path("~/.config/yardo/completions.zsh")); err != nil {
-		return nil
+		return false
 	}
-	if _, err := exec.LookPath("zsh"); err != nil {
+	_, err := exec.LookPath("zsh")
+	return err == nil
+}
+
+// primeZshCompletions fills the zsh completion cache once every tool of
+// the run is installed, so the first login doesn't pay for it: one of
+// r's steps.
+func primeZshCompletions(ctx context.Context, env *steps.Env, r *run.Runner) error {
+	if !zshPrime(env) {
 		return nil
 	}
 	const title = "zsh completions for installed tools"
-	p.Start(title)
+	r.Step(title)
 	_, err := env.RunLogged(ctx, steps.Cmd{Name: "zsh", Args: []string{"-c", "source ~/.config/yardo/completions.zsh && yardo_comp_refresh"}, AsUser: true})
 	if err != nil {
-		p.Done("fail", title)
+		r.Progress.Done("fail", title)
 		return err
 	}
-	p.Done("ok", title)
+	r.Progress.Done("ok", title)
 	return nil
 }
 
@@ -1108,45 +1150,37 @@ func (o *options) env(a *answers.Answers, sec *creds.Secrets, log io.Writer) (*s
 	return env, nil
 }
 
-// keysFile holds the public keys made this run (host, where to add it,
-// file, key per line), shown last.
+// keysFile holds the public keys runs made (host, where to add it, file,
+// key per line): printed after the run that made them, and listed on
+// Connection until added or dismissed.
 const keysFile = ".keys"
+
+// newKeys are the keys in now that weren't in before: this run's.
+func newKeys(before, now []ui.AddKey) []ui.AddKey {
+	var out []ui.AddKey
+	for _, k := range now {
+		if !slices.ContainsFunc(before, func(b ui.AddKey) bool { return b.Pub == k.Pub && slices.Equal(b.Where, k.Where) }) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
 
 // printKeys shows the run's new public keys after everything else: where
 // to add each, then the key alone on a line between blank lines, so a
-// triple-click copies exactly it.
-func printKeys(w io.Writer, state, home string) {
-	b, err := os.ReadFile(filepath.Join(state, keysFile))
-	if err != nil {
-		return
-	}
-	type key struct {
-		path, pub string
-		where     []string
-	}
-	var keys []*key
-	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-		f := strings.SplitN(l, "\t", 4)
-		if len(f) != 4 || f[3] == "" {
-			continue
-		}
-		i := slices.IndexFunc(keys, func(k *key) bool { return k.pub == f[3] })
-		if i < 0 {
-			keys = append(keys, &key{path: f[2], pub: f[3]})
-			i = len(keys) - 1
-		}
-		keys[i].where = append(keys[i].where, f[0]+": "+f[1])
-	}
+// triple-click copies exactly it. (Connection lists them too, until
+// they're added.)
+func printKeys(w io.Writer, keys []ui.AddKey, home string) {
 	for _, k := range keys {
-		path := k.path
+		path := k.Path
 		if rest, ok := strings.CutPrefix(path, "~/"); ok {
 			path = filepath.Join(home, rest)
 		}
 		fmt.Fprintf(w, "\nSSH key to add\n")
-		for _, wh := range k.where {
+		for _, wh := range k.Where {
 			fmt.Fprintf(w, "  %s\n", wh)
 		}
-		fmt.Fprintf(w, "\n%s\n\nShow it again: cat %s\n", k.pub, path)
+		fmt.Fprintf(w, "\n%s\n\nShow it again: cat %s\n", k.Pub, path)
 	}
 }
 
