@@ -576,7 +576,8 @@ installed by hand.
    (Codex, Gemini CLI, OpenCode, Goose, pi, omp) and `~/.claude/skills`
    (Claude Code): short commit messages that say why, a PR description
    that's a note to the reviewer, and tickets a teammate would write: a
-   title, a few plain sentences, at most five acceptance criteria. yardo
+   title, one to three plain sentences, and three to five acceptance
+   criteria, each checkable (required), under a hundred words. yardo
    updates only the copies it wrote; one you edit stays yours. **No
    agent's name on commits:** Claude Code's `attribution` setting is off,
    the agents' notes say so, and on Git 2.54+ a global commit-msg hook
