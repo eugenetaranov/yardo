@@ -1,7 +1,7 @@
 # yardo-catalog-data Specification
 
 ## Purpose
-TBD - created by archiving change yardo-go-rewrite. Update Purpose after archive.
+The catalog as data: items, tabs and steps in TOML under internal/catalog/data, plus a team's /etc/yardo/catalog.d, read and checked at start.
 
 ## Requirements
 

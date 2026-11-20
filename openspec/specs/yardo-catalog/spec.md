@@ -133,10 +133,10 @@ The catalog SHALL offer these items. Each one follows the ask-or-skip contract o
 - **WHEN** only `gitsign` is picked
 - **THEN** the plan also includes `github` and its needs
 
-### Requirement: pmox-owned MCP server specs
-pmox SHALL ship its own MCP server specs in `internal/bootstrap/conf/mcp-catalog/`, installed into the same catalog directory as the tack-roles specs. A spec name SHALL NOT exist in both directories; a test SHALL enforce this. `bootstrap:sync` SHALL NOT change the pmox-owned directory.
+### Requirement: yardo's own MCP server specs
+yardo SHALL ship its own MCP server specs in `internal/assets/conf/mcp-catalog/`, installed into the same catalog directory as the specs that began as tack-roles copies (`internal/assets/mcp-catalog/`). A spec name SHALL NOT exist in both directories; a test SHALL enforce this.
 
-The pmox-owned specs SHALL include:
+yardo's own specs SHALL include:
 - `github` (docker, `GITHUB_PERSONAL_ACCESS_TOKEN`)
 - `postgres` (docker with host networking, `DATABASE_URI`)
 - `playwright` (docker, no credentials)

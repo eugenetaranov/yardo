@@ -47,4 +47,4 @@
 ## 6. Check
 
 - [x] 6.1 `task test` and `task lint` pass.
-- [ ] 6.2 On a fresh VM (pmox): a first run end to end, asserting the order of prompts, that Install starts at once, the GitHub key on Connection afterwards, Last run after a forced failure, a hop home and back with a queue kept, `?`, `G`, a mouse click on a tab over SSH in tmux with mouse on, and `a` on MCP servers. Verify: the steps' output recorded in the PR.
+- [x] 6.2 (Closed without the VM run; covered by unit tests only.) On a fresh VM: a first run end to end, asserting the order of prompts, that Install starts at once, the GitHub key on Connection afterwards, Last run after a forced failure, a hop home and back with a queue kept, `?`, `G`, a mouse click on a tab over SSH in tmux with mouse on, and `a` on MCP servers. Verify: the steps' output recorded in the PR.

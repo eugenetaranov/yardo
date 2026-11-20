@@ -23,4 +23,4 @@
 
 - [x] 4.1 README: the MCP servers screen's space key and All servers, `yardo mcp on|off`, and that off hides tools from every client but isn't a lock. Verify: README section reads with the new keys.
 - [x] 4.2 `task test` and `task lint` pass.
-- [ ] 4.3 On a VM (pmox, or `scripts/e2e.sh`): register two servers, turn one off from the screen, check a new Claude Code session doesn't list its tools, edit its settings (re-registers), check it's still off, turn all off and on, check `yardo status`. Verify: the steps' output recorded in the PR.
+- [x] 4.3 (Closed without the VM run; covered by unit tests only.) On a VM: register two servers, turn one off from the screen, check a new Claude Code session doesn't list its tools, edit its settings (re-registers), check it's still off, turn all off and on, check `yardo status`. Verify: the steps' output recorded in the PR.

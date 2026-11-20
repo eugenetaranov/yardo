@@ -1,7 +1,7 @@
 # yardo-credentials Specification
 
 ## Purpose
-TBD - created by archiving change yardo-credentials-flow. Update Purpose after archive.
+How yardo asks for secrets (agent API keys, MCP server keys, tokens) and where it writes them: each tool's own file, readable only by the user, never yardo's state.
 
 ## Requirements
 

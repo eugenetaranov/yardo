@@ -1,41 +1,9 @@
 # yardo-github-access Specification
 
 ## Purpose
-TBD - created by archiving change yardo-credentials-flow. Update Purpose after archive.
+How a machine logs in to GitHub, GitLab and Bitbucket: the gh login, tokens, and the user's own forwarded agent.
 
 ## Requirements
-
-### Requirement: GitHub access modes
-When `github` is picked, yardo SHALL ask how the VM reaches GitHub, and SHALL save the choice as `gh_mode` in answers. The three modes:
-- **`agent`**: use the SSH agent forwarded from the laptop.
-  - No key is generated or uploaded.
-  - gh is logged in through the device flow, with scope `user:email`. It never asks for `admin:public_key`.
-- **`key`**: generate `~/.ssh/id_ed25519` if absent, with an optional passphrase, and upload it as an auth key.
-  - gh scopes are `admin:public_key,user:email`.
-- **`token`**: paste a fine-grained personal access token.
-  - yardo runs `gh auth login --with-token` and `gh auth setup-git`, and git uses HTTPS.
-  - No key is uploaded, and the token is not saved in answers.
-
-The default SHALL be `agent` when an agent with at least one key is reachable during setup, and `key` otherwise.
-
-yardo SHALL keep `SSH_AUTH_SOCK` when it re-runs itself through sudo, so it can make that check.
-
-Saved answers with `github` picked and no `gh_mode` SHALL be treated as `key`.
-
-#### Scenario: Forwarded agent
-- **WHEN** the user connected with `pmox shell -A`, picks `github` and accepts the default
-- **THEN** no key file is created and no key is uploaded
-- **AND** `ssh -T git@github.com` as the user succeeds
-- **AND** `~/yardo.txt` says to connect with `pmox shell -A` (or `forward_agent: true`) for git over SSH
-
-#### Scenario: Token mode
-- **WHEN** the user picks token and pastes a fine-grained PAT
-- **THEN** `gh auth status` is logged in and `git clone https://github.com/<org>/<private>` works
-- **AND** `answers.json` contains `gh_mode: token` and no token
-
-#### Scenario: Old answers
-- **WHEN** `sudo yardo --yes` runs with answers saved before this change, with `github` picked
-- **THEN** it behaves as `key` mode
 
 ### Requirement: SSO hint after a key upload
 After uploading a key in `key` mode, yardo SHALL print, and add to `~/yardo.txt`, a note that keys for SAML SSO organizations must be authorized at https://github.com/settings/keys ("Configure SSO").

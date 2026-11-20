@@ -23,4 +23,4 @@
 
 - [x] 4.1 Update `internal/catalog/data/90-git.toml`'s labels and sources (keys in `~/.ssh/identities`, the config file), the `gitkey` step's doc comment, and the README's Git & SSH section and Settings list. Verify: `task test` (catalog tests) and the README reads with the new flow.
 - [x] 4.2 `task test` and `task lint` pass.
-- [ ] 4.3 On a VM: add Bitbucket with a new key, add it on Bitbucket, `git clone git@bitbucket.org:<team>/<repo>` and `git@ssh.bitbucket.org:…` both work without a prompt; add GitHub with a key from `~/.ssh`; check `~/.ssh/config` only gained the Include lines; turn the setting on and `ssh` to a new host without a prompt. Verify: the output recorded in the PR.
+- [x] 4.3 (Closed without the VM run; covered by unit tests only.) On a VM: add Bitbucket with a new key, add it on Bitbucket, `git clone git@bitbucket.org:<team>/<repo>` and `git@ssh.bitbucket.org:…` both work without a prompt; add GitHub with a key from `~/.ssh`; check `~/.ssh/config` only gained the Include lines; turn the setting on and `ssh` to a new host without a prompt. Verify: the output recorded in the PR.

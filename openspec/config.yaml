@@ -1,51 +1,32 @@
 schema: spec-driven
 
 context: |
-  pmox is a single static Go binary — a multipass-style CLI for spinning
-  up and managing ephemeral VMs on a remote Proxmox VE cluster via the
-  PVE HTTP API. It does not run on the Proxmox host.
-
-  Project shape, build pipeline, flag/env conventions, OpenSpec workflow,
-  README tone, and llms.txt structure are mirrored from tackhq/tack:
-    https://github.com/tackhq/tack
+  yardo is a single static Go binary that sets up a Linux machine (a VM
+  or a server, Ubuntu/Debian) for development: a terminal UI (home,
+  Tools, Settings, MCP servers) over a catalog of items it installs,
+  configures, checks and uninstalls, run as `sudo yardo` on the machine.
 
   Tech stack:
-    - Go 1.24 (pure Go, no CGo)
-    - Cobra v1.8.x for CLI wiring (no viper; hand-rolled flag/env helpers)
-    - gopkg.in/yaml.v3 for config files
-    - github.com/zalando/go-keyring for cross-platform secret storage
-    - net/http for the PVE API client (small typed wrapper, no SDK)
-    - golang.org/x/crypto/ssh for the SSH wait helper
-    - testify for table-driven tests
-    - GoReleaser v2 for releases; Homebrew tap at eugenetaranov/homebrew-tap
+    - Go (pure Go, no CGo), linux amd64 and arm64 only
+    - Bubble Tea, Bubbles, Lip Gloss and huh for the TUI
+    - BurntSushi/toml for the catalog and profiles, yaml.v3
+    - the catalog in internal/catalog/data/*.toml, config files and
+      MCP server specs embedded from internal/assets
+    - Taskfile (task build, test, lint, release), golangci-lint
+    - GoReleaser v2; install.sh from the release, checksums checked;
+      Homebrew tap at eugenetaranov/homebrew-tap
 
-  Conventions inherited from tack:
-    - cmd/pmox/main.go holds Cobra wiring for most commands inline.
-      Only commands large enough to deserve their own file (e.g. configure,
-      launch) get split out as siblings. No file-per-trivial-command.
-    - Flag/env pairing is explicit: flagOrEnv(cmd, "name", "PMOX_NAME").
-      No automatic binding.
-    - Workflow files are .yaml not .yml. CI file is ci.yaml.
-    - golangci-lint v1.64 with --timeout=3m.
-    - GoReleaser builds linux+darwin × amd64+arm64. No Windows.
-    - Release workflow polls CI via gh CLI before running goreleaser.
-    - All non-public code lives under internal/. No pkg/ directory.
-    - No log package; verbose/debug bools threaded through, stderr writes
-      via fmt.Fprintln at call sites.
-
-  Out of scope for v1 (do not propose changes for these):
-    - LXC containers
-    - Snapshots
-    - Multi-VM launch (--count)
-    - pmox shell / pmox exec
-    - Host directory mounts
-    - Networking beyond DHCP on the default bridge
-    - Windows builds
+  Conventions:
+    - cmd/yardo holds the CLI; everything else lives under internal/.
+    - State lives under /var/lib/yardo (answers.json, per-user state);
+      secrets never go there, only into each tool's own config file.
+    - Every command and its output goes to /var/log/yardo.log.
+    - Workflow files are .yaml, not .yml.
+    - README and UI text: short plain sentences, the user's words, no
+      jargon; screens say what something does, not how.
 
 rules:
   proposal:
-    - Keep proposals tight. Match tack's archived proposal style:
-      ## Why, ## What Changes, ## Capabilities, ## Impact.
-    - Reference tack precedent when mirroring a convention.
+    - "Keep proposals tight: ## Why, ## What Changes, ## Capabilities, ## Impact."
   spec:
     - "Use OpenSpec scenario format: '### Requirement:' followed by '#### Scenario:' with WHEN/THEN bullets."

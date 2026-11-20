@@ -2,14 +2,14 @@
 
 How yardo runs on a VM: non-interactive apt, safe key downloads,
 secrets kept out of argv, visible warnings, saved-answer migration, and
-pmox-owned config files kept apart from the synced tack-roles assets.
+yardo's own config files kept apart from the tack-roles assets.
 
 ## Requirements
 
-### Requirement: pmox-owned config files
+### Requirement: yardo's own config files
 yardo's own config files SHALL live in its source tree and SHALL be embedded in the binary. `task bootstrap:sync` SHALL copy only the tack-roles files (`mcp-sync`, `mcp-catalog/*.spec`, `SOURCE`) into their own directory, and SHALL NOT change yardo's config files.
 
-#### Scenario: Sync keeps pmox config
+#### Scenario: Sync keeps yardo's config
 - **WHEN** `task bootstrap:sync` runs
 - **THEN** only the tack-roles files change
 
@@ -63,7 +63,7 @@ Saved answers SHALL be read from `/var/lib/yardo/answers.json`, a JSON object wi
 - `kubectl`, `kubectx`, `helm` and `k9s` become `k8s`
 - `yardo` becomes `essentials cli editors tmux zellij`
 - `typescript` becomes `node`, and `kotlin` becomes `java`
-- `chrony` is dropped, with a note that pmox now sets the clock up at launch
+- `chrony` is dropped, with a note that the clock is the image's (systemd-timesyncd)
 - `A_WIRE_CLAUDE=yes` becomes `wire_agents: true`
 
 #### Scenario: Old answers file

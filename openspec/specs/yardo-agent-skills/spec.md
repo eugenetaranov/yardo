@@ -1,7 +1,7 @@
 # yardo-agent-skills Specification
 
 ## Purpose
-TBD - created by archiving change agent-skills. Update Purpose after archive.
+The agent setup yardo installs for coding agents: the notes describing the machine, safety settings for unattended agents, and the shared skills in ~/.agents/skills.
 
 ## Requirements
 

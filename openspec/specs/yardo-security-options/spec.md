@@ -1,23 +1,19 @@
 ## Purpose
 
 Opt-in hardening in yardo (sshd, ufw, fail2ban, needrestart,
-automatic security updates) and how it interacts with pmox's boot-time
+automatic security updates) and how it interacts with a launcher's boot-time
 switch-off of unattended upgrades.
 ## Requirements
 ### Requirement: Boot-time auto-upgrade switch-off yields to opt-in
-The bootcmd that pmox injects to turn off the apt timers SHALL run only when `/etc/yardo/auto-upgrades` does not exist. The starter cloud-init template SHALL contain the same guarded command.
+`/etc/yardo/auto-upgrades` SHALL be the marker that automatic updates were turned on: a launcher or cloud-init template that turns the apt timers off at boot is expected to skip that when the marker exists (`[ -e /etc/yardo/auto-upgrades ] || …`).
 
 #### Scenario: Default VM
-- **WHEN** a VM launched by pmox boots without the marker
+- **WHEN** a VM whose boot turns the apt timers off boots without the marker
 - **THEN** `apt-daily.timer` and `apt-daily-upgrade.timer` are disabled
 
 #### Scenario: Opted in
 - **WHEN** a VM has `/etc/yardo/auto-upgrades` and reboots
 - **THEN** the apt timers remain enabled
-
-#### Scenario: Unit test
-- **WHEN** `bootstrap` injects into an empty cloud-init document
-- **THEN** the single bootcmd entry starts with `[ -e /etc/yardo/auto-upgrades ] ||`
 
 ### Requirement: Automatic security updates
 An `autoupdates` item SHALL:

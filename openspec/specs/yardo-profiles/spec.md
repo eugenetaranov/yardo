@@ -1,7 +1,7 @@
 # yardo-profiles Specification
 
 ## Purpose
-TBD - created by archiving change yardo-go-rewrite. Update Purpose after archive.
+Team profiles: TOML files (or URLs) naming what a machine gets, layered, applied without a terminal, and the account they set up.
 
 ## Requirements
 
@@ -23,12 +23,12 @@ A profile SHALL be a TOML file with `picks`, and optionally `mise_extra`, `[git]
 - **WHEN** a profile is exported on one VM and applied with `--profile f.toml --yes` on a fresh VM
 - **THEN** the second VM's saved answers equal the first VM's
 
-### Requirement: Profile at launch
-`pmox launch --yardo-profile <file>`, or the server config's `yardo_profile`, SHALL copy the profile to the VM with yardo and run `sudo yardo --profile <path> --yes`, streaming its output. A failure SHALL be a warning, or a launch failure with `--strict-hooks`.
+### Requirement: Profile without a terminal
+`sudo yardo --profile <file or URL> --yes` SHALL install the profile's items asking nothing, streaming its output, and exit non-zero when an item failed.
 
-#### Scenario: Launch with profile
-- **WHEN** `pmox launch web1 --yardo-profile team.toml` runs
-- **THEN** after launch, the profile's items are installed and saved as web1's answers
+#### Scenario: First boot with a profile
+- **WHEN** `sudo yardo --profile team.toml --yes` runs from cloud-init on web1
+- **THEN** the profile's items are installed and saved as web1's answers
 
 ### Requirement: Layered profiles
 `--profile` SHALL be repeatable. Profiles SHALL be applied in order. For `[git]`, `[system]` and `user`, a later profile's value SHALL win. `picks`, `mise_extra` and `[mcp].servers` SHALL be unioned.
@@ -49,7 +49,7 @@ A profile MAY set `name`. Answers SHALL record which picks each named profile co
 - **THEN** `lazygit` stays picked after the team profile changes
 
 ### Requirement: Target user
-A profile's `user` key, or `--user`, SHALL choose the account yardo configures. If the account does not exist, it SHALL be created with the same groups as pmox's cloud-init user. `--user` SHALL win over the profile.
+A profile's `user` key, or `--user`, SHALL choose the account yardo configures. If the account does not exist, it SHALL be created like the machine's first user: a home, passwordless sudo, and the supplementary groups of the user who ran sudo. `--user` SHALL win over the profile.
 
 #### Scenario: New user
 - **WHEN** a profile has `user = "ada"` and the VM has no `ada`
