@@ -115,16 +115,19 @@ type BoardItem struct {
 	// Tab is the section it's listed in (a catalog tab id, or ExtraTab).
 	Tab string
 	// Picked: it's among the saved picks (installed). Pending is "add",
-	// "uninstall" or "forget" (yardo stops checking it; it stays
-	// installed) when a change to it is queued.
+	// "uninstall", "forget" (yardo stops checking it; it stays installed)
+	// or "update" (to its newer versions, from the Updates tab) when a
+	// change to it is queued.
 	Picked  bool
 	Pending string
 	// State is its status when picked (ok, down, drifted, partial,
 	// missing, secret, unchecked; "" when not checked yet).
 	State, Detail string
 	// Inputs are the values left empty; Updates newer versions of its
-	// tools; Source how it's installed.
+	// tools (Pinned: a profile pins them, so they stay); Source how it's
+	// installed.
 	Inputs, Updates []string
+	Pinned          bool
 	Source          string
 	// Changes are the answers enter can change (label and key), such as
 	// the git identity: a picked item's questions, asked again.
@@ -195,8 +198,9 @@ type BoardResult struct {
 	// Change is BoardChange's answer to change (a BoardItem.Changes key).
 	Change        string
 	Adds, Forgets []string
-	// Uninstalls are the items to uninstall, with what needs them.
-	Uninstalls []string
+	// Uninstalls are the items to uninstall, with what needs them;
+	// Updates the ones to update (item IDs and mise: IDs).
+	Uninstalls, Updates []string
 	// Settings are settings to change, key to value (the menu's).
 	Settings map[string]string
 }
@@ -228,6 +232,23 @@ type Board struct {
 	hits  []Hit
 	// plan says what the queued uninstalls do (see SetPlanner).
 	plan Planner
+	// checking reports whether a check for updates is running (see
+	// SetChecking); check is u on the Updates tab, asking for one.
+	checking func() bool
+	check    bool
+}
+
+// SetChecking has the Updates tab say "Checking for updates…" while f
+// reports a check running.
+func (b *Board) SetChecking(f func() bool) { b.checking = f }
+
+// QueueUpdates queues every update that isn't pinned.
+func (b *Board) QueueUpdates() {
+	for _, i := range b.items {
+		if newer(i) && !i.Pinned && !b.inRow(i) && i.Pending == "" {
+			i.Pending = "update"
+		}
+	}
 }
 
 // Planner says, for each item to uninstall, what uninstalling it does:
@@ -248,6 +269,10 @@ const ShellSection = "__shell__"
 // InstalledTab is the board's first tab, once anything is installed: every
 // tool installed, from all the tabs, to find one to fix or uninstall.
 const InstalledTab = "__installed__"
+
+// UpdatesTab follows Installed while a check for updates runs or found
+// newer versions: one row per tool, to queue for update.
+const UpdatesTab = "__updates__"
 
 // NewBoard builds the board: tabs (each with sections, or none) and the
 // items. first: nothing is installed yet (no marks; the defaults come
@@ -287,19 +312,43 @@ func (b *Board) Flash(s string) { b.flash = s }
 func (b *Board) SetFromMenu(on bool) { b.fromMenu = on }
 
 // current is the current tab's index in tabs (the visible ones): found by
-// its id, or, gone, the one now at its place.
+// its id, or, gone, the one now at its place (Updates gone: Installed).
 func (b *Board) current(tabs []Tab) int {
 	if n := slices.IndexFunc(tabs, func(t Tab) bool { return t.ID == b.tabID }); n >= 0 {
 		b.tab = n
 		return n
+	}
+	if b.tabID == UpdatesTab {
+		if n := slices.IndexFunc(tabs, func(t Tab) bool { return t.ID == InstalledTab }); n >= 0 {
+			b.tab, b.tabID = n, InstalledTab
+			return n
+		}
 	}
 	b.tab = max(0, min(b.tab, len(tabs)-1))
 	b.tabID = tabs[b.tab].ID
 	return b.tab
 }
 
-// visibleTabs are the tabs as shown.
-func (b *Board) visibleTabs() []Tab { return b.tabs }
+// visibleTabs are the tabs as shown: Updates, after Installed, while a
+// check runs or something has a newer version.
+func (b *Board) visibleTabs() []Tab {
+	if !b.updating() {
+		return b.tabs
+	}
+	title := "Updates"
+	if n := b.count(func(i *BoardItem) bool { return newer(i) && !b.inRow(i) }); n > 0 && !b.isChecking() {
+		title += " " + strconv.Itoa(n)
+	}
+	n := slices.IndexFunc(b.tabs, func(t Tab) bool { return t.ID == InstalledTab }) + 1
+	return slices.Insert(slices.Clone(b.tabs), n, Tab{ID: UpdatesTab, Title: title})
+}
+
+// updating: the Updates tab is shown.
+func (b *Board) updating() bool {
+	return !b.first && (b.isChecking() || b.count(func(i *BoardItem) bool { return newer(i) && !b.inRow(i) }) > 0)
+}
+
+func (b *Board) isChecking() bool { return b.checking != nil && b.checking() }
 
 func fixable(i *BoardItem) bool { return i.Picked && Fixable(i.State) }
 func secret(i *BoardItem) bool  { return i.Picked && i.State == "secret" }
@@ -392,6 +441,17 @@ func (b *Board) rows() []row {
 	}
 	tabs := b.visibleTabs()
 	t := tabs[b.current(tabs)]
+	if t.ID == UpdatesTab {
+		if b.isChecking() {
+			return []row{{text: "Checking for updates…"}}
+		}
+		for _, i := range b.items {
+			if newer(i) && !b.inRow(i) {
+				out = append(out, row{item: i})
+			}
+		}
+		return out
+	}
 	if t.ID == InstalledTab {
 		for _, i := range b.items {
 			if i.Picked && !b.inRow(i) {
@@ -500,6 +560,8 @@ func (b *Board) done(k BoardKind, id string) tea.Cmd {
 			b.result.Forgets = append(b.result.Forgets, i.ID)
 		case "uninstall":
 			b.result.Uninstalls = append(b.result.Uninstalls, i.ID)
+		case "update":
+			b.result.Updates = append(b.result.Updates, i.ID)
 		}
 	}
 	b.ended = true
@@ -507,9 +569,14 @@ func (b *Board) done(k BoardKind, id string) tea.Cmd {
 }
 
 // toggle ticks i (queues installing it) or unticks it (queues
-// uninstalling it), or takes it off the queue.
+// uninstalling it), or takes it off the queue. On the Updates tab, it
+// queues updating it instead (a pinned one only says why).
 func (b *Board) toggle(i *BoardItem) {
 	switch {
+	case b.onUpdates() && i.Pending == "" && i.Pinned:
+		b.flash = short(i.Label) + " is pinned by your profile: it stays at its version."
+	case b.onUpdates() && i.Pending == "" && newer(i):
+		i.Pending = "update"
 	case i.Pending != "":
 		i.Pending = ""
 	case i.Picked:
@@ -548,6 +615,17 @@ func (b *Board) untick(i *BoardItem) {
 	}
 }
 
+// onUpdates: the Updates tab is up (not a search).
+func (b *Board) onUpdates() bool { return b.key() == UpdatesTab }
+
+// CheckAsked reports whether u on the Updates tab asked for a check (and
+// clears it).
+func (b *Board) CheckAsked() bool {
+	c := b.check
+	b.check = false
+	return c
+}
+
 func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 	tabs := b.visibleTabs()
 	cur := b.current(tabs)
@@ -580,10 +658,21 @@ func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 		if b.dialog == nil && b.count(func(i *BoardItem) bool { return i.Pending == "uninstall" }) > 0 {
 			b.confirm(false)
 		}
+	case "u":
+		if b.onUpdates() {
+			b.check = true
+		}
 	case "a":
 		if b.queued() == 0 {
 			b.flash = "Nothing queued. Space adds or uninstalls a tool."
+			if b.onUpdates() {
+				b.flash = "Nothing queued. Space queues a tool to update."
+			}
 			return nil
+		}
+		// Only updates: nothing to ask, the run starts.
+		if b.count(func(i *BoardItem) bool { return i.Pending == "update" }) == b.queued() {
+			return b.done(BoardApply, "")
 		}
 		b.confirm(false)
 	case "/":
@@ -827,6 +916,8 @@ func (b *Board) confirm(full bool) {
 			lines = append(lines, "  Forget "+short(i.Label)+": it stays installed")
 		case "add":
 			lines = append(lines, "+ Install "+short(i.Label))
+		case "update":
+			lines = append(lines, "↑ Update "+short(i.Label)+": "+strings.Join(i.Updates, ", "))
 		}
 	}
 	lines = append(lines, "")
@@ -933,6 +1024,18 @@ func (b *Board) note(r row) (string, lipgloss.Style) {
 		pre = r.where + " · "
 	}
 	switch {
+	case b.key() == UpdatesTab:
+		say := strings.Join(i.Updates, " · ")
+		if from := updateFrom(i.Source); from != "" {
+			say += " · " + from
+		}
+		switch {
+		case i.Pending == "update":
+			return "will update: " + say, green
+		case i.Pinned:
+			return say + " · pinned by your profile", muted
+		}
+		return say, yellow
 	case i.Pending == "add":
 		return pre + "will install", green
 	case i.Pending == "forget":
@@ -953,6 +1056,21 @@ func (b *Board) note(r row) (string, lipgloss.Style) {
 		return pre + "from the team profile " + i.Team, muted
 	}
 	return strings.TrimSuffix(pre, " · "), muted
+}
+
+// updateFrom is where an item's updates come from, by how it's
+// installed: mise, apt, or both.
+func updateFrom(source string) string {
+	m, a := strings.Contains(source, "mise"), strings.Contains(source, "apt")
+	switch {
+	case m && a:
+		return "mise and apt"
+	case m:
+		return "mise"
+	case a:
+		return "apt"
+	}
+	return ""
 }
 
 // fixLabel is what fixing an item in state does, said as a choice.
@@ -988,9 +1106,6 @@ func (b *Board) health() string {
 	}
 	if n := b.count(own(secret)); n > 0 {
 		right = append(right, accent.Render(fmt.Sprintf("%s %d to fill in", tui.Cur.Mark.Need, n)))
-	}
-	if n := b.count(own(newer)); n > 0 {
-		right = append(right, yellow.Render(fmt.Sprintf("%s %d with updates", tui.Cur.Mark.Update, n)))
 	}
 	if len(right) == 0 {
 		right = append(right, green.Render(tui.Cur.Mark.OK+" all well"))
@@ -1071,7 +1186,14 @@ func (b *Board) queueSay() string {
 			q = append(q, "forget "+short(i.Label))
 		case "uninstall":
 			q = append(q, "uninstall "+short(i.Label))
+		case "update":
+			q = append(q, "update "+short(i.Label))
 		}
+	}
+	if n := b.count(func(i *BoardItem) bool { return i.Pending == "update" }); n > 1 {
+		// Updates are counted, not named: there can be many.
+		q = slices.DeleteFunc(q, func(s string) bool { return strings.HasPrefix(s, "update ") })
+		q = append(q, fmt.Sprintf("%d to update", n))
 	}
 	return strings.Join(q, " · ")
 }
@@ -1114,6 +1236,20 @@ func (b *Board) Keys() []Key {
 	}
 	_, r := b.selected(b.rows())
 	var keys []Key
+	if b.onUpdates() {
+		switch {
+		case r == nil:
+		case r.item.Pending != "":
+			keys = append(keys, Key{Key: "space", What: "cancel"})
+		case !r.item.Pinned:
+			keys = append(keys, Key{Key: "space", What: "update"})
+		}
+		keys = append(keys, Key{Key: "u", What: "check again"})
+		if n := b.queued(); n > 0 {
+			keys = append(keys, Key{Key: "a", What: fmt.Sprintf("APPLY %d", n), On: true})
+		}
+		return append(keys, Key{Key: "←→", What: "tabs"}, Key{Key: "/", What: "search"})
+	}
 	first := Key{Key: "enter", What: "details"}
 	switch {
 	case r == nil:
@@ -1141,7 +1277,8 @@ func (b *Board) Keys() []Key {
 // Help are every key the board takes, for the keys screen.
 func (b *Board) Help() []Key {
 	return []Key{
-		{Key: "space", What: "tick a tool to install, untick one to uninstall; again takes it off the queue"},
+		{Key: "space", What: "tick a tool to install, untick one to uninstall; again takes it off the queue (on Updates: queue it to update)"},
+		{Key: "u", What: "on Updates: check for updates again"},
 		{Key: "enter", What: "the row's details: fix, fill in, change, reinstall, log in, forget"},
 		{Key: "a", What: "apply the queue, asked first"},
 		{Key: "d", What: "uninstall the row, asked first"},
@@ -1249,6 +1386,8 @@ func (b *Board) Body(w, h int) string {
 			box = "[ ]"
 		case i.Pending == "uninstall":
 			box = "[−]"
+		case i.Pending == "update":
+			box = "[↑]"
 		case i.Picked:
 			box = "[x]"
 		}

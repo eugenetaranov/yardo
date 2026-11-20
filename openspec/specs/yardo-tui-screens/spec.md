@@ -110,13 +110,6 @@ The Fix screen SHALL show each problem's detail under its row without a key; ent
 - **WHEN** Fix opens with a drifted file
 - **THEN** the file's path is under its row at once
 
-### Requirement: Updates in one step
-Enter on the home's "Install N updates" row SHALL open the Updates screen listing each tool and its versions; enter there SHALL start the update, and `q` SHALL go back. There SHALL be no other button or question between the list and the run.
-
-#### Scenario: Two enters
-- **WHEN** the user presses enter on "Install 3 updates", then enter
-- **THEN** the update run starts
-
 ### Requirement: Check for updates from the home
 `u` on the home SHALL start a check for updates in the background and say so. While updates were never checked, Needs you SHALL have a row "Check for updates" that enter starts. Settings SHALL NOT have a Check for updates row.
 
@@ -137,3 +130,14 @@ The Machine panel SHALL be two lines at every width, and Needs you SHALL be the 
 #### Scenario: Wide screen
 - **WHEN** the terminal is 120 columns wide
 - **THEN** Needs you is one box the width of the screen and Machine is two lines under it
+
+### Requirement: Install updates opens the Updates tab
+Enter on the home's "Install N updates" row SHALL open Tools on the Updates tab with every update queued (pinned ones excepted); `a` there SHALL start the update, and `q` SHALL go back home with the queue kept. There SHALL be no other button or question between the list and the run. yardo SHALL NOT have an Updates screen apart from that tab.
+
+#### Scenario: Two keys
+- **WHEN** the user presses enter on "Install 3 updates", then `a`
+- **THEN** the run updating the three starts
+
+#### Scenario: Leave some out
+- **WHEN** the user presses enter on "Install 3 updates", space on node, then `a`
+- **THEN** the run updates the other two only

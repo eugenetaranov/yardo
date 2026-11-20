@@ -750,17 +750,23 @@ func TestRanSays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ranSays(cat, []string{"docker"}, nil); !strings.HasPrefix(got, "✓ Done: Docker") || strings.Contains(got, "q quits") {
+	if got := ranSays(cat, []string{"docker"}, nil, nil); !strings.HasPrefix(got, "✓ Done: Docker") || strings.Contains(got, "q quits") {
 		t.Errorf("fixed: %q", got)
 	}
-	if got := ranSays(cat, nil, nil); got != "✓ Done" {
+	if got := ranSays(cat, nil, nil, nil); got != "✓ Done" {
 		t.Errorf("applied: %q", got)
 	}
-	if got := ranSays(cat, nil, &runFailed{ids: []string{"docker"}}); got != "✗ "+ui.Short(cat.Item("docker").Label)+" failed · Last run shows what happened" {
+	if got := ranSays(cat, nil, nil, &runFailed{ids: []string{"docker"}}); got != "✗ "+ui.Short(cat.Item("docker").Label)+" failed · Last run shows what happened" {
 		t.Errorf("failed: %q", got)
 	}
-	if got := ranSays(cat, nil, errCancelled); got != "Cancelled: nothing changed." {
+	if got := ranSays(cat, nil, nil, errCancelled); got != "Cancelled: nothing changed." {
 		t.Errorf("cancelled: %q", got)
+	}
+	if got := ranSays(cat, []string{"terraform"}, []string{"terraform", "mise:uv"}, nil); got != "✓ Updated "+ui.Short(cat.Item("terraform").Label)+", uv" {
+		t.Errorf("updated: %q", got)
+	}
+	if got := ranSays(cat, nil, []string{"terraform"}, &runFailed{ids: []string{"updates"}}); got != "✗ updates failed · Last run shows what happened" {
+		t.Errorf("update failed: %q", got)
 	}
 }
 

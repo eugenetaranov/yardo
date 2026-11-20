@@ -105,8 +105,9 @@ picked but never installed is on Tools, not a problem; three or more are
 one **Fix 3 things** row, a checklist with each one's details under it,
 all ticked: space unticks, enter fixes the ticked in one run), **Fill
 in** a value (opens its file in your editor), **Install 3 updates**
-(enter opens the list, enter there updates: `mise up` for the tools, apt
-for the packages; q backs out), **Check for updates** (while it was never
+(enter opens Tools on the Updates tab with all three queued: **a**
+updates them, space on one leaves it out, q goes home with the queue
+kept), **Check for updates** (while it was never
 done; **u** does it from anywhere on the home), and **See why the last
 run failed**. Under it, the **Machine** in two lines, **Services &
 containers** (what's up or failed, the ports it listens on beyond this
@@ -212,7 +213,8 @@ it on its next run, once, before the home opens.
 
 **Tools** opens the full screen: tabs by area
 (**Installed** first, once anything is: every tool installed, from all
-the tabs, to fix or uninstall one; then **Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
+the tabs, to fix or uninstall one; **Updates** next, while a check runs
+or has found newer versions; then **Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
 SSH**) above a checklist, where a ticked box means installed and a mark
 beside it how it is, said in a word beside it: `✓` working, `✗` stopped
 or not installed, `~` half set up, edited by hand, or set up by an older
@@ -222,6 +224,16 @@ yardo (this one ships newer files; Fix applies them), `○` needs a value,
 - **space** ticks a tool to install (`[+]`), or unticks an installed one
   to uninstall it (`[−]`); space again takes it off the queue. The queue
   shows on a line above the keys, in words.
+- **Updates** lists each tool with a newer version, one row each: the
+  version it has and the one that's out (`node 22.12 → 24.11`), and
+  whether it comes from mise or apt. **space** queues one to update
+  (`[↑]`), in the same queue as adding and uninstalling, and **a**
+  applies it all in one run: only the queued tools are updated, each to
+  its latest version, and the others stay listed until the next check.
+  A tool a team profile pins says "pinned by your profile" and isn't
+  queued. yardo looks for newer versions once a day, in the background;
+  **u** there (or on the home) looks again, and every key keeps working
+  meanwhile. Updating yardo itself is `sudo yardo version up`.
 - **d** asks to uninstall the row now (with anything else queued to
   uninstall).
 - **enter** acts on the row: fix what's broken (now), fill in a missing
@@ -807,7 +819,8 @@ user set up), and each run keeps the latest in
 `/var/lib/yardo/status/<user>.json`. `--updates` also asks apt and mise
 what's newer (slow: it refreshes apt's lists) and lists it per item; it
 never upgrades (`mise up`, `sudo apt upgrade` do; the home looks once a day,
-in the background, and its Install updates row asks, then updates).
+in the background, and its Install updates row opens Tools › Updates,
+everything queued).
 Each run leaves a copy for you in
 `~/.cache/yardo/status.json`: `yardo status` without sudo shows that one,
 and how old it is. `sudo yardo` shows the same marks on its screen. `sudo yardo --verify` is the same

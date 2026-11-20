@@ -767,27 +767,28 @@ func TestMenuMCPSorted(t *testing.T) {
 	}
 }
 
-// Updates in one step: enter on Install 1 update opens the list, enter
-// there updates; q backs out.
-func TestMenuUpgrade(t *testing.T) {
+// Install N updates is a row of the home's; enter on it leaves the menu
+// for Tools' Updates tab (see TestAppUpdates).
+func TestMenuInstallUpdates(t *testing.T) {
 	m := testMenu(true)
 	m.items[2].Updates = []string{"go 1.25.1 → 1.25.2"}
 	m.checked = true
-	if !strings.Contains(m.View(), "Install 1 update") || !strings.Contains(m.View(), "1 update") {
+	if !strings.Contains(m.View(), "Install 1 update") {
 		t.Fatalf("home:\n%s", m.View())
 	}
 	onRow(m, "updates")
 	mk(m, "enter")
-	if v := m.View(); strings.Contains(v, "Update all") || !strings.Contains(v, "enter update 1") || !strings.Contains(v, "q back") {
-		t.Fatalf("updates screen:\n%s", v)
+	if m.result.Kind != MenuUpdatesTab {
+		t.Errorf("result %+v, want MenuUpdatesTab", m.result)
 	}
-	mk(m, "q")
-	if m.screen != "home" || m.ended {
-		t.Fatalf("q: screen %s ended %v", m.screen, m.ended)
-	}
-	mk(m, "enter", "enter")
-	if m.result.Kind != MenuUpgrade {
-		t.Errorf("result %+v, want MenuUpgrade", m.result)
+}
+
+// A check that finds nothing newer says everything is current.
+func TestMenuNothingNewer(t *testing.T) {
+	m := testMenu(true)
+	m.Update(UpdatesMsg{ByID: map[string][]string{}, At: "09:05"})
+	if !strings.Contains(m.View(), "No updates: everything is current.") {
+		t.Errorf("toast:\n%s", m.View())
 	}
 }
 

@@ -87,7 +87,7 @@ func TestAppHop(t *testing.T) {
 func TestAppQueueKept(t *testing.T) {
 	a := testApp()
 	onHome(a, "tools")
-	ak(a, "enter", "right", "right", "space") // System: WireGuard
+	ak(a, "enter", "right", "right", "right", "space") // System: WireGuard
 	if a.Board.queued() != 1 {
 		t.Fatalf("not queued:\n%s", a.View())
 	}
@@ -114,7 +114,7 @@ func TestAppQueueKept(t *testing.T) {
 func TestAppReload(t *testing.T) {
 	a := testApp()
 	onHome(a, "tools")
-	ak(a, "enter", "right", "right", "space") // System: WireGuard
+	ak(a, "enter", "right", "right", "right", "space") // System: WireGuard
 	tab := a.Board.tabID
 	reload := func(installed bool) {
 		m, b := testMenu(true), testBoard(false)
@@ -149,7 +149,7 @@ func TestAppTypeOnHome(t *testing.T) {
 func TestAppChrome(t *testing.T) {
 	a := testApp()
 	onHome(a, "tools")
-	ak(a, "enter", "right") // DevOps
+	ak(a, "enter", "right", "right") // DevOps
 	if v := a.View(); !strings.Contains(strings.Split(v, "\n")[0], "Home › Tools › DevOps") {
 		t.Errorf("header:\n%s", v)
 	}
@@ -170,7 +170,7 @@ func TestAppDialog(t *testing.T) {
 	a := testApp()
 	a.Board.items[0].Removable = true
 	onHome(a, "tools")
-	ak(a, "enter", "right", "d") // DevOps: Docker
+	ak(a, "enter", "right", "right", "d") // DevOps: Docker
 	v := a.View()
 	if !strings.Contains(v, "┌ Uninstall 1 tool?") || !strings.Contains(v, "y yes") || !strings.Contains(v, "n no") {
 		t.Fatalf("uninstall:\n%s", v)
@@ -281,5 +281,146 @@ func TestAppMouse(t *testing.T) {
 	a.Update(tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
 	if a.Menu.sel == start {
 		t.Errorf("wheel didn't move: %d", a.Menu.sel)
+	}
+}
+
+// testUpdates is the app with three tools that have newer versions; one
+// (Go) is pinned when pinned.
+func testUpdates(pinned bool) *App {
+	a := testApp()
+	for _, i := range a.Board.items {
+		switch i.ID {
+		case "docker":
+			i.State, i.Updates, i.Source = "ok", []string{"docker-ce 27.1 → 27.2"}, "apt docker-ce"
+		case "keys":
+			i.State, i.Updates, i.Source = "ok", []string{"gh 2.60 → 2.62"}, "mise use -g gh"
+		case "terraform":
+			i.Pinned, i.Source = pinned, "mise use -g terraform"
+		}
+	}
+	return a
+}
+
+// The home's Install N updates opens Tools on the Updates tab with every
+// update queued: a then y updates them all; space leaves one out; q goes
+// home with the queue kept.
+func TestAppUpdates(t *testing.T) {
+	a := testUpdates(false)
+	onHome(a, "updates")
+	ak(a, "enter")
+	v := ansi.Strip(a.View())
+	if !a.onBoard || a.Board.tabID != UpdatesTab || !strings.Contains(v, "Updates 3") {
+		t.Fatalf("enter on Install 3 updates:\n%s", v)
+	}
+	for _, want := range []string{"[↑]", "will update: terraform 1.9.8 → 1.10.1 · mise", "docker-ce 27.1 → 27.2 · apt", "Queued: 3 to update", "APPLY 3"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("tab lacks %q:\n%s", want, v)
+		}
+	}
+	if cmd := ak(a, "a"); !isQuit(cmd) || a.result.Board == nil || a.result.Board.Kind != BoardApply ||
+		strings.Join(a.result.Board.Updates, " ") != "docker terraform keys" || len(a.result.Board.Uninstalls) != 0 {
+		t.Fatalf("result %+v", a.result.Board)
+	}
+	// Leave one out.
+	a = testUpdates(false)
+	onHome(a, "updates")
+	ak(a, "enter", "space", "a")
+	if got := strings.Join(a.result.Board.Updates, " "); got != "terraform keys" {
+		t.Errorf("updates %q", got)
+	}
+	// q: home, the queue kept.
+	a = testUpdates(false)
+	onHome(a, "updates")
+	ak(a, "enter", "q")
+	if a.onBoard || a.Board.queued() != 3 {
+		t.Errorf("q: on board %v, queued %d", a.onBoard, a.Board.queued())
+	}
+}
+
+// Space on another tab still uninstalls; arriving by tab queues nothing.
+func TestAppUpdatesByTab(t *testing.T) {
+	a := testUpdates(false)
+	a.Board.items[1].Removable = true
+	onHome(a, "tools")
+	ak(a, "enter", "right")
+	if a.Board.tabID != UpdatesTab || a.Board.queued() != 0 {
+		t.Fatalf("tab %s, queued %d", a.Board.tabID, a.Board.queued())
+	}
+	ak(a, "right", "down", "space") // DevOps: Terraform
+	if a.Board.items[1].Pending != "uninstall" {
+		t.Errorf("space on DevOps: %q", a.Board.items[1].Pending)
+	}
+}
+
+// A pinned tool says so, and space only says why.
+func TestAppUpdatesPinned(t *testing.T) {
+	a := testUpdates(true)
+	onHome(a, "updates")
+	ak(a, "enter")
+	if a.Board.queued() != 2 || a.Board.items[1].Pending != "" {
+		t.Fatalf("queued %d, terraform %q", a.Board.queued(), a.Board.items[1].Pending)
+	}
+	if v := ansi.Strip(a.View()); !strings.Contains(v, "pinned by your profile") {
+		t.Errorf("no pinned note:\n%s", v)
+	}
+	ak(a, "down", "space")
+	if a.Board.items[1].Pending != "" || !strings.Contains(a.View(), "pinned by your profile: it stays") {
+		t.Errorf("space on pinned: %q\n%s", a.Board.items[1].Pending, a.View())
+	}
+}
+
+// While a check runs, the tab says so; when it's done, it fills in; with
+// nothing newer, it goes and Installed is up. u on the tab checks again.
+func TestAppUpdatesCheck(t *testing.T) {
+	a := testApp()
+	done := make(chan struct{})
+	started := 0
+	a.Menu.Checker(func() func() UpdatesMsg {
+		started++
+		return func() UpdatesMsg {
+			<-done
+			return UpdatesMsg{ByID: map[string][]string{"terraform": {"terraform 1.9.8 → 1.11.0"}, "keys": {"gh 2.60 → 2.62"}}, At: "09:05"}
+		}
+	})
+	onHome(a, "tools")
+	ak(a, "enter", "right")
+	if a.Board.tabID != UpdatesTab {
+		t.Fatalf("tab %s", a.Board.tabID)
+	}
+	ak(a, "u")
+	if started != 1 || !strings.Contains(a.View(), "Checking for updates…") {
+		t.Fatalf("u: started %d\n%s", started, a.View())
+	}
+	close(done)
+	a.Update(a.Menu.wait())
+	v := ansi.Strip(a.View())
+	if a.Board.tabID != UpdatesTab || !strings.Contains(v, "terraform 1.9.8 → 1.11.0") || !strings.Contains(v, "gh 2.60 → 2.62") {
+		t.Fatalf("filled in:\n%s", v)
+	}
+	a.Update(UpdatesMsg{ByID: map[string][]string{}, At: "09:10"})
+	if v := a.View(); a.Board.tabID != InstalledTab || !strings.Contains(v, "No updates: everything is current.") {
+		t.Errorf("nothing newer: tab %s\n%s", a.Board.tabID, v)
+	}
+}
+
+// Reload keeps a queued update only while the tool still has one.
+func TestAppReloadUpdates(t *testing.T) {
+	a := testUpdates(false)
+	onHome(a, "updates")
+	ak(a, "enter")
+	reload := func(updated bool) {
+		b := testBoard(false)
+		if updated {
+			b.items[1].Updates = nil
+		}
+		a.Reload(AppData{Info: a.Menu.info, Items: b.items, Tabs: rawTabs(b), Checked: true})
+	}
+	reload(false)
+	if a.Board.items[1].Pending != "update" {
+		t.Errorf("reload: terraform %q", a.Board.items[1].Pending)
+	}
+	reload(true)
+	if a.Board.items[1].Pending != "" {
+		t.Errorf("reload after updating: terraform %q", a.Board.items[1].Pending)
 	}
 }

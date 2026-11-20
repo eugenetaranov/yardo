@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/catalog"
 	"github.com/eugenetaranov/yardo/internal/plan"
+	"github.com/eugenetaranov/yardo/internal/run"
 	"github.com/eugenetaranov/yardo/internal/steps"
 	"github.com/eugenetaranov/yardo/internal/ui"
 )
@@ -142,4 +144,86 @@ func (o *options) checkUpdates(ctx context.Context, cat *catalog.Catalog, a *ans
 		_ = u.save(o.state, user)
 	}()
 	return u
+}
+
+// drop takes ids, updated, off the check, and saves it: the rest stay
+// listed until the next check.
+func (u *updateCheck) drop(ids []string, state, user string) error {
+	if u == nil || u.ByID == nil {
+		return nil
+	}
+	for _, id := range ids {
+		delete(u.ByID, id)
+	}
+	return u.save(state, user)
+}
+
+// outdatedFor are the mise tools and apt packages of ids (items, and
+// mise:<tool> for extra tools) that mise and apt have newer versions of;
+// what the env's lock pins stays.
+func outdatedFor(cat *catalog.Catalog, env *steps.Env, ids []string, mise, apt map[string]string) (tools, pkgs []string) {
+	for _, id := range ids {
+		if t, ok := strings.CutPrefix(id, "mise:"); ok {
+			if n := steps.MiseName(t); mise[n] != "" {
+				tools = append(tools, n)
+			}
+			continue
+		}
+		if it := cat.Item(id); it != nil {
+			t, p := steps.ItemOutdated(env, it.Steps, mise, apt)
+			tools, pkgs = append(tools, t...), append(pkgs, p...)
+		}
+	}
+	if l := env.Lock; l != nil {
+		tools = slices.DeleteFunc(tools, func(t string) bool { return l.Mise[t] != "" })
+		pkgs = slices.DeleteFunc(pkgs, func(p string) bool { return l.Apt[p] != "" })
+	}
+	return slices.Compact(slices.Sorted(slices.Values(tools))), slices.Compact(slices.Sorted(slices.Values(pkgs)))
+}
+
+// updateStep updates ids to their newest versions, as one counted step
+// of r's run (looking again for what's newer first).
+func (o *options) updateStep(ctx context.Context, r *run.Runner, env *steps.Env, cat *catalog.Catalog, ids []string) error {
+	title := "Updating " + strings.Join(updateNames(cat, ids), ", ")
+	r.Step(title)
+	mise, apt := steps.Outdated(ctx, env)
+	tools, pkgs := outdatedFor(cat, env, ids, mise, apt)
+	if len(tools)+len(pkgs) == 0 {
+		r.Progress.Done("ok", "Nothing to update: already current")
+		return nil
+	}
+	if err := steps.Upgrade(ctx, env, tools, pkgs); err != nil {
+		r.Progress.Done("fail", title)
+		return err
+	}
+	r.Progress.Done("ok", "Updated "+strings.Join(append(tools, pkgs...), ", "))
+	return nil
+}
+
+// updateNames are ids as the screens name them.
+func updateNames(cat *catalog.Catalog, ids []string) []string {
+	var out []string
+	for _, id := range ids {
+		if it := cat.Item(id); it != nil {
+			out = append(out, ui.Short(it.Label))
+		} else {
+			out = append(out, strings.TrimPrefix(id, "mise:"))
+		}
+	}
+	return out
+}
+
+// pinned reports whether every tool in an item's update lines ("node
+// 22.12 → 24.11") is pinned by lock.
+func pinned(lock *answers.Lock, updates []string) bool {
+	if lock.Empty() || len(updates) == 0 {
+		return false
+	}
+	for _, u := range updates {
+		n, _, _ := strings.Cut(u, " ")
+		if lock.Mise[n] == "" && lock.Apt[n] == "" {
+			return false
+		}
+	}
+	return true
 }

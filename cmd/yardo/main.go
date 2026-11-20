@@ -463,8 +463,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		var fix []string
 		var board *ui.BoardResult
 		// mcpEdit: the MCP servers picked new, to fill in once the run has
-		// made their env files.
-		var mcpEdit []string
+		// made their env files; updates: what the board queued to update,
+		// done last in the run.
+		var mcpEdit, updates []string
 		if based != nil && interactive {
 			fix, based = based, nil // installed now, not left to fix
 		}
@@ -499,7 +500,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						return err
 					}
 				}
-				d.withUpdates(upd)
+				d.withUpdates(upd, o.lock)
 				if app == nil || shown != d {
 					if app == nil {
 						app = ui.NewApp(d.appData(), prep)
@@ -551,16 +552,6 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						upd = o.checkUpdates(ctx, cat, a)
 						app.Menu.Checking(upd.msg)
 						toast = "Checking for updates in the background: what it finds shows here."
-					case ui.MenuUpgrade:
-						upd.wait(stdout)
-						said, err := o.upgrade(ctx, cat, a)
-						if err != nil {
-							return err
-						}
-						// What was newer is installed now.
-						upd = (&updateCheck{At: time.Now(), ByID: map[string][]string{}}).finished()
-						_ = upd.save(o.state, a.User)
-						d, open, toast = nil, "home", said
 					case ui.MenuFix:
 						// Fix all: every problem, in one run.
 						fix = res.IDs
@@ -688,13 +679,19 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							if err != nil {
 								return err
 							}
-							if len(res.Adds) == 0 && len(res.Forgets) == 0 && len(res.Settings) == 0 {
+							if len(res.Adds) == 0 && len(res.Forgets) == 0 && len(res.Settings) == 0 && len(res.Updates) == 0 {
 								done, d = &r, nil // back to the board, checked again
 								continue
 							}
 							for _, l := range r.Lines {
 								fmt.Fprintln(stdout, l)
 							}
+						}
+						updates = res.Updates
+						if len(res.Adds)+len(res.Forgets)+len(res.Settings) == 0 && len(updates) > 0 {
+							// Only updates: those items, applied again, then updated.
+							fix = slices.Clone(updates)
+							break loop
 						}
 						board = &res
 						break loop
@@ -863,7 +860,18 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			if zshPrime(env) {
 				r.More = 1
 			}
+			if len(updates) > 0 {
+				r.More++
+			}
 			res := r.Run(ctx, items, extra)
+			if len(updates) > 0 {
+				if err := o.updateStep(ctx, r, env, cat, updates); err != nil {
+					res.Failed = append(res.Failed, "updates")
+					res.Errors["updates"] = err.Error()
+				} else {
+					_ = upd.drop(updates, o.state, a.User)
+				}
+			}
 			if err := markApplied(o.state, a.User, slices.Concat(res.Changed, res.Unchanged), time.Now()); err != nil {
 				fmt.Fprintf(stderr, "yardo: %v\n", err)
 			}
@@ -943,7 +951,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		}
 		// Back to the menu (or the board), saying how it went; what's set up
 		// now is checked again.
-		toast, lastErr = ranSays(cat, fix, err), err
+		toast, lastErr = ranSays(cat, fix, updates, err), err
 		if errors.Is(err, errCancelled) {
 			lastErr = nil
 		}
@@ -975,8 +983,9 @@ func (e *runFailed) Error() string {
 }
 
 // ranSays is the home's line after a run of fix (or of what was queued),
-// which ended in err: what it did, or what failed.
-func ranSays(cat *catalog.Catalog, fix []string, err error) string {
+// with the tools updated after it, which ended in err: what it did, or
+// what failed.
+func ranSays(cat *catalog.Catalog, fix, updated []string, err error) string {
 	names := func(ids []string) string {
 		var out []string
 		for _, id := range ids {
@@ -997,6 +1006,9 @@ func ranSays(cat *catalog.Catalog, fix []string, err error) string {
 	case err != nil:
 		msg := err.Error()
 		return "✗ " + strings.ToUpper(msg[:1]) + msg[1:]
+	}
+	if n := names(updated); n != "" {
+		return "✓ Updated " + n
 	}
 	if n := names(fix); n != "" {
 		return "✓ Done: " + n

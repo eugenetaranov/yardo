@@ -48,9 +48,8 @@ const (
 	// MenuChange asks Result.ID's Result.Change question again (the git
 	// name, the prompt, the dotfiles repo), then re-applies it.
 	MenuChange
-	// MenuUpgrade installs the newer versions the Updates screen lists
-	// (mise up, apt's only-upgrade).
-	MenuUpgrade
+	// MenuUpdatesTab opens Tools on the Updates tab, every update queued.
+	MenuUpdatesTab
 )
 
 // MCPAct is what to do to an MCP server: Do (add, edit, on, rename,
@@ -111,7 +110,7 @@ type Menu struct {
 	before    HomeInfo
 	leaving   bool
 
-	screen string // home, fix, secrets, updates, settings, access, look, connect, lastrun, mcp, mcp:server, mcp:add, mcp:name
+	screen string // home, fix, secrets, settings, access, look, connect, lastrun, mcp, mcp:server, mcp:add, mcp:name
 	sel    int
 	// The MCP screens: the server and catalog row chosen, the name typed
 	// (for nameFor: a spec to add, or an entry to rename), its error;
@@ -491,11 +490,10 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.wait, m.checked, m.info.Checked = nil, true, v.At
 		switch n := len(m.filter(newer)); {
-		case !m.asked:
-		case n > 0:
-			m.toast = plural(n, "update", "updates") + " found: Install " + plural(n, "update", "updates") + " is on the home."
-		default:
+		case n == 0:
 			m.toast = "No updates: everything is current."
+		case m.asked:
+			m.toast = plural(n, "update", "updates") + " found: they're on Tools › Updates."
 		}
 		m.asked = false
 		m.normalize()
@@ -540,7 +538,7 @@ func homeKey(k string) bool {
 // move moves the cursor n rows (normalize keeps it on one).
 func (m *Menu) move(n int) {
 	switch m.screen {
-	case "home", "fix", "secrets", "settings", "access", "look", "shell", "mcp:server", "mcp:add", "updates", "lastrun":
+	case "home", "fix", "secrets", "settings", "access", "look", "shell", "mcp:server", "mcp:add", "lastrun":
 		m.sel = clamp(m.sel+n, -toEnd, toEnd)
 	case "connect":
 		m.sel = clamp(m.sel+n, -toEnd, toEnd)
@@ -572,10 +570,6 @@ func (m *Menu) normalize() {
 		if len(m.filter(secret)) == 0 {
 			m.back()
 		}
-	case "updates":
-		if len(m.filter(newer)) == 0 {
-			m.back()
-		}
 	case "lastrun":
 		if m.info.LastRun == nil {
 			m.back()
@@ -596,8 +590,6 @@ func (m *Menu) normalize() {
 		m.sel = clamp(m.sel, 0, len(m.settingsRows())-1)
 	case "access", "look", "shell":
 		m.sel = clamp(m.sel, 0, len(m.choices())) // Apply is the last
-	case "updates":
-		m.sel = clamp(m.sel, 0, len(m.filter(newer))-1)
 	case "connect":
 		m.sel = clamp(m.sel, 0, len(m.info.Keys)-1)
 	case "lastrun":
@@ -744,6 +736,8 @@ func (m *Menu) key(k string) tea.Cmd {
 			return m.quit(MenuResult{Kind: MenuEdit, ID: r.item.ID, Inputs: []string{r.input}})
 		case k == "enter" && r.id == "tools":
 			return m.quit(MenuResult{Kind: MenuTools})
+		case k == "enter" && r.id == "updates":
+			return m.quit(MenuResult{Kind: MenuUpdatesTab})
 		case k == "enter" && r.id == "why":
 			m.open("lastrun")
 		case k == "enter" && (strings.HasPrefix(r.id, "mcp:") || strings.HasPrefix(r.id, "mcpkey:")):
@@ -869,17 +863,6 @@ func (m *Menu) key(k string) tea.Cmd {
 		case down:
 			m.sel++
 		}
-	case "updates":
-		switch {
-		case back:
-			m.back()
-		case up:
-			m.sel--
-		case down:
-			m.sel++
-		case k == "enter" && len(m.filter(newer)) > 0:
-			return m.quit(MenuResult{Kind: MenuUpgrade})
-		}
 	}
 	return nil
 }
@@ -933,8 +916,6 @@ func (m *Menu) Path() string {
 		return "Home › Fix " + plural(len(m.filter(problem)), "thing", "things")
 	case "secrets":
 		return "Home › Fill in " + plural(len(m.filter(secret)), "value", "values")
-	case "updates":
-		return "Home › Updates"
 	case "connect":
 		return "Home › Connection"
 	case "lastrun":
@@ -979,8 +960,6 @@ func (m *Menu) Keys() []Key {
 		return nil
 	case "lastrun":
 		return []Key{{Key: "↑↓", What: "scroll"}}
-	case "updates":
-		return []Key{{Key: "enter", What: "update " + fmt.Sprint(len(m.filter(newer)))}}
 	}
 	return m.mcpKeys()
 }
@@ -1145,20 +1124,6 @@ func (m *Menu) Body(w, h int) string {
 		add(ls[start:min(len(ls), start+room)]...)
 	case "mcp", "mcp:server", "mcp:add", "mcp:name":
 		add(m.mcpView(w, h-len(b))...)
-	case "updates":
-		us := m.filter(newer)
-		for n, i := range us {
-			line := padTo(short(i.Label), 40) + muted.Render(strings.Join(i.Updates, ", "))
-			if n == m.sel {
-				line = rowOn.Render(" › "+padTo(short(i.Label), 40)) + " " + muted.Render(strings.Join(i.Updates, ", "))
-			} else {
-				line = "   " + keyOn.Render("↑ ") + line
-			}
-			m.hit(at(), 0, 0, m.selects(n))
-			add("  " + line)
-		}
-		add("", "  "+bold.Render("Enter updates "+plural(len(us), "item", "items"))+"  "+muted.Render("mise up for the tools, apt for the packages; nothing else changes."),
-			"  "+muted.Render("yardo doesn't upgrade on its own."))
 	}
 	if m.dialog != nil {
 		dl := dialogLines(m.dialog, w, 0, nil)

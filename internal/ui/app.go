@@ -233,6 +233,8 @@ func (a *App) load(d AppData) {
 	a.Menu = NewMenu(d.Info, d.Sub, d.Items, d.Settings, d.Connect, d.Checked)
 	a.Board = NewBoard(d.Info, d.First, d.Tabs, d.Items)
 	a.Board.SetFromMenu(!d.First)
+	m := a.Menu
+	a.Board.SetChecking(func() bool { return m.wait != nil })
 	if a.prep != nil {
 		a.prep(a)
 	}
@@ -253,7 +255,7 @@ func (a *App) Reload(d AppData) {
 	a.load(d)
 	for _, i := range a.Board.items {
 		switch p := pending[i.ID]; {
-		case p == "add" && !i.Picked, (p == "uninstall" || p == "forget") && i.Picked:
+		case p == "add" && !i.Picked, (p == "uninstall" || p == "forget") && i.Picked, p == "update" && newer(i):
 			i.Pending = p
 		}
 	}
@@ -314,8 +316,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MoveMsg:
 		return a, a.send(v)
 	}
-	// The menu's ticks and checks, whichever view is up.
+	// The menu's ticks and checks, whichever view is up; the board shares
+	// its items, so a check's updates reach the Updates tab too.
 	_, cmd := a.Menu.Update(msg)
+	if _, ok := msg.(UpdatesMsg); ok && a.onBoard {
+		a.toast, a.Menu.toast = a.Menu.toast, ""
+		for _, i := range a.Board.items {
+			if i.Pending == "update" && !newer(i) {
+				i.Pending = ""
+			}
+		}
+	}
 	return a, a.after(cmd)
 }
 
@@ -394,6 +405,20 @@ func (a *App) send(msg tea.Msg) tea.Cmd {
 func (a *App) after(cmd tea.Cmd) tea.Cmd {
 	m, b := a.Menu, a.Board
 	switch {
+	case b.CheckAsked():
+		// u on the Updates tab: the home's check, said here.
+		c := m.checkUpdates()
+		if !m.ended {
+			a.toast, m.toast = m.toast, ""
+			return tea.Batch(cmd, c)
+		}
+		return a.after(c)
+	case m.ended && m.result.Kind == MenuUpdatesTab:
+		m.ended = false
+		b.search, b.typing = nil, false
+		b.Open(UpdatesTab)
+		b.QueueUpdates()
+		a.onBoard = true
 	case m.ended && m.result.Kind == MenuTools:
 		m.ended = false
 		if m.result.Search != "" {
