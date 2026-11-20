@@ -73,8 +73,9 @@ switch applies once the gateway runs, and exits 0; yardo's sync step, which
 runs on every apply and Fix, reconciles later.
 
 **`mcp-sync status` says `off` first.** For an enabled server with a
-marker, the line is `<name>\toff\t<all|>` (`all` when only `~/.mcp/off`
-makes it off), before the checks that would say `waiting` or `failed`.
+marker, the line is `<name>\toff\t<own|all>` (`own` when it has its own
+marker, `all` when only `~/.mcp/off` makes it off), before the checks that
+would say `waiting` or `failed`; a first line `*\toff` says all are off.
 yardo maps it to the row state `off`, which wins over secret, failed,
 pending and new, so a server that's off never makes a problem row.
 
@@ -83,7 +84,7 @@ with `MCPAct{Do: "off"|"on", Entry}` (Entry empty for All servers), as
 Try again does. yardo runs `mcp-sync off|on`, then reopens the list with a
 toast; there's no run screen. Turning one server on while `~/.mcp/off`
 exists is refused in the menu with a toast. The found-server action `on`
-becomes `adopt`, labelled Add it to yardo's servers, and that state
+becomes `adopt`, labelled Add to yardo's list, and that state
 becomes `unlisted`, read "not on yardo's list".
 
 ## Risks / Trade-offs

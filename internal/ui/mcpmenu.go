@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -60,6 +61,120 @@ func (m *Menu) mcpServer() *MCPServer {
 	return ss[m.mcpSel]
 }
 
+// Switcher turns a server (act.Entry; "": all) off or on, then says how
+// the servers are now (and whether all are off), and what happened.
+type Switcher func(act MCPAct) (servers []MCPServer, allOff bool, toast string, err error)
+
+// Switching has the menu turn servers off and on itself, in the
+// background, with f.
+func (m *Menu) Switching(f Switcher) *Menu {
+	m.switcher = f
+	return m
+}
+
+// mcpSwitched is a switch done: the servers as they are now.
+type mcpSwitched struct {
+	servers []MCPServer
+	allOff  bool
+	toast   string
+	err     error
+}
+
+// flip turns servers off or on as act says: on the screen at once, by
+// the switcher in the background (the menu stays). Without one, the menu
+// ends with act.
+func (m *Menu) flip(act MCPAct) tea.Cmd {
+	if m.switcher == nil {
+		return m.quit(MenuResult{Kind: MenuMCP, MCP: act})
+	}
+	if m.switching {
+		m.toast = "Still switching the last one: a moment."
+		return nil
+	}
+	m.switching, m.before = true, m.info
+	m.before.MCP = slices.Clone(m.info.MCP)
+	m.showSwitch(act)
+	f := m.switcher
+	return func() tea.Msg {
+		servers, allOff, toast, err := f(act)
+		return mcpSwitched{servers, allOff, toast, err}
+	}
+}
+
+// showSwitch is act on the screen, before it's done.
+func (m *Menu) showSwitch(act MCPAct) {
+	set := func(s *MCPServer, off bool, how string) {
+		switch {
+		case off && s.State != "off":
+			s.was, s.State, s.Off = s.State, "off", how
+		case !off && s.State == "off" && (act.Entry != "" || s.Off == "all"):
+			s.State, s.Off = cmp.Or(s.was, "ok"), ""
+		}
+	}
+	for _, s := range m.mcpServers() {
+		switch {
+		case !s.Yardo:
+		case act.Entry == "":
+			set(s, act.Do == "off", "all")
+		case s.Entry == act.Entry:
+			set(s, act.Do == "off", "own")
+		}
+	}
+	if act.Entry == "" {
+		m.info.MCPAllOff = act.Do == "off"
+	}
+}
+
+// switched takes a switch's outcome: the servers as they are now, or as
+// they were before it, when it failed.
+func (m *Menu) switched(v mcpSwitched) {
+	m.switching = false
+	if v.err != nil {
+		m.info.MCP, m.info.MCPAllOff = m.before.MCP, m.before.MCPAllOff
+		m.toast = "✗ " + v.err.Error()
+	} else {
+		// Where they run from stays as it was read.
+		from := map[string]MCPServer{}
+		for _, s := range m.info.MCP {
+			from[s.Name] = s
+		}
+		for n := range v.servers {
+			f := from[v.servers[n].Name]
+			v.servers[n].From, v.servers[n].Cached = f.From, f.Cached
+		}
+		m.info.MCP, m.info.MCPAllOff, m.toast = v.servers, v.allOff, v.toast
+	}
+	m.sortMCP()
+	m.normalize()
+}
+
+// hasAll says whether the list has its All servers row (above the
+// servers, m.sel -1): there's a server of yardo's to turn off.
+func (m *Menu) hasAll() bool {
+	return slices.ContainsFunc(m.info.MCP, func(s MCPServer) bool { return s.Yardo })
+}
+
+// switchAct is space's act on the list's row sel (-1: All servers), or
+// why there's none.
+func (m *Menu) switchAct(sel int) (MCPAct, string) {
+	if sel < 0 {
+		if m.info.MCPAllOff {
+			return MCPAct{Do: "on"}, ""
+		}
+		return MCPAct{Do: "off"}, ""
+	}
+	s := m.mcpServers()[sel]
+	switch {
+	case !s.Yardo:
+		return MCPAct{}, ""
+	case m.info.MCPAllOff:
+		return MCPAct{}, "All servers are off: turn them on first (the All servers row)."
+	case s.State == "off":
+		return MCPAct{Do: "on", Entry: s.Entry}, ""
+	}
+	return MCPAct{Do: "off", Entry: s.Entry}, ""
+}
+
 func (m *Menu) isSpec(n string) bool {
 	return slices.ContainsFunc(m.info.MCPSpecs, func(s MCPSpec) bool { return s.Name == n })
 }
@@ -89,11 +204,18 @@ type mcpAction struct{ id, label, note string }
 
 func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
 	var out []mcpAction
-	if !s.Yardo && s.State == "off" {
-		out = append(out, mcpAction{"on", "Turn it on", "adds it to yardo's servers and registers it"})
-	}
 	if s.Yardo && (s.State == "failed" || s.State == "pending") && !m.info.MCPDown {
 		out = append(out, mcpAction{"retry", "Try again", "registers it as its settings are now"})
+	}
+	switch {
+	case !s.Yardo && s.State == "unlisted":
+		out = append(out, mcpAction{"adopt", "Add to yardo's list", "and registers it"})
+	case s.Yardo && m.info.MCPAllOff:
+		// Back on with all of them, from the list.
+	case s.Yardo && s.State == "off":
+		out = append(out, mcpAction{"on", "Turn it on", "agents see its tools again; its settings are as they were"})
+	case s.Yardo:
+		out = append(out, mcpAction{"off", "Turn it off", "keeps its settings; agents stop seeing its tools"})
 	}
 	out = append(out, mcpAction{"edit", "Edit its settings", "opens ~/.mcp/" + s.Name + "/env, then registers it"})
 	if !m.info.MCPDown {
@@ -122,7 +244,12 @@ func mcpWord(s *MCPServer) string {
 	case "nospec":
 		return yellow.Render("▲ no longer in the catalog")
 	case "off":
-		return muted.Render("· off")
+		if s.Off == "all" {
+			return muted.Render("○ off with all")
+		}
+		return muted.Render("○ off")
+	case "unlisted":
+		return muted.Render("· not on yardo's list")
 	case "byhand":
 		return green.Render("● on, added by hand")
 	case "new":
@@ -160,7 +287,11 @@ func (m *Menu) examples() string {
 func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 	switch m.screen {
 	case "mcp":
-		n := len(m.mcpServers()) // the Add row is n
+		n := len(m.mcpServers()) // the Add row is n, All servers -1
+		top := 0
+		if m.hasAll() {
+			top = -1
+		}
 		switch {
 		case k == "esc" || k == "q":
 			if m.fromBoard {
@@ -168,9 +299,22 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 			}
 			m.back()
 		case up:
-			m.sel = max(0, m.sel-1)
+			m.sel = max(top, m.sel-1)
 		case down:
 			m.sel = min(n, m.sel+1)
+		case k == " " || (k == "enter" && m.sel < 0):
+			if m.sel >= n {
+				return nil
+			}
+			act, why := m.switchAct(m.sel)
+			if why != "" {
+				m.toast = why
+			}
+			if act.Do == "" {
+				return nil
+			}
+			return m.flip(act)
+		case m.sel < 0:
 		case k == "e" && m.sel < n:
 			s := m.mcpServers()[m.sel]
 			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "edit", Entry: s.Entry}})
@@ -211,6 +355,8 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 				m.screen, m.nameFor, m.renaming, m.name, m.nameErr = "mcp:name", s.Entry, true, []rune(s.Name), ""
 			case "delete":
 				m.screen, m.btn, m.delList = "mcp:delete", 1, false // Keep it, first
+			case "off", "on":
+				return m.flip(MCPAct{Do: as[m.sel].id, Entry: s.Entry})
 			default:
 				return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: as[m.sel].id, Entry: s.Entry}})
 			}
@@ -342,6 +488,27 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		}
 		var lines []string
 		selLine := 0
+		if m.hasAll() {
+			on, all := 0, 0
+			for _, s := range ss {
+				if s.Yardo {
+					all++
+					if s.State != "off" {
+						on++
+					}
+				}
+			}
+			word := green.Render("● on") + muted.Render(fmt.Sprintf(" · %d of %d", on, all))
+			if m.info.MCPAllOff {
+				word = accent.Render("○ off") + muted.Render(" · space turns them back on")
+			}
+			if m.sel < 0 {
+				lines = append(lines, "  "+rowOn.Render(padTo(" › All servers", 21))+"  "+word)
+			} else {
+				lines = append(lines, "     "+padTo("All servers", 18)+"  "+word)
+			}
+			lines = append(lines, "")
+		}
 		heading := false
 		for n, s := range ss {
 			if !s.Yardo && !heading {
@@ -349,11 +516,16 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 				lines = append(lines, "", "     "+muted.Render("Also in ~/.mcp (not on yardo's list)"))
 			}
 			cols := padTo(mcpType(s), 13) + "  " + mcpWord(s)
+			name := padTo(s.Name, 18)
+			if s.Yardo && m.info.MCPAllOff {
+				// Dimmed: all are off; these come back with them.
+				cols, name = muted.Render(padTo(mcpType(s), 13))+"  "+mcpWord(s), muted.Render(name)
+			}
 			if n == m.sel {
 				selLine = len(lines)
 				lines = append(lines, "  "+rowOn.Render(padTo(" › "+s.Name, 21))+"  "+cols)
 			} else {
-				lines = append(lines, "     "+padTo(s.Name, 18)+"  "+cols)
+				lines = append(lines, "     "+name+"  "+cols)
 			}
 		}
 		lines = append(lines, "")
@@ -366,7 +538,9 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		// The chosen server's details, under the list, in lines that don't
 		// change in number: the rows never move.
 		var about []string
-		if m.sel < len(ss) {
+		if m.sel < 0 {
+			about = []string{"Turns every server off at once (agents see none of their tools), and back on: each as you left it."}
+		} else if m.sel < len(ss) {
 			s := ss[m.sel]
 			about = wrap(s.About, max(20, w-8))
 			if len(about) > mcpAbout-1 {
@@ -388,7 +562,7 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		add("")
 		add(about...)
 		add("", "  "+muted.Render("Agents reach their tools through the gateway as <name>__<tool>."))
-		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("enter", "open"), k("e", "edit its settings"), k("d", "delete"), k("a", "add"), k("q", "back")}, "   ")
+		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("space", "on/off"), k("enter", "open"), k("e", "edit its settings"), k("d", "delete"), k("a", "add"), k("q", "back")}, "   ")
 	case "mcp:server", "mcp:delete":
 		s := m.mcpServer()
 		if s == nil { // normalize goes back to the list first

@@ -26,10 +26,11 @@ type HomeInfo struct {
 	Host, User, Checked string
 	// MCP are the gateway's servers (yardo's, then the ones found in
 	// ~/.mcp), MCPSpecs the catalog's, to add; MCPDown: the gateway isn't
-	// running.
-	MCP      []MCPServer
-	MCPSpecs []MCPSpec
-	MCPDown  bool
+	// running; MCPAllOff: all servers are turned off.
+	MCP       []MCPServer
+	MCPSpecs  []MCPSpec
+	MCPDown   bool
+	MCPAllOff bool
 	// Dash is the home's dashboard.
 	Dash Dashboard
 	// Connect is the home's How to connect panel.
@@ -48,9 +49,15 @@ type MCPServer struct {
 	Spec  string // its catalog spec; "" for one with its own
 	About string // the spec's description
 	// State is ok, secret (Keys are empty), failed (not registered),
-	// nospec (gone from the catalog), off or byhand (found in ~/.mcp: not
-	// yardo's, registered or not), unchecked.
+	// nospec (gone from the catalog), off (turned off: Off says how),
+	// unlisted or byhand (found in ~/.mcp: not yardo's, registered or
+	// not), unchecked.
 	State string
+	// Off is "own" for a server turned off by itself, "all" for one off
+	// only because all are.
+	Off string
+	// was is its state before the menu turned it off (back to it on).
+	was string
 	Keys  []string
 	Yardo bool // on yardo's list (else found in ~/.mcp)
 	// Instead is what replaces it, when its maker retired it (State

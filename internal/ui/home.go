@@ -444,17 +444,20 @@ func (m *Menu) mcpLines() []string {
 		gw = red.Render(tui.Cur.Mark.Down + " stopped")
 	}
 	out := []string{muted.Render("Gateway ") + gw}
-	if s := m.setting("mcp"); s != nil {
+	if m.info.MCPAllOff {
+		out[0] += "  " + accent.Render("○ all servers off")
+	} else if s := m.setting("mcp"); s != nil {
 		out[0] += "  " + muted.Render(s.label(s.Value))
 	}
 	out = append(out, "")
-	var ready []string
-	var bad []string
+	var ready, bad, off []string
 	others := 0
 	for _, s := range m.mcpServers() {
 		switch {
 		case !s.Yardo:
 			others++
+		case s.State == "off":
+			off = append(off, muted.Render("○ "+padTo(s.Name, 16)+" off"))
 		case s.State == "ok" || s.State == "unchecked":
 			ready = append(ready, s.Name)
 		default:
@@ -473,7 +476,8 @@ func (m *Menu) mcpLines() []string {
 		out = append(out, l)
 	}
 	out = append(out, bad...)
-	if len(ready)+len(bad) == 0 {
+	out = append(out, off...)
+	if len(ready)+len(bad)+len(off) == 0 {
 		out = append(out, muted.Render("None yet: add GitHub, Jira, Grafana and more."))
 	}
 	if others > 0 {
@@ -501,9 +505,13 @@ func (m *Menu) connectLines(w int) []string {
 
 // mcpSummary is the MCP servers in a line.
 func (m *Menu) mcpSummary() string {
-	ready, all := 0, 0
+	ready, all, off := 0, 0, 0
 	for _, s := range m.mcpServers() {
-		if s.Yardo {
+		switch {
+		case !s.Yardo:
+		case s.State == "off":
+			off++
+		default:
 			all++
 			if s.State == "ok" || s.State == "unchecked" {
 				ready++
@@ -511,6 +519,11 @@ func (m *Menu) mcpSummary() string {
 		}
 	}
 	s := fmt.Sprintf("%d of %d ready", ready, all)
+	if m.info.MCPAllOff {
+		s = "all off"
+	} else if off > 0 {
+		s += fmt.Sprintf(" · %d off", off)
+	}
 	if m.info.MCPDown {
 		s = red.Render("gateway stopped") + muted.Render(" · ") + s
 	}

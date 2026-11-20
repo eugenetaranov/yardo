@@ -24,9 +24,10 @@ Commands:
   status [--json] [--updates]  what's installed, down, partial or waiting for a value
   remove ITEM… [--dry-run] [--yes]
                                uninstall tools (say what goes and stays, then ask)
-  mcp [edit NAME | sync | status]
+  mcp [edit NAME | sync | status | on|off [NAME…]]
                                the MCP servers: the screen; edit one's settings (then
-                               it registers); register what changed; how each is
+                               it registers); register what changed; how each is;
+                               turn servers on or off (none named: all of them)
   export [--name N] [--lock] [FILE]
                                write the saved choices as a profile
   connect                      how to reach this machine from a laptop

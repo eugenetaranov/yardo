@@ -64,14 +64,14 @@ Each server's row SHALL say whether it's off (`○ off`). The All servers row SH
 - **THEN** All servers reads off and every server's row is dimmed
 
 ### Requirement: A found server isn't called off
-A server found in `~/.mcp` that isn't on yardo's list SHALL read "not on yardo's list", not "off", and its action to adopt it SHALL be **Add it to yardo's servers**.
+A server found in `~/.mcp` that isn't on yardo's list SHALL read "not on yardo's list", not "off", and its action to adopt it SHALL be **Add to yardo's list**.
 
 #### Scenario: Found
 - **WHEN** `~/.mcp/opensearch` exists and `opensearch` isn't on yardo's list
-- **THEN** its row reads "not on yardo's list" and its screen offers Add it to yardo's servers
+- **THEN** its row reads "not on yardo's list" and its screen offers Add to yardo's list
 
 ### Requirement: A server that's off doesn't ask for attention
-A server that's off SHALL NOT produce rows on the home (Fill in, Try again, Fix), SHALL NOT count as a problem in `yardo status` (text or JSON, where its state SHALL be `off`), and SHALL be shown as off on the home's MCP servers panel, apart from the servers that are ready or need something. When all servers are off, the panel SHALL say so on its gateway line.
+A server that's off SHALL NOT produce rows on the home (Fill in, Try again, Fix), SHALL NOT count as a problem in `yardo status` (text or JSON: its empty values aren't among the MCP servers item's inputs), SHALL be shown as off by `yardo mcp status`, and SHALL be shown as off on the home's MCP servers panel, apart from the servers that are ready or need something. When all servers are off, the panel SHALL say so on its gateway line.
 
 #### Scenario: Missing a value
 - **WHEN** `jira` is off and its `JIRA_API_TOKEN` is empty

@@ -435,6 +435,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		}
 		st := status["mcpjungle-install"].State
 		info.MCPDown = down || st == "down" || st == "missing"
+		info.MCPAllOff = sync["*"].state == "off"
 	}
 	return &screen{info: info, sub: sub, first: first,
 		tabs: tabs, items: items, settings: settings, connect: strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")}, nil

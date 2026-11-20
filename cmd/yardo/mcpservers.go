@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -171,7 +172,7 @@ func mcpRows(entries []string, found []foundServer, inputs []string, specs map[s
 		case !yardo && f.registered && f.linked:
 			r.State = "byhand"
 		case !yardo:
-			r.State = "off"
+			r.State = "unlisted"
 		case len(r.Keys) > 0:
 			r.State = "secret"
 		case !there:
@@ -195,6 +196,8 @@ func mcpRows(entries []string, found []foundServer, inputs []string, specs map[s
 				r.State = "pending"
 			case "noenv":
 				r.State = "new"
+			case "off":
+				r.State, r.Off, r.Keys, r.Detail = "off", s.detail, nil, ""
 			}
 		}
 		return r, true
@@ -237,6 +240,9 @@ type mcpOutcome struct {
 // mcpDo does act to an MCP server, changing the answers' servers; on an
 // error they're as they were.
 func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.Spec) (mcpOutcome, error) {
+	if act.Do == "off" || act.Do == "on" {
+		return k.mcpSwitch(ctx, act)
+	}
 	spec, name, err := mcp.Instance(act.Entry)
 	if err != nil {
 		return mcpOutcome{}, err
@@ -255,7 +261,7 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 			out.edit = []string{name} // once the run has made its env
 		}
 		return out, nil
-	case "on":
+	case "adopt":
 		adopt()
 		return mcpOutcome{apply: true}, nil
 	case "edit":
@@ -316,6 +322,59 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 	return mcpOutcome{}, fmt.Errorf("nothing to do for %q", act.Do)
 }
 
+// mcpSwitch turns a server (act.Entry; "": all of them) off or on, now:
+// mcp-sync keeps the choice and tells the gateway. Nothing to apply.
+func (k *asker) mcpSwitch(ctx context.Context, act ui.MCPAct) (mcpOutcome, error) {
+	args, who := []string{act.Do}, "all servers"
+	if act.Entry != "" {
+		_, name, err := mcp.Instance(act.Entry)
+		if err != nil {
+			return mcpOutcome{}, err
+		}
+		args, who = append(args, name), name
+	}
+	var out bytes.Buffer
+	k2 := *k
+	k2.out = &out
+	if err := k2.mcpSyncAs(ctx, args...); err != nil {
+		return mcpOutcome{}, fmt.Errorf("couldn't turn %s %s: %w", who, act.Do, err)
+	}
+	return mcpOutcome{toast: switchSays(who, act.Do, strings.Contains(out.String(), "once the gateway runs"))}, nil
+}
+
+// mcpSwitcher turns servers off and on for the menu, in the background:
+// mcp-sync, then the servers' rows as they are now (only theirs: nothing
+// else is checked again).
+func (o *options) mcpSwitcher(ctx context.Context, a *answers.Answers) ui.Switcher {
+	return func(act ui.MCPAct) ([]ui.MCPServer, bool, string, error) {
+		k := &asker{a: a, share: o.share(), out: io.Discard}
+		out, err := k.mcpSwitch(ctx, act)
+		if err != nil {
+			return nil, false, "", err
+		}
+		specs := o.mcpSpecs(ctx)
+		sync, _ := o.mcpStatus(ctx, a)
+		return mcpRows(a.MCPServers, findMCP(ctx, a.User, specs), nil, specs, true, sync), sync["*"].state == "off", out.toast, nil
+	}
+}
+
+// switchSays is what turning who (a server, or "all servers") off or on
+// did; later: the gateway didn't answer, so it's once it runs.
+func switchSays(who, do string, later bool) string {
+	s := "✓ " + who + " " + do
+	switch {
+	case later:
+		return s + ": once the gateway runs (Fix it from Home)."
+	case who == "all servers" && do == "off":
+		return s + ": new agent sessions see no MCP tools."
+	case who == "all servers":
+		return s + ": each as you left it."
+	case do == "off":
+		return s + ": new agent sessions won't see its tools."
+	}
+	return s + ": new agent sessions see its tools as " + who + "__<tool>."
+}
+
 // setEnv sets keys in server name's env.
 func (k *asker) setEnv(ctx context.Context, name string, kv [][2]string) error {
 	if k.mcpEnv != nil {
@@ -339,7 +398,7 @@ func (k *asker) editNow(ctx context.Context, name string) (bool, error) {
 
 // syncState is a server's state as mcp-sync status says it: ok, waiting
 // (detail: the keys), changed, unregistered, failed (detail: why),
-// nospec, noenv.
+// nospec, noenv, off (detail: own or all). "*" is off when all are.
 type syncState struct{ state, detail string }
 
 // mcpSyncCmd is this version's mcp-sync (unpacked at start; else the
@@ -478,6 +537,8 @@ func mcpSays(name, spec string, s syncState, ok bool) string {
 		return "✗ " + name + " didn't register: " + awsHint(spec, s.detail)
 	case s.state == "nospec":
 		return "✗ " + name + ": no longer in the catalog."
+	case s.state == "off":
+		return "○ " + name + ": off; agents don't see its tools (sudo yardo mcp on " + name + ")."
 	}
 	return "✗ " + name + ": not registered yet (sudo yardo mcp sync)."
 }
@@ -496,7 +557,22 @@ func mcpPending(st map[string]syncState) []string {
 	return out
 }
 
-// mcpCmd runs `yardo mcp edit <name>`, `sync` and `status` (the bare
+// switchArgs reads `yardo mcp on|off [server ...]` (args from on|off):
+// mcp-sync's args, and the servers to say the state of after (none
+// named: all of them).
+func switchArgs(args, servers []string) (sync, names []string, err error) {
+	for _, n := range args[1:] {
+		if !slices.Contains(servers, n) {
+			return nil, nil, fmt.Errorf("no MCP server %q: sudo yardo mcp %s [server ...]; the servers: %s", n, args[0], strings.Join(servers, ", "))
+		}
+	}
+	if len(args) == 1 {
+		return args, servers, nil
+	}
+	return args, args[1:], nil
+}
+
+// mcpCmd runs `yardo mcp edit <name>`, `sync`, `status` and `on|off` (the bare
 // `yardo mcp` opens the menu on its MCP servers).
 func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Store, args []string) error {
 	u, err := o.userFor(st)
@@ -553,9 +629,22 @@ func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Stor
 			return errors.New("some MCP servers didn't register (above)")
 		}
 	case "status":
+		if s, _ := o.mcpStatus(ctx, a); s["*"].state == "off" {
+			fmt.Fprintln(stdout, "○ All servers are off (sudo yardo mcp on).")
+		}
 		show(mcpNames(a.MCPServers))
+	case "on", "off":
+		sync, names, err := switchArgs(args, mcpNames(a.MCPServers))
+		if err != nil {
+			return err
+		}
+		k := &asker{a: a, share: o.share(), out: stdout}
+		if err := k.mcpSyncAs(ctx, sync...); err != nil {
+			return err
+		}
+		show(names)
 	default:
-		return fmt.Errorf("unknown: yardo mcp %s (yardo mcp, mcp edit <server>, mcp sync, mcp status)", args[0])
+		return fmt.Errorf("unknown: yardo mcp %s (yardo mcp, mcp edit <server>, mcp sync, mcp status, mcp on|off [server ...])", args[0])
 	}
 	return nil
 }

@@ -829,12 +829,26 @@ func (mcpServersStep) Check(ctx context.Context, e *Env) (bool, error) {
 	return true, nil
 }
 
+// MCPOff says whether server name is turned off (mcp-sync off): by
+// itself, or with all of them.
+func MCPOff(ctx context.Context, e *Env, name string) bool {
+	for _, rel := range []string{"off", name + "/off"} {
+		if b, _ := mcpRead(ctx, e, rel); b != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // Missing: the required keys of the picked servers left empty (the server
-// isn't registered until they're filled in).
+// isn't registered until they're filled in); not a server turned off's.
 func (mcpServersStep) Missing(ctx context.Context, e *Env) []string {
 	var out []string
 	for _, srv := range pickedServers(e) {
 		n := srv.name
+		if MCPOff(ctx, e, n) {
+			continue
+		}
 		s, err := mcp.Load(ctx, mcp.Dirs(e.Share), srv.spec)
 		if err != nil {
 			continue

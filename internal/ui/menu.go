@@ -95,6 +95,12 @@ type Menu struct {
 	// wait waits for a check for updates running in the background (nil
 	// for none).
 	wait func() UpdatesMsg
+	// switcher turns MCP servers off or on in the background (nil: the
+	// menu ends with the act instead); switching: one is running, and
+	// before is the servers as they were, to go back to if it fails.
+	switcher  Switcher
+	switching bool
+	before    HomeInfo
 
 	screen string // home, fix, secrets, updates, settings, access, look, connect, mcp, mcp:server, mcp:delete, mcp:add, mcp:name
 	sel    int
@@ -284,11 +290,15 @@ func (m *Menu) rows() []menuRow {
 	out = append(out, menuRow{id: "tools", label: "Tools", note: "yours: fix, add or uninstall · or just start typing"})
 	if m.hasMCP() {
 		var names []string
-		problems := 0
+		problems, off := 0, 0
 		for _, s := range m.info.MCP {
 			if s.Yardo {
 				names = append(names, s.Name)
-				if s.State != "ok" && s.State != "unchecked" {
+				switch s.State {
+				case "ok", "unchecked":
+				case "off":
+					off++
+				default:
 					problems++
 				}
 			}
@@ -296,6 +306,11 @@ func (m *Menu) rows() []menuRow {
 		note := "none yet: add GitHub, Jira, Grafana and more"
 		if len(names) > 0 {
 			note = strings.Join(names, ", ")
+			if m.info.MCPAllOff {
+				note = "all off · " + note
+			} else if off > 0 {
+				note += fmt.Sprintf(" · %d off", off)
+			}
 			if problems > 0 {
 				note += " · " + plural(problems, "needs you", "need you")
 			}
@@ -394,6 +409,8 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tickMachine(time.Second)
 		}
 		return m, tickMachine(machineEvery)
+	case mcpSwitched:
+		m.switched(v)
 	case UpdatesMsg:
 		for _, i := range m.items {
 			if i.Picked {
@@ -461,7 +478,11 @@ func (m *Menu) normalize() {
 	case "access", "look":
 		m.sel = clamp(m.sel, 0, len(m.choices())) // Apply is the last
 	case "mcp":
-		m.sel = clamp(m.sel, 0, len(m.mcpServers())) // Add a server is the last
+		top := 0
+		if m.hasAll() {
+			top = -1 // All servers, above the servers
+		}
+		m.sel = clamp(m.sel, top, len(m.mcpServers())) // Add a server is the last
 	case "mcp:server":
 		m.sel = clamp(m.sel, 0, len(m.mcpActions(m.mcpServer()))-1)
 	case "mcp:add":

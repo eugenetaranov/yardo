@@ -468,6 +468,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					if upd != nil && !upd.ready() {
 						m.Checking(upd.msg)
 					}
+					m.Switching(o.mcpSwitcher(ctx, a))
 					wasFromBoard := fromBoard
 					if reopen != "" {
 						m.Open(reopen, toast, fromBoard)

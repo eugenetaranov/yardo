@@ -88,7 +88,8 @@ all ticked: space unticks, enter fixes the ticked in one run),
 updates** (asks, then updates just those: `mise up` for the tools, apt
 for the packages). Below them, rows that never move: **Tools**
 (the full screen, below), **MCP servers** (the gateway's list: add one,
-or another instance of one; **d** deletes one, asking first), **Connection**
+or another instance of one; **space** turns one off or on; **d** deletes
+one, asking first), **Connection**
 (every step to reach this machine from a laptop) and **Settings**: **Network access** (the
 MCP gateway and containers' published ports, each a row
 of choices with a sentence saying what it means), the **Look** (theme and accent colour),
@@ -429,7 +430,14 @@ installed by hand.
    **The servers** are the menu's **MCP servers**: each one you have, by
    name and type (`jira-work` · jira), with how it is (ready, needs
    `JIRA_API_TOKEN`, didn't register), and the ones found in `~/.mcp` that
-   yardo didn't make. Enter on one edits its settings (its
+   yardo didn't make. **Space turns one off** (or on): it stays
+   registered with its settings, but the gateway hides its tools from
+   every client, so they're not in your agents' context or within their
+   reach; **All servers**, above them, turns them all off and back on,
+   each as you left it. A server that's off doesn't ask for anything on
+   the home. New agent sessions see the change. It keeps tools out of
+   everyday sessions; it isn't a lock (an agent with sudo can turn one
+   back on). Enter on one edits its settings (its
    `~/.mcp/<name>/env` in your editor, then it registers), renames it (its
    settings move with it) or deletes it (off the gateway, with its
    settings). **Add a server** shows the catalog; then its name, the
@@ -442,7 +450,8 @@ installed by hand.
    again). yardo keeps watch: opening it registers servers whose settings
    changed since. From the shell: `sudo yardo mcp` (the screen),
    `sudo yardo mcp edit <name>`, `sudo yardo mcp sync`,
-   `sudo yardo mcp status`. A profile lists another instance as
+   `sudo yardo mcp status`, `sudo yardo mcp off|on [<name>…]` (no name:
+   all of them). A profile lists another instance as
    `"grafana:prod"` in `[mcp] servers`.
    **Logins you already have** fill in what's empty, so a token isn't
    typed twice: GitHub (github.com) gets gh's token after `gh auth login`,

@@ -529,3 +529,164 @@ esac`,
 		t.Errorf("servers rewritten: %q", b)
 	}
 }
+
+// onOffEnv is a ~/.mcp with servers a and b of one spec, both registered
+// as they are, and a gateway that logs what it's told (and fails while
+// $root/down exists).
+func onOffEnv(t *testing.T) (mcp, log string, env []string) {
+	t.Helper()
+	jq, err := exec.LookPath("jq")
+	if err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	mkdirAll(t, cat, 0o755)
+	putFile(t, filepath.Join(cat, "svc.spec"), []byte("KIND=docker\nIMAGE=img:1\nREQUIRED=TOKEN\n"), 0o644)
+	log = filepath.Join(root, "mj.log")
+	bin := fakeBin(t, map[string]string{
+		"mcpjungle": `[ -f ` + root + `/down ] && exit 1
+case "$3" in
+  list) printf '1. a\n2. b\n' ;;
+  register) echo "register $(jq -r .name "$6")" >> ` + log + ` ;;
+  *) echo "$3 $4 $5" >> ` + log + ` ;;
+esac; exit 0`,
+		"docker": "exit 0",
+	})
+	env = []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	for _, d := range []string{"a", "b"} {
+		mkdirAll(t, filepath.Join(mcp, d), 0o700)
+		if err := os.Symlink(filepath.Join(cat, "svc.spec"), filepath.Join(mcp, d, "spec")); err != nil {
+			t.Fatal(err)
+		}
+		putFile(t, filepath.Join(mcp, d, "env"), []byte("TOKEN=1\n"), 0o600)
+	}
+	if out, err := mcpSync(t, env); err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	_ = os.Remove(log)
+	return mcp, log, env
+}
+
+func logged(t *testing.T, log string) string {
+	t.Helper()
+	b, _ := os.ReadFile(log)
+	_ = os.Remove(log)
+	return string(b)
+}
+
+// off and on: the markers, and the gateway told once; with none named,
+// all of them, each back to its own choice.
+func TestMCPSyncOnOff(t *testing.T) {
+	mcp, log, env := onOffEnv(t)
+	if out, err := mcpSync(t, env, "off", "a"); err != nil || !strings.Contains(out, "a: off") {
+		t.Fatalf("off a: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(mcp, "a", "off")); err != nil {
+		t.Error("no a/off")
+	}
+	if got := logged(t, log); got != "disable server a\n" {
+		t.Errorf("off a: gateway told %q", got)
+	}
+	if out, err := mcpSync(t, env, "off"); err != nil || !strings.Contains(out, "all servers: off") {
+		t.Fatalf("off: %v\n%s", err, out)
+	}
+	if got := logged(t, log); got != "disable server b\n" {
+		t.Errorf("off (all): gateway told %q", got)
+	}
+	if out, err := mcpSync(t, env, "on"); err != nil {
+		t.Fatalf("on: %v\n%s", err, out)
+	}
+	if got := logged(t, log); got != "enable server b\n" {
+		t.Errorf("on (all): gateway told %q (a is off by itself)", got)
+	}
+	if _, err := mcpSync(t, env, "on", "a"); err != nil {
+		t.Fatal(err)
+	}
+	if got := logged(t, log); got != "enable server a\n" {
+		t.Errorf("on a: gateway told %q", got)
+	}
+	if _, err := mcpSync(t, env, "off", "../x"); err == nil {
+		t.Error("off ../x: want an error")
+	}
+}
+
+// The gateway down: the choice is kept, said, and made at the next sync.
+func TestMCPSyncOffGatewayDown(t *testing.T) {
+	mcp, log, env := onOffEnv(t)
+	down := filepath.Join(filepath.Dir(mcp), "down")
+	putFile(t, down, nil, 0o600)
+	out, err := mcpSync(t, env, "off", "a")
+	if err != nil || !strings.Contains(out, "once the gateway runs") {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(mcp, "a", "off")); err != nil {
+		t.Error("the choice wasn't kept")
+	}
+	_ = os.Remove(down)
+	if out, err := mcpSync(t, env); err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	if got := logged(t, log); got != "disable server a\n" {
+		t.Errorf("sync: gateway told %q", got)
+	}
+}
+
+// A server off and registered again (its settings changed) is disabled
+// again in the same sync; a sync with nothing changed tells the gateway
+// nothing.
+func TestMCPSyncOffSurvivesRegister(t *testing.T) {
+	mcp, log, env := onOffEnv(t)
+	if _, err := mcpSync(t, env, "off", "a"); err != nil {
+		t.Fatal(err)
+	}
+	logged(t, log)
+	if out, err := mcpSync(t, env); err != nil || logged(t, log) != "" {
+		t.Errorf("a sync with nothing changed told the gateway something (%v):\n%s", err, out)
+	}
+	// Registered with another config than its settings make now.
+	putFile(t, filepath.Join(mcp, "a", ".registered.json"), []byte("{}\n"), 0o600)
+	out, err := mcpSync(t, env)
+	if err != nil || !strings.Contains(out, "a: registered, off") {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	if got := logged(t, log); got != "register a\ndisable server a\n" {
+		t.Errorf("gateway told %q", got)
+	}
+}
+
+// status says off first, own or all; a renamed server stays off and isn't
+// thought disabled on the gateway any more.
+func TestMCPSyncOffStatusRename(t *testing.T) {
+	mcp, _, env := onOffEnv(t)
+	putFile(t, filepath.Join(mcp, "b", "env"), []byte("TOKEN=\n"), 0o600) // would be waiting
+	if _, err := mcpSync(t, env, "off", "b"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := mcpSync(t, env, "status")
+	if err != nil || !strings.Contains(out, "a\tok\t\n") || !strings.Contains(out, "b\toff\town\n") {
+		t.Errorf("status (%v):\n%s", err, out)
+	}
+	if _, err := mcpSync(t, env, "off"); err != nil {
+		t.Fatal(err)
+	}
+	out, _ = mcpSync(t, env, "status")
+	if !strings.HasPrefix(out, "*\toff\t\n") || !strings.Contains(out, "a\toff\tall\n") || !strings.Contains(out, "b\toff\town\n") {
+		t.Errorf("status, all off:\n%s", out)
+	}
+	if out, err := mcpSync(t, env, "rename", "a", "c"); err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	if _, err := mcpSync(t, env, "off", "c"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := mcpSync(t, env, "rename", "c", "d"); err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(mcp, "d", "off")); err != nil {
+		t.Error("the choice didn't move with the rename")
+	}
+	if _, err := os.Stat(filepath.Join(mcp, "d", ".disabled")); err == nil {
+		t.Error("the renamed server still looks disabled on the gateway")
+	}
+}

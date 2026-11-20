@@ -6,9 +6,14 @@
 #   mcp-sync edit <name>   edit a server's credentials (~/.mcp/<name>/env)
 #   mcp-sync rename <name> <new>  rename a server (deregistered; run mcp-sync to register it)
 #   mcp-sync remove <name> deregister a server and delete its ~/.mcp/<name> (its settings)
+#   mcp-sync off [name ...]  turn these servers off (none named: all of them): they stay
+#                          registered, with their settings, but the gateway hides their
+#                          tools from every client (~/.mcp/<name>/off, ~/.mcp/off)
+#   mcp-sync on [name ...] turn them on again (none named: all, each back to its own choice)
 #   mcp-sync status        each server's state, a line each: <name> TAB <state> TAB <detail>
 #                          (ok, waiting <keys>, changed, unregistered, failed <why>,
-#                          nospec, noenv; "-  down" first when the gateway can't be reached)
+#                          nospec, noenv, off <own|all>; "-  down" first when the gateway
+#                          can't be reached, "*  off" when all servers are off)
 #   mcp-sync source [name ...]  where each server runs from, a line each:
 #                          <name> TAB <image or URL> [TAB <version> TAB <id> TAB <built>]
 #                          (the last three for an image pulled here)
@@ -136,11 +141,56 @@ fi
 forget() {
   if [ -f "$MCP_DIR/$1/.registered.json" ]; then
     mj --registry "$REGISTRY" deregister "$1" >/dev/null 2>&1 || true
-    rm -f "$MCP_DIR/$1/.registered.json"
+    rm -f "$MCP_DIR/$1/.registered.json" "$MCP_DIR/$1/.disabled"
   fi
   [ -f "$MCP_DIR/servers" ] && { grep -vx -- "$1" "$MCP_DIR/servers" > "$MCP_DIR/servers.new" || true; mv -f "$MCP_DIR/servers.new" "$MCP_DIR/servers"; }
   return 0
 }
+
+# is_off NAME — NAME is turned off: by itself, or with all of them.
+is_off() { [ -f "$MCP_DIR/off" ] || [ -f "$MCP_DIR/$1/off" ]; }
+
+# reconcile — the gateway's servers on or off as the markers say. A server
+# registered while off is disabled on the gateway, and .disabled says so
+# (registering enables it again, and drops .disabled); one turned on again
+# is enabled. Returns 1 when the gateway didn't take a change (then the
+# next sync tries again).
+reconcile() {
+  rc=0
+  for reg in "$MCP_DIR"/*/.registered.json; do
+    [ -f "$reg" ] || continue
+    n=$(basename "$(dirname "$reg")")
+    if is_off "$n"; then
+      [ -f "$MCP_DIR/$n/.disabled" ] && continue
+      if mj --registry "$REGISTRY" disable server "$n" >/dev/null 2>&1; then : > "$MCP_DIR/$n/.disabled"; else rc=1; fi
+    elif [ -f "$MCP_DIR/$n/.disabled" ]; then
+      if mj --registry "$REGISTRY" enable server "$n" >/dev/null 2>&1; then rm -f "$MCP_DIR/$n/.disabled"; else rc=1; fi
+    fi
+  done
+  return "$rc"
+}
+
+if [ "${1:-}" = off ] || [ "${1:-}" = on ]; then
+  what=$1; shift
+  for n in "$@"; do
+    valid_name "$n" || { echo "mcp-sync: not a server name: $n" >&2; exit 2; }
+  done
+  if [ $# -eq 0 ]; then
+    if [ "$what" = off ]; then : > "$MCP_DIR/off"; else rm -f "$MCP_DIR/off"; fi
+    echo "all servers: $what"
+  else
+    for n in "$@"; do
+      if [ "$what" = off ]; then
+        mkdir -p "$MCP_DIR/$n"; chmod 700 "$MCP_DIR/$n"; : > "$MCP_DIR/$n/off"
+      else
+        rm -f "$MCP_DIR/$n/off"
+      fi
+      echo "$n: $what"
+    done
+  fi
+  reconcile || echo "The gateway didn't answer: it takes effect once the gateway runs (the next sync)."
+  exit 0
+fi
 
 if [ "${1:-}" = rename ]; then
   { valid_name "${2:-}" && valid_name "${3:-}"; } || { echo "usage: mcp-sync rename <server> <new name>" >&2; exit 2; }
@@ -311,6 +361,7 @@ else
 fi
 # state NAME STATE [DETAIL] — a status line.
 state() { printf '%s\t%s\t%s\n' "$1" "$2" "${3:-}"; }
+[ -n "$STATUS" ] && [ -f "$MCP_DIR/off" ] && state '*' off
 
 for NAME in $want; do
   spec=$(spec_for "$NAME")
@@ -333,6 +384,10 @@ for NAME in $want; do
   esac
 
   dir="$MCP_DIR/$NAME"
+  if [ -n "$STATUS" ] && is_off "$NAME"; then
+    if [ -f "$dir/off" ]; then state "$NAME" off own; else state "$NAME" off all; fi
+    continue
+  fi
   if [ -n "$STATUS" ] && [ ! -f "$dir/env" ]; then state "$NAME" noenv; continue; fi
   mkdir -p "$dir"; chmod 700 "$dir"
   if [ ! -f "$dir/env" ]; then
@@ -386,10 +441,10 @@ for NAME in $want; do
   out=$(mj --registry "$REGISTRY" register --force -c "$dir/.config.json.new" 2>&1) && rc=0 || rc=$?
   if [ "$rc" -eq 0 ]; then
     mv "$dir/.config.json.new" "$dir/.registered.json"
-    rm -f "$dir/.error"
-    echo "$NAME: registered"
+    rm -f "$dir/.error" "$dir/.disabled" # registering enables it
+    if is_off "$NAME"; then echo "$NAME: registered, off"; else echo "$NAME: registered"; fi
   else
-    rm -f "$dir/.config.json.new" "$dir/.registered.json"
+    rm -f "$dir/.config.json.new" "$dir/.registered.json" "$dir/.disabled"
     # Why, for status (and yardo) to say; kept until it registers.
     echo "$out" | grep -v '^TIP:' | grep -v '^[[:space:]]*$' > "$dir/.error" || echo "registration failed" > "$dir/.error"
     echo "$NAME: registration failed (check $dir/env):"
@@ -406,9 +461,12 @@ for reg in "$MCP_DIR"/*/.registered.json; do
   NAME=$(basename "$(dirname "$reg")")
   if ! echo "$want" | grep -qx "$NAME"; then
     mj --registry "$REGISTRY" deregister "$NAME" >/dev/null 2>&1 || true
-    rm -f "$reg"
+    rm -f "$reg" "$(dirname "$reg")/.disabled"
     echo "$NAME: deregistered (credentials kept in $MCP_DIR/$NAME)"
   fi
 done
+
+# Those turned off stay off: registering one enabled it again.
+reconcile || { echo "the gateway didn't take every server's on or off; the next sync tries again" >&2; failed=1; }
 
 exit "$failed"

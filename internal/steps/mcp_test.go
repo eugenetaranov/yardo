@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -771,5 +772,31 @@ func TestEnvSet(t *testing.T) {
 		if got := string(EnvSet([]byte(tc.in), tc.key, tc.val)); got != tc.want {
 			t.Errorf("EnvSet(%q, %s): %q, want %q", tc.in, tc.key, got, tc.want)
 		}
+	}
+}
+
+// A server turned off asks for nothing: its empty keys aren't missing.
+func TestMCPServersMissingOff(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("no bash (specs are shell)")
+	}
+	e := mcpEnv(t, &fakeExec{})
+	put(t, filepath.Join(e.Share, "conf", "mcp-catalog", "jira.spec"), "KIND=docker\nREQUIRED=JIRA_API_TOKEN\n")
+	e.Answers.MCPServers = []string{"github", "jira"}
+	put(t, e.Path("~/.mcp/jira/env"), "JIRA_API_TOKEN=\n")
+	miss := func() []string {
+		return mcpServersStep{}.Missing(context.Background(), e)
+	}
+	if got := miss(); !slices.Equal(got, []string{"~/.mcp/jira/env: JIRA_API_TOKEN"}) {
+		t.Fatalf("on: missing %q", got)
+	}
+	put(t, e.Path("~/.mcp/jira/off"), "")
+	if got := miss(); len(got) != 0 {
+		t.Errorf("jira off: missing %q", got)
+	}
+	_ = os.Remove(e.Path("~/.mcp/jira/off"))
+	put(t, e.Path("~/.mcp/off"), "")
+	if got := miss(); len(got) != 0 {
+		t.Errorf("all off: missing %q", got)
 	}
 }
