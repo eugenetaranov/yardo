@@ -428,8 +428,8 @@ func TestBoardUninstall(t *testing.T) {
 	// The login: logged out from its tool's details.
 	b, items = mk()
 	press2(b, "right", "enter")
-	if !strings.Contains(b.View(), "Log out (NetBird stays)") {
-		t.Fatalf("no log out:\n%s", b.View())
+	if v := ansi.Strip(b.View()); !strings.Contains(v, "Log out (NetBird stays)") || !strings.Contains(v, "More on Connection (Home › Connection)") {
+		t.Fatalf("no log out, or no Connection:\n%s", v)
 	}
 	for b.dialog.Opts[b.dialog.Sel][0] != "Log out (NetBird stays)" {
 		press2(b, "down")

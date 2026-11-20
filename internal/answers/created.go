@@ -43,3 +43,17 @@ func AddCreated(state string, c Created) error {
 	}
 	return writeAtomic(filepath.Join(state, "created.json"), append(b, '\n'), 0o600)
 }
+
+// DropCreated takes c off the record (a join undone by hand: yardo
+// forget has nothing left to undo).
+func DropCreated(state string, c Created) error {
+	list := ReadCreated(state)
+	if !slices.Contains(list, c) {
+		return nil
+	}
+	b, err := json.MarshalIndent(slices.DeleteFunc(list, func(x Created) bool { return x == c }), "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeAtomic(filepath.Join(state, "created.json"), append(b, '\n'), 0o600)
+}

@@ -12,7 +12,7 @@ import (
 // testApp is the app on testMenu's items and testBoard's tabs.
 func testApp() *App {
 	m, b := testMenu(true), testBoard(false)
-	d := AppData{Info: m.info, Sub: m.sub, Items: b.items, Settings: m.settings, Connect: m.connect, Checked: true, Tabs: rawTabs(b)}
+	d := AppData{Info: m.info, Sub: m.sub, Items: b.items, Settings: m.settings, Checked: true, Tabs: rawTabs(b)}
 	a := NewApp(d, nil)
 	a.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	return a

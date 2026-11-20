@@ -128,3 +128,10 @@ func Ask(qs []*Question) error {
 	}
 	return err
 }
+
+// Text asks for lines of text (pasted, say); empty keeps nothing.
+func Text(title, desc string) (string, error) {
+	var v string
+	err := run(huh.NewText().Title(title).Description(desc).Lines(12).CharLimit(64 << 10).Value(&v))
+	return v, err
+}

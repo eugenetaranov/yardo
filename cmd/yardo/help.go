@@ -92,10 +92,19 @@ stdout. Apply it elsewhere with: sudo yardo --profile FILE --yes
                picks it no longer lists (an unnamed profile only adds)
   --lock       add a [lock] table with the installed mise and apt versions
 `,
-	"connect": `Usage: sudo yardo connect
+	"connect": `Usage: sudo yardo connect [--script]
 
 Prints how to reach this machine from a laptop: Docker over SSH, the MCP
-gateway's URL and token, or an SSH tunnel to it.
+gateway's URL and token, or an SSH tunnel to it. In sudo yardo, the
+Connection screen has the same lines (c copies them), and starts, stops,
+sets up and removes the machine's networks.
+
+  --script  print a shell script for the laptop that adds the ssh Host
+            block, the Docker context and (with claude there) the MCP
+            gateway, each once. It holds no token: it reads it over ssh.
+            On the laptop:
+              ssh me@vm sudo yardo connect --script > yardo-vm.sh
+              sh yardo-vm.sh
 `,
 	"gitkey": `Usage: ssh me@vm 'sudo yardo gitkey [github|gitlab|bitbucket] [--host HOST] [--replace]' < KEYFILE
 

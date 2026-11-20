@@ -789,6 +789,9 @@ func (b *Board) act(r *row) tea.Cmd {
 // do), changing each of its answers, logging in or out (its parts),
 // uninstalling it and forgetting it. Any other value does nothing.
 func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func() tea.Cmd) *Dialog {
+	if vpnItems[i.ID] {
+		lines = append(lines, "More on Connection (Home › Connection): start and stop it, set it up, add a profile, remove it.")
+	}
 	opts := append([][2]string{first}, changeOpts(i)...)
 	parts := b.parts(i)
 	for n, p := range parts {
@@ -837,6 +840,9 @@ func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func
 			return b.change(i, v)
 		}}
 }
+
+// vpnItems are the VPNs Connection starts, stops, sets up and removes.
+var vpnItems = map[string]bool{"tailscale-install": true, "netbird-install": true, "wireguard-client": true, "openvpn-client": true}
 
 // parts are the items that are part of i (its login).
 func (b *Board) parts(i *BoardItem) []*BoardItem {

@@ -117,7 +117,9 @@ func authKey(e *Env) string {
 // TSStatus is what `tailscale status --json` says of this machine.
 type TSStatus struct {
 	BackendState string
-	Self         struct {
+	// AuthURL is the login link, while a login waits for one.
+	AuthURL string
+	Self    struct {
 		DNSName      string
 		TailscaleIPs []string
 		Tags         []string

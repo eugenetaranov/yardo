@@ -690,3 +690,43 @@ func TestMCPSyncOffStatusRename(t *testing.T) {
 		t.Error("the renamed server still looks disabled on the gateway")
 	}
 }
+
+// client-rm takes a client off the gateway, then deletes its token; a
+// gateway that won't forget it keeps the files (the token still works,
+// and it says so); no such client is refused.
+func TestMCPSyncClientRm(t *testing.T) {
+	root := t.TempDir()
+	mcp := filepath.Join(root, "mcp")
+	if err := os.MkdirAll(mcp+"/clients", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, mcp+"/clients/ci.token", []byte("secret\n"), 0o600)
+	putFile(t, mcp+"/clients/ci.json", []byte("{}\n"), 0o600)
+	seen := filepath.Join(root, "seen")
+	ok := `case "$3 $4" in "list mcp-clients") echo "1. ci";; "delete mcp-client") echo "$5" >> ` + seen + `;; *) exit 1;; esac`
+	env := func(fake string) []string {
+		return []string{"PATH=" + fakeBin(t, map[string]string{"mcpjungle": fake}) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	}
+	refuse := `case "$3 $4" in "list mcp-clients") echo "1. ci";; *) exit 1;; esac`
+	if out, err := mcpSync(t, env(refuse), "client-rm", "ci"); err == nil || !strings.Contains(out, "still works") {
+		t.Errorf("refused: %v: %s", err, out)
+	}
+	if _, err := os.Stat(mcp + "/clients/ci.token"); err != nil {
+		t.Error("the token went though the gateway kept it")
+	}
+	out, err := mcpSync(t, env(ok), "client-rm", "ci")
+	if err != nil || !strings.Contains(out, "revoked") {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if b, _ := os.ReadFile(seen); string(b) != "ci\n" {
+		t.Errorf("deleted on the gateway: %q", b)
+	}
+	for _, f := range []string{"ci.token", "ci.json"} {
+		if _, err := os.Stat(mcp + "/clients/" + f); err == nil {
+			t.Errorf("%s stays", f)
+		}
+	}
+	if out, err := mcpSync(t, env(ok), "client-rm", "ci"); err == nil || !strings.Contains(out, "no client ci") {
+		t.Errorf("again: %v: %s", err, out)
+	}
+}

@@ -28,7 +28,8 @@ func testMenu(healthy bool) *Menu {
 		// The look: Settings' Accent colour, not network access.
 		{Key: "accent", Label: "Accent colour", Section: LookSection, Value: "blue", Choices: [][2]string{{"blue", "Blue"}, {"green", "Green"}}, Swatches: map[string]string{"blue": "#0000ff"}},
 	}
-	m := NewMenu(HomeInfo{Host: "vm", User: "ada"}, "Ubuntu 24.04  ·  10.0.0.5", items, settings, []string{"Docker, over SSH:", "  docker context create vm …"}, false)
+	info := HomeInfo{Host: "vm", User: "ada", Connect: []ConnectRow{{What: "SSH", Use: "ssh vm", Note: "ada@10.0.0.5"}}}
+	m := NewMenu(info, "Ubuntu 24.04  ·  10.0.0.5", items, settings, false)
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
 	return m
 }
@@ -254,8 +255,8 @@ func TestMenuAccess(t *testing.T) {
 }
 
 // The home's Connection panel: what to type, and where a secret is kept;
-// tab reaches it, enter opens every step, and q comes back home onto it.
-// Go to doesn't list it.
+// tab reaches it, and enter opens the Connection screen (the app's), as
+// Go to's Connection does.
 func TestHomeConnect(t *testing.T) {
 	m := testMenu(false)
 	m.info.Connect = []ConnectRow{
@@ -269,21 +270,25 @@ func TestHomeConnect(t *testing.T) {
 			t.Errorf("home lacks %q:\n%s", want, v)
 		}
 	}
-	if l := lineWith(v, "Tools 3"); strings.Contains(l, "Connection") {
-		t.Errorf("Go to lists Connection: %s", l)
+	if l := lineWith(v, "Tools 3"); !strings.Contains(l, "Connection") {
+		t.Errorf("Go to lacks Connection: %s", l)
 	}
 	mk(m, "tab")
 	if m.rows()[m.sel].id != "connect" {
 		t.Fatalf("tab from Needs you: on %s, want connect", m.rows()[m.sel].id)
 	}
 	mk(m, "enter")
-	if v := m.View(); !strings.Contains(v, "Home › Connection") {
-		t.Errorf("connect from home:\n%s", v)
+	if !m.ended || m.result.Kind != MenuConnection || m.result.ID != "connect" {
+		t.Errorf("enter: %+v", m.result)
 	}
-	mk(m, "q")
-	if m.screen != "home" || m.rows()[m.sel].id != "connect" {
-		t.Errorf("back on %s, row %d", m.screen, m.sel)
+	m.ended = false
+	onRow(m, "conn")
+	mk(m, "enter")
+	if !m.ended || m.result.Kind != MenuConnection || m.result.ID != "conn" {
+		t.Errorf("Go to's enter: %+v", m.result)
 	}
+	m.ended = false
+	onRow(m, "connect")
 	mk(m, "tab")
 	if m.rows()[m.sel].id != "tools" {
 		t.Errorf("tab from Connection: on %s, want tools", m.rows()[m.sel].id)
@@ -678,7 +683,7 @@ func TestMenuEscQ(t *testing.T) {
 // Checked, with nothing newer: Check again, with the time; Open shows
 // that nothing was found.
 func TestMenuCheckAgain(t *testing.T) {
-	m := NewMenu(HomeInfo{Host: "vm", Checked: "14:05"}, "", testMenu(true).items, nil, nil, true)
+	m := NewMenu(HomeInfo{Host: "vm", Checked: "14:05"}, "", testMenu(true).items, nil, true)
 	if v := m.View(); !strings.Contains(v, "nothing newer · checked 14:05") || strings.Contains(v, "Check for updates") {
 		t.Errorf("home:\n%s", v)
 	}
@@ -689,7 +694,7 @@ func TestMenuCheckAgain(t *testing.T) {
 	}
 	// Never checked: a Needs you row; u (or enter on it) checks in the
 	// background, the menu staying.
-	m = NewMenu(HomeInfo{Host: "vm"}, "", testMenu(true).items, nil, nil, false)
+	m = NewMenu(HomeInfo{Host: "vm"}, "", testMenu(true).items, nil, false)
 	onRow(m, "check")
 	if m.rows()[m.sel].id != "check" {
 		t.Fatalf("no Check for updates row:\n%s", m.View())
@@ -711,7 +716,7 @@ func TestMenuCheckAgain(t *testing.T) {
 	if v := m.View(); !strings.Contains(v, "No updates: everything is current.") || strings.Contains(v, "Check for updates") {
 		t.Errorf("found:\n%s", v)
 	}
-	m = NewMenu(HomeInfo{Host: "vm"}, "", testMenu(true).items, nil, nil, true).Open("home", "✓ No updates: everything is current.", false)
+	m = NewMenu(HomeInfo{Host: "vm"}, "", testMenu(true).items, nil, true).Open("home", "✓ No updates: everything is current.", false)
 	if !strings.Contains(m.View(), "No updates: everything is current.") {
 		t.Errorf("no toast:\n%s", m.View())
 	}
@@ -754,7 +759,7 @@ func TestMenuNormalize(t *testing.T) {
 // then the found ones; the caller's slice is left as it was.
 func TestMenuMCPSorted(t *testing.T) {
 	info := HomeInfo{MCP: []MCPServer{{Name: "zed"}, {Name: "jira", Yardo: true}, {Name: "abc"}, {Name: "github", Yardo: true}}}
-	m := NewMenu(info, "", nil, nil, nil, false)
+	m := NewMenu(info, "", nil, nil, false)
 	var got []string
 	for _, s := range m.mcpServers() {
 		got = append(got, s.Name)
@@ -841,7 +846,7 @@ func TestMenuDashboard(t *testing.T) {
 	}
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	m.info.Dash = Dashboard{Docker: true}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "none running") || strings.Contains(v, "ssh") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "none running") || strings.Contains(v, "22/tcp") {
 		t.Errorf("nothing running:\n%s", v)
 	}
 }
@@ -1221,31 +1226,6 @@ func TestMenuLastRun(t *testing.T) {
 	}
 }
 
-// Keys to add: on Connection, each with where to add it and the key
-// alone on a line; d dismisses one.
-func TestMenuKeysToAdd(t *testing.T) {
-	m := testMenu(true)
-	m.info.Keys = []AddKey{{Pub: "ssh-ed25519 AAAA ada@vm", Path: "~/.ssh/identities/github.pub", Where: []string{"github.com: add it at github.com/settings/keys"}}}
-	var dropped []string
-	m.KeyDropper(func(pub string) error { dropped = append(dropped, pub); return nil })
-	if v := m.View(); !strings.Contains(v, "1 key to add: github.com") {
-		t.Errorf("home:\n%s", v)
-	}
-	onRow(m, "connect")
-	mk(m, "enter")
-	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "Keys to add") || !strings.Contains(v, "github.com: add it at github.com/settings/keys") || !strings.Contains(v, "d dismiss it") {
-		t.Fatalf("connection:\n%s", v)
-	}
-	if l := lineWith(v, "AAAA"); strings.TrimSpace(l) != "ssh-ed25519 AAAA ada@vm" {
-		t.Errorf("the key isn't alone on its line: %q", l)
-	}
-	mk(m, "d")
-	if len(m.info.Keys) != 0 || len(dropped) != 1 || strings.Contains(m.View(), "Keys to add") {
-		t.Errorf("d: %v\n%s", dropped, m.View())
-	}
-}
-
 // Fix shows each row's details at once; ←→ do nothing there.
 func TestMenuFixDetails(t *testing.T) {
 	m := testMenu(false)
@@ -1273,7 +1253,7 @@ func TestMenuHomeKeys(t *testing.T) {
 		t.Errorf("→ from Needs you: on %s", id)
 	}
 	mk(m, "l")
-	if id := m.rows()[m.sel].id; id != "settings" {
+	if id := m.rows()[m.sel].id; id != "conn" {
 		t.Errorf("l along Go to: on %s", id)
 	}
 	mk(m, "h", "h")

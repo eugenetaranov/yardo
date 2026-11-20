@@ -266,7 +266,7 @@ type screen struct {
 	tabs     []ui.Tab
 	items    []*ui.BoardItem
 	settings []*ui.BoardSetting
-	connect  []string
+	conn     ui.ConnData
 }
 
 // configureInto is the board tab each configure tab is listed under (a
@@ -408,10 +408,8 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		look.Swatches[c.Key] = c.Hex
 	}
 	settings = append(settings, look)
-	var buf strings.Builder
-	addrs, ts := withNames(ctx, steps.OSExec{}, addresses())
+	addrs, _ := withNames(ctx, steps.OSExec{}, addresses())
 	tokens := laptopTokens(a.User)
-	printConnect(&buf, a, addrs, ts, os.Getenv("LC_TERMINAL"), tokens)
 	host, _ := os.Hostname()
 	sub := osName()
 	if len(addrs) > 0 {
@@ -459,7 +457,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	info.LastRun = loadLastRun(o.state, a.User, o.log, now)
 	info.Keys = keysToAdd(o.state, a, func(id string) bool { return status[id].State == "ok" })
 	return &screen{info: info, sub: sub, first: first,
-		tabs: tabs, items: items, settings: settings, connect: strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")}, nil
+		tabs: tabs, items: items, settings: settings, conn: o.connData(ctx, a, addrs, picked)}, nil
 }
 
 // withUpdates gives the items the newer versions u found, once it's

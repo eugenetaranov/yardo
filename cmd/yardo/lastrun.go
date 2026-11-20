@@ -187,5 +187,5 @@ func keysToAdd(state string, a *answers.Answers, working func(id string) bool) [
 
 // appData is what the app shows of d.
 func (d *screen) appData() ui.AppData {
-	return ui.AppData{Info: d.info, Sub: d.sub, Items: d.items, Settings: d.settings, Connect: d.connect, Checked: d.updates, Tabs: d.tabs, First: d.first}
+	return ui.AppData{Info: d.info, Sub: d.sub, Items: d.items, Settings: d.settings, Conn: d.conn, Checked: d.updates, Tabs: d.tabs, First: d.first}
 }

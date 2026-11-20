@@ -86,11 +86,11 @@ account is created). Once something is set up, it opens on the home:
 ┌─ Connection ──────────────────────────────────────────────────────────────────── from a laptop ┐
 │ SSH      ssh vm  ·  ada@vm.tail1234.ts.net                                                     │
 │ MCP      http://vm.tail1234.ts.net:8081/mcp  ·  token: sudo cat ~/.mcp/clients/laptop.token    │
-│ Enter: every step, ready to paste                                                              │
+│ Enter: every step, ready to paste, and the networks: start, stop, add, remove                  │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─ Go to ────────────────────────────────────────────────────────────────────────────────────────┐
-│  Tools 4     MCP servers 4     Settings     Last run                                           │
+│  Tools 4     MCP servers 4     Connection     Settings     Last run                            │
 │ or just start typing to search the tools                                                       │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
 
@@ -112,16 +112,14 @@ done; **u** does it from anywhere on the home), and **See why the last
 run failed**. Under it, the **Machine** in two lines, **Services &
 containers** (what's up or failed, the ports it listens on beyond this
 machine and who can reach them; the containers by image) and the **MCP
-servers**; then **Connection**, a panel tab reaches: enter opens every
-step to reach this machine from a laptop, ready to paste, and the **Keys
-to add** a run made (a git host's key, with where to add it and the key
-alone on a line), until the host reads working on Tools or you dismiss
-one with **d**. **Go to** has what never moves: **Tools** (the full
+servers**; then **Connection**, a panel tab reaches: enter opens the
+Connection screen (below), the same as Go to's Connection. **Go to** has
+what never moves: **Tools** (the full
 screen, below; with changes queued there, it says how many), **MCP
 servers** (the gateway's list: **space** marks one, or All servers, off
 or on, **a** applies what's marked, **n** adds one, or another instance
 of one, **e** edits its settings, **d** deletes one, asking first),
-**Settings** (**Network access**: the MCP gateway and containers'
+**Connection**, **Settings** (**Network access**: the MCP gateway and containers'
 published ports, each a row of choices with a sentence saying what it
 means; **Accept new hosts' SSH keys**; **Session on login**; the
 **Look**, theme and accent
@@ -755,9 +753,9 @@ home too. At home Tailscale finds the
 direct path over your LAN, so it's as fast as the LAN; away it goes
 through the tunnel. The name and address don't change when the laptop
 changes network, so ssh, known_hosts and VS Code Remote-SSH keep one host.
-`yardo connect` prints the name and a ready `~/.ssh/config` block (one
-`Host`, `HostKeyAlias`, keep-alives); tmux on the VM keeps sessions across
-sleep. Things to avoid:
+Connection's SSH row (and `yardo connect`) has the name and a ready
+`~/.ssh/config` block (one `Host`, `HostKeyAlias`, keep-alives), **c**
+copies it; tmux on the VM keeps sessions across sleep. Things to avoid:
 - The VM's LAN address: VPN-only services (the MCP gateway, container
   ports) aren't open on it, and it's unreachable away from home.
 - A subnet router for the whole home LAN (192.168.0.0/24): traffic arrives
@@ -769,7 +767,7 @@ sleep. Things to avoid:
   tagged auth key: tagged nodes never expire, and a grant like
   `{"src": ["autogroup:member"], "dst": ["tag:devvm"], "ip": ["tcp:22", "tcp:8081"]}`
   limits who reaches them. An untagged VM's key expires after 180 days;
-  `yardo connect` says when.
+  Connection's Tailscale row (and `yardo connect`) says when.
 - NetBird: the same with a reusable setup key (not ephemeral) whose
   auto-group, `devvm` say, is in a policy like *laptops → devvm, TCP 22
   and 8081*; a peer that needs approval waits for it in the dashboard
@@ -791,17 +789,69 @@ traffic to the local network go out the way they did before (a routing
 table of yardo's, set up each time the tunnel comes up), so ssh over the
 LAN still works, and Tailscale and NetBird keep their own routes.
 
-**Reaching this machine from a laptop.** The home's **Connection**
-panel has the short version: `ssh vm`, `docker context use vm`, and the
-gateway's URL with where its token is (`sudo cat ~/.mcp/clients/client.token`,
-never the token). `sudo yardo connect` (or Go to → Connection, on the
-screen) prints it all, with this machine's addresses (VPNs
-first): Docker over SSH, which opens no port and needs no certificate
-(`docker context create vm --docker "host=ssh://you@vm"`; bind mounts are
-this machine's paths, `-p` ports open here); and the MCP gateway's URL,
-how to make a laptop's token (`mcp-sync client laptop`) and the
-`claude mcp add` and Codex lines that use it, or, when the gateway is for
-this machine only, an SSH tunnel to it. Containers' published ports are
+**Reaching this machine from a laptop: the Connection screen.** The
+home's **Connection** panel has the short version (`ssh vm`,
+`docker context use vm`, the gateway's URL and where its token is);
+enter on it, or Go to → Connection, opens the screen:
+
+- **Networks**: Tailscale and NetBird when installed, each WireGuard and
+  OpenVPN client profile (`/etc/wireguard/<name>.conf`,
+  `/etc/openvpn/client/<name>.conf`), and the local network, each with
+  its state, address and name, and the one your session came in by
+  marked *← this session*. **space** stops a network or starts it again
+  (`tailscale down`/`up`, `netbird down`/`up`, `systemctl stop`/`start`
+  of the profile's unit), in the background, the screen kept; it never
+  logs out or deletes anything. A failure says its last line on the row.
+  **b** turns a profile's start at boot on or off.
+- **The warning.** Stopping or removing the network your ssh session came
+  in by (yardo reads `SSH_CONNECTION`) asks first, no by default, and
+  names the way back: another address of the machine, or its console.
+  Any other network stops without a question. When yardo can't tell
+  which network a session came by, every stop warns.
+- **Setting up.** Enter on Tailscale or NetBird not set up asks for its
+  key and logs in (the login item's run); Tailscale with no key shows its
+  login link on the row (**c** copies it) and turns connected once you've
+  logged in in a browser. **n** adds a profile: WireGuard or OpenVPN, a
+  name (it names the interface: lowercase, 15 at most), and a file on
+  the machine or the profile pasted. yardo checks it's a profile of that
+  kind (`[Interface]` with a `PrivateKey` and a `[Peer]`; a `remote`
+  line) or refuses it, storing nothing; stores it root's only (0600);
+  starts it at boot and now; and says whether it connected. One that
+  sends all traffic through it says so first. The client is installed
+  first when it isn't.
+- **Removing.** **d** asks, saying what goes and what stays: Tailscale is
+  logged out (the machine stays in the tailnet's admin console until you
+  delete it there), NetBird is disconnected and logged out, a profile is
+  stopped, taken off boot and its file deleted. `yardo forget` then has
+  nothing left to log out.
+- **From your laptop**: SSH (the Host block), Docker (a context over SSH,
+  which opens no port and needs no certificate; bind mounts are this
+  machine's paths, `-p` ports open here), and with the MCP gateway
+  Claude Code (`claude mcp add`), Codex (`~/.codex/config.toml`) and
+  other clients (the URL and the header), each with this machine's
+  address (its VPN's first), the exact lines and how you sign in. **c**
+  copies the row's lines to the laptop's clipboard through the terminal
+  (OSC 52; through tmux too); with a token, it's read from its file as
+  it's copied, never drawn. iTerm2 needs it allowed once (the screen
+  says how), Terminal.app can't. When the gateway is this machine's
+  only, the rows have the ssh tunnel to use instead.
+- **Gateway tokens**: a token per client, by name and file, never the
+  value. **n** makes one (`mcp-sync client <name>`), **d** revokes one,
+  asked first: the gateway refuses it from then on and its file goes
+  (`mcp-sync client-rm <name>`).
+- **All of it, one script**: `ssh you@vm sudo yardo connect --script >
+  yardo-vm.sh`, read it, then `sh yardo-vm.sh` on the laptop. It adds the
+  Host block, the Docker context and, with claude there, the gateway to
+  Claude Code, each once (run it again: it adds nothing). It holds no
+  token: it reads it over ssh when it runs.
+- **Keys to add**: a key a run made (a git host's, with where to add it
+  and the key alone on a line), until the host reads working on Tools or
+  you dismiss it with **d**.
+
+Tools' VPN details say the same: Log in and Log out there run the same
+login and logout. `sudo yardo connect` prints the laptop's side as text.
+
+Containers' published ports are
 reachable from everywhere, as Docker does it, unless Settings → Network
 access → "Container ports" keeps them to the VPNs or this machine.
 yardo's firewall rules are nftables tables of its own in

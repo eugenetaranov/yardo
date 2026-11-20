@@ -50,6 +50,8 @@ const (
 	MenuChange
 	// MenuUpdatesTab opens Tools on the Updates tab, every update queued.
 	MenuUpdatesTab
+	// MenuConnection opens the Connection screen.
+	MenuConnection
 )
 
 // MCPAct is what to do to an MCP server: Do (add, edit, on, rename,
@@ -89,7 +91,6 @@ type Menu struct {
 	sub      string // the line under the title: the OS, the address
 	items    []*BoardItem
 	settings []*BoardSetting
-	connect  []string
 	checked  bool // updates were checked
 	// wait waits for a check for updates running in the background (nil
 	// for none); check starts one (u), returning its wait.
@@ -97,8 +98,6 @@ type Menu struct {
 	check func() func() UpdatesMsg
 	// asked: the check running was u's, which says what it found.
 	asked bool
-	// dropKey forgets a key under Keys to add (d on Connection).
-	dropKey func(pub string) error
 	// switcher saves the MCP servers turned off and on, in the
 	// background; switching: a save is running.
 	// pend are the servers marked off or on, not saved yet (entry: off
@@ -110,7 +109,7 @@ type Menu struct {
 	before    HomeInfo
 	leaving   bool
 
-	screen string // home, fix, secrets, settings, access, look, connect, lastrun, mcp, mcp:server, mcp:add, mcp:name
+	screen string // home, fix, secrets, settings, access, look, shell, lastrun, mcp, mcp:server, mcp:add, mcp:name
 	sel    int
 	// The MCP screens: the server and catalog row chosen, the name typed
 	// (for nameFor: a spec to add, or an entry to rename), its error;
@@ -137,8 +136,8 @@ type Menu struct {
 
 // NewMenu builds the menu. sub is the header's second half (OS, address);
 // checked: updates were looked for (Items carry them).
-func NewMenu(info HomeInfo, sub string, items []*BoardItem, settings []*BoardSetting, connect []string, checked bool) *Menu {
-	m := &Menu{info: info, sub: sub, items: items, settings: settings, connect: connect, checked: checked,
+func NewMenu(info HomeInfo, sub string, items []*BoardItem, settings []*BoardSetting, checked bool) *Menu {
+	m := &Menu{info: info, sub: sub, items: items, settings: settings, checked: checked,
 		screen: "home", unticked: map[string]bool{}, pick: map[string]string{}, width: 100, height: 30}
 	m.sortMCP()
 	m.normalize()
@@ -313,7 +312,7 @@ func (m *Menu) queued() int {
 }
 
 // hasConnect: the home has its Connection panel.
-func (m *Menu) hasConnect() bool { return len(m.connect) > 0 || len(m.info.Connect) > 0 || len(m.info.Keys) > 0 }
+func (m *Menu) hasConnect() bool { return len(m.info.Connect) > 0 || len(m.info.Keys) > 0 }
 
 // gotoAt is where Go to's entries start among the home's rows.
 func (m *Menu) gotoAt() int {
@@ -366,6 +365,9 @@ func (m *Menu) rows() []menuRow {
 			}
 		}
 		out = append(out, menuRow{id: "mcp", label: "MCP servers", note: note})
+	}
+	if m.hasConnect() {
+		out = append(out, menuRow{id: "conn", label: "Connection", note: "the networks: start, stop, add, remove · from a laptop: SSH, Docker, the MCP gateway"})
 	}
 	out = append(out, menuRow{id: "settings", label: "Settings", note: "network access, git, prompt, look"})
 	if l := m.info.LastRun; l != nil {
@@ -447,12 +449,6 @@ func (m *Menu) Checking(wait func() UpdatesMsg) *Menu {
 // with MenuUpdates.
 func (m *Menu) Checker(start func() func() UpdatesMsg) *Menu {
 	m.check = start
-	return m
-}
-
-// KeyDropper has d on a key under Keys to add forget it with f.
-func (m *Menu) KeyDropper(f func(pub string) error) *Menu {
-	m.dropKey = f
 	return m
 }
 
@@ -540,8 +536,6 @@ func (m *Menu) move(n int) {
 	switch m.screen {
 	case "home", "fix", "secrets", "settings", "access", "look", "shell", "mcp:server", "mcp:add", "lastrun":
 		m.sel = clamp(m.sel+n, -toEnd, toEnd)
-	case "connect":
-		m.sel = clamp(m.sel+n, -toEnd, toEnd)
 	case "mcp":
 		top := 0
 		if m.hasAll() {
@@ -590,8 +584,6 @@ func (m *Menu) normalize() {
 		m.sel = clamp(m.sel, 0, len(m.settingsRows())-1)
 	case "access", "look", "shell":
 		m.sel = clamp(m.sel, 0, len(m.choices())) // Apply is the last
-	case "connect":
-		m.sel = clamp(m.sel, 0, len(m.info.Keys)-1)
 	case "lastrun":
 		m.sel = clamp(m.sel, 0, max(0, len(m.lastRunLines(m.width))-m.listRoom()))
 	case "mcp":
@@ -738,6 +730,8 @@ func (m *Menu) key(k string) tea.Cmd {
 			return m.quit(MenuResult{Kind: MenuTools})
 		case k == "enter" && r.id == "updates":
 			return m.quit(MenuResult{Kind: MenuUpdatesTab})
+		case k == "enter" && (r.id == "connect" || r.id == "conn"):
+			return m.quit(MenuResult{Kind: MenuConnection, ID: r.id})
 		case k == "enter" && r.id == "why":
 			m.open("lastrun")
 		case k == "enter" && (strings.HasPrefix(r.id, "mcp:") || strings.HasPrefix(r.id, "mcpkey:")):
@@ -835,25 +829,6 @@ func (m *Menu) key(k string) tea.Cmd {
 		}
 	case "mcp", "mcp:server", "mcp:add":
 		return m.mcpKey(k, up, down, left, right)
-	case "connect":
-		switch {
-		case back:
-			m.back()
-		case up:
-			m.sel--
-		case down:
-			m.sel++
-		case k == "d" && m.sel < len(m.info.Keys):
-			key := m.info.Keys[m.sel]
-			if m.dropKey != nil {
-				if err := m.dropKey(key.Pub); err != nil {
-					m.toast = "✗ " + err.Error()
-					return nil
-				}
-			}
-			m.info.Keys = slices.Delete(slices.Clone(m.info.Keys), m.sel, m.sel+1)
-			m.toast = "Dismissed the " + key.For() + " key."
-		}
 	case "lastrun":
 		switch {
 		case back:
@@ -916,8 +891,6 @@ func (m *Menu) Path() string {
 		return "Home › Fix " + plural(len(m.filter(problem)), "thing", "things")
 	case "secrets":
 		return "Home › Fill in " + plural(len(m.filter(secret)), "value", "values")
-	case "connect":
-		return "Home › Connection"
 	case "lastrun":
 		return "Home › Last run"
 	}
@@ -953,11 +926,6 @@ func (m *Menu) Keys() []Key {
 		return []Key{{Key: "↑↓", What: "choose"}, {Key: "space", What: "tick"}, {Key: "enter", What: "fix " + fmt.Sprint(len(m.ticked()))}}
 	case "access", "look", "shell":
 		return []Key{{Key: "↑↓", What: "setting"}, {Key: "←→", What: "choose"}, {Key: "a", What: "apply", On: len(m.changed()) > 0}}
-	case "connect":
-		if len(m.info.Keys) > 0 {
-			return []Key{{Key: "↑↓", What: "choose a key"}, {Key: "d", What: "dismiss it"}}
-		}
-		return nil
 	case "lastrun":
 		return []Key{{Key: "↑↓", What: "scroll"}}
 	}
@@ -1089,34 +1057,6 @@ func (m *Menu) Body(w, h int) string {
 		}
 		m.hit(at(), 0, 0, m.selects(len(as)))
 		add("  " + apply)
-	case "connect":
-		for _, l := range m.connect {
-			if p, ok := strings.CutPrefix(l, Paste); ok {
-				add("  " + keyOn.Render(p))
-			} else {
-				add("  " + l)
-			}
-		}
-		if len(m.info.Keys) > 0 {
-			add("", "  "+bold.Render("Keys to add")+muted.Render("  ·  d dismisses one once it's added"))
-			for n, k := range m.info.Keys {
-				add("")
-				for c, wh := range k.Where {
-					l := wh
-					if c == 0 && n == m.sel {
-						l = rowOn.Render(" › " + l + " ")
-					} else {
-						l = "   " + l
-					}
-					m.hit(at(), 0, 0, m.selects(n))
-					add("  " + l)
-				}
-				add("", keyOn.Render(k.Pub), "")
-				if k.Path != "" {
-					add("     " + muted.Render("Show it again: cat "+k.Path))
-				}
-			}
-		}
 	case "lastrun":
 		ls := m.lastRunLines(w)
 		room := h - len(b)

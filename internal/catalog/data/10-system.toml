@@ -195,8 +195,11 @@ check = "systemctl is-active --quiet netbird"
 [[item]]
 id = "netbird"
 part_of = "netbird-install"
-remove = "netbird down 2>/dev/null || true"
-remove_say = "logs this machine out of NetBird; NetBird stays installed"
+remove = """
+netbird down 2>/dev/null || true
+netbird logout 2>/dev/null || true
+"""
+remove_say = "disconnects this machine and logs it out of NetBird; NetBird stays installed"
 tab = "logins"
 scope = "system"
 label = "NetBird login (setup key, NetBird cloud or your own; or 'sudo netbird up' later)"

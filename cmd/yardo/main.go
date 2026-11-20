@@ -216,7 +216,14 @@ func cli(args []string, stdout, stderr io.Writer) error {
 				return err
 			}
 		case "connect":
-			return o.connect(stdout, st)
+			script := false
+			for _, x := range fs.Args()[1:] {
+				if x != "--script" {
+					return fmt.Errorf("connect: unknown %q (connect [--script])", x)
+				}
+				script = true
+			}
+			return o.connect(stdout, st, script)
 		case "remove", "uninstall":
 			return o.removeCmd(cat, st, fs.Args()[1:], stdout, stderr)
 		case "mcp":
@@ -425,6 +432,13 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	var d, shown *screen
 	var app *ui.App
 	var open, toast string
+	// back is the view a run comes back to instead of the home
+	// (Connection, after a login); link: Connection starts Tailscale's
+	// login by link; prof: the profile to add once its client is
+	// installed.
+	var back string
+	var link bool
+	var prof *newProfile
 	// done: how the last uninstall went, shown on the board until
 	// dismissed.
 	var done *uninstalled
@@ -448,7 +462,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			upd = o.checkUpdates(ctx, cat, a)
 			return upd.msg
 		})
-		x.Menu.KeyDropper(func(pub string) error { return dropKey(o.state, pub) })
+		x.Conn.Hooks(o.connHooks(ctx, a))
 		if upd != nil && !upd.ready() {
 			x.Menu.Checking(upd.msg)
 		}
@@ -524,6 +538,10 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				if open != "" {
 					app.Open(open)
 					open = ""
+				}
+				if link {
+					app.Conn.LinkLogin()
+					link = false
 				}
 				app.Toast(toast)
 				toast = ""
@@ -642,6 +660,20 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						}
 						toast, d = out.toast, nil
 					}
+				case out.Conn != nil:
+					c, err := o.connDo(ctx, a, *out.Conn, stdout)
+					if err != nil {
+						return err
+					}
+					open, toast, link = "connection", c.toast, c.link
+					if c.fix != nil {
+						if c.pick != "" && !slices.Contains(a.Picks, c.pick) {
+							a.Pick([]string{c.pick})
+						}
+						fix, sec, changed, back, prof = c.fix, c.sec, true, "connection", c.prof
+						break loop
+					}
+					d = nil
 				case out.Board != nil:
 					res := *out.Board
 					switch res.Kind {
@@ -964,6 +996,16 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 		open = "home"
 		if o.ui == "board" {
 			open = "board"
+		}
+		if back != "" {
+			open, back = back, ""
+		}
+		if prof != nil {
+			// Its client is installed now (or the run said why not).
+			if err == nil {
+				toast = o.addProfile(ctx, a, *prof, stdout)
+			}
+			prof = nil
 		}
 	}
 }
@@ -1465,7 +1507,9 @@ func asRoot(args []string) error {
 	argv := []string{"sudo"}
 	// Keep a forwarded agent, the user's editor, and a proxy their shell has.
 	var keep []string
-	for _, k := range []string{"SSH_AUTH_SOCK", "LC_TERMINAL", "VISUAL", "EDITOR", "http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} {
+	// SSH_CONNECTION and SSH_TTY tell Connection the network this session
+	// came by; TMUX, how to copy through to the laptop.
+	for _, k := range []string{"SSH_AUTH_SOCK", "SSH_CONNECTION", "SSH_TTY", "TMUX", "LC_TERMINAL", "VISUAL", "EDITOR", "http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} {
 		if os.Getenv(k) != "" {
 			keep = append(keep, k)
 		}

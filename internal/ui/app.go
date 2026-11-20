@@ -12,8 +12,8 @@ import (
 	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
-// The app is yardo's one program: the menu (the home and its screens)
-// and the board (Tools) are its views, in one alt screen. Moving between
+// The app is yardo's one program: the menu (the home and its screens),
+// the board (Tools) and Connection are its views, in one alt screen. Moving between
 // them keeps each one's state (the board's queue, tab, cursors and
 // filter); only what needs the terminal (a question, a run) ends it.
 // Every view has the same chrome: a header (who, where, the path), a
@@ -50,7 +50,7 @@ func (h Hit) has(x, y int) bool {
 // doubleClick is how soon a second click on the same place acts.
 const doubleClick = 400 * time.Millisecond
 
-// view is one of the app's: the menu or the board.
+// view is one of the app's: the menu, the board or Connection.
 type view interface {
 	Update(tea.Msg) (tea.Model, tea.Cmd)
 	// Path is where the view is, from the home: Home › Tools › Dev.
@@ -172,11 +172,12 @@ var sharedKeys = []Key{
 	{Key: "mouse", What: "click selects, double-click opens, the wheel scrolls"},
 }
 
-// AppResult is what the app was left with: the menu's result or the
-// board's, or Quit.
+// AppResult is what the app was left with: the menu's result, the
+// board's or Connection's, or Quit.
 type AppResult struct {
 	Menu  *MenuResult
 	Board *BoardResult
+	Conn  *ConnResult
 	Quit  bool
 }
 
@@ -186,7 +187,7 @@ type AppData struct {
 	Sub      string
 	Items    []*BoardItem
 	Settings []*BoardSetting
-	Connect  []string
+	Conn     ConnData
 	Checked  bool
 	Tabs     []Tab
 	// First: nothing is installed yet; there's no home, only the board.
@@ -197,8 +198,9 @@ type AppData struct {
 type App struct {
 	Menu  *Menu
 	Board *Board
-	// onBoard: the board is the view.
-	onBoard bool
+	Conn  *Connection
+	// onBoard: the board is the view; onConn: Connection is.
+	onBoard, onConn bool
 	first   bool
 	toast   string
 	// keys: the keys screen is up; dialog the app's own question (quit
@@ -230,8 +232,9 @@ func NewApp(d AppData, prep func(*App)) *App {
 
 func (a *App) load(d AppData) {
 	a.first = d.First
-	a.Menu = NewMenu(d.Info, d.Sub, d.Items, d.Settings, d.Connect, d.Checked)
+	a.Menu = NewMenu(d.Info, d.Sub, d.Items, d.Settings, d.Checked)
 	a.Board = NewBoard(d.Info, d.First, d.Tabs, d.Items)
+	a.Conn = NewConnection(d.Conn, d.Info.Keys)
 	a.Board.SetFromMenu(!d.First)
 	m := a.Menu
 	a.Board.SetChecking(func() bool { return m.wait != nil })
@@ -245,7 +248,7 @@ func (a *App) load(d AppData) {
 // screen, tab, cursors and filter, and the board its queue but what the
 // run applied (an add now installed, an uninstall or a forget gone).
 func (a *App) Reload(d AppData) {
-	m, b := a.Menu, a.Board
+	m, b, c := a.Menu, a.Board, a.Conn
 	pending := map[string]string{}
 	for _, i := range b.items {
 		if i.Pending != "" {
@@ -262,6 +265,7 @@ func (a *App) Reload(d AppData) {
 	nb, nm := a.Board, a.Menu
 	nb.tabID, nb.tab, nb.cursor, nb.search, nb.typing = b.tabID, b.tab, b.cursor, b.search, false
 	nm.screen, nm.sel, nm.mcpSel, nm.addSel, nm.fromBoard = m.screen, m.sel, m.mcpSel, m.addSel, m.fromBoard
+	a.Conn.sel = c.sel
 	if nm.screen == "mcp:name" {
 		nm.screen = "mcp"
 	}
@@ -271,14 +275,14 @@ func (a *App) Reload(d AppData) {
 	nm.normalize()
 }
 
-// Open shows view ("board", or a menu screen: home, mcp, settings…).
+// Open shows view ("board", "connection", or a menu screen: home, mcp,
+// settings…).
 func (a *App) Open(screen string) {
 	a.keys, a.dialog = false, nil
-	if screen == "board" {
-		a.onBoard = true
+	a.onBoard, a.onConn = screen == "board", screen == "connection"
+	if a.onBoard || a.onConn {
 		return
 	}
-	a.onBoard = false
 	a.Menu.Open(screen, a.Menu.toast, a.Menu.fromBoard)
 }
 
@@ -286,8 +290,11 @@ func (a *App) Open(screen string) {
 func (a *App) Toast(s string) { a.toast = s }
 
 func (a *App) view() view {
-	if a.onBoard {
+	switch {
+	case a.onBoard:
 		return a.Board
+	case a.onConn:
+		return a.Conn
 	}
 	return a.Menu
 }
@@ -296,11 +303,12 @@ func (a *App) size() {
 	msg := tea.WindowSizeMsg{Width: a.width, Height: a.height}
 	a.Menu.Update(msg)
 	a.Board.Update(msg)
+	a.Conn.Update(msg)
 }
 
 func (a *App) Init() tea.Cmd {
-	a.Menu.ended, a.Board.ended = false, false
-	return a.Menu.Init()
+	a.Menu.ended, a.Board.ended, a.Conn.ended, a.Conn.left = false, false, false, false
+	return tea.Batch(a.Menu.Init(), a.Conn.Init())
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -315,6 +323,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.key(v)
 	case MoveMsg:
 		return a, a.send(v)
+	case connMsg:
+		// Connection's background work, whichever view is up.
+		_, cmd := a.Conn.Update(msg)
+		return a, cmd
 	}
 	// The menu's ticks and checks, whichever view is up; the board shares
 	// its items, so a check's updates reach the Updates tab too.
@@ -389,8 +401,11 @@ func (a *App) key(v tea.KeyMsg) tea.Cmd {
 
 // dialogUp: the view has a question open (its keys are the dialog's).
 func (a *App) dialogUp() bool {
-	if a.onBoard {
+	switch {
+	case a.onBoard:
 		return a.Board.dialog != nil
+	case a.onConn:
+		return a.Conn.dialog != nil
 	}
 	return a.Menu.dialog != nil
 }
@@ -403,8 +418,28 @@ func (a *App) send(msg tea.Msg) tea.Cmd {
 // after takes what a view was left with: a hop to the other view, or a
 // result that ends the program.
 func (a *App) after(cmd tea.Cmd) tea.Cmd {
-	m, b := a.Menu, a.Board
+	m, b, c := a.Menu, a.Board, a.Conn
+	// A key dismissed on Connection is off the home's panel too.
+	m.info.Keys = c.keys
 	switch {
+	case c.left:
+		// Home, on the row it was opened from.
+		c.left, a.onConn = false, false
+		m.screen = "home"
+		for n, r := range m.rows() {
+			if r.id == cmpOr(m.result.ID, "connect") && m.result.Kind == MenuConnection {
+				m.sel = n
+			}
+		}
+		m.normalize()
+	case c.ended:
+		c.ended = false
+		r := c.result
+		a.result = AppResult{Conn: &r}
+		return tea.Quit
+	case m.ended && m.result.Kind == MenuConnection:
+		m.ended = false
+		a.onConn = true
 	case b.CheckAsked():
 		// u on the Updates tab: the home's check, said here.
 		c := m.checkUpdates()

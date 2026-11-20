@@ -158,6 +158,8 @@ func paste(w io.Writer, indent string, lines ...string) {
 func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TSStatus, term string, tokens []string) {
 	host, _ := os.Hostname()
 	ctxName := strings.SplitN(host, ".", 2)[0]
+	// The lines to paste are the Connection screen's.
+	ss := laptopSetups(a, addrs, tokens, true, ctxName)
 	fmt.Fprintf(w, "Connecting to %s from your laptop (as %s)\n\n", host, a.User)
 	fmt.Fprintln(w, "This machine's addresses:")
 	addr := host
@@ -194,8 +196,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 			fmt.Fprintln(w, "(another VPN's DNS can take them over); the address always does.")
 		}
 		fmt.Fprintln(w, "\nSSH: add to your laptop's ~/.ssh/config (then: ssh "+ctxName+", and VS Code Remote-SSH to "+ctxName+"):")
-		paste(w, "  ", "Host "+ctxName, "  HostName "+addr, "  User "+a.User, "  HostKeyAlias "+ctxName,
-			"  ServerAliveInterval 15", "  ServerAliveCountMax 8")
+		paste(w, "  ", setupLines(ss, "ssh")...)
 		if addrs[0].kind() == vpnMesh && addrs[0].name == "" {
 			fmt.Fprintf(w, "  (%s gave no name: its DNS off? Its address works the same.)\n", addrs[0].vpn)
 		}
@@ -210,8 +211,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 	}
 
 	fmt.Fprintln(w, "\nDocker, over SSH (no port to open; your SSH key is the login). On the laptop:")
-	paste(w, "  ", fmt.Sprintf("docker context create %s --docker \"host=ssh://%s@%s\"", ctxName, a.User, addr),
-		fmt.Sprintf("docker context use %s        # back: docker context use default", ctxName))
+	paste(w, "  ", setupLines(ss, "docker")...)
 	fmt.Fprintf(w, "  With a Host for it in ~/.ssh/config (the one above, or yours with its own key), use that:\n")
 	fmt.Fprintf(w, "  \"host=ssh://%s\": ssh takes its address, user and key from there.\n", ctxName)
 	fmt.Fprintf(w, "  docker context use makes it the default: every docker command, in every terminal, until you\n")
@@ -224,9 +224,8 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		fmt.Fprintln(w, l)
 	}
 
-	port := mcpPort(a)
 	fmt.Fprintln(w, "\nMCP gateway (mcpjungle; the servers' own tokens stay here):")
-	if url, who, ok := gatewayURL(a, addr); ok {
+	if _, who, ok := gatewayURL(a, addr); ok {
 		fmt.Fprintf(w, "  reachable from %s, with the gateway's token for your laptop.\n", who)
 		if len(tokens) > 0 {
 			fmt.Fprintln(w, "  1. Read the token here (it isn't shown):")
@@ -238,14 +237,13 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 			paste(w, "       ", "sudo cat "+laptopToken(a.User, "client"))
 		}
 		fmt.Fprintln(w, "  2. On the laptop, for Claude Code (<token> is the token):")
-		paste(w, "       ", fmt.Sprintf("claude mcp add --transport http %s %s --header \"Authorization: Bearer <token>\"", ctxName, url))
+		paste(w, "       ", setupLines(ss, "mcp-claude")...)
 		fmt.Fprintln(w, "     or for Codex, add to ~/.codex/config.toml:")
-		paste(w, "       ", "[mcp_servers."+ctxName+"]", fmt.Sprintf("url = %q", url), `http_headers = { "Authorization" = "Bearer <token>" }`)
+		paste(w, "       ", setupLines(ss, "mcp-codex")...)
 	} else {
 		fmt.Fprintln(w, "  this machine only: in 'sudo yardo', Settings → Network access opens it to your VPNs or")
 		fmt.Fprintln(w, "  the internet. Or, with nothing to change, through SSH, on the laptop:")
-		paste(w, "    ", fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s@%s", port, port, a.User, addr),
-			fmt.Sprintf("claude mcp add --transport http %s http://127.0.0.1:%d/mcp", ctxName, port))
+		paste(w, "    ", setupLines(ss, "mcp-claude")...)
 	}
 }
 
@@ -329,8 +327,8 @@ func tildeOf(user, path string) string {
 }
 
 // connect is `yardo connect`: how to reach this machine from a laptop, for
-// the user who ran sudo (or --user).
-func (o *options) connect(stdout io.Writer, st *answers.Store) error {
+// the user who ran sudo (or --user); with script, the laptop's script.
+func (o *options) connect(stdout io.Writer, st *answers.Store, script bool) error {
 	u, err := o.userFor(st)
 	if err != nil {
 		return err
@@ -341,6 +339,11 @@ func (o *options) connect(stdout io.Writer, st *answers.Store) error {
 	}
 	a.User = u
 	addrs, ts := withNames(context.Background(), steps.OSExec{}, addresses())
+	if script {
+		host, _ := os.Hostname()
+		connectScript(stdout, a, addrs, laptopTokens(u), slices.Contains(a.Picks, "mcpjungle"), strings.SplitN(host, ".", 2)[0])
+		return nil
+	}
 	var b strings.Builder
 	printConnect(&b, a, addrs, ts, os.Getenv("LC_TERMINAL"), laptopTokens(u))
 	_, err = io.WriteString(stdout, ui.Unmark(b.String()))

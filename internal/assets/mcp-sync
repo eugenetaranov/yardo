@@ -20,6 +20,8 @@
 #   mcp-sync client <name> make a token for another MCP client (a laptop's agent), allowed
 #                          every server, in ~/.mcp/clients/<name>.token (not printed);
 #                          only when the gateway listens beyond this machine
+#   mcp-sync client-rm <name>  revoke that client's token: the gateway forgets the
+#                          client, and its token and conf files are deleted
 #
 # When yardo runs the gateway as a service user (mcp-<you>, which
 # owns ~/.mcp so agents running as you can't read the tokens), this re-runs
@@ -133,6 +135,25 @@ if [ "${1:-}" = client ]; then
   fi
   echo "$2's token is in $tok (read it with: sudo cat $tok)."
   echo "Send it as the header 'Authorization: Bearer <token>' to $REGISTRY/mcp (from another machine, use this machine's address)."
+  exit 0
+fi
+
+if [ "${1:-}" = client-rm ]; then
+  case "${2:-}" in
+    ''|.*|*/*|*[!A-Za-z0-9._-]*) echo "usage: mcp-sync client-rm <name>" >&2; exit 2 ;;
+  esac
+  tok="$MCP_DIR/clients/$2.token"
+  [ -e "$tok" ] || [ -e "$MCP_DIR/clients/$2.json" ] || { echo "mcp-sync: there's no client $2" >&2; exit 1; }
+  # Off the gateway first: a token left in a file but still accepted
+  # would be worse than one deleted.
+  if mj --registry "$REGISTRY" list mcp-clients 2>/dev/null | grep -Eq "^[0-9]+\. $(printf '%s' "$2" | sed 's/[.]/\\./g')\$"; then
+    if ! mj --registry "$REGISTRY" delete mcp-client "$2" >/dev/null; then
+      echo "mcp-sync: the gateway didn't forget $2; its token still works" >&2
+      exit 1
+    fi
+  fi
+  rm -f "$tok" "$MCP_DIR/clients/$2.json"
+  echo "$2's token is revoked: the gateway refuses it."
   exit 0
 fi
 

@@ -56,7 +56,7 @@ func (m *Menu) homeView(w, h int) string {
 
 	conL := m.connectLines(fw - 4)
 	if con >= 0 && len(conL) == 0 {
-		conL = []string{muted.Render("Enter: every way in from a laptop, ready to paste")}
+		conL = []string{muted.Render("Enter: the networks, and every way in from a laptop, ready to paste")}
 	}
 	// What's left for Services and Connection: Go to (4 and a gap) and a
 	// line under it.
@@ -492,7 +492,7 @@ func (m *Menu) connectLines(w int) []string {
 		out = append(out, accent.Render(tui.Cur.Mark.Need+" "+plural(n, "key", "keys")+" to add: "+strings.Join(fors, ", ")))
 	}
 	if len(out) > 0 {
-		out = append(out, muted.Render("Enter: every step, ready to paste"))
+		out = append(out, muted.Render("Enter: every step, ready to paste, and the networks: start, stop, add, remove"))
 	}
 	return out
 }
