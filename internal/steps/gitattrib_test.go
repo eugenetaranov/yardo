@@ -60,6 +60,18 @@ func TestGitAttrib(t *testing.T) {
 	if !check(t, e, st) {
 		t.Error("Check = false after Apply")
 	}
+	// With Claude Code: its own attribution off, other settings kept.
+	if got := read(t, e.Path("~/.claude/settings.json")); !strings.Contains(got, `"commit": ""`) || !strings.Contains(got, `"pr": ""`) {
+		t.Errorf("claude settings: %s", got)
+	}
+	writeAt(t, e, "~/.claude/settings.json", `{"model":"opus","attribution":{"commit":"Co-Authored-By: Claude"}}`)
+	if check(t, e, st) {
+		t.Error("Check = true with attribution on")
+	}
+	apply(t, e, st)
+	if got := read(t, e.Path("~/.claude/settings.json")); !strings.Contains(got, `"model": "opus"`) || strings.Contains(got, "Co-Authored-By") {
+		t.Errorf("claude settings: %s", got)
+	}
 	// Older git off Ubuntu: nothing set, a note says why.
 	version = "git version 2.43.0\n"
 	e2 := testEnv(t, x)
@@ -117,6 +129,7 @@ func TestNoAgentTrailer(t *testing.T) {
 		"feat: x\n\nwhy\n\nCo-authored-by: Ada <ada@example.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: Codex <noreply@openai.com>\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n": "feat: x\n\nwhy\n\nCo-authored-by: Ada <ada@example.com>\n",
 		"fix: y\n\nCo-authored-by: Cursor <cursoragent@cursor.com>\n":                        "fix: y\n",
 		"docs: z\n\nGenerated with [Codex](https://openai.com/codex/).\n":                    "docs: z\n",
+		"feat: g\n\nCo-authored-by: Gemini CLI <gemini-cli@example.com>\nCo-authored-by: aider (openai/gpt-5) <noreply@aider.chat>\nCo-Authored-By: opencode <noreply@opencode.ai>\nCo-authored-by: Amp <amp@ampcode.com>\nAmp-Thread-ID: https://ampcode.com/threads/T-1\nCo-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>\nCo-authored-by: goose <goose@example.com>\n": "feat: g\n",
 		"chore: claude is a name in the text\n\nCo-authored-by: Claudette <c@example.com>\n": "chore: claude is a name in the text\n\nCo-authored-by: Claudette <c@example.com>\n",
 	} {
 		f := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")

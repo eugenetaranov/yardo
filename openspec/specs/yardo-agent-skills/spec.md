@@ -6,14 +6,14 @@ The agent setup yardo installs for coding agents: the notes describing the machi
 ## Requirements
 
 ### Requirement: No AI attribution in commits
-yardo SHALL keep coding agents from adding attribution to commits and pull requests: Claude Code's settings SHALL have `attribution.commit` and `attribution.pr` set to empty strings, merged so the user's other settings stay, and the agent notes SHALL say not to add such lines.
+yardo SHALL keep coding agents from adding attribution to commits and pull requests on every machine, in an item that is always in the plan and can't be unticked or removed: Claude Code's settings SHALL have `attribution.commit` and `attribution.pr` set to empty strings, merged so the user's other settings stay, and the agent notes SHALL say not to add such lines.
 
 #### Scenario: Claude Code settings
 - **WHEN** the agent skills item is applied for a user with Claude Code
 - **THEN** `~/.claude/settings.json` has `"attribution": {"commit": "", "pr": ""}`, and its other keys are as they were
 
 ### Requirement: Agent trailers stripped by a git hook
-On Git 2.54 or later, yardo SHALL set a global config-based `commit-msg` hook that removes trailer lines naming a coding agent (`noreply@anthropic.com`, `noreply@openai.com`, `cursoragent@cursor.com`, "Generated with [Claude Code]" or "[Codex]") and no other line. yardo SHALL NOT set a global `core.hooksPath`.
+On Git 2.54 or later, yardo SHALL set a global config-based `commit-msg` hook that removes trailer lines naming a coding agent (Claude, Codex, Cursor, Gemini, OpenCode, Goose, Aider, Copilot, Amp and others, by name or by their noreply address; "Generated with [Claude Code]" or "[Codex]"; Amp's thread link) and no other line. yardo SHALL NOT set a global `core.hooksPath`.
 
 #### Scenario: Agent trailer stripped, person's kept
 - **WHEN** a commit message ends with `Co-Authored-By: Claude <noreply@anthropic.com>` and `Co-authored-by: Ada <ada@example.com>`

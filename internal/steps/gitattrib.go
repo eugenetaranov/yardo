@@ -3,6 +3,7 @@ package steps
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -17,9 +18,9 @@ import (
 
 func init() { RegisterGo("gitattrib", func(catalog.Step) Step { return gitAttribStep{} }) }
 
-// gitAttribStep keeps agents' attribution out of commits: a global
-// commit-msg hook that drops a coding agent's Co-authored-by and
-// "Generated with" lines (a person's stay). It's config-based (Git 2.54
+// gitAttribStep keeps agents' attribution out of commits: Claude Code's
+// own setting off, and a global commit-msg hook that drops a coding
+// agent's Co-authored-by and "Generated with" lines (a person's stay). It's config-based (Git 2.54
 // and later), so a repo's own hooks, husky's and pre-commit's still run;
 // a global core.hooksPath would turn them off. Older git on Ubuntu is
 // upgraded from the Ubuntu Git Maintainers' PPA; elsewhere it gets no hook.
@@ -55,7 +56,27 @@ func (gitAttribStep) Plan(*Env) []Action {
 		{"file", attribFile + " (drops agents' Co-authored-by and Generated-with lines)"},
 		{"git", "hook." + attribHook + ".event=commit-msg, .command=" + attribFile + " (Git 2.54+)"},
 		{"apt", "git from the git-core PPA, when git is older than 2.54 (Ubuntu)"},
+		{"file", "~/.claude/settings.json (attribution off: no Co-Authored-By, no Generated-with), with Claude Code"},
 	}
+}
+
+const claudeSettings = "~/.claude/settings.json"
+
+// claudeAttrib returns Claude Code's settings with attribution off, and
+// whether they change; nothing without Claude Code.
+func (gitAttribStep) claudeAttrib(ctx context.Context, e *Env) ([]byte, bool, error) {
+	if !has(ctx, e, "claude") {
+		return nil, false, nil
+	}
+	cur, err := os.ReadFile(e.Path(claudeSettings))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, false, err
+	}
+	b, changed, err := claudeAttribOff(cur)
+	if err != nil {
+		return nil, false, fmt.Errorf("%s: %w", claudeSettings, err)
+	}
+	return b, changed, nil
 }
 
 // gitAtLeast reports whether `git --version` says major.minor or later.
@@ -79,6 +100,9 @@ func (gitAttribStep) script(e *Env) ([]byte, error) {
 }
 
 func (g gitAttribStep) Check(ctx context.Context, e *Env) (bool, error) {
+	if _, changed, err := g.claudeAttrib(ctx, e); err != nil || changed {
+		return false, err
+	}
 	if !g.hasHooks(ctx, e) {
 		_, err := os.Stat(e.Path(attribSaid))
 		return err == nil, nil // Apply says why, once
@@ -146,6 +170,22 @@ func (gitAttribStep) newGit(ctx context.Context, e *Env) error {
 }
 
 func (g gitAttribStep) Apply(ctx context.Context, e *Env) error {
+	if b, changed, err := g.claudeAttrib(ctx, e); err != nil {
+		return err
+	} else if changed {
+		p := e.Path(claudeSettings)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			return err
+		}
+		if err := writeFile(p, b, 0o600); err != nil {
+			return err
+		}
+		for _, f := range []string{filepath.Dir(p), p} {
+			if err := e.chown(f, e.UID, e.GID); err != nil {
+				return err
+			}
+		}
+	}
 	if !g.hasHooks(ctx, e) && distro(e) == "ubuntu" {
 		if err := g.newGit(ctx, e); err != nil {
 			return fmt.Errorf("git 2.54+ from the git-core PPA (for the commit-msg hook): %w", err)

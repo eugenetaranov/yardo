@@ -166,18 +166,28 @@ if_absent = true
 type = "go:agentsafe"
 
 # Skills every agent reads (agentskills.io; ~/.agents/skills and
-# ~/.claude/skills), and no agent's name on commits.
+# ~/.claude/skills).
 [[item]]
 id = "agentskills"
 tab = "agents"
 after = ["agentcfg"]
-label = "Agent skills: git commits and branches, PR descriptions, Jira tickets; no agent co-author lines"
+label = "Agent skills: git commits and branches, PR descriptions, Jira tickets"
 default = true
-source = "~/.agents/skills, ~/.claude/skills (Claude Code, Codex, Gemini CLI, OpenCode, Goose, omp) · a git commit-msg hook (Git 2.54+; older git on Ubuntu upgraded from the git-core PPA) dropping agents' Co-authored-by"
+source = "~/.agents/skills, ~/.claude/skills (Claude Code, Codex, Gemini CLI, OpenCode, Goose, omp)"
 
 [[item.step]]
 type = "go:skills"
 skills = ["git-commits", "git-branches", "pr-descriptions", "jira-tickets"]
+
+# No coding agent's name on a commit, on every machine: not offered, so
+# not unticked or removed.
+[[item]]
+id = "noagentattrib"
+tab = "agents"
+always = true
+after = ["claude", "codex", "agentcfg", "agentskills"]
+label = "No agent co-author lines on commits"
+source = "a global git commit-msg hook (Git 2.54+; older git on Ubuntu upgraded from the git-core PPA) dropping any coding agent's Co-authored-by and Generated-with lines · Claude Code's commit and PR attribution off"
 
 [[item.step]]
 type = "go:gitattrib"

@@ -125,6 +125,33 @@ func (agentSafeStep) want(ctx context.Context, e *Env) (map[string][]byte, error
 // in commits and no "Generated with" footer in pull requests.
 var claudeNoAttribution = map[string]any{"commit": "", "pr": ""}
 
+// claudeAttribOff sets attribution off in a settings.json, keeping every
+// other setting.
+func claudeAttribOff(cur []byte) ([]byte, bool, error) {
+	doc := map[string]any{}
+	if len(bytes.TrimSpace(cur)) > 0 {
+		if err := json.Unmarshal(cur, &doc); err != nil {
+			return nil, false, err
+		}
+	}
+	attr, _ := doc["attribution"].(map[string]any)
+	if attr == nil {
+		attr = map[string]any{}
+	}
+	changed := false
+	for k, v := range claudeNoAttribution {
+		if attr[k] != v {
+			attr[k], changed = v, true
+		}
+	}
+	if !changed {
+		return cur, false, nil
+	}
+	doc["attribution"] = attr
+	b, err := json.MarshalIndent(doc, "", "  ")
+	return append(b, '\n'), true, err
+}
+
 // claudeDeny merges ClaudeDeny into a settings.json's permissions.deny,
 // and sets attribution off, keeping every other setting.
 func claudeDeny(cur []byte) ([]byte, bool, error) {

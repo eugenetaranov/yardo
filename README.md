@@ -583,10 +583,12 @@ installed by hand.
    title, one to three plain sentences, and three to five acceptance
    criteria, each checkable (required), under a hundred words. yardo
    updates only the copies it wrote; one you edit stays yours. **No
-   agent's name on commits:** Claude Code's `attribution` setting is off,
-   the agents' notes say so, and on Git 2.54+ a global commit-msg hook
-   (config-based, so your repos' own hooks still run) drops an agent's
-   `Co-authored-by` and "Generated with" lines, never a person's (older
+   agent's name on commits** (on every machine, not something to untick):
+   Claude Code's `attribution` setting is off, the agents' notes say so,
+   and on Git 2.54+ a global commit-msg hook (config-based, so your repos'
+   own hooks still run) drops any coding agent's `Co-authored-by` and
+   "Generated with" lines (Claude, Codex, Cursor, Gemini, OpenCode, Goose,
+   Aider, Copilot, Amp, …), never a person's (older
    git on Ubuntu is upgraded from the git-core PPA first). Codex
    takes it from your ChatGPT account: turn commit attribution off there.
    **Community skills** (off by default), shipped inside yardo at pinned
