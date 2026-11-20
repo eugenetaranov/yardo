@@ -375,7 +375,7 @@ func (k *asker) askSecrets(c *choices, has func(string) bool) error {
 		}
 	}
 	if has("netbird") && !netbirdConnected() {
-		if c.secrets.NBSetupKey, err = ui.Password("NetBird setup key (empty: run 'sudo netbird up' later)", ""); err != nil {
+		if c.secrets.NBSetupKey, err = ui.Password("NetBird setup key: a reusable one with an auto-group (Setup Keys → Auto-assigned groups) puts the VM in that group's policies (empty: 'sudo netbird up' later)", ""); err != nil {
 			return err
 		}
 		if c.secrets.NBSetupKey != "" {

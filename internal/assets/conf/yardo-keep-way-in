@@ -1,0 +1,38 @@
+#!/bin/sh
+# yardo-keep-way-in — written by yardo (the WireGuard and OpenVPN client
+# items), run by wg-quick@ and openvpn-client@ once a tunnel is up.
+#
+# A VPN client that takes all traffic (AllowedIPs = 0.0.0.0/0,
+# redirect-gateway) would also take the replies to an ssh coming in over
+# the local network, and the way in is lost. This keeps it: replies from
+# this machine's local address, and traffic to the local network, go out
+# the way they did before the tunnel (table 5400). Tailscale's and
+# NetBird's own rules come first, and yardo's VPN subnets are routes of
+# their own, so the mesh VPNs and those keep working as they are.
+# Rebuilt on each run; harmless with no tunnel up.
+set -u
+T=5400 P=5400
+while ip rule del pref $P 2>/dev/null; do :; done
+ip route flush table $T 2>/dev/null || true
+
+# The local network's way out: the first default route not into a tunnel.
+route=$(ip -4 route show default table main | awk '$0 !~ / dev (tun|wg|tailscale|wt)/ {
+  d = ""; g = ""
+  for (i = 1; i < NF; i++) { if ($i == "via") g = $(i + 1); if ($i == "dev") d = $(i + 1) }
+  if (d != "") { print d, g; exit }
+}')
+dev=${route%% *}
+gw=${route#* }
+[ -n "$dev" ] || exit 0
+
+for cidr in $(ip -4 -o addr show dev "$dev" | awk '{ print $4 }'); do
+  ip=${cidr%/*}
+  net=$(ip -4 route show table main dev "$dev" scope link | awk -v ip="$ip" '$0 ~ ("src " ip "( |$)") { print $1; exit }')
+  if [ -n "$net" ]; then
+    ip route replace "$net" dev "$dev" src "$ip" table $T
+    ip rule add to "$net" lookup $T pref $P
+  fi
+  ip rule add from "$ip" lookup $T pref $P
+done
+[ -n "$gw" ] && [ "$gw" != "$dev" ] && ip route replace default via "$gw" dev "$dev" table $T
+exit 0

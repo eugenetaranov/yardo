@@ -711,9 +711,10 @@ must be pinned (`sha256`) or say why it can't be (`unverified = "…"`), or
 yardo refuses to load it.
 
 **Away from home, and back.** For a VM on your home network (Proxmox,
-say), run a mesh VPN on the VM itself (Tailscale, on Tools → System → VPN
-logins) and on the laptop, and always use the VM's VPN name
-(`payzoff.<tailnet>.ts.net`), at home too. At home Tailscale finds the
+say), run a mesh VPN on the VM itself (Tailscale or NetBird, on Tools →
+System → VPN logins) and on the laptop, and always use the VM's VPN
+address or name (`payzoff.<tailnet>.ts.net`, `payzoff.netbird.cloud`), at
+home too. At home Tailscale finds the
 direct path over your LAN, so it's as fast as the LAN; away it goes
 through the tunnel. The name and address don't change when the laptop
 changes network, so ssh, known_hosts and VS Code Remote-SSH keep one host.
@@ -732,12 +733,26 @@ sleep. Things to avoid:
   `{"src": ["autogroup:member"], "dst": ["tag:devvm"], "ip": ["tcp:22", "tcp:8081"]}`
   limits who reaches them. An untagged VM's key expires after 180 days;
   `yardo connect` says when.
+- NetBird: the same with a reusable setup key (not ephemeral) whose
+  auto-group, `devvm` say, is in a policy like *laptops → devvm, TCP 22
+  and 8081*; a peer that needs approval waits for it in the dashboard
+  (yardo says so). Run a self-hosted NetBird on a VPS, not on the home
+  network it's meant to reach.
 - Two mesh VPNs on the laptop at once (Tailscale and NetBird share
   100.64.0.0/10).
 
 yardo sets Tailscale to accept no subnet routes on the VM and makes you
-its operator (`tailscale serve` without sudo), and doesn't log in again
-once the VM is on the tailnet.
+its operator (`tailscale serve` without sudo), names the NetBird peer
+after the machine, and logs in to neither again once the VM is on it;
+`sudo yardo forget` logs the VM out of both (a deleted VM stays in your
+tailnet or NetBird network otherwise).
+
+**A VPN client on the VM** (the WireGuard or OpenVPN client item, to reach
+another network from it) doesn't take the way in: even with a profile that
+sends all traffic into the tunnel, replies from the VM's local address and
+traffic to the local network go out the way they did before (a routing
+table of yardo's, set up each time the tunnel comes up), so ssh over the
+LAN still works, and Tailscale and NetBird keep their own routes.
 
 **Reaching this machine from a laptop.** The home's **Connection**
 panel has the short version: `ssh vm`, `docker context use vm`, and the

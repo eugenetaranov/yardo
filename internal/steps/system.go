@@ -209,7 +209,8 @@ func (t tailscaleUpStep) Apply(ctx context.Context, e *Env) error {
 
 // netbirdUpStep joins NetBird with the setup key typed this run, on NetBird's
 // cloud or the self-hosted management URL typed (none: the user runs `sudo
-// netbird up` later).
+// netbird up` later), named after this machine's hostname. A connected
+// machine isn't joined again; a peer that waits for approval says so.
 type netbirdUpStep struct{}
 
 func setupKey(e *Env) (key, url string) {
@@ -219,20 +220,59 @@ func setupKey(e *Env) (key, url string) {
 	return e.Secrets.NBSetupKey, e.Secrets.NBManagementURL
 }
 
+// NBStatus is what `netbird status --json` says of this machine (its
+// field names vary between versions: read leniently).
+type NBStatus struct {
+	Management struct {
+		Connected bool   `json:"connected"`
+		URL       string `json:"url"`
+	} `json:"management"`
+	IP   string `json:"netbirdIp"`
+	FQDN string `json:"fqdn"`
+}
+
+// NetbirdStatus is this machine's NetBird status; ok is false when netbird
+// isn't there or says nothing readable.
+func NetbirdStatus(ctx context.Context, x Execer) (st NBStatus, ok bool) {
+	out, _ := x.Run(ctx, Cmd{Name: "netbird", Args: []string{"status", "--json"}})
+	if len(out) == 0 || json.Unmarshal(out, &st) != nil {
+		return st, false
+	}
+	return st, true
+}
+
+func (netbirdUpStep) joined(ctx context.Context, e *Env) (NBStatus, bool) {
+	st, ok := NetbirdStatus(ctx, e.Exec)
+	return st, ok && st.Management.Connected
+}
+
 func (netbirdUpStep) Plan(e *Env) []Action {
 	if k, _ := setupKey(e); k == "" {
 		return nil
 	}
-	return []Action{{"run", "netbird up --setup-key-file … (the key typed)"}}
+	return []Action{{"run", "netbird up --setup-key-file … --hostname <this machine> (the key typed; not once connected)"}}
 }
 
-func (netbirdUpStep) Check(_ context.Context, e *Env) (bool, error) {
+func (n netbirdUpStep) Check(ctx context.Context, e *Env) (bool, error) {
+	if _, ok := n.joined(ctx, e); ok {
+		return true, nil
+	}
 	k, _ := setupKey(e)
 	return k == "", nil
 }
 
-func (netbirdUpStep) Apply(ctx context.Context, e *Env) error {
+func (n netbirdUpStep) Apply(ctx context.Context, e *Env) error {
 	key, url := setupKey(e)
+	if st, ok := n.joined(ctx, e); ok {
+		if key != "" {
+			name := strings.TrimSuffix(st.FQDN, ".")
+			if name == "" {
+				name = "this machine"
+			}
+			e.note(fmt.Sprintf("NetBird: already connected as %s, so the setup key typed wasn't used (to join again: sudo netbird down && sudo netbird logout, then sudo yardo).", name))
+		}
+		return nil
+	}
 	if key == "" {
 		return nil
 	}
@@ -247,11 +287,30 @@ func (netbirdUpStep) Apply(ctx context.Context, e *Env) error {
 		return err
 	}
 	args := []string{"up", "--setup-key-file", f.Name()}
+	if h, _ := os.Hostname(); h != "" {
+		args = append(args, "--hostname", h)
+	}
 	if url != "" {
 		args = append(args, "--management-url", url)
 	}
-	_, err = e.run(ctx, Cmd{Name: "netbird", Args: args})
-	return err
+	out, err := e.run(ctx, Cmd{Name: "netbird", Args: args})
+	if err != nil {
+		return err
+	}
+	if err := e.record("netbird", ""); err != nil {
+		return err
+	}
+	// A peer waiting for approval is connected to management with no
+	// network yet; NetBird says "approval" when it says anything.
+	st, ok := NetbirdStatus(ctx, e.Exec)
+	if strings.Contains(strings.ToLower(string(out)), "approv") || ok && (!st.Management.Connected || st.IP == "") {
+		where := "app.netbird.io"
+		if url != "" {
+			where = url
+		}
+		e.note("NetBird: this machine may be waiting for approval: approve it in the NetBird dashboard (" + where + ", Peers), and it joins.")
+	}
+	return nil
 }
 
 // --- go:sshharden ------------------------------------------------------------

@@ -2000,6 +2000,7 @@ forget() {
       file)      say "  - the values in $v1" ;;
       block)     say "  - yardo's block in $v1" ;;
       tailscale) say "  - this VM's Tailscale login" ;;
+      netbird)   say "  - this VM's NetBird login (the peer leaves your NetBird network)" ;;
     esac
   done <<< "$entries"
   if [ "$YES" = 0 ]; then
@@ -2056,6 +2057,11 @@ forget() {
   if grep -q '^tailscale' <<< "$entries"; then
     if tailscale logout >/dev/null 2>&1; then ok "✓ logged out of Tailscale"; unrecord tailscale
     else warn "✗ tailscale logout"; rc=1; fi
+  fi
+  if grep -q '^netbird' <<< "$entries"; then
+    netbird down >/dev/null 2>&1 || true
+    if netbird logout >/dev/null 2>&1; then ok "✓ logged out of NetBird (the peer is deregistered)"; unrecord netbird
+    else warn "✗ netbird logout: delete this machine in the NetBird dashboard (Peers)"; rc=1; fi
   fi
 
   echo

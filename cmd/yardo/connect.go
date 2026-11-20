@@ -91,9 +91,18 @@ func addresses() []address {
 }
 
 // withNames fills in the VPNs' DNS names for their addresses (Tailscale's
-// MagicDNS name), adds Tailscale's address when no interface has it
-// (userspace networking), and returns Tailscale's status when it's up.
+// MagicDNS name, NetBird's FQDN), adds Tailscale's address when no
+// interface has it (userspace networking), and returns Tailscale's status
+// when it's up.
 func withNames(ctx context.Context, x steps.Execer, addrs []address) ([]address, *steps.TSStatus) {
+	if nb, ok := steps.NetbirdStatus(ctx, x); ok && nb.Management.Connected {
+		ip, _, _ := strings.Cut(nb.IP, "/")
+		for i := range addrs {
+			if addrs[i].iface == "wt0" || ip != "" && addrs[i].ip == ip {
+				addrs[i].vpn, addrs[i].name = "NetBird", strings.TrimSuffix(nb.FQDN, ".")
+			}
+		}
+	}
 	st, ok := steps.TailscaleStatus(ctx, x)
 	if !ok || st.BackendState != "Running" {
 		return addrs, nil
@@ -187,8 +196,8 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		fmt.Fprintln(w, "\nSSH: add to your laptop's ~/.ssh/config (then: ssh "+ctxName+", and VS Code Remote-SSH to "+ctxName+"):")
 		paste(w, "  ", "Host "+ctxName, "  HostName "+addr, "  User "+a.User, "  HostKeyAlias "+ctxName,
 			"  ServerAliveInterval 15", "  ServerAliveCountMax 8")
-		if addrs[0].vpn == "Tailscale" && addrs[0].name == "" {
-			fmt.Fprintln(w, "  (Tailscale gave no name: MagicDNS off? Its address works the same.)")
+		if addrs[0].kind() == vpnMesh && addrs[0].name == "" {
+			fmt.Fprintf(w, "  (%s gave no name: its DNS off? Its address works the same.)\n", addrs[0].vpn)
 		}
 	} else if len(addrs) > 0 {
 		fmt.Fprintf(w, "\nThe commands below use %s, which works only on its own network; a VPN (Tailscale:\n", addr)

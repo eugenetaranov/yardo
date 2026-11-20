@@ -787,14 +787,46 @@ func TestThemeFlag(t *testing.T) {
 	}
 }
 
-// tsExec answers tailscale status with out.
-type tsExec struct{ out string }
+// tsExec answers tailscale status with out, and netbird status with nb.
+type tsExec struct{ out, nb string }
 
 func (x tsExec) Run(_ context.Context, c steps.Cmd) ([]byte, error) {
-	if c.Name == "tailscale" {
+	switch c.Name {
+	case "tailscale":
 		return []byte(x.out), nil
+	case "netbird":
+		return []byte(x.nb), nil
 	}
 	return nil, nil
+}
+
+// NetBird's address gets its FQDN, alone or beside Tailscale; connect
+// says to use it at home and away.
+func TestWithNamesNetbird(t *testing.T) {
+	nb := `{"management":{"connected":true},"netbirdIp":"100.92.0.7/16","fqdn":"payzoff.netbird.cloud"}`
+	lan := []address{{"100.92.0.7", "wt0", "NetBird", ""}, {"192.168.0.105", "eth0", "", ""}}
+	got, ts := withNames(context.Background(), tsExec{nb: nb}, slices.Clone(lan))
+	if ts != nil || got[0].name != "payzoff.netbird.cloud" || got[0].vpn != "NetBird" {
+		t.Fatalf("netbird: %+v", got)
+	}
+	var b strings.Builder
+	printConnect(&b, &answers.Answers{User: "ada"}, got, ts, "", nil)
+	if v := b.String(); !strings.Contains(v, "Use 100.92.0.7 at home and away") || !strings.Contains(v, "Its name, payzoff.netbird.cloud, works too") {
+		t.Errorf("connect:\n%s", v)
+	}
+	up := `{"BackendState":"Running","Self":{"DNSName":"payzoff.tail1234.ts.net.","TailscaleIPs":["100.64.1.7"]}}`
+	both := append([]address{{"100.64.1.7", "tailscale0", "Tailscale", ""}}, lan...)
+	got, ts = withNames(context.Background(), tsExec{up, nb}, both)
+	if ts == nil || got[0].name != "payzoff.tail1234.ts.net" || got[1].name != "payzoff.netbird.cloud" {
+		t.Errorf("both: %+v", got)
+	}
+	// Disconnected: no name; connect says why it has only the address.
+	got, _ = withNames(context.Background(), tsExec{nb: `{"management":{"connected":false}}`}, slices.Clone(lan))
+	b.Reset()
+	printConnect(&b, &answers.Answers{User: "ada"}, got, nil, "", nil)
+	if got[0].name != "" || !strings.Contains(b.String(), "NetBird gave no name") {
+		t.Errorf("disconnected: %+v\n%s", got, b.String())
+	}
 }
 
 // Tailscale's address comes first, with its name, even with no tailscale0
@@ -802,7 +834,7 @@ func (x tsExec) Run(_ context.Context, c steps.Cmd) ([]byte, error) {
 func TestWithNames(t *testing.T) {
 	up := `{"BackendState":"Running","Self":{"DNSName":"alice.tail1234.ts.net.","TailscaleIPs":["100.64.1.7","fd7a:115c:a1e0::7"]}}`
 	lan := []address{{"192.168.0.105", "eth0", "", ""}}
-	got, ts := withNames(context.Background(), tsExec{up}, slices.Clone(lan))
+	got, ts := withNames(context.Background(), tsExec{out: up}, slices.Clone(lan))
 	if ts == nil || len(got) != 2 || got[0] != (address{"100.64.1.7", tsUserspace, "Tailscale", "alice.tail1234.ts.net"}) {
 		t.Errorf("userspace: %+v", got)
 	}
@@ -811,11 +843,11 @@ func TestWithNames(t *testing.T) {
 	if !strings.Contains(b.String(), `host=ssh://ubuntu@100.64.1.7"`) {
 		t.Errorf("connect:\n%s", b.String())
 	}
-	got, _ = withNames(context.Background(), tsExec{up}, []address{{"192.168.0.105", "eth0", "", ""}, {"100.64.1.7", "tailscale0", "Tailscale", ""}})
+	got, _ = withNames(context.Background(), tsExec{out: up}, []address{{"192.168.0.105", "eth0", "", ""}, {"100.64.1.7", "tailscale0", "Tailscale", ""}})
 	if len(got) != 2 || got[0].iface != "tailscale0" || got[0].name != "alice.tail1234.ts.net" {
 		t.Errorf("tailscale0: %+v", got)
 	}
-	got, ts = withNames(context.Background(), tsExec{`{"BackendState":"NeedsLogin"}`}, slices.Clone(lan))
+	got, ts = withNames(context.Background(), tsExec{out: `{"BackendState":"NeedsLogin"}`}, slices.Clone(lan))
 	if ts != nil || len(got) != 1 || got[0].ip != "192.168.0.105" {
 		t.Errorf("logged out: %+v", got)
 	}

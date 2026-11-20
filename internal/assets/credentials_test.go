@@ -327,14 +327,16 @@ func TestForget(t *testing.T) {
 	add("registry", "ghcr.io")
 	add("file", agent)
 	add("block", npmrc)
+	add("netbird")
 	body := `as_user() { echo "$*" >> "$H/ran"; }
+netbird() { echo "netbird $*" >> "$H/ran"; }
 header() { :; }; ok() { echo "$*"; }; warn() { echo "$*"; }; say() { echo "$*"; }
 is_secret() { case "$1" in *TOKEN*|*SECRET*|*PASSWORD*|*_KEY|*_KEY_ID|*APIKEY*) return 0 ;; esac; return 1; }
 YES=1 A_USER=ada STATE="$H/state"
 forget`
 	out := credShell(t, home, body, "forget", "unrecord", "revoke_hints")
 	ran := readFile(t, filepath.Join(home, "ran"))
-	for _, want := range []string{"gh api -X DELETE user/keys/42", "docker logout ghcr.io", "gh auth logout -h github.com"} {
+	for _, want := range []string{"gh api -X DELETE user/keys/42", "docker logout ghcr.io", "gh auth logout -h github.com", "netbird down", "netbird logout"} {
 		if !strings.Contains(ran, want) {
 			t.Errorf("forget did not run %q; ran:\n%s", want, ran)
 		}

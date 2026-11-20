@@ -184,33 +184,81 @@ func TestTailscaleJoined(t *testing.T) {
 }
 
 // netbird up reads the setup key from a file (not the command line, which
-// ps shows), with the management URL when one was typed.
+// ps shows), named after the hostname, with the management URL when one
+// was typed; the join is recorded for yardo forget.
 func TestNetbirdUp(t *testing.T) {
 	var keyFile string
+	status := `{"management": {"connected": false}}`
 	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
-		if c.Name == "netbird" {
+		switch {
+		case c.Name == "netbird" && c.Args[0] == "status":
+			return []byte(status), nil
+		case c.Name == "netbird" && c.Args[0] == "up":
 			keyFile = c.Args[2]
 			b, _ := os.ReadFile(keyFile)
 			if string(b) != "NB-KEY-1" {
 				t.Errorf("key file holds %q", b)
 			}
+			status = `{"management": {"connected": true}, "netbirdIp": "100.92.0.7/16", "fqdn": "payzoff.netbird.cloud"}`
 		}
 		return nil, nil
 	}}
 	e := testEnv(t, x)
+	e.State = t.TempDir()
+	var notes []string
+	e.Note = func(s string) { notes = append(notes, s) }
 	st := step(t, catalog.Step{Type: "go:netbird_up"})
 	if !check(t, e, st) {
 		t.Error("no key typed: Check = false")
 	}
 	e.Secrets = creds.New()
 	e.Secrets.NBSetupKey, e.Secrets.NBManagementURL = "NB-KEY-1", "https://netbird.example.com"
+	if check(t, e, st) {
+		t.Error("a key, not connected: Check = true")
+	}
 	apply(t, e, st)
 	cmds := strings.Join(x.commands(), " ")
-	if strings.Contains(cmds, "NB-KEY") || !strings.Contains(cmds, "--setup-key-file") || !strings.Contains(cmds, "--management-url https://netbird.example.com") {
+	h, _ := os.Hostname()
+	if strings.Contains(cmds, "NB-KEY") || !strings.Contains(cmds, "--setup-key-file") || !strings.Contains(cmds, "--hostname "+h) || !strings.Contains(cmds, "--management-url https://netbird.example.com") {
 		t.Errorf("commands: %s", cmds)
 	}
 	if _, err := os.Stat(keyFile); err == nil {
 		t.Error("key file left behind")
+	}
+	if got := answers.ReadCreated(e.State); len(got) != 1 || got[0].Kind != "netbird" {
+		t.Errorf("created = %+v", got)
+	}
+	if len(notes) != 0 {
+		t.Errorf("notes = %q", notes)
+	}
+	// Connected now: a key typed again is noted, not used.
+	x.ran = nil
+	if !check(t, e, st) {
+		t.Error("connected: Check = false")
+	}
+	apply(t, e, st)
+	if cmds := strings.Join(x.commands(), " "); strings.Contains(cmds, "netbird up") || len(notes) != 1 || !strings.Contains(notes[0], "already connected as payzoff.netbird.cloud") {
+		t.Errorf("connected: ran %s, notes %q", cmds, notes)
+	}
+}
+
+// A peer that waits for approval after netbird up: a note says where to
+// approve it.
+func TestNetbirdApproval(t *testing.T) {
+	x := &fakeExec{reply: func(c Cmd) ([]byte, error) {
+		if c.Name == "netbird" && c.Args[0] == "status" {
+			return []byte(`{"management": {"connected": false}}`), nil
+		}
+		return nil, nil
+	}}
+	e := testEnv(t, x)
+	var notes []string
+	e.Note = func(s string) { notes = append(notes, s) }
+	e.Secrets = creds.New()
+	e.Secrets.NBSetupKey = "NB-KEY-1"
+	apply(t, e, step(t, catalog.Step{Type: "go:netbird_up"}))
+	if len(notes) != 1 || !strings.Contains(notes[0], "approve it in the NetBird dashboard (app.netbird.io, Peers)") {
+		t.Errorf("notes = %q", notes)
 	}
 }
 

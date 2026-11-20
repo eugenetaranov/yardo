@@ -226,6 +226,28 @@ source = "apt openvpn · sudo openvpn --config <profile>.ovpn, or /etc/openvpn/c
 type = "apt"
 packages = ["openvpn"]
 
+# Keeps the way in (ssh over the local network) out of the tunnel, however
+# the profile routes: see conf/yardo-keep-way-in.
+[[item.step]]
+type = "file"
+src = "yardo-keep-way-in"
+to = "/usr/local/libexec/yardo-keep-way-in"
+mode = "0755"
+
+[[item.step]]
+type = "file"
+src = "vpn-keep-way-in.conf"
+to = "/etc/systemd/system/openvpn-client@.service.d/yardo-keep-way-in.conf"
+
+[[item.step]]
+type = "file"
+src = "vpn-keep-way-in.conf"
+to = "/etc/systemd/system/openvpn@.service.d/yardo-keep-way-in.conf"
+
+[[item.step]]
+type = "systemctl"
+action = "daemon-reload"
+
 [[item]]
 id = "wireguard-client"
 tab = "net"
@@ -236,6 +258,23 @@ source = "apt wireguard-tools · a config in /etc/wireguard/<name>.conf, then sy
 [[item.step]]
 type = "apt"
 packages = ["wireguard-tools"]
+
+# Keeps the way in (ssh over the local network) out of the tunnel, however
+# the profile routes: see conf/yardo-keep-way-in.
+[[item.step]]
+type = "file"
+src = "yardo-keep-way-in"
+to = "/usr/local/libexec/yardo-keep-way-in"
+mode = "0755"
+
+[[item.step]]
+type = "file"
+src = "vpn-keep-way-in.conf"
+to = "/etc/systemd/system/wg-quick@.service.d/yardo-keep-way-in.conf"
+
+[[item.step]]
+type = "systemctl"
+action = "daemon-reload"
 
 [[item]]
 id = "devlimits"
