@@ -95,12 +95,16 @@ type Menu struct {
 	// wait waits for a check for updates running in the background (nil
 	// for none).
 	wait func() UpdatesMsg
-	// switcher turns MCP servers off or on in the background (nil: the
-	// menu ends with the act instead); switching: one is running, and
-	// before is the servers as they were, to go back to if it fails.
+	// switcher saves the MCP servers turned off and on, in the
+	// background; switching: a save is running.
+	// pend are the servers marked off or on, not saved yet (entry: off
+	// or on; "": all of them); before, the servers as they're saved;
+	// leaving: q was pressed once with pend.
 	switcher  Switcher
 	switching bool
+	pend      map[string]string
 	before    HomeInfo
+	leaving   bool
 
 	screen string // home, fix, secrets, updates, settings, access, look, connect, mcp, mcp:server, mcp:delete, mcp:add, mcp:name
 	sel    int
@@ -482,7 +486,7 @@ func (m *Menu) normalize() {
 		if m.hasAll() {
 			top = -1 // All servers, above the servers
 		}
-		m.sel = clamp(m.sel, top, len(m.mcpServers())) // Add a server is the last
+		m.sel = clamp(m.sel, top, m.lastRow()) // Add a server, then Save
 	case "mcp:server":
 		m.sel = clamp(m.sel, 0, len(m.mcpActions(m.mcpServer()))-1)
 	case "mcp:add":
@@ -505,6 +509,11 @@ func (m *Menu) ticked() []string {
 }
 
 func (m *Menu) quit(r MenuResult) tea.Cmd {
+	if r.Kind == MenuMCP && len(m.pend) > 0 {
+		// It leaves the menu: what's marked would be lost.
+		m.toast = "Save first (s), or turn back what you changed."
+		return nil
+	}
 	m.result = r
 	return tea.Quit
 }

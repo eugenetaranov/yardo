@@ -960,76 +960,7 @@ func TestMenuMCPAllRow(t *testing.T) {
 	}
 }
 
-// Space turns the server under the cursor off or on, or all of them (on
-// All servers, enter too); not a found one; not one while all are off.
-func TestMenuMCPSpace(t *testing.T) {
-	list := func(edit func(m *Menu)) *Menu {
-		m := mcpMenu()
-		if edit != nil {
-			edit(m)
-		}
-		onRow(m, "mcp")
-		mk(m, "enter")
-		return m
-	}
-	m := list(nil)
-	mk(m, "down", " ")
-	if r := m.result; r.Kind != MenuMCP || r.MCP != (MCPAct{Do: "off", Entry: "jira"}) {
-		t.Errorf("space on jira: %+v", r)
-	}
-	m = list(func(m *Menu) { m.info.MCP[1].State, m.info.MCP[1].Off = "off", "own" })
-	mk(m, "down", " ")
-	if r := m.result; r.MCP != (MCPAct{Do: "on", Entry: "jira"}) {
-		t.Errorf("space on jira, off: %+v", r)
-	}
-	m = list(nil)
-	mk(m, "up", " ")
-	if r := m.result; r.MCP != (MCPAct{Do: "off"}) {
-		t.Errorf("space on All servers: %+v", r)
-	}
-	m = list(func(m *Menu) { m.info.MCPAllOff = true })
-	mk(m, "up", "enter")
-	if r := m.result; r.MCP != (MCPAct{Do: "on"}) {
-		t.Errorf("enter on All servers, all off: %+v", r)
-	}
-	m = list(func(m *Menu) { m.info.MCPAllOff = true })
-	mk(m, " ")
-	if m.result.Kind == MenuMCP || !strings.Contains(m.View(), "turn them on first") {
-		t.Errorf("space on github, all off: %+v\n%s", m.result, m.View())
-	}
-	m = list(nil)
-	mk(m, "down", "down", "down", "down", " ") // grafana-test, found
-	if m.result.Kind == MenuMCP || m.screen != "mcp" {
-		t.Errorf("space on a found server: %+v on %s", m.result, m.screen)
-	}
-	mk(m, "down", " ") // Add a server
-	if m.result.Kind == MenuMCP || m.screen != "mcp" {
-		t.Errorf("space on Add: %+v on %s", m.result, m.screen)
-	}
-}
 
-// A server off offers Turn it on; while all are off, neither.
-func TestMenuMCPServerSwitch(t *testing.T) {
-	open := func(edit func(m *Menu)) *Menu {
-		m := mcpMenu()
-		edit(m)
-		onRow(m, "mcp")
-		mk(m, "enter", "enter") // github
-		return m
-	}
-	m := open(func(m *Menu) { m.info.MCP[0].State, m.info.MCP[0].Off = "off", "own" })
-	if v := m.View(); !strings.Contains(v, "› Turn it on") || !strings.Contains(v, "○ off") {
-		t.Fatalf("off:\n%s", v)
-	}
-	mk(m, "enter")
-	if r := m.result; r.MCP != (MCPAct{Do: "on", Entry: "github"}) {
-		t.Errorf("turn on: %+v", r)
-	}
-	m = open(func(m *Menu) { m.info.MCPAllOff, m.info.MCP[0].State, m.info.MCP[0].Off = true, "off", "all" })
-	if v := m.View(); strings.Contains(v, "Turn it") || !strings.Contains(v, "› Edit its settings") {
-		t.Errorf("all off:\n%s", v)
-	}
-}
 
 // The home's panel lists a server off apart; all off says so on the
 // gateway's line and in Go to's note.
@@ -1060,54 +991,145 @@ func TestMenuMCPHomeOff(t *testing.T) {
 	}
 }
 
-// With a switcher, space flips the row at once and the menu stays; the
-// switch runs in the background, and its servers replace the rows (or,
-// when it fails, they're as they were).
-func TestMenuMCPSwitchInBackground(t *testing.T) {
+// switchMenu is the MCP servers list with a switcher that records what
+// it's given and says the servers are as marked (or fails with fail).
+func switchMenu(fail *error) (*Menu, *[][]MCPAct) {
 	m := mcpMenu()
-	var got []MCPAct
-	fail := error(nil)
-	m.Switching(func(act MCPAct) ([]MCPServer, bool, string, error) {
-		got = append(got, act)
-		if fail != nil {
-			return nil, false, "", fail
+	ran := &[][]MCPAct{}
+	m.Switching(func(acts []MCPAct) ([]MCPServer, bool, string, error) {
+		*ran = append(*ran, acts)
+		if fail != nil && *fail != nil {
+			return nil, false, "", *fail
 		}
-		s := slices.Clone(m.before.MCP)
-		s[1].State, s[1].Off = "off", "own"
-		return s, false, "✓ jira off", nil
+		return slices.Clone(m.info.MCP), m.info.MCPAllOff, "✓ saved", nil
 	})
 	onRow(m, "mcp")
-	mk(m, "enter", "down")
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
-	if m.result.Kind == MenuMCP || m.screen != "mcp" || cmd == nil {
-		t.Fatalf("the menu ended: %+v on %s", m.result, m.screen)
+	mk(m, "enter")
+	return m, ran
+}
+
+// runCmd runs cmd's message through the menu, as the program would.
+func runCmd(m *Menu, cmd tea.Cmd) {
+	if cmd != nil {
+		m.Update(cmd())
 	}
-	if m.info.MCP[1].State != "off" || !strings.Contains(ansi.Strip(m.View()), "○ off") {
-		t.Errorf("not off at once:\n%s", m.View())
+}
+
+// Space marks a server, or all of them, off or on: the screen shows it
+// at once, "not saved", and nothing runs until Save; marking one back
+// unmarks it.
+func TestMenuMCPSpaceMarks(t *testing.T) {
+	m, ran := switchMenu(nil)
+	mk(m, "down", " ") // jira
+	v := ansi.Strip(m.View())
+	if m.result.Kind == MenuMCP || len(*ran) != 0 || m.info.MCP[1].State != "off" || !strings.Contains(v, "not saved") || !strings.Contains(v, "Save 1 change") || !strings.Contains(v, "s save") {
+		t.Fatalf("marked jira off:\n%s", v)
 	}
 	mk(m, " ")
-	if !strings.Contains(m.View(), "Still switching") {
-		t.Errorf("a second switch while one runs:\n%s", m.View())
+	if v := ansi.Strip(m.View()); strings.Contains(v, "not saved") || strings.Contains(v, "Save") || m.info.MCP[1].State != "secret" {
+		t.Errorf("marked back:\n%s", v)
 	}
-	m.Update(cmd())
-	if !reflect.DeepEqual(got, []MCPAct{{Do: "off", Entry: "jira"}}) || !strings.Contains(m.View(), "✓ jira off") || m.info.MCP[1].Off != "own" {
-		t.Errorf("done: ran %v\n%s", got, m.View())
+	// All servers: every one of yardo's off, the found one left be.
+	mk(m, "up", "up", " ")
+	if !m.info.MCPAllOff || m.info.MCP[0].Off != "all" || m.info.MCP[4].State == "off" {
+		t.Errorf("all off: %+v", m.info.MCP)
 	}
-	// Turned on again, and it fails: back as it was, saying why.
-	fail = errors.New("couldn't turn jira on: the gateway said no")
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
-	if m.info.MCP[1].State == "off" {
-		t.Error("not on at once")
+	mk(m, "down", " ")
+	if !strings.Contains(m.View(), "turn them on first") {
+		t.Errorf("a server while all are off:\n%s", m.View())
 	}
-	m.Update(cmd())
-	if m.info.MCP[1].State != "off" || !strings.Contains(m.View(), "the gateway said no") {
-		t.Errorf("failed, not back:\n%s", m.View())
+	// A found server: nothing to mark.
+	m, _ = switchMenu(nil)
+	mk(m, "down", "down", "down", "down", " ")
+	if strings.Contains(m.View(), "not saved") {
+		t.Errorf("a found server was marked:\n%s", m.View())
 	}
-	// All servers: every one of yardo's off at once, the found one left be.
-	fail = nil
-	mk(m, "up", "up")
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
-	if !m.info.MCPAllOff || m.info.MCP[0].Off != "all" || m.info.MCP[4].State == "off" || cmd == nil {
-		t.Errorf("all off at once: %+v", m.info.MCP)
+}
+
+// Save (s, or enter on the button) runs what's marked in one go, in the
+// background; its servers replace the rows. Failing, the rows are back
+// as they were.
+func TestMenuMCPSave(t *testing.T) {
+	m, ran := switchMenu(nil)
+	mk(m, "down", " ", "down", "down", " ") // jira, opensearch off
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	if cmd == nil || !strings.Contains(m.View(), "Saving") {
+		t.Fatalf("s:\n%s", m.View())
+	}
+	runCmd(m, cmd)
+	want := [][]MCPAct{{{Do: "off", Entry: "jira"}, {Do: "off", Entry: "opensearch"}}}
+	if !reflect.DeepEqual(*ran, want) || strings.Contains(m.View(), "not saved") || !strings.Contains(m.View(), "✓ saved") {
+		t.Errorf("saved: ran %v\n%s", *ran, m.View())
+	}
+	// The button: down past Add a server, enter.
+	m, ran = switchMenu(nil)
+	mk(m, " ")
+	for range 6 {
+		mk(m, "down")
+	}
+	if !strings.Contains(m.View(), "or s, from anywhere here") {
+		t.Fatalf("the button isn't chosen:\n%s", m.View())
+	}
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	runCmd(m, cmd)
+	if !reflect.DeepEqual(*ran, [][]MCPAct{{{Do: "off", Entry: "github"}}}) {
+		t.Errorf("enter on Save: ran %v", *ran)
+	}
+	// All on first, then each server.
+	m, ran = switchMenu(nil)
+	m.info.MCPAllOff = true
+	mk(m, "up", " ")
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	runCmd(m, cmd)
+	if !reflect.DeepEqual(*ran, [][]MCPAct{{{Do: "on"}}}) {
+		t.Errorf("all on: ran %v", *ran)
+	}
+	// It fails: back as saved, saying why.
+	fail := errors.New("couldn't turn jira off: the gateway said no")
+	m, _ = switchMenu(&fail)
+	mk(m, "down", " ")
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	runCmd(m, cmd)
+	if m.info.MCP[1].State != "secret" || !strings.Contains(m.View(), "the gateway said no") || strings.Contains(m.View(), "not saved") {
+		t.Errorf("failed:\n%s", m.View())
+	}
+}
+
+// Leaving with changes not saved asks once; q again leaves without them.
+// Edit, delete and the rest wait for a save.
+func TestMenuMCPUnsaved(t *testing.T) {
+	m, _ := switchMenu(nil)
+	mk(m, " ", "q")
+	if m.screen != "mcp" || !strings.Contains(m.View(), "1 change isn't saved") {
+		t.Fatalf("q once:\n%s", m.View())
+	}
+	mk(m, "q")
+	if m.screen != "home" || m.info.MCP[0].State != "ok" {
+		t.Errorf("q again: on %s, github %s", m.screen, m.info.MCP[0].State)
+	}
+	m, _ = switchMenu(nil)
+	mk(m, " ", "e")
+	if m.result.Kind == MenuMCP || !strings.Contains(m.View(), "Save first") {
+		t.Errorf("e with a change marked: %+v\n%s", m.result, m.View())
+	}
+}
+
+// A server's screen marks it off or on, and goes back to the list; while
+// all are off, it offers neither.
+func TestMenuMCPServerMarks(t *testing.T) {
+	m, ran := switchMenu(nil)
+	mk(m, "enter") // github
+	if !strings.Contains(m.View(), "› Turn it off") {
+		t.Fatalf("server:\n%s", m.View())
+	}
+	mk(m, "enter")
+	if m.screen != "mcp" || m.info.MCP[0].State != "off" || !strings.Contains(m.View(), "not saved") || len(*ran) != 0 {
+		t.Errorf("Turn it off: on %s\n%s", m.screen, m.View())
+	}
+	m, _ = switchMenu(nil)
+	m.info.MCPAllOff, m.info.MCP[0].State, m.info.MCP[0].Off = true, "off", "all"
+	mk(m, "enter")
+	if v := m.View(); strings.Contains(v, "Turn it") || !strings.Contains(v, "› Edit its settings") {
+		t.Errorf("all off:\n%s", v)
 	}
 }

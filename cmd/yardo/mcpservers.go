@@ -342,20 +342,50 @@ func (k *asker) mcpSwitch(ctx context.Context, act ui.MCPAct) (mcpOutcome, error
 	return mcpOutcome{toast: switchSays(who, act.Do, strings.Contains(out.String(), "once the gateway runs"))}, nil
 }
 
-// mcpSwitcher turns servers off and on for the menu, in the background:
-// mcp-sync, then the servers' rows as they are now (only theirs: nothing
-// else is checked again).
+// mcpSwitcher applies the servers turned off and on on the menu, in the
+// background: mcp-sync, then the servers' rows as they are now (only
+// theirs: nothing else is checked again). One that fails stops the rest;
+// the rows say how far it got.
 func (o *options) mcpSwitcher(ctx context.Context, a *answers.Answers) ui.Switcher {
-	return func(act ui.MCPAct) ([]ui.MCPServer, bool, string, error) {
+	return func(acts []ui.MCPAct) ([]ui.MCPServer, bool, string, error) {
 		k := &asker{a: a, share: o.share(), out: io.Discard}
-		out, err := k.mcpSwitch(ctx, act)
-		if err != nil {
-			return nil, false, "", err
+		var says []string
+		var err error
+		for _, act := range acts {
+			var out mcpOutcome
+			if out, err = k.mcpSwitch(ctx, act); err != nil {
+				break
+			}
+			says = append(says, out.toast)
 		}
 		specs := o.mcpSpecs(ctx)
 		sync, _ := o.mcpStatus(ctx, a)
-		return mcpRows(a.MCPServers, findMCP(ctx, a.User, specs), nil, specs, true, sync), sync["*"].state == "off", out.toast, nil
+		rows := mcpRows(a.MCPServers, findMCP(ctx, a.User, specs), nil, specs, true, sync)
+		return rows, sync["*"].state == "off", appliedSays(acts, says), err
 	}
+}
+
+// appliedSays is what applying acts did, says each one's: one says it
+// all; more are named in a line.
+func appliedSays(acts []ui.MCPAct, says []string) string {
+	if len(says) == 1 {
+		return says[0]
+	}
+	var what []string
+	later := false
+	for n, act := range acts[:len(says)] {
+		who := "all servers"
+		if act.Entry != "" {
+			_, who, _ = mcp.Instance(act.Entry)
+		}
+		what = append(what, who+" "+act.Do)
+		later = later || strings.Contains(says[n], "once the gateway runs")
+	}
+	s := "✓ Applied: " + strings.Join(what, ", ")
+	if later {
+		return s + " (once the gateway runs: Fix it from Home)."
+	}
+	return s + ". New agent sessions see the change."
 }
 
 // switchSays is what turning who (a server, or "all servers") off or on

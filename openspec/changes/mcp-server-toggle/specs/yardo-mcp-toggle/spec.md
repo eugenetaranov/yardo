@@ -42,11 +42,19 @@ The user SHALL be able to turn all servers off in one action, and back on. While
 - **THEN** `grafana` registers and is off
 
 ### Requirement: Switching on the MCP servers screen
-On the MCP servers screen, space SHALL turn the selected server on or off, and a row above the servers, **All servers**, SHALL turn them all off or on with space. A switch SHALL take effect without a run screen, and the screen SHALL then say what changed. The keys line SHALL include `space on/off`. A server's own screen SHALL offer **Turn it off** or **Turn it on**. Space SHALL do nothing on a server found in `~/.mcp` that isn't on yardo's list.
+On the MCP servers screen, space SHALL mark the selected server off or on, and a row above the servers, **All servers**, SHALL mark them all, shown at once as not saved. **Save** (a button under the list, or `s`) SHALL apply every change marked, in the background, the screen staying open, and SHALL then say what changed. Leaving with changes not saved SHALL ask once first. The keys line SHALL include `space on/off`. A server's own screen SHALL offer **Turn it off** or **Turn it on**.
 
-#### Scenario: One key
-- **WHEN** the cursor is on `jira-work` and the user presses space
-- **THEN** the screen stays the MCP servers list, `jira-work` reads `○ off`, and the screen says `jira-work` is off
+#### Scenario: Mark, then save
+- **WHEN** the cursor is on `jira-work`, the user presses space, then `s`
+- **THEN** `jira-work` reads `○ off` and not saved at once, and after `s` it is off, the screen still the MCP servers list, saying `jira-work` is off
+
+#### Scenario: Leaving unsaved
+- **WHEN** a change is marked and the user presses `q`
+- **THEN** the screen says it isn't saved and stays; `q` again leaves without it
+
+#### Scenario: A found server
+- **WHEN** the cursor is on a server found in `~/.mcp` that isn't on yardo's list and the user presses space
+- **THEN** nothing is marked
 
 #### Scenario: A server's screen
 - **WHEN** the user opens `aws`, which is on

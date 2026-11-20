@@ -3,6 +3,7 @@ package ui
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -61,18 +62,19 @@ func (m *Menu) mcpServer() *MCPServer {
 	return ss[m.mcpSel]
 }
 
-// Switcher turns a server (act.Entry; "": all) off or on, then says how
-// the servers are now (and whether all are off), and what happened.
-type Switcher func(act MCPAct) (servers []MCPServer, allOff bool, toast string, err error)
+// Switcher turns servers off or on as acts say (an act's Entry ""
+// is all of them), then says how the servers are now (and whether all are
+// off), and what happened.
+type Switcher func(acts []MCPAct) (servers []MCPServer, allOff bool, toast string, err error)
 
-// Switching has the menu turn servers off and on itself, in the
-// background, with f.
+// Switching has the menu save the servers turned off and on itself, in
+// the background, with f.
 func (m *Menu) Switching(f Switcher) *Menu {
 	m.switcher = f
 	return m
 }
 
-// mcpSwitched is a switch done: the servers as they are now.
+// mcpSwitched is a save done: the servers as they are now.
 type mcpSwitched struct {
 	servers []MCPServer
 	allOff  bool
@@ -80,28 +82,80 @@ type mcpSwitched struct {
 	err     error
 }
 
-// flip turns servers off or on as act says: on the screen at once, by
-// the switcher in the background (the menu stays). Without one, the menu
-// ends with act.
-func (m *Menu) flip(act MCPAct) tea.Cmd {
-	if m.switcher == nil {
-		return m.quit(MenuResult{Kind: MenuMCP, MCP: act})
+// stage marks act to save (Save, or s): the screen shows it at once.
+// Marking a server back as it's saved unmarks it.
+func (m *Menu) stage(act MCPAct) {
+	if m.pend == nil {
+		m.pend, m.before = map[string]string{}, m.info
+		m.before.MCP = slices.Clone(m.info.MCP)
 	}
-	if m.switching {
-		m.toast = "Still switching the last one: a moment."
+	m.showSwitch(act)
+	saved := m.before.MCPAllOff
+	now := m.info.MCPAllOff
+	if act.Entry != "" {
+		i := slices.IndexFunc(m.before.MCP, func(s MCPServer) bool { return s.Entry == act.Entry })
+		saved = i >= 0 && m.before.MCP[i].State == "off" && m.before.MCP[i].Off == "own"
+		now = act.Do == "off"
+	}
+	if now == saved {
+		delete(m.pend, act.Entry)
+	} else {
+		m.pend[act.Entry] = act.Do
+	}
+	if len(m.pend) == 0 {
+		m.unstage()
+	}
+}
+
+// unstage drops what's marked: the servers as they're saved.
+func (m *Menu) unstage() {
+	if m.pend != nil {
+		m.info.MCP, m.info.MCPAllOff = m.before.MCP, m.before.MCPAllOff
+	}
+	m.pend = nil
+}
+
+// staged are the marked acts, in the order to save them: all on first,
+// then each server, then all off.
+func (m *Menu) staged() []MCPAct {
+	var out []MCPAct
+	if m.pend[""] == "on" {
+		out = append(out, MCPAct{Do: "on"})
+	}
+	for _, e := range slices.Sorted(maps.Keys(m.pend)) {
+		if e != "" {
+			out = append(out, MCPAct{Do: m.pend[e], Entry: e})
+		}
+	}
+	if m.pend[""] == "off" {
+		out = append(out, MCPAct{Do: "off"})
+	}
+	return out
+}
+
+// save applies what's marked, in the background: the menu stays.
+func (m *Menu) save() tea.Cmd {
+	switch {
+	case len(m.pend) == 0:
+		m.toast = "Nothing to save: space turns a server off or on."
+		return nil
+	case m.switching:
+		m.toast = "Saving: a moment."
+		return nil
+	case m.switcher == nil:
+		m.toast = "Can't save from here: sudo yardo mcp off|on <server>."
 		return nil
 	}
-	m.switching, m.before = true, m.info
-	m.before.MCP = slices.Clone(m.info.MCP)
-	m.showSwitch(act)
-	f := m.switcher
+	m.switching = true
+	acts, f := m.staged(), m.switcher
+	m.toast = "Saving…"
 	return func() tea.Msg {
-		servers, allOff, toast, err := f(act)
+		servers, allOff, toast, err := f(acts)
 		return mcpSwitched{servers, allOff, toast, err}
 	}
 }
 
-// showSwitch is act on the screen, before it's done.
+// showSwitch is act on the screen, before it's saved.
 func (m *Menu) showSwitch(act MCPAct) {
 	set := func(s *MCPServer, off bool, how string) {
 		switch {
@@ -125,14 +179,19 @@ func (m *Menu) showSwitch(act MCPAct) {
 	}
 }
 
-// switched takes a switch's outcome: the servers as they are now, or as
-// they were before it, when it failed.
+// switched takes a save's outcome: the servers as they are now, or as
+// they were before, when it failed.
 func (m *Menu) switched(v mcpSwitched) {
 	m.switching = false
-	if v.err != nil {
-		m.info.MCP, m.info.MCPAllOff = m.before.MCP, m.before.MCPAllOff
+	switch {
+	case v.err != nil && v.servers == nil:
+		m.unstage()
 		m.toast = "✗ " + v.err.Error()
-	} else {
+	case v.err != nil:
+		// Part applied: the rows say how far.
+		m.pend = nil
+		m.info.MCP, m.info.MCPAllOff, m.toast = v.servers, v.allOff, "✗ "+v.err.Error()
+	default:
 		// Where they run from stays as it was read.
 		from := map[string]MCPServer{}
 		for _, s := range m.info.MCP {
@@ -142,10 +201,20 @@ func (m *Menu) switched(v mcpSwitched) {
 			f := from[v.servers[n].Name]
 			v.servers[n].From, v.servers[n].Cached = f.From, f.Cached
 		}
+		m.pend = nil
 		m.info.MCP, m.info.MCPAllOff, m.toast = v.servers, v.allOff, v.toast
 	}
 	m.sortMCP()
 	m.normalize()
+}
+
+// lastRow is the list's last row: Save (with changes to save), else
+// Add a server.
+func (m *Menu) lastRow() int {
+	if len(m.pend) > 0 {
+		return len(m.mcpServers()) + 1
+	}
+	return len(m.mcpServers())
 }
 
 // hasAll says whether the list has its All servers row (above the
@@ -292,28 +361,35 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 		if m.hasAll() {
 			top = -1
 		}
+		leaving := m.leaving
+		m.leaving = false
 		switch {
+		case (k == "esc" || k == "q") && len(m.pend) > 0 && !leaving:
+			m.leaving = true
+			m.toast = plural(len(m.pend), "change isn't saved", "changes aren't saved") + ": s saves, q again leaves without them."
 		case k == "esc" || k == "q":
+			m.unstage()
 			if m.fromBoard {
 				return m.quit(MenuResult{Kind: MenuTools})
 			}
 			m.back()
+		case k == "s" || (k == "enter" && m.sel > n):
+			return m.save()
 		case up:
 			m.sel = max(top, m.sel-1)
 		case down:
-			m.sel = min(n, m.sel+1)
+			m.sel = min(m.lastRow(), m.sel+1)
 		case k == " " || (k == "enter" && m.sel < 0):
-			if m.sel >= n {
+			if m.sel >= n || m.switching {
 				return nil
 			}
 			act, why := m.switchAct(m.sel)
 			if why != "" {
 				m.toast = why
 			}
-			if act.Do == "" {
-				return nil
+			if act.Do != "" {
+				m.stage(act)
 			}
-			return m.flip(act)
 		case m.sel < 0:
 		case k == "e" && m.sel < n:
 			s := m.mcpServers()[m.sel]
@@ -356,7 +432,8 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 			case "delete":
 				m.screen, m.btn, m.delList = "mcp:delete", 1, false // Keep it, first
 			case "off", "on":
-				return m.flip(MCPAct{Do: as[m.sel].id, Entry: s.Entry})
+				m.stage(MCPAct{Do: as[m.sel].id, Entry: s.Entry})
+				m.screen, m.sel = "mcp", m.mcpSel
 			default:
 				return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: as[m.sel].id, Entry: s.Entry}})
 			}
@@ -502,6 +579,9 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			if m.info.MCPAllOff {
 				word = accent.Render("○ off") + muted.Render(" · space turns them back on")
 			}
+			if _, marked := m.pend[""]; marked {
+				word += accent.Render("  · not saved")
+			}
 			if m.sel < 0 {
 				lines = append(lines, "  "+rowOn.Render(padTo(" › All servers", 21))+"  "+word)
 			} else {
@@ -521,6 +601,9 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 				// Dimmed: all are off; these come back with them.
 				cols, name = muted.Render(padTo(mcpType(s), 13))+"  "+mcpWord(s), muted.Render(name)
 			}
+			if _, marked := m.pend[s.Entry]; marked {
+				cols += accent.Render("  · not saved")
+			}
 			if n == m.sel {
 				selLine = len(lines)
 				lines = append(lines, "  "+rowOn.Render(padTo(" › "+s.Name, 21))+"  "+cols)
@@ -534,6 +617,17 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 			lines = append(lines, "  "+rowOn.Render(padTo(" › + Add a server", 21))+"  "+muted.Render(m.examples()))
 		} else {
 			lines = append(lines, "     "+padTo("+ Add a server", 18)+"  "+muted.Render(m.examples()))
+		}
+		if len(m.pend) > 0 {
+			// The button: what's marked takes effect when it's pressed.
+			label := "Save " + plural(len(m.pend), "change", "changes")
+			lines = append(lines, "")
+			if m.sel > len(ss) {
+				selLine = len(lines)
+				lines = append(lines, "  "+rowOn.Render(" "+label+" ")+"  "+muted.Render("or s, from anywhere here"))
+			} else {
+				lines = append(lines, "  "+muted.Render("[ ")+label+muted.Render(" ]")+"  "+muted.Render("s"))
+			}
 		}
 		// The chosen server's details, under the list, in lines that don't
 		// change in number: the rows never move.
@@ -562,7 +656,12 @@ func (m *Menu) mcpView(w, room int) (string, []string, string) {
 		add("")
 		add(about...)
 		add("", "  "+muted.Render("Agents reach their tools through the gateway as <name>__<tool>."))
-		return "MCP servers", b, strings.Join([]string{k("↑↓", "choose"), k("space", "on/off"), k("enter", "open"), k("e", "edit its settings"), k("d", "delete"), k("a", "add"), k("q", "back")}, "   ")
+		keys := []string{k("↑↓", "choose"), k("space", "on/off")}
+		if len(m.pend) > 0 {
+			keys = append(keys, k("s", "save"))
+		}
+		keys = append(keys, k("enter", "open"), k("e", "edit its settings"), k("d", "delete"), k("a", "add"), k("q", "back"))
+		return "MCP servers", b, strings.Join(keys, "   ")
 	case "mcp:server", "mcp:delete":
 		s := m.mcpServer()
 		if s == nil { // normalize goes back to the list first
