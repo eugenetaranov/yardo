@@ -28,5 +28,5 @@ context: |
 rules:
   proposal:
     - "Keep proposals tight: ## Why, ## What Changes, ## Capabilities, ## Impact."
-  spec:
+  specs:
     - "Use OpenSpec scenario format: '### Requirement:' followed by '#### Scenario:' with WHEN/THEN bullets."
