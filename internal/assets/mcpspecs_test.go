@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os/exec"
 	"path"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -72,6 +73,39 @@ func TestMCPSpecsValid(t *testing.T) {
 		}
 		if len(required) > 0 && !strings.Contains(skel, "https://") {
 			t.Errorf("%s: skeleton doesn't say where to get the credential", n)
+		}
+	}
+}
+
+// Every spec, yardo's and the vendored ones, pins what it runs: an image
+// with a tag that isn't latest, and a package run with npx -y or uvx at
+// an exact version.
+func TestMCPSpecsPinned(t *testing.T) {
+	run := regexp.MustCompile(`(?:npx -y|uvx) +(@?[a-z0-9][a-z0-9._/-]*)(@[0-9]\S*)?`)
+	for _, dir := range []string{"conf/mcp-catalog", "mcp-catalog"} {
+		for n := range specNames(t, dir) {
+			b, err := fs.ReadFile(files, path.Join(dir, n+".spec"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := string(b)
+			if m := regexp.MustCompile(`(?m)^IMAGE=(\S+)`).FindStringSubmatch(s); m != nil {
+				if i := strings.LastIndex(m[1], ":"); i < 0 || m[1][i+1:] == "latest" {
+					t.Errorf("%s/%s: image %q is not pinned to a tag", dir, n, m[1])
+				}
+			}
+			// What image_args runs is a line each: uvx, then the package.
+			s = regexp.MustCompile(`echo (npx -y|uvx)\n\s*echo `).ReplaceAllString(s, "$1 ")
+			for _, l := range strings.Split(s, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(l), "#") {
+					continue
+				}
+				for _, m := range run.FindAllStringSubmatch(l, -1) {
+					if m[2] == "" {
+						t.Errorf("%s/%s: %q runs without an exact version", dir, n, m[1])
+					}
+				}
+			}
 		}
 	}
 }

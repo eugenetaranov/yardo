@@ -19,6 +19,10 @@ AZURE_CLIENT_SECRET=
 # Optional: the default subscription
 #AZURE_SUBSCRIPTION_ID=
 
+# Optional: only these credentials (the service principal's), never a
+# developer login it finds
+#AZURE_TOKEN_CREDENTIALS=prod
+
 AZURE_MCP_COLLECT_TELEMETRY=false
 SKEL
 }

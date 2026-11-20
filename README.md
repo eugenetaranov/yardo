@@ -510,7 +510,10 @@ installed by hand.
    the retired AWS API server, `aws-api`, which a
    machine set up before shows as retired, to delete), Azure, Kubernetes,
    Docker, Grafana, Jenkins;
-   Playwright, context7, …; read-only where the server allows it, and
+   Playwright, context7, …; read-only where the server allows it (Postgres
+   in restricted mode, OpenSearch with writes off, Slack's read tools only,
+   Grafana, Azure, MySQL and Kubernetes read-only; each server's settings
+   say how to let it write), no usage reports, and
    Docker is root on the machine), added to
    Claude Code, Codex, Gemini CLI, OpenCode and Goose. The gateway can be
    reached from this machine only; from this machine and your VPNs
@@ -526,8 +529,8 @@ installed by hand.
    `~/.mcp`, the gateway user's) and one for the agents on the VM, wired
    into them, and one for your laptop, in `~/.mcp/clients/client.token`
    (read it with `sudo cat`; the home's Connection says where). More
-   laptops: `mcp-sync client <name>`, sent as `Authorization: Bearer
-   <token>`. Neither shows a token: it goes to
+   laptops: Connection's **n** (or `mcp-sync client <name>`), sent as
+   `Authorization: Bearer <token>`; **d** there revokes one. Neither shows a token: it goes to
    `~/.mcp/clients/<name>.token`. The
    laptop only ever talks to the gateway: the servers' own tokens
    (GitHub, Jira…) stay on this machine. On this machine only, there
@@ -910,7 +913,14 @@ task build:linux  # bin/yardo-linux-amd64, -arm64
 task test         # go test -race ./...
 task lint
 HOST=ubuntu@10.0.0.5 task e2e   # every item on a throwaway machine over SSH
+task mcp-audit    # each MCP server's pin next to its latest release
 ```
+
+Before a minor release, `task mcp-audit` and each server's changelog:
+pin the newest release that's settled (a few days old, not a new major
+without reading what broke), drop a server its maker retired, and check
+that a description saying read-only still is. Every image carries a tag
+and every `npx`/`uvx` package an exact version, or the spec test fails.
 
 The bash part (`internal/assets/yardo.sh`, `picker.py`) still runs the GitHub
 login and commit-signing items, and is the fallback on other architectures;

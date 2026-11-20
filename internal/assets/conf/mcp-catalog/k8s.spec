@@ -3,7 +3,7 @@
 # https://github.com/Flux159/mcp-server-kubernetes
 DESCRIPTION="Kubernetes: pods, deployments, logs, events and Helm (read-only)"
 KIND=docker
-IMAGE=flux159/mcp-server-kubernetes:v4.2.1
+IMAGE=flux159/mcp-server-kubernetes:v4.2.3
 # Your ~/.kube and ~/.aws, read-only: the kubeconfig, and for EKS what its
 # aws eks get-token reads (profiles, SSO logins: aws sso login here renews
 # them for the server too).

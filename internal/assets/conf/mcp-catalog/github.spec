@@ -2,7 +2,7 @@
 # https://github.com/github/github-mcp-server
 DESCRIPTION="GitHub: repositories, issues, pull requests and Actions"
 KIND=docker
-IMAGE=ghcr.io/github/github-mcp-server:v2.0.2
+IMAGE=ghcr.io/github/github-mcp-server:v2.2.0
 REQUIRED="GITHUB_PERSONAL_ACCESS_TOKEN"
 skeleton() {
   cat <<'SKEL'
@@ -33,5 +33,10 @@ GITHUB_PERSONAL_ACCESS_TOKEN=
 
 # Optional: read-only tools only
 #GITHUB_READ_ONLY=1
+
+# Optional: lockdown mode: in public repositories, content only from
+# people with push access (others' issues and comments can carry prompt
+# injections)
+#GITHUB_LOCKDOWN_MODE=1
 SKEL
 }

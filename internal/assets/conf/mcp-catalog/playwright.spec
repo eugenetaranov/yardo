@@ -2,7 +2,7 @@
 # https://github.com/microsoft/playwright-mcp
 DESCRIPTION="Playwright: a headless browser to open pages, click, fill forms and take screenshots"
 KIND=docker
-IMAGE=mcr.microsoft.com/playwright/mcp:v0.0.83
+IMAGE=mcr.microsoft.com/playwright/mcp:v0.0.85
 REQUIRED=""
 DOCKER_ARGS="--init"
 skeleton() {

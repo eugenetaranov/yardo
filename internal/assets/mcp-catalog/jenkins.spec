@@ -11,7 +11,9 @@ AUTH_TOKEN_VAR=JENKINS_API_TOKEN
 REQUIRED="JENKINS_URL JENKINS_USER JENKINS_API_TOKEN"
 skeleton() {
   cat <<'SKEL'
-# Jenkins — API token: <your Jenkins>/me/configure → API Token
+# Jenkins — the MCP Server plugin 0.178 or later (two security advisories
+# before it). An API token: <your Jenkins>/me/security → API Token
+# (https://www.jenkins.io/doc/book/using/remote-access-api/)
 JENKINS_URL=
 JENKINS_USER=
 JENKINS_API_TOKEN=

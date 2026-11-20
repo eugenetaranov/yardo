@@ -3,7 +3,7 @@
 # https://github.com/benborla/mcp-server-mysql
 DESCRIPTION="MySQL: schema and read-only queries"
 KIND=docker
-IMAGE=node:24.19.0-slim
+IMAGE=node:24.22.3-slim
 IMAGE_ARGS="npx -y @benborla29/mcp-server-mysql@2.0.9"
 REQUIRED="MYSQL_HOST MYSQL_USER MYSQL_PASS"
 # Host networking, so a database on this VM is reachable at 127.0.0.1.
@@ -24,5 +24,9 @@ MYSQL_PASS=
 #ALLOW_INSERT_OPERATION=true
 #ALLOW_UPDATE_OPERATION=true
 #ALLOW_DELETE_OPERATION=true
+
+# Optional: mask emails, phone numbers, card numbers and the like in
+# results (queries then name their columns: SELECT * is refused)
+#ENABLE_PII_REDACTION=true
 SKEL
 }

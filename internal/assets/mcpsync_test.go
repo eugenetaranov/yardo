@@ -231,7 +231,7 @@ func TestMCPSyncAWSArgs(t *testing.T) {
 			t.Fatalf("%v:\n%s", err, out)
 		}
 		out, err := exec.Command(jq, "-c", ".args", reg).Output()
-		if err != nil || !strings.HasSuffix(strings.TrimSpace(string(out)), `"public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:1.7.0",`+c.want) {
+		if err != nil || !strings.HasSuffix(strings.TrimSpace(string(out)), `"public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:1.8.0",`+c.want) {
 			t.Errorf("%q: args %s", c.env, out)
 		}
 	}
@@ -269,8 +269,10 @@ func TestMCPSyncAWSMount(t *testing.T) {
 		}
 		return string(out)
 	}
-	if a := args(); strings.Contains(a, "/aws/.aws") || strings.Contains(a, "--user") {
-		t.Errorf("no ~/.aws, yet mounted: %s", a)
+	// Root in the container either way: the image's own user can't read
+	// the env file's directory (~/.mcp/aws, 700).
+	if a := args(); strings.Contains(a, "/aws/.aws") || !strings.Contains(a, `"--no-healthcheck","--user","0:0","public.ecr.aws/`) {
+		t.Errorf("no ~/.aws: %s", a)
 	}
 	mkdirAll(t, filepath.Join(root, ".aws"), 0o700)
 	fi, err := os.Stat(root)
@@ -278,7 +280,7 @@ func TestMCPSyncAWSMount(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids := fmt.Sprintf("%d:%d", fi.Sys().(*syscall.Stat_t).Uid, fi.Sys().(*syscall.Stat_t).Gid)
-	want := `"-v","` + mcp + `/aws:/mcp:ro","-v","` + root + `/.aws:/aws/.aws:ro","-e","HOME=/aws","--user","` + ids + `","--no-healthcheck","public.ecr.aws/`
+	want := `"-v","` + mcp + `/aws:/mcp:ro","-v","` + root + `/.aws:/aws/.aws:ro","-e","HOME=/aws","--user","` + ids + `","--no-healthcheck","--user","0:0","public.ecr.aws/`
 	if a := args(); !strings.Contains(a, want) || strings.Contains(a, "/etc") {
 		t.Errorf("args %s\nwant %s", a, want)
 	}
@@ -728,5 +730,81 @@ func TestMCPSyncClientRm(t *testing.T) {
 	}
 	if out, err := mcpSync(t, env(ok), "client-rm", "ci"); err == nil || !strings.Contains(out, "no client ci") {
 		t.Errorf("again: %v: %s", err, out)
+	}
+}
+
+// The read-only switches as the servers get them: postgres restricted;
+// opensearch not writing unless its env says so (one of before, without
+// the line, too); slack's read tools only, posting kept for an env that
+// allowed it, an env's own list as it is; grafana writing nothing and
+// reporting nothing.
+func TestMCPSpecsReadOnlyArgs(t *testing.T) {
+	jq, err := exec.LookPath("jq")
+	if err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	mkdirAll(t, cat, 0o755)
+	reg := filepath.Join(root, "registered")
+	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	args := func(name, envFile string) string {
+		t.Helper()
+		spec, err := os.ReadFile("conf/mcp-catalog/" + name + ".spec")
+		if err != nil {
+			t.Fatal(err)
+		}
+		putFile(t, filepath.Join(cat, name+".spec"), spec, 0o644)
+		mkdirAll(t, filepath.Join(mcp, name), 0o700)
+		putFile(t, filepath.Join(mcp, name, "env"), []byte(envFile), 0o600)
+		_ = os.Remove(filepath.Join(mcp, name, ".registered.json"))
+		if out, err := mcpSync(t, env, name); err != nil {
+			t.Fatalf("%s: %v:\n%s", name, err, out)
+		}
+		out, err := exec.Command(jq, "-c", ".args", reg).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	skel := func(name string) string {
+		t.Helper()
+		out, err := exec.Command("sh", "-c", `. "$1"; skeleton`, "_", "conf/mcp-catalog/"+name+".spec").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}
+	if a := args("postgres", "DATABASE_URI=postgresql://u:p@127.0.0.1/db\n"); !strings.HasSuffix(a, `"crystaldba/postgres-mcp:0.3.0","--access-mode=restricted"]`) {
+		t.Errorf("postgres: %s", a)
+	}
+	os := skel("opensearch")
+	if !strings.Contains(os, "\nOPENSEARCH_SETTINGS_ALLOW_WRITE=false\n") {
+		t.Errorf("opensearch skeleton:\n%s", os)
+	}
+	for envFile, want := range map[string]string{
+		strings.Replace(os, "\nOPENSEARCH_URL=\n", "\nOPENSEARCH_URL=https://s:9200\n", 1): "false",
+		"OPENSEARCH_URL=https://s:9200\n":                                                  "false",
+		"OPENSEARCH_URL=https://s:9200\nOPENSEARCH_SETTINGS_ALLOW_WRITE=true\n":            "true",
+	} {
+		if a := args("opensearch", envFile); !strings.HasSuffix(a, `-slim","env","OPENSEARCH_SETTINGS_ALLOW_WRITE=`+want+`","uvx","opensearch-mcp-server-py@0.12.0"]`) {
+			t.Errorf("opensearch %q: %s", envFile, a)
+		}
+	}
+	read := "conversations_history,conversations_replies,conversations_search_messages,conversations_unreads,channels_list,channels_me,users_search,usergroups_list,usergroups_me,saved_list"
+	sl := strings.Replace(skel("slack"), "\nSLACK_MCP_XOXP_TOKEN=\n", "\nSLACK_MCP_XOXP_TOKEN=xoxp-1\n", 1)
+	for envFile, want := range map[string]string{
+		sl:                              read,
+		"SLACK_MCP_XOXP_TOKEN=xoxp-1\n": read,
+		"SLACK_MCP_XOXP_TOKEN=xoxp-1\nSLACK_MCP_ADD_MESSAGE_TOOL=C123\n":       read + ",conversations_add_message",
+		"SLACK_MCP_XOXP_TOKEN=xoxp-1\nSLACK_MCP_ENABLED_TOOLS=channels_list\n": "channels_list",
+	} {
+		if a := args("slack", envFile); !strings.HasSuffix(a, `"--transport","stdio","--enabled-tools","`+want+`"]`) {
+			t.Errorf("slack %q: %s", envFile, a)
+		}
+	}
+	if a := args("grafana", "GRAFANA_URL=http://g\nGRAFANA_SERVICE_ACCOUNT_TOKEN=x\n"); !strings.HasSuffix(a, `"-t","stdio","--disable-write","--usage-stats=disabled"]`) {
+		t.Errorf("grafana: %s", a)
 	}
 }

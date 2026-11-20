@@ -31,7 +31,7 @@ Where a server reports usage by default and has a documented switch, its spec SH
 
 #### Scenario: Grafana and Azure quiet
 - **WHEN** the grafana or azure server registers
-- **THEN** `GRAFANA_USAGE_STATS=disabled` or `AZURE_MCP_COLLECT_TELEMETRY=false` is set
+- **THEN** grafana runs with `--usage-stats=disabled`, and azure's env has `AZURE_MCP_COLLECT_TELEMETRY=false`
 
 ### Requirement: Retired MCP servers
 A catalog server its maker retired SHALL leave yardo's catalog, its installed spec SHALL be removed (a team's spec of that name stays), and one already set up SHALL show on the MCP servers screen as retired, naming its replacement, with Delete.

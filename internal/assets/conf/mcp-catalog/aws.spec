@@ -5,12 +5,16 @@
 # https://github.com/aws/mcp-proxy-for-aws
 DESCRIPTION="AWS: call AWS APIs, search the docs and follow AWS's guides (AWS's managed MCP server)"
 KIND=docker
-IMAGE=public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:1.7.0
+IMAGE=public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:1.8.0
 REQUIRED="AWS_REGION"
 # The image's healthcheck looks for a process named aws.* holding a socket;
 # the proxy, run over stdio, is mcp-proxy-for-aws-cli: it would always say
 # unhealthy, working or not.
-DOCKER_ARGS="--no-healthcheck"
+#
+# As root in the container (as the kubernetes server is): the image's own
+# user, app, can't read the env file's directory (~/.mcp/aws, mode 700),
+# nor your ~/.aws (0600, yours).
+DOCKER_ARGS="--no-healthcheck --user 0:0"
 # Your ~/.aws, read-only: the AWS CLI's profiles and its SSO logins (aws
 # sso login here renews them for the server too, as it runs).
 MOUNT_AWS=1

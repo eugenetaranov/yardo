@@ -4,7 +4,7 @@
 # https://github.com/aashari/mcp-server-atlassian-bitbucket
 DESCRIPTION="Bitbucket: repositories, pull requests, comments and diffs"
 KIND=docker
-IMAGE=node:24.19.0-slim
+IMAGE=node:24.22.3-slim
 IMAGE_ARGS="npx -y @aashari/mcp-server-atlassian-bitbucket@3.1.0"
 REQUIRED="ATLASSIAN_USER_EMAIL ATLASSIAN_API_TOKEN"
 skeleton() {
