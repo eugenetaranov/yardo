@@ -249,3 +249,22 @@ func TestProfileGitKeys(t *testing.T) {
 		t.Errorf("export:\n%s", b)
 	}
 }
+
+// sessions sets Session on login; only tmux, zellij and off are good.
+func TestSessions(t *testing.T) {
+	p, err := Parse("p.toml", []byte("sessions = \"zellij\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &answers.Answers{}
+	p.Apply(a, nil)
+	if a.Session != "zellij" {
+		t.Errorf("session %q", a.Session)
+	}
+	if b := Export(a, nil, ""); !strings.Contains(string(b), `sessions = "zellij"`) {
+		t.Errorf("export:\n%s", b)
+	}
+	if _, err := Parse("p.toml", []byte("sessions = \"screen\"\n")); err == nil || !strings.Contains(err.Error(), "want tmux, zellij or off") {
+		t.Errorf("bad value: %v", err)
+	}
+}

@@ -149,7 +149,8 @@ type BoardItem struct {
 // (Network access), or how things look.
 type BoardSetting struct {
 	Key, Label string
-	// Section is LookSection for the look ("": who can reach it).
+	// Section is LookSection for the look, ShellSection for the shell
+	// ("": who can reach it).
 	Section string
 	// Choices are value and label pairs, in order.
 	Choices [][2]string
@@ -240,6 +241,9 @@ func (b *Board) SetPlanner(p Planner) { b.plan = p }
 
 // LookSection is the look's settings' Section (the accent colour).
 const LookSection = "__look__"
+
+// ShellSection is the shell's settings' Section (Session on login).
+const ShellSection = "__shell__"
 
 // InstalledTab is the board's first tab, once anything is installed: every
 // tool installed, from all the tabs, to find one to fix or uninstall.

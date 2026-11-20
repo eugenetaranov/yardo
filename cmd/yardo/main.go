@@ -581,6 +581,28 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							open, toast = "home", said
 						}
 					case ui.MenuApply:
+						// Session on login is a file of the user's: written, and
+						// shown, without a run.
+						if v, ok := res.Settings["session"]; ok {
+							delete(res.Settings, "session")
+							a.Session = strings.TrimPrefix(v, "ask")
+							if !o.dryRun {
+								env, err := newEnv(a.User, o.share(), io.Discard, false)
+								if err != nil {
+									return err
+								}
+								if err := steps.SetSession(env, v); err != nil {
+									return err
+								}
+								if err := st.Save(a); err != nil {
+									return err
+								}
+							}
+							if len(res.Settings) == 0 {
+								d, open, toast = nil, "settings", "Session on login: "+v+"."
+								break
+							}
+						}
 						// The theme is yardo's own: kept, and shown, without a run.
 						if v, ok := res.Settings["theme"]; ok {
 							delete(res.Settings, "theme")

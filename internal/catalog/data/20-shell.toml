@@ -163,7 +163,7 @@ id = "zshcfg"
 tab = "-"
 label = "zsh config: oh-my-zsh + autosuggestions, syntax highlighting, history search, completions"
 needs = ["zshbin"]
-source = "git clone ~/.oh-my-zsh + plugins · ~/.config/yardo/zshrc, loaded from a block at the top of ~/.zshrc"
+source = "git clone ~/.oh-my-zsh + plugins · ~/.config/yardo/zshrc, loaded from a block at the top of ~/.zshrc · ~/.config/yardo/session.zsh (your tmux or zellij session on ssh login)"
 
 [[item.step]]
 type = "git_clone"
@@ -189,6 +189,16 @@ to = "~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
 type = "file"
 src = "completions.zsh"
 to = "~/.config/yardo/completions.zsh"
+
+# An ssh login lands in your tmux or zellij session (Settings › Session on
+# login, or asked at the first login).
+[[item.step]]
+type = "file"
+src = "session.zsh"
+to = "~/.config/yardo/session.zsh"
+
+[[item.step]]
+type = "go:session"
 
 [[item]]
 id = "fzftab"

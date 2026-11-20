@@ -45,6 +45,7 @@ func init() {
 	RegisterGo("zshrc", func(catalog.Step) Step { return zshrcStep{} })
 	RegisterGo("zshdropin", func(s catalog.Step) Step { return zshDropinStep{line: s.Line} })
 	RegisterGo("prompt", func(catalog.Step) Step { return promptStep{} })
+	RegisterGo("session", func(catalog.Step) Step { return sessionStep{} })
 }
 
 // promptStep installs the chosen prompt: Powerlevel10k (its clone, and a
@@ -379,4 +380,65 @@ func (z zshDropinStep) PlanUndo(_ context.Context, e *Env, p *RemovePlan) error 
 		p.off("a line in "+f, func(context.Context) error { return rewrite(path, WithoutLine)(z.line) })
 	}
 	return nil
+}
+
+// SessionFile holds the session an ssh login gets (tmux, zellij or off;
+// missing: asked at login): session.zsh writes it when the question is
+// answered, and yardo when Settings or a profile set it.
+const SessionFile = "~/.config/yardo/session"
+
+// Session is the session an ssh login gets, as the file says: "tmux",
+// "zellij", "off", or "ask" when nothing is set.
+func Session(e *Env) string {
+	b, err := os.ReadFile(e.Path(SessionFile))
+	switch v := strings.TrimSpace(string(b)); {
+	case err != nil:
+		return "ask"
+	case v == "tmux", v == "zellij", v == "off":
+		return v
+	}
+	return "ask"
+}
+
+// SetSession writes v (tmux, zellij or off) to the session file, as the
+// user's; "ask" (or "") removes it, so the next login asks.
+func SetSession(e *Env, v string) error {
+	p := e.Path(SessionFile)
+	if v == "" || v == "ask" {
+		return rmIfThere(p)
+	}
+	if err := mkdirFor(e, p, catalog.Step{To: SessionFile}); err != nil {
+		return err
+	}
+	if err := writeFile(p, []byte(v+"\n"), 0o644); err != nil {
+		return err
+	}
+	return e.chown(p, e.UID, e.GID)
+}
+
+// sessionStep keeps the session file as Settings or a profile last set
+// it (Answers.Session); with nothing set there, it's the login's to
+// answer, and left alone.
+type sessionStep struct{}
+
+func (sessionStep) Plan(e *Env) []Action {
+	if e.Answers == nil || e.Answers.Session == "" {
+		return nil
+	}
+	return []Action{{"file", SessionFile + " (" + e.Answers.Session + ")"}}
+}
+
+func (sessionStep) Check(_ context.Context, e *Env) (bool, error) {
+	return e.Answers == nil || e.Answers.Session == "" || Session(e) == e.Answers.Session, nil
+}
+
+// PlanUndo leaves the session file: it's the user's answer, and does
+// nothing once session.zsh is gone.
+func (sessionStep) PlanUndo(context.Context, *Env, *RemovePlan) error { return nil }
+
+func (sessionStep) Apply(_ context.Context, e *Env) error {
+	if e.Answers == nil || e.Answers.Session == "" {
+		return nil
+	}
+	return SetSession(e, e.Answers.Session)
 }

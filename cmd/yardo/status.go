@@ -384,6 +384,13 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	if has("gitid") || has("github") || has("gitlab") || has("bitbucket") {
 		settings = append(settings, sshAcceptNew(a))
 	}
+	// Session on login: the session file's, which the login's question
+	// writes too.
+	if has("zsh") || has("zshcfg") {
+		settings = append(settings, &ui.BoardSetting{Key: "session", Label: "Session on login", Section: ui.ShellSection,
+			Value: steps.Session(&steps.Env{Home: homeOf(a.User)}), Choices: [][2]string{
+				{"tmux", "tmux"}, {"zellij", "zellij"}, {"ask", "ask at the next ssh login"}, {"off", "off: a plain shell"}}})
+	}
 	// The theme: yardo's screens.
 	theme := &ui.BoardSetting{Key: "theme", Label: "Theme", Section: ui.LookSection, Value: cmp.Or(a.Theme, "classic"), Swatches: map[string]string{}}
 	for _, l := range tui.Looks {

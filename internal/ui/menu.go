@@ -174,8 +174,11 @@ func (m *Menu) section(sec string) []*BoardSetting {
 
 // choices are the settings the access or look screen shows.
 func (m *Menu) choices() []*BoardSetting {
-	if m.screen == "look" {
+	switch m.screen {
+	case "look":
 		return m.section(LookSection)
+	case "shell":
+		return m.section(ShellSection)
 	}
 	return m.access()
 }
@@ -398,6 +401,18 @@ func (m *Menu) settingsRows() []menuRow {
 		}
 		out = append(out, menuRow{id: "look", label: label, note: strings.Join(now, " · ")})
 	}
+	// The shell: one row per setting, one screen.
+	if ss := m.section(ShellSection); len(ss) > 0 {
+		var now []string
+		for _, s := range ss {
+			now = append(now, s.Label+": "+s.label(s.Value))
+		}
+		label := ss[0].Label
+		if len(ss) > 1 {
+			label = "Shell"
+		}
+		out = append(out, menuRow{id: "shell", label: label, note: strings.Join(now, " · ")})
+	}
 	for _, i := range m.items {
 		if !i.Picked {
 			continue
@@ -525,7 +540,7 @@ func homeKey(k string) bool {
 // move moves the cursor n rows (normalize keeps it on one).
 func (m *Menu) move(n int) {
 	switch m.screen {
-	case "home", "fix", "secrets", "settings", "access", "look", "mcp:server", "mcp:add", "updates", "lastrun":
+	case "home", "fix", "secrets", "settings", "access", "look", "shell", "mcp:server", "mcp:add", "updates", "lastrun":
 		m.sel = clamp(m.sel+n, -toEnd, toEnd)
 	case "connect":
 		m.sel = clamp(m.sel+n, -toEnd, toEnd)
@@ -579,7 +594,7 @@ func (m *Menu) normalize() {
 		m.sel = clamp(m.sel, 0, len(m.filter(secret))-1)
 	case "settings":
 		m.sel = clamp(m.sel, 0, len(m.settingsRows())-1)
-	case "access", "look":
+	case "access", "look", "shell":
 		m.sel = clamp(m.sel, 0, len(m.choices())) // Apply is the last
 	case "updates":
 		m.sel = clamp(m.sel, 0, len(m.filter(newer))-1)
@@ -631,7 +646,7 @@ func (m *Menu) quit(r MenuResult) tea.Cmd {
 func (m *Menu) open(screen string) {
 	m.screen, m.sel, m.dialog = screen, 0, nil
 	switch screen {
-	case "access", "look":
+	case "access", "look", "shell":
 		m.pick = map[string]string{}
 	case "mcp":
 		m.sortMCP()
@@ -645,7 +660,7 @@ func (m *Menu) back() {
 	m.screen, m.sel, m.dialog = "home", 0, nil
 	rows := m.rows
 	switch from {
-	case "access", "look":
+	case "access", "look", "shell":
 		m.screen, rows = "settings", m.settingsRows
 	}
 	for n, r := range rows() {
@@ -789,7 +804,7 @@ func (m *Menu) key(k string) tea.Cmd {
 		case k == "enter" && m.sel < len(ss):
 			return m.quit(MenuResult{Kind: MenuEdit, ID: ss[m.sel].ID, Inputs: ss[m.sel].Inputs})
 		}
-	case "access", "look":
+	case "access", "look", "shell":
 		as := m.choices()
 		n := len(as)
 		switch {
@@ -909,6 +924,11 @@ func (m *Menu) Path() string {
 		return "Home › Settings › Network access"
 	case "look":
 		return "Home › Settings › Look"
+	case "shell":
+		if ss := m.section(ShellSection); len(ss) == 1 {
+			return "Home › Settings › " + ss[0].Label
+		}
+		return "Home › Settings › Shell"
 	case "fix":
 		return "Home › Fix " + plural(len(m.filter(problem)), "thing", "things")
 	case "secrets":
@@ -950,7 +970,7 @@ func (m *Menu) Keys() []Key {
 		return []Key{{Key: "↑↓", What: "choose"}, {Key: "enter", What: map[bool]string{true: "fill in", false: "open"}[m.screen == "secrets"]}}
 	case "fix":
 		return []Key{{Key: "↑↓", What: "choose"}, {Key: "space", What: "tick"}, {Key: "enter", What: "fix " + fmt.Sprint(len(m.ticked()))}}
-	case "access", "look":
+	case "access", "look", "shell":
 		return []Key{{Key: "↑↓", What: "setting"}, {Key: "←→", What: "choose"}, {Key: "a", What: "apply", On: len(m.changed()) > 0}}
 	case "connect":
 		if len(m.info.Keys) > 0 {
@@ -1041,7 +1061,7 @@ func (m *Menu) Body(w, h int) string {
 			add("  "+label+"  "+accent.Render(strings.Join(i.Inputs, ", ")), "")
 		}
 		add("  " + muted.Render("Enter opens the file in your editor; yardo never stores the value."))
-	case "access", "look":
+	case "access", "look", "shell":
 		as := m.choices()
 		for n, s := range as {
 			on := n == m.sel

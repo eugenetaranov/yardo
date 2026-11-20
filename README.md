@@ -122,7 +122,8 @@ or on, **a** applies what's marked, **n** adds one, or another instance
 of one, **e** edits its settings, **d** deletes one, asking first),
 **Settings** (**Network access**: the MCP gateway and containers'
 published ports, each a row of choices with a sentence saying what it
-means; **Accept new hosts' SSH keys**; the **Look**, theme and accent
+means; **Accept new hosts' SSH keys**; **Session on login**; the
+**Look**, theme and accent
 colour; your **Git name and email**, each git host's **SSH key**, the
 **Shell prompt** and the **Dotfiles repo**, asked again, then applied)
 and **Last run**. Typing on the home searches the tools, live on the
@@ -426,10 +427,23 @@ installed by hand.
    allow it, on the laptop:
    `defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true`,
    then quit and reopen iTerm2 (Ghostty, kitty, WezTerm and Alacritty
-   need nothing; Terminal.app can't). The zsh,
+   need nothing; Terminal.app can't). `.zshrc` stays yours; the
    Neovim and tmux files replace yours, keeping the old ones as `.orig`; keep your
    own lines in the local files instead (see [Your own
-   settings](#your-own-settings)). **Shell helpers**, in
+   settings](#your-own-settings)).
+
+   **ssh in, and you're in your session.** Over ssh, the shell attaches to
+   your running tmux or zellij session, or starts one, so a dropped
+   connection loses nothing: ssh in again and you're back where you were.
+   The first time, with both installed, one line asks: `t` tmux, `z`
+   zellij, `n` never (any other key: not now). Detaching leaves you in the
+   plain shell, still connected; if tmux or zellij can't start, you get
+   the plain shell and a line saying so. Nothing starts inside tmux or
+   zellij, for `ssh vm command`, scp, rsync or git, on the console, or in
+   an editor's terminal (VS Code, Cursor, JetBrains). Skip it once with
+   `ssh -t vm YARDO_SESSION=off zsh`; for good, or to change your answer,
+   Settings → **Session on login** (tmux, zellij, ask, off), or
+   `sessions = "off"` in a profile. **Shell helpers**, in
    `~/.config/yardo/helpers.sh` (zsh and bash): `git-make-branch
    <ticket>`, `recent_branches`, `fzf-git-checkout`,
    `default_branch_git`; `kev`, `kgn`, `kdn`, `kgpres`, `sternf`, `keit`,

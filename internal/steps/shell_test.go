@@ -494,3 +494,30 @@ func TestAccent(t *testing.T) {
 		t.Error("shell.sh lacks YARDO_ACCENT")
 	}
 }
+
+// Session on login: what Settings or a profile set is written to the
+// session file, the user's; with nothing set, the login's answer stays.
+func TestSessionSetting(t *testing.T) {
+	e := shellEnv(t)
+	e.Answers = &answers.Answers{}
+	st := step(t, catalog.Step{Type: "go:session"})
+	put(t, e.Path(SessionFile), "zellij\n")
+	if !check(t, e, st) {
+		t.Error("nothing set: Check = false")
+	}
+	apply(t, e, st)
+	if Session(e) != "zellij" {
+		t.Errorf("the login's answer changed: %q", Session(e))
+	}
+	e.Answers.Session = "off"
+	if check(t, e, st) {
+		t.Error("Check = true with the setting off and the file zellij")
+	}
+	apply(t, e, st)
+	if got := read(t, e.Path(SessionFile)); got != "off\n" || !check(t, e, st) {
+		t.Errorf("session file %q", got)
+	}
+	if err := SetSession(e, "ask"); err != nil || exists(e.Path(SessionFile)) || Session(e) != "ask" {
+		t.Errorf("ask: %v, file there %v", err, exists(e.Path(SessionFile)))
+	}
+}

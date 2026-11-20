@@ -317,6 +317,22 @@ func TestNoLineIntoZshrc(t *testing.T) {
 	}
 }
 
+// The zsh config installs session.zsh, which yardo's zsh file sources.
+func TestZshcfgSession(t *testing.T) {
+	c, err := Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file, set bool
+	for _, s := range c.Item("zshcfg").Steps {
+		file = file || (s.Type == "file" && s.Src == "session.zsh" && s.To == "~/.config/yardo/session.zsh")
+		set = set || s.Type == "go:session"
+	}
+	if !file || !set {
+		t.Errorf("zshcfg: session.zsh %v, go:session %v", file, set)
+	}
+}
+
 func TestBlockStepNeedsSrcAndTo(t *testing.T) {
 	item := func(step string) fstest.MapFS {
 		return fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\n[[item.step]]\n" + step)}}

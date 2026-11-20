@@ -37,6 +37,9 @@ type Profile struct {
 	// SSHAcceptNew: ssh trusts hosts it hasn't seen before without asking
 	// (Settings › Accept new hosts' SSH keys).
 	SSHAcceptNew *bool `toml:"ssh_accept_new,omitempty"`
+	// Sessions is the session an ssh login gets: "tmux", "zellij" or
+	// "off" (Settings › Session on login).
+	Sessions string `toml:"sessions,omitempty"`
 	// Lock pins versions (export --lock).
 	Lock *answers.Lock `toml:"lock,omitempty"`
 }
@@ -88,6 +91,9 @@ func Parse(name string, b []byte) (*Profile, error) {
 			}
 		}
 		return nil, fmt.Errorf("%s: unknown key %s", name, strings.Join(keys, ", "))
+	}
+	if p.Sessions != "" && p.Sessions != "tmux" && p.Sessions != "zellij" && p.Sessions != "off" {
+		return nil, fmt.Errorf("%s: sessions %q: want tmux, zellij or off", name, p.Sessions)
 	}
 	if p.MCP != nil && p.MCP.Listen != "" && p.MCP.Listen != "127.0.0.1" && p.MCP.Listen != "0.0.0.0" && p.MCP.Listen != "tailscale" {
 		return nil, fmt.Errorf("%s: mcp.listen %q: want 127.0.0.1, tailscale or 0.0.0.0", name, p.MCP.Listen)
@@ -188,6 +194,9 @@ func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnin
 	if p.SSHAcceptNew != nil {
 		a.SSHAcceptNew = map[bool]string{true: "on"}[*p.SSHAcceptNew]
 	}
+	if p.Sessions != "" {
+		a.Session = p.Sessions
+	}
 	a.MiseExtra = answers.Merge(a.MiseExtra, p.MiseExtra)
 	if p.Git != nil {
 		if p.Git.Name != "" {
@@ -238,6 +247,7 @@ func Export(a *answers.Answers, lock *answers.Lock, name string) []byte {
 		on := true
 		p.SSHAcceptNew = &on
 	}
+	p.Sessions = a.Session
 	if hosts := a.SentKeyHosts(); len(hosts) > 0 {
 		p.GitKey = &GitKey{Hosts: hosts}
 	}

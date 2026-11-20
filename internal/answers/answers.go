@@ -58,6 +58,10 @@ type Answers struct {
 	Registries  []string `json:"registries"`
 	// Prompt is the zsh prompt: "p10k" (also "") or "starship".
 	Prompt string `json:"prompt,omitempty"`
+	// Session is the session an ssh login gets, as yardo last set it
+	// (Settings, a profile): "tmux", "zellij" or "off"; "" leaves
+	// ~/.config/yardo/session to the login's question.
+	Session string `json:"session,omitempty"`
 	// Dotfiles is the user's dotfiles repo (cloned to ~/.dotfiles).
 	Dotfiles string `json:"dotfiles,omitempty"`
 	// SSHAcceptNew is "on" when ssh trusts a host it hasn't seen before

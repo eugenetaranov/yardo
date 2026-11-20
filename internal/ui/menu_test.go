@@ -187,6 +187,28 @@ func TestMenuLook(t *testing.T) {
 	}
 }
 
+// Session on login: its own row and screen, the value it reads; Apply
+// hands back the new one.
+func TestMenuSession(t *testing.T) {
+	m := testMenu(false)
+	m.settings = append(m.settings, &BoardSetting{Key: "session", Label: "Session on login", Section: ShellSection, Value: "zellij",
+		Choices: [][2]string{{"tmux", "tmux"}, {"zellij", "zellij"}, {"ask", "ask at the next login"}, {"off", "off"}}})
+	onRow(m, "settings")
+	mk(m, "enter")
+	if v := m.View(); !strings.Contains(v, "Session on login: zellij") {
+		t.Fatalf("settings:\n%s", v)
+	}
+	onSetting(m, "shell")
+	mk(m, "enter")
+	if v := m.View(); !strings.Contains(v, "Home › Settings › Session on login") || strings.Contains(v, "MCP gateway") || strings.Contains(v, "Accent colour") {
+		t.Fatalf("session:\n%s", v)
+	}
+	mk(m, "right", "right", "enter", "enter")
+	if r := m.result; r.Kind != MenuApply || r.Settings["session"] != "off" || len(r.Settings) != 1 {
+		t.Errorf("result %+v", r)
+	}
+}
+
 // onSetting moves Settings' cursor to row id.
 func onSetting(m *Menu, id string) {
 	for n, r := range m.settingsRows() {
