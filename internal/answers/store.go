@@ -48,27 +48,28 @@ type UserInfo struct {
 }
 
 type userFile struct {
-	Version     int                 `json:"version"`
-	Picks       []string            `json:"picks"`
-	MiseExtra   []string            `json:"mise_extra"`
-	MCPListen   string              `json:"mcp_listen"`
-	MCPDomain   string              `json:"mcp_domain,omitempty"`
-	Accent      string              `json:"accent,omitempty"`
-	Theme       string              `json:"theme,omitempty"`
-	MCPServers  []string            `json:"mcp_servers"`
-	WireAgents  *bool               `json:"wire_agents"`
-	Git         Git                 `json:"git"`
-	GitHub      GitHost             `json:"github"`
-	GitLab      GitHost             `json:"gitlab,omitzero"`
-	Bitbucket   GitHost             `json:"bitbucket,omitzero"`
-	NPM         NPM                 `json:"npm"`
-	Registries  []string            `json:"registries"`
-	Dotfiles    string              `json:"dotfiles,omitempty"`
-	Prompt      string              `json:"prompt,omitempty"`
-	Base        int                 `json:"base,omitempty"`
-	GitKeyHosts []string            `json:"gitkey_hosts,omitempty"`
-	Layers      map[string][]string `json:"layers,omitempty"`
-	Hand        []string            `json:"hand,omitempty"`
+	Version      int                 `json:"version"`
+	Picks        []string            `json:"picks"`
+	MiseExtra    []string            `json:"mise_extra"`
+	MCPListen    string              `json:"mcp_listen"`
+	MCPDomain    string              `json:"mcp_domain,omitempty"`
+	Accent       string              `json:"accent,omitempty"`
+	Theme        string              `json:"theme,omitempty"`
+	MCPServers   []string            `json:"mcp_servers"`
+	WireAgents   *bool               `json:"wire_agents"`
+	Git          Git                 `json:"git"`
+	GitHub       GitHost             `json:"github"`
+	GitLab       GitHost             `json:"gitlab,omitzero"`
+	Bitbucket    GitHost             `json:"bitbucket,omitzero"`
+	NPM          NPM                 `json:"npm"`
+	Registries   []string            `json:"registries"`
+	Dotfiles     string              `json:"dotfiles,omitempty"`
+	SSHAcceptNew string              `json:"ssh_accept_new,omitempty"`
+	Prompt       string              `json:"prompt,omitempty"`
+	Base         int                 `json:"base,omitempty"`
+	GitKeyHosts  []string            `json:"gitkey_hosts,omitempty"`
+	Layers       map[string][]string `json:"layers,omitempty"`
+	Hand         []string            `json:"hand,omitempty"`
 }
 
 // Account is a user's home and ids.
@@ -225,6 +226,7 @@ func (s *Store) Load(name string) (*Answers, []string, error) {
 		a.MiseExtra, a.MCPListen, a.MCPDomain, a.MCPServers, a.WireAgents = uf.MiseExtra, uf.MCPListen, uf.MCPDomain, uf.MCPServers, uf.WireAgents
 		a.Git, a.GitHub, a.NPM, a.Registries, a.Dotfiles, a.GitKeyHosts = uf.Git, uf.GitHub, uf.NPM, uf.Registries, uf.Dotfiles, uf.GitKeyHosts
 		a.GitLab, a.Bitbucket, a.Prompt, a.Accent, a.Theme, a.Base = uf.GitLab, uf.Bitbucket, uf.Prompt, uf.Accent, uf.Theme, uf.Base
+		a.SSHAcceptNew = uf.SSHAcceptNew
 	}
 	if len(a.Layers) == 0 {
 		a.Layers = nil
@@ -264,7 +266,7 @@ func (s *Store) Save(a *Answers) error {
 		return Merge(nil, system), Merge(nil, own)
 	}
 	uf := &userFile{Version: Version, MiseExtra: a.MiseExtra, MCPListen: a.MCPListen, MCPDomain: a.MCPDomain, MCPServers: a.MCPServers,
-		WireAgents: a.WireAgents, Git: a.Git, GitHub: a.GitHub, GitLab: a.GitLab, Bitbucket: a.Bitbucket, NPM: a.NPM, Registries: a.Registries, Dotfiles: a.Dotfiles, GitKeyHosts: a.GitKeyHosts, Prompt: a.Prompt, Accent: a.Accent, Theme: a.Theme, Base: a.Base}
+		WireAgents: a.WireAgents, Git: a.Git, GitHub: a.GitHub, GitLab: a.GitLab, Bitbucket: a.Bitbucket, NPM: a.NPM, Registries: a.Registries, Dotfiles: a.Dotfiles, SSHAcceptNew: a.SSHAcceptNew, GitKeyHosts: a.GitKeyHosts, Prompt: a.Prompt, Accent: a.Accent, Theme: a.Theme, Base: a.Base}
 	sys.Version, sys.TZ, sys.DockerPorts = Version, a.TZ, a.DockerPorts
 	sys.Picks, uf.Picks = split(a.Picks)
 	sys.Hand, uf.Hand = split(a.Hand)

@@ -9,7 +9,7 @@ tab = "git"
 label = "Git: name, email, your SSH key and defaults (rebase pulls, auto upstream, delta diffs, aliases), lazygit"
 default = true
 needs = ["essentials", "gitkey"]
-source = "git config --global user.name/email and defaults · ~/.ssh/id_ed25519 made when you have no key · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore · mise use -g lazygit"
+source = "git config --global user.name/email and defaults · SSH for your git hosts (~/.ssh/config.d/yardo-git) · aliases st co br sw lg amend · global ignores in ~/.config/git/ignore · mise use -g lazygit"
 
 # lazygit, the git TUI.
 [[item.step]]
@@ -66,21 +66,21 @@ type = "block"
 src = "gitignore_global"
 to = "~/.config/git/ignore"
 
-# SSH for git: your own key (~/.ssh/id_ed25519, made when you have none),
-# which ssh uses for every host by itself. Machines set up with a way per
-# host keep it, as each host item's mode says: the key sent from
-# your machine with `ssh <host> 'sudo yardo gitkey' < <key>` (a deploy key,
-# or your account's; one is made here when none was sent), which
-# ~/.ssh/config points every connection to those hosts at, so it works for
-# any repo it may reach; a key made here named for its host (~/.ssh/gitlab,
-# ~/.ssh/bitbucket; GitHub's ~/.ssh/github is made and uploaded by its
-# login), which ~/.ssh/config points the host at; host keys.
+# SSH for git: each git host's key, chosen when it's added (made or pasted
+# in ~/.ssh/identities/<host>, one of yours under ~/.ssh, or none: a
+# forwarded agent), or sent with `ssh <host> 'sudo yardo gitkey <host>' <
+# <key>`; machines set up before keep theirs (~/.ssh/id_ed25519, made when
+# you have no key; ~/.ssh/<host>; ~/.ssh/yardo_git_key). Its settings are
+# in ~/.ssh/config.d/yardo-git, included at the top of ~/.ssh/config (a
+# host your config sets is left to you), its defaults (Settings › Accept
+# new hosts' SSH keys) in ~/.ssh/config.d/yardo-defaults, included at the
+# end; GitHub's and Bitbucket's host keys pinned.
 [[item]]
 id = "gitkey"
 tab = "-"
 phase = "configure"
 label = "SSH for git"
-source = "~/.ssh/id_ed25519 (or ~/.ssh/yardo_git_key, ~/.ssh/github, gitlab, bitbucket) · ~/.ssh/config · host keys"
+source = "each host's key (~/.ssh/identities/<host>, or yours) · ~/.ssh/config.d/yardo-git, included by ~/.ssh/config · GitHub's and Bitbucket's host keys"
 
 [[item.step]]
 type = "go:gitkey"
@@ -90,13 +90,13 @@ type = "go:gitkey"
 [[item]]
 id = "github"
 tab = "git"
-label = "GitHub: act (run Actions locally), git over your SSH key; gh auth login is yours"
+label = "GitHub: act (run Actions locally), git over the SSH key you pick; gh auth login is yours"
 needs = ["essentials", "gitkey"]
-source = "gh (essentials) · GitHub's host keys in ~/.ssh/known_hosts · mise act (needs Docker to run) · log in yourself: gh auth login"
+source = "gh (essentials) · its SSH key: made, yours, pasted or none · GitHub's host keys in ~/.ssh/known_hosts · mise act (needs Docker to run) · log in yourself: gh auth login"
 
 [[item.step]]
 type = "note"
-text = "GitHub: log gh in when you want it: gh auth login (git over SSH uses ~/.ssh/id_ed25519; add its .pub at https://github.com/settings/keys)."
+text = "GitHub: log gh in when you want it: gh auth login (git over SSH uses the key picked for GitHub; add its .pub at https://github.com/settings/keys)."
 when = "! runuser -u {{user}} -- gh auth status -h github.com >/dev/null 2>&1"
 
 [[item.step]]
@@ -108,7 +108,7 @@ id = "gitlab"
 tab = "git"
 label = "GitLab: SSH key for git, glab (GitLab CLI)"
 needs = ["gitkey"]
-source = "git over SSH: forwarded agent, a key made here or one you send (yardo gitkey) · gitlab.com or your own"
+source = "git over SSH: its key made, yours, pasted or sent (yardo gitkey gitlab), or a forwarded agent · gitlab.com or your own"
 
 [[item.step]]
 type = "mise"
@@ -119,7 +119,7 @@ id = "bitbucket"
 tab = "git"
 label = "Bitbucket: SSH key for git"
 needs = ["gitkey"]
-source = "git over SSH: forwarded agent, a key made here or one you send (yardo gitkey) · bitbucket.org"
+source = "git over SSH at ssh.bitbucket.org (bitbucket.org remotes too): its key made, yours, pasted or sent (yardo gitkey bitbucket), or a forwarded agent · host keys pinned"
 
 [[item]]
 id = "gitsign"

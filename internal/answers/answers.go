@@ -60,6 +60,9 @@ type Answers struct {
 	Prompt string `json:"prompt,omitempty"`
 	// Dotfiles is the user's dotfiles repo (cloned to ~/.dotfiles).
 	Dotfiles string `json:"dotfiles,omitempty"`
+	// SSHAcceptNew is "on" when ssh trusts a host it hasn't seen before
+	// without asking (still refusing a changed key); "" asks.
+	SSHAcceptNew string `json:"ssh_accept_new,omitempty"`
 	// GitKeyHosts are other git hosts the sent SSH key (yardo gitkey) is
 	// used for, besides GitHub, GitLab and Bitbucket in the "sent" mode.
 	GitKeyHosts []string `json:"gitkey_hosts,omitempty"`
@@ -86,14 +89,64 @@ type Git struct {
 	Email string `json:"email"`
 }
 
-// GitHost holds how the VM reaches a git host: agent (the SSH agent
-// forwarded with ssh -A), key (~/.ssh/<host item>, made here), sent
-// (~/.ssh/yardo_git_key, sent with yardo gitkey) or, GitHub only, token
-// (HTTPS). "" is key.
+// GitHost holds how the VM reaches a git host. Key is the key chosen for
+// it: a path (~/.ssh/identities/<host item>, made or given here, or one of
+// the user's under ~/.ssh) or "none" (no key here: a forwarded agent, or
+// HTTPS). Without one, Mode is what an earlier yardo set up, kept as it
+// was: "" (~/.ssh/id_ed25519), agent, key (~/.ssh/<host item>), sent
+// (~/.ssh/yardo_git_key, sent with yardo gitkey) or token (HTTPS).
 type GitHost struct {
 	Mode string `json:"mode"`
+	Key  string `json:"key,omitempty"`
 	// Host is a self-managed GitLab ("" = gitlab.com).
 	Host string `json:"host,omitempty"`
+}
+
+// NoKey is GitHost.Key for a host reached without a key here.
+const NoKey = "none"
+
+// GitProviders are the git host items, in order.
+var GitProviders = []string{"github", "gitlab", "bitbucket"}
+
+// IdentityKey is where yardo makes, or puts a given, key for the git host
+// item id.
+func IdentityKey(id string) string { return "~/.ssh/identities/" + id }
+
+// GitHostOf is the git host item id's settings.
+func (a *Answers) GitHostOf(id string) *GitHost {
+	switch id {
+	case "github":
+		return &a.GitHub
+	case "gitlab":
+		return &a.GitLab
+	case "bitbucket":
+		return &a.Bitbucket
+	}
+	return nil
+}
+
+// ProviderOf is the git host item reached at host ("" for another host).
+func (a *Answers) ProviderOf(host string) string {
+	switch host {
+	case "github.com":
+		return "github"
+	case "bitbucket.org", "ssh.bitbucket.org":
+		return "bitbucket"
+	case a.GitLabHost():
+		return "gitlab"
+	}
+	return ""
+}
+
+// NewGitHosts gives the git host items among ids that have no key chosen
+// and were never set up (no Mode) their own key, ~/.ssh/identities/<id>:
+// what a run that asks nothing (a profile, --yes) uses.
+func (a *Answers) NewGitHosts(ids []string) {
+	for _, id := range ids {
+		if g := a.GitHostOf(id); g != nil && g.Key == "" && g.Mode == "" && !slices.Contains(a.Picks, id) {
+			g.Key = IdentityKey(id)
+		}
+	}
 }
 
 // GitLabHost is the GitLab host name.
@@ -127,6 +180,25 @@ func (a *Answers) SendKeyTo(hosts []string) (picks []string) {
 	return picks
 }
 
+// GiveKeyTo sets up a key given to yardo (yardo gitkey, a profile's
+// gitkey hosts) for hosts (none: github.com): GitHub, GitLab and Bitbucket
+// use ~/.ssh/identities/<item>, where it goes; other hosts go in
+// GitKeyHosts (~/.ssh/yardo_git_key). It returns the items to pick, as
+// SendKeyTo.
+func (a *Answers) GiveKeyTo(hosts []string) (picks []string) {
+	if len(hosts) == 0 {
+		hosts = []string{"github.com"}
+	}
+	for _, h := range hosts {
+		if id := a.ProviderOf(h); id != "" {
+			a.GitHostOf(id).Key, picks = IdentityKey(id), Merge(picks, []string{id})
+			continue
+		}
+		a.GitKeyHosts, picks = Merge(a.GitKeyHosts, []string{h}), Merge(picks, []string{"gitkey"})
+	}
+	return picks
+}
+
 // SentKeyHosts are the hosts the sent SSH key is for: the picked host
 // items in the "sent" mode, then GitKeyHosts.
 func (a *Answers) SentKeyHosts() []string {
@@ -135,7 +207,7 @@ func (a *Answers) SentKeyHosts() []string {
 		id, host string
 		m        GitHost
 	}{{"github", "github.com", a.GitHub}, {"gitlab", a.GitLabHost(), a.GitLab}, {"bitbucket", "bitbucket.org", a.Bitbucket}} {
-		if h.m.Mode == "sent" && slices.Contains(a.Picks, h.id) {
+		if h.m.Mode == "sent" && h.m.Key == "" && slices.Contains(a.Picks, h.id) {
 			out = append(out, h.host)
 		}
 	}

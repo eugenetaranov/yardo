@@ -115,8 +115,8 @@ func TestNoAgentTrailer(t *testing.T) {
 	script, _ := filepath.Abs("../assets/conf/git-no-agent-trailer")
 	for in, want := range map[string]string{
 		"feat: x\n\nwhy\n\nCo-authored-by: Ada <ada@example.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: Codex <noreply@openai.com>\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n": "feat: x\n\nwhy\n\nCo-authored-by: Ada <ada@example.com>\n",
-		"fix: y\n\nCo-authored-by: Cursor <cursoragent@cursor.com>\n":                         "fix: y\n",
-		"docs: z\n\nGenerated with [Codex](https://openai.com/codex/).\n":                       "docs: z\n",
+		"fix: y\n\nCo-authored-by: Cursor <cursoragent@cursor.com>\n":                        "fix: y\n",
+		"docs: z\n\nGenerated with [Codex](https://openai.com/codex/).\n":                    "docs: z\n",
 		"chore: claude is a name in the text\n\nCo-authored-by: Claudette <c@example.com>\n": "chore: claude is a name in the text\n\nCo-authored-by: Claudette <c@example.com>\n",
 	} {
 		f := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")

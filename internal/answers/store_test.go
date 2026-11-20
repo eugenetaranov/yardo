@@ -174,3 +174,34 @@ func TestStoreMigrates(t *testing.T) {
 		t.Errorf("bob's port = %d", p)
 	}
 }
+
+// Each git host's key and the accept-new setting round-trip; answers
+// saved before (a mode, no key) load as they were.
+func TestStoreGitKeys(t *testing.T) {
+	s, home := testStore(t)
+	a := &Answers{User: "ada", Picks: []string{"github", "gitlab", "bitbucket"}, SSHAcceptNew: "on",
+		GitHub: GitHost{Key: "~/.ssh/identities/github"}, GitLab: GitHost{Key: NoKey, Host: "git.acme.io"}, Bitbucket: GitHost{Mode: "sent", Key: "~/.ssh/work"}}
+	if err := s.Save(a); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := s.Load("ada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GitHub != a.GitHub || got.GitLab != a.GitLab || got.Bitbucket != a.Bitbucket || got.SSHAcceptNew != "on" {
+		t.Errorf("loaded %+v %+v %+v %q", got.GitHub, got.GitLab, got.Bitbucket, got.SSHAcceptNew)
+	}
+	for _, mode := range []string{"", "agent", "key", "sent", "own", "token"} {
+		old := `{"version":1,"picks":["github"],"github":{"mode":"` + mode + `"}}`
+		if err := os.WriteFile(userPath(home("ada")), []byte(old), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got, _, err := s.Load("ada")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.GitHub != (GitHost{Mode: mode}) || got.SSHAcceptNew != "" {
+			t.Errorf("mode %q loaded as %+v", mode, got.GitHub)
+		}
+	}
+}

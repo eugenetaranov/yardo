@@ -15,6 +15,7 @@ import (
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/catalog"
+	"github.com/eugenetaranov/yardo/internal/creds"
 	"github.com/eugenetaranov/yardo/internal/plan"
 	"github.com/eugenetaranov/yardo/internal/profile"
 	"github.com/eugenetaranov/yardo/internal/steps"
@@ -269,7 +270,8 @@ func TestGitKeySubcommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "SSH for git") || !strings.Contains(got, "write the key sent on stdin") || !strings.Contains(got, "github.com, git.acme.io") {
+	if !strings.Contains(got, "SSH for git") || !strings.Contains(got, "write the key sent on stdin to ~/.ssh/yardo_git_key for git.acme.io") ||
+		!strings.Contains(got, "write the key given to ~/.ssh/identities/github for github.com") {
 		t.Errorf("plan:\n%s", got)
 	}
 	if strings.Contains(got, "zsh (login shell)") {
@@ -277,6 +279,43 @@ func TestGitKeySubcommand(t *testing.T) {
 	}
 	if err := cli([]string{"--state", state, "--dry-run", "gitkey", "--host", "bad host"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
 		t.Error("want an error for a bad --host")
+	}
+	if err := cli([]string{"--state", state, "--dry-run", "gitkey", "bitbukcet"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Error("want an error for a bad provider")
+	}
+	// Bitbucket, named or by its host: its identity, the key replaced
+	// only with --replace.
+	for _, args := range [][]string{{"bitbucket"}, {"--host", "bitbucket.org"}, {"--replace", "bitbucket"}} {
+		if _, err := in.Seek(0, 0); err != nil {
+			t.Fatal(err)
+		}
+		out.Reset()
+		if err := cli(append([]string{"--state", state, "--dry-run", "gitkey"}, args...), &out, &bytes.Buffer{}); err != nil {
+			t.Fatal(err)
+		}
+		want := "write the key given to ~/.ssh/identities/bitbucket for bitbucket.org"
+		if !strings.Contains(out.String(), want) || strings.Contains(out.String(), "github.com") {
+			t.Errorf("%v: plan:\n%s", args, out.String())
+		}
+	}
+}
+
+// The key yardo gitkey is given goes in the run's secrets, never the
+// answers.
+func TestGiveKey(t *testing.T) {
+	key := []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n-----END OPENSSH PRIVATE KEY-----\n")
+	o := &options{gitKey: key, gitProviders: []string{"bitbucket"}, gitHosts: []string{"git.acme.io"}, gitReplace: true}
+	a, sec := &answers.Answers{}, creds.New()
+	picks := o.giveKey(a, sec)
+	if strings.Join(picks, " ") != "gitkey bitbucket" {
+		t.Errorf("picks = %v", picks)
+	}
+	if !bytes.Equal(sec.GitKeys["bitbucket"], key) || !sec.GitReplace["bitbucket"] || !bytes.Equal(sec.GitKey, key) {
+		t.Errorf("secrets = %+v", sec)
+	}
+	b, _ := json.Marshal(a)
+	if bytes.Contains(b, []byte("secret")) || a.Bitbucket.Key != "~/.ssh/identities/bitbucket" {
+		t.Errorf("answers: %s", b)
 	}
 }
 

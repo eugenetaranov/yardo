@@ -24,13 +24,21 @@ type Secrets struct {
 	// GHPassphrase is "yes" to set a passphrase on a new key (ssh-keygen
 	// asks for it itself).
 	GHPassphrase string
-	// GitKey is a private key for gitkey, sent on stdin to yardo gitkey.
+	// GitKey is a private key sent on stdin to yardo gitkey for hosts other
+	// than GitHub, GitLab and Bitbucket (~/.ssh/yardo_git_key).
 	GitKey []byte
+	// GitKeys are private keys for the git host items (github, gitlab,
+	// bitbucket), pasted or sent with yardo gitkey, for
+	// ~/.ssh/identities/<item>; GitReplace marks those whose key there the
+	// user chose to replace (moved aside first).
+	GitKeys    map[string][]byte
+	GitReplace map[string]bool
 }
 
 // New returns empty secrets.
 func New() *Secrets {
-	return &Secrets{Cred: map[string]string{}, MCP: map[string]string{}, RegUser: map[string]string{}, RegPass: map[string]string{}}
+	return &Secrets{Cred: map[string]string{}, MCP: map[string]string{}, RegUser: map[string]string{}, RegPass: map[string]string{},
+		GitKeys: map[string][]byte{}, GitReplace: map[string]bool{}}
 }
 
 // Encode is the stdin the bash installer's --secrets reads: NUL-separated

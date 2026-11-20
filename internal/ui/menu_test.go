@@ -960,8 +960,6 @@ func TestMenuMCPAllRow(t *testing.T) {
 	}
 }
 
-
-
 // The home's panel lists a server off apart; all off says so on the
 // gateway's line and in Go to's note.
 func TestMenuMCPHomeOff(t *testing.T) {

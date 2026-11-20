@@ -254,6 +254,36 @@ func TestGitHubKnownHostsPinned(t *testing.T) {
 	}
 }
 
+// Bitbucket's published host keys, for both its names: pinned, never
+// scanned.
+func TestBitbucketKnownHostsPinned(t *testing.T) {
+	hosts := readFile(t, "conf/bitbucket_known_hosts")
+	for _, name := range []string{"bitbucket.org", "ssh.bitbucket.org"} {
+		if !strings.Contains(hosts, "\n"+name+" ssh-ed25519 ") && !strings.HasPrefix(hosts, name+" ssh-ed25519 ") {
+			t.Errorf("conf/bitbucket_known_hosts has no ed25519 key for %s:\n%s", name, hosts)
+		}
+	}
+	for _, l := range strings.Split(strings.TrimSpace(hosts), "\n") {
+		if name, _, _ := strings.Cut(l, " "); name != "bitbucket.org" && name != "ssh.bitbucket.org" {
+			t.Errorf("conf/bitbucket_known_hosts: %q", l)
+		}
+	}
+	b, _ := os.ReadFile("../steps/gitkey.go")
+	if strings.Contains(string(b), "ssh-keyscan") {
+		t.Error("the gitkey step uses ssh-keyscan; use conf/bitbucket_known_hosts")
+	}
+	if os.Getenv("YARDO_ONLINE_TESTS") == "" {
+		return
+	}
+	out, err := exec.Command("curl", "-fsS", "--max-time", "10", "https://bitbucket.org/site/ssh").Output()
+	if err != nil {
+		t.Skipf("bitbucket.org/site/ssh: %v", err)
+	}
+	if string(out) != hosts {
+		t.Errorf("conf/bitbucket_known_hosts differs from bitbucket.org/site/ssh:\n%s", out)
+	}
+}
+
 func TestCreatedRecord(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not installed")

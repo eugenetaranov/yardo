@@ -34,6 +34,9 @@ type Profile struct {
 	// GitKey is the git hosts the key sent with yardo gitkey is for (the
 	// key itself never is here).
 	GitKey *GitKey `toml:"gitkey,omitempty"`
+	// SSHAcceptNew: ssh trusts hosts it hasn't seen before without asking
+	// (Settings › Accept new hosts' SSH keys).
+	SSHAcceptNew *bool `toml:"ssh_accept_new,omitempty"`
 	// Lock pins versions (export --lock).
 	Lock *answers.Lock `toml:"lock,omitempty"`
 }
@@ -142,15 +145,16 @@ func ValidUser(name string) bool { return userName.MatchString(name) }
 func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnings []string) {
 	picks, notes := answers.MigratePicks(p.Picks)
 	warnings = append(warnings, notes...)
-	// The hosts the sent key is for: GitHub, GitLab and Bitbucket in the
-	// "sent" mode (their items picked), others with the gitkey item. A
-	// gitkey pick without hosts is the old item's default, GitHub.
+	// The hosts the sent key is for: GitHub, GitLab and Bitbucket with
+	// their key in ~/.ssh/identities (their items picked), others with the
+	// gitkey item. A gitkey pick without hosts is the old item's default,
+	// GitHub.
 	if p.GitKey != nil || slices.Contains(picks, "gitkey") {
 		var hosts []string
 		if p.GitKey != nil {
 			hosts = p.GitKey.Hosts
 		}
-		picks = answers.Merge(slices.DeleteFunc(picks, func(id string) bool { return id == "gitkey" }), a.SendKeyTo(hosts))
+		picks = answers.Merge(slices.DeleteFunc(picks, func(id string) bool { return id == "gitkey" }), a.GiveKeyTo(hosts))
 	}
 	var keep []string
 	for _, id := range picks {
@@ -168,6 +172,8 @@ func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnin
 		}
 		keep = append(keep, id)
 	}
+	// New git hosts get a key of their own: a profile asks nothing.
+	a.NewGitHosts(keep)
 	if p.Name != "" {
 		dropped = a.SetLayer(p.Name, keep)
 	} else {
@@ -178,6 +184,9 @@ func (p *Profile) Apply(a *answers.Answers, c *catalog.Catalog) (dropped, warnin
 	}
 	if p.Dotfiles != nil && p.Dotfiles.Repo != "" {
 		a.Dotfiles = p.Dotfiles.Repo
+	}
+	if p.SSHAcceptNew != nil {
+		a.SSHAcceptNew = map[bool]string{true: "on"}[*p.SSHAcceptNew]
 	}
 	a.MiseExtra = answers.Merge(a.MiseExtra, p.MiseExtra)
 	if p.Git != nil {
@@ -224,6 +233,10 @@ func Export(a *answers.Answers, lock *answers.Lock, name string) []byte {
 	}
 	if a.Dotfiles != "" {
 		p.Dotfiles = &Dotfiles{Repo: a.Dotfiles}
+	}
+	if a.SSHAcceptNew == "on" {
+		on := true
+		p.SSHAcceptNew = &on
 	}
 	if hosts := a.SentKeyHosts(); len(hosts) > 0 {
 		p.GitKey = &GitKey{Hosts: hosts}

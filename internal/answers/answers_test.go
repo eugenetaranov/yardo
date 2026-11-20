@@ -279,3 +279,19 @@ func TestMigrateMCP(t *testing.T) {
 		t.Errorf("servers: %v", got)
 	}
 }
+
+// A key given (yardo gitkey, a profile's hosts) goes to the host items'
+// ~/.ssh/identities; other hosts keep the sent key's file.
+func TestGiveKeyTo(t *testing.T) {
+	a := &Answers{GitLab: GitHost{Host: "git.acme.io"}}
+	picks := a.GiveKeyTo([]string{"bitbucket.org", "git.acme.io", "git.other.io"})
+	if !slices.Equal(picks, []string{"bitbucket", "gitlab", "gitkey"}) {
+		t.Errorf("picks = %v", picks)
+	}
+	if a.Bitbucket.Key != "~/.ssh/identities/bitbucket" || a.GitLab.Key != "~/.ssh/identities/gitlab" || !slices.Equal(a.GitKeyHosts, []string{"git.other.io"}) {
+		t.Errorf("bitbucket %+v gitlab %+v hosts %v", a.Bitbucket, a.GitLab, a.GitKeyHosts)
+	}
+	if got := (&Answers{}).GiveKeyTo(nil); !slices.Equal(got, []string{"github"}) {
+		t.Errorf("no hosts: %v", got)
+	}
+}

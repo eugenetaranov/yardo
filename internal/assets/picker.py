@@ -424,7 +424,7 @@ class Picker:
 
 ANSWER_VARS = ["A_USER", "A_PICKS", "A_MISE_EXTRA", "A_MCP_LISTEN", "A_MCP_SERVERS",
                "A_WIRE_AGENTS", "A_GIT_NAME", "A_GIT_EMAIL", "A_TZ",
-               "A_GH_MODE", "A_NPM_SCOPE", "A_NPM_REGISTRY", "A_REGISTRIES"]
+               "A_GH_MODE", "A_GH_KEY", "A_NPM_SCOPE", "A_NPM_REGISTRY", "A_REGISTRIES"]
 LEGACY_VARS = set(ANSWER_VARS) | {"A_WIRE_CLAUDE"}  # A_WIRE_CLAUDE: saved before v0.32
 ANSWERS_VERSION = 1
 
@@ -579,7 +579,7 @@ def vals_to_doc(vals):
         "git": {"name": vals.get("A_GIT_NAME", ""), "email": vals.get("A_GIT_EMAIL", "")},
         "tz": vals.get("A_TZ", ""),
         # Settings of the credential items; never their secrets.
-        "github": {"mode": vals.get("A_GH_MODE", "")},
+        "github": {k: v for k, v in (("mode", vals.get("A_GH_MODE", "")), ("key", vals.get("A_GH_KEY", ""))) if k == "mode" or v},
         "npm": {"scope": vals.get("A_NPM_SCOPE", ""), "registry": vals.get("A_NPM_REGISTRY", "")},
         "registries": words(vals.get("A_REGISTRIES")),
     }
@@ -600,7 +600,7 @@ def doc_to_vals(doc):
         "A_MCP_LISTEN": s("mcp_listen"), "A_MCP_SERVERS": lst("mcp_servers"),
         "A_WIRE_AGENTS": "yes" if wire is True else "no" if wire is False else "",
         "A_GIT_NAME": s("name", git), "A_GIT_EMAIL": s("email", git), "A_TZ": s("tz"),
-        "A_GH_MODE": s("mode", gh), "A_NPM_SCOPE": s("scope", npm), "A_NPM_REGISTRY": s("registry", npm),
+        "A_GH_MODE": s("mode", gh), "A_GH_KEY": s("key", gh), "A_NPM_SCOPE": s("scope", npm), "A_NPM_REGISTRY": s("registry", npm),
         "A_REGISTRIES": lst("registries"),
     }
 

@@ -137,10 +137,13 @@ type options struct {
 	// lock is the profiles' [lock] tables, merged.
 	lock *answers.Lock
 	// only limits a --yes run to one item (gitkey), with gitKey (from
-	// stdin) and gitHosts.
-	only     string
-	gitKey   []byte
-	gitHosts []string
+	// stdin) for gitHosts and the git host items gitProviders (replacing
+	// the key there when gitReplace).
+	only         string
+	gitKey       []byte
+	gitHosts     []string
+	gitProviders []string
+	gitReplace   bool
 	// in answers yardo remove's question (os.Stdin when nil); exec runs
 	// the commands instead of the system, and root prefixes every path
 	// (tests).
@@ -721,8 +724,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 				changed = true
 			} else {
 				if o.only != "" {
-					a.Pick(a.SendKeyTo(o.gitHosts))
-					sec.GitKey = o.gitKey
+					a.Pick(o.giveKey(a, sec))
 					changed = true
 				}
 				if len(a.Picks) == 0 {
@@ -946,16 +948,27 @@ func ranSays(cat *catalog.Catalog, fix []string, err error) string {
 	return "✓ Done: " + strings.Join(names, ", ") + out
 }
 
-// gitKeyArgs reads `yardo gitkey [--host h]...`: the private key
-// on stdin (ssh host 'sudo yardo gitkey' < key) for the sudo user (or --user),
-// set up alone, as with --yes.
+// gitKeyArgs reads `yardo gitkey [github|gitlab|bitbucket] [--host h]...
+// [--replace]`: the private key on stdin (ssh host 'sudo yardo gitkey' <
+// key) for the sudo user (or --user), set up alone, as with --yes.
 func (o *options) gitKeyArgs(args []string, stderr io.Writer) error {
 	fs := flag.NewFlagSet("yardo gitkey", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var hosts list
 	fs.Var(&hosts, "host", "a git host to use the key for: github.com, bitbucket.org, your GitLab or another (repeatable; default github.com)")
-	if err := fs.Parse(args); err != nil {
-		return err
+	replace := fs.Bool("replace", false, "replace the key in ~/.ssh/identities (the old one is moved aside)")
+	var providers []string
+	for len(args) > 0 {
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		if args = fs.Args(); len(args) == 0 {
+			break
+		}
+		if !slices.Contains(answers.GitProviders, args[0]) {
+			return fmt.Errorf("gitkey: %q: want github, gitlab or bitbucket (or --host HOST)", args[0])
+		}
+		providers, args = answers.Merge(providers, args[:1]), args[1:]
 	}
 	for _, h := range hosts {
 		if !answers.ValidHost(h) {
@@ -978,8 +991,30 @@ func (o *options) gitKeyArgs(args []string, stderr io.Writer) error {
 	if o.user == "" {
 		return errors.New("no user to set the key up for: give --user")
 	}
-	o.yes, o.only, o.gitKey, o.gitHosts = true, "gitkey", key, hosts
+	o.yes, o.only, o.gitKey, o.gitHosts, o.gitProviders, o.gitReplace = true, "gitkey", key, hosts, providers, *replace
 	return nil
+}
+
+// giveKey sets up the key sent to yardo gitkey: for the git host items
+// named or reached at its hosts (GitHub when none), in
+// ~/.ssh/identities; for other hosts, ~/.ssh/yardo_git_key. It returns
+// the items to pick.
+func (o *options) giveKey(a *answers.Answers, sec *creds.Secrets) []string {
+	var picks []string
+	if len(o.gitHosts) > 0 || len(o.gitProviders) == 0 {
+		picks = a.GiveKeyTo(o.gitHosts)
+	}
+	for _, id := range o.gitProviders {
+		a.GitHostOf(id).Key = answers.IdentityKey(id)
+	}
+	for _, id := range answers.Merge(picks, o.gitProviders) {
+		if a.GitHostOf(id) == nil {
+			sec.GitKey = o.gitKey
+			continue
+		}
+		sec.GitKeys[id], sec.GitReplace[id] = o.gitKey, o.gitReplace
+	}
+	return answers.Merge(picks, o.gitProviders)
 }
 
 // progressFor shows each step with a spinner and its elapsed time on a

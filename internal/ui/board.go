@@ -57,7 +57,7 @@ type MCPServer struct {
 	// only because all are.
 	Off string
 	// was is its state before the menu turned it off (back to it on).
-	was string
+	was   string
 	Keys  []string
 	Yardo bool // on yardo's list (else found in ~/.mcp)
 	// Instead is what replaces it, when its maker retired it (State

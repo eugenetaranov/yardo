@@ -56,6 +56,11 @@ type asker struct {
 	awsPick  func(name string) (awsChoice, bool, error)
 	kubePick func(name string) (kubeChoice, bool, error)
 	mcpEnv   func(name string, kv [][2]string) error
+	// choose, password and home are seams for the git hosts' key pages:
+	// ui.Choose, ui.Password, and the user's home (homeOf).
+	choose   func(title string, opts []string, sel string) (string, error)
+	password func(title, placeholder string) (string, error)
+	home     string
 }
 
 // ask is a run with profiles: their picks, reviewed, and what they can't
@@ -102,6 +107,8 @@ func (k *asker) fromBoard(ctx context.Context, res ui.BoardResult, first bool) (
 			k.a.Accent = v
 		case "theme":
 			k.a.Theme = v
+		case "sshnew":
+			k.a.SSHAcceptNew = map[string]string{"on": "on"}[v]
 		}
 	}
 	c := &choices{secrets: creds.New(), picks: picks, miseExtra: extras, dropped: dropped}
@@ -120,6 +127,8 @@ func (k *asker) change(ctx context.Context, key string) (*creds.Secrets, error) 
 		err = k.askPrompt()
 	case "dotfiles":
 		err = k.askDotfiles()
+	case "key:github", "key:gitlab", "key:bitbucket":
+		err = k.askGitKey(c, strings.TrimPrefix(key, "key:"))
 	default:
 		err = fmt.Errorf("nothing to change for %q", key)
 	}
@@ -191,7 +200,18 @@ func (k *asker) questions(ctx context.Context, c *choices, first bool, saved []s
 			return err
 		}
 	}
-	return k.askSecrets(c, isNew)
+	if err := k.askSecrets(c, isNew); err != nil {
+		return err
+	}
+	// Each new git host's key (after the GitLab host).
+	for _, id := range answers.GitProviders {
+		if isNew(id) {
+			if err := k.askGitKey(c, id); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // fromProfile plans the profiles' picks (already in the answers) and asks

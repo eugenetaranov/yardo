@@ -244,6 +244,15 @@ var changes = map[string][2]string{
 	"zsh":       {"the zsh prompt", "prompt"},
 	"dotfiles":  {"the dotfiles repo", "dotfiles"},
 	"mcpjungle": {"the MCP servers", "mcp"},
+	"github":    {"its SSH key", "key:github"},
+	"gitlab":    {"its SSH key", "key:gitlab"},
+	"bitbucket": {"its SSH key", "key:bitbucket"},
+}
+
+// sshAcceptNew is the Settings row for accepting new hosts' SSH keys.
+func sshAcceptNew(a *answers.Answers) *ui.BoardSetting {
+	return &ui.BoardSetting{Key: "sshnew", Label: "Accept new hosts' SSH keys", Value: cmp.Or(a.SSHAcceptNew, "off"), Choices: [][2]string{
+		{"off", "ask me (ssh's way)"}, {"on", "accept new, refuse changed"}}}
 }
 
 // screen is what the menu and the board show: every item, ticked when
@@ -371,6 +380,9 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		}
 		settings = append(settings, &ui.BoardSetting{Key: "ports", Label: "Container ports", Value: ports, Choices: [][2]string{
 			{"all", "everywhere (Docker's way)"}, {"vpn", "this machine and your VPNs"}, {"local", "this machine only"}}})
+	}
+	if has("gitid") || has("github") || has("gitlab") || has("bitbucket") {
+		settings = append(settings, sshAcceptNew(a))
 	}
 	// The theme: yardo's screens.
 	theme := &ui.BoardSetting{Key: "theme", Label: "Theme", Section: ui.LookSection, Value: cmp.Or(a.Theme, "classic"), Swatches: map[string]string{}}

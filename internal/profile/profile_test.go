@@ -231,3 +231,21 @@ func TestApplySkipsDeclined(t *testing.T) {
 		t.Errorf("picks %q warnings %q", a.Picks, w)
 	}
 }
+
+// A profile asks nothing: its new git hosts get ~/.ssh/identities/<item>,
+// a host already set up keeps its key; it can set ssh_accept_new, which
+// export keeps.
+func TestProfileGitKeys(t *testing.T) {
+	p, err := Parse("p.toml", []byte("ssh_accept_new = true\npicks = [\"github\", \"bitbucket\"]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &answers.Answers{Picks: []string{"bitbucket"}, Bitbucket: answers.GitHost{Mode: "agent"}}
+	p.Apply(a, cat(t))
+	if a.GitHub.Key != "~/.ssh/identities/github" || a.Bitbucket.Key != "" || a.SSHAcceptNew != "on" {
+		t.Errorf("github %+v bitbucket %+v accept %q", a.GitHub, a.Bitbucket, a.SSHAcceptNew)
+	}
+	if b := Export(a, nil, ""); !strings.Contains(string(b), "ssh_accept_new = true") {
+		t.Errorf("export:\n%s", b)
+	}
+}

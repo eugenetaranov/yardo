@@ -227,8 +227,8 @@ source_of() {
 # --- Saved answers -----------------------------------------------------------
 
 A_USER= A_PICKS= A_MISE_EXTRA= A_MCP_LISTEN= A_MCP_SERVERS= A_WIRE_AGENTS= A_GIT_NAME= A_GIT_EMAIL= A_TZ=
-A_GH_MODE= A_NPM_SCOPE= A_NPM_REGISTRY= A_REGISTRIES=
-ANSWER_VARS="A_USER A_PICKS A_MISE_EXTRA A_MCP_LISTEN A_MCP_SERVERS A_WIRE_AGENTS A_GIT_NAME A_GIT_EMAIL A_TZ A_GH_MODE A_NPM_SCOPE A_NPM_REGISTRY A_REGISTRIES"
+A_GH_MODE= A_GH_KEY= A_NPM_SCOPE= A_NPM_REGISTRY= A_REGISTRIES=
+ANSWER_VARS="A_USER A_PICKS A_MISE_EXTRA A_MCP_LISTEN A_MCP_SERVERS A_WIRE_AGENTS A_GIT_NAME A_GIT_EMAIL A_TZ A_GH_MODE A_GH_KEY A_NPM_SCOPE A_NPM_REGISTRY A_REGISTRIES"
 # Saved answers are data ($STATE/answers.json): picker.py parses them (and converts
 # the shell-format file older versions wrote, without running it) and hands
 # back NUL-separated name/value pairs. Nothing from the file is executed.
@@ -1640,10 +1640,12 @@ github_identity() {
 }
 
 # install_gitsign — sign commits and tags with SSH: the forwarded agent's
-# key (agent mode) or GitHub's (gh_key), uploaded as a signing key. Runs in
+# key (agent mode, or no key here) or GitHub's (the one chosen, A_GH_KEY;
+# else gh_key), uploaded as a signing key. Runs in
 # the foreground after the GitHub login (the scope may need the browser).
 install_gitsign() {
   local home mode key signingkey email allowed title; home=$(user_home); mode=${A_GH_MODE:-key}
+  case "$A_GH_KEY" in none) mode=agent ;; ?*) mode=chosen ;; esac
   title="$(hostname) ($A_USER) signing"
   echo
   header "Commit signing"
@@ -1657,6 +1659,7 @@ install_gitsign() {
   else
     local pub; pub=$(basename "$(gh_key)").pub
     [ "$mode" = sent ] && pub=yardo_git_key.pub
+    [ "$mode" = chosen ] && pub=${A_GH_KEY#\~/.ssh/}.pub
     key=$(cat "$home/.ssh/$pub" 2>/dev/null || true)
     [ -n "$key" ] || { note "Commit signing: no ~/.ssh/$pub yet; run 'sudo yardo --yes' after the GitHub step."; return 0; }
     signingkey="$home/.ssh/$pub"

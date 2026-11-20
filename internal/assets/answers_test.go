@@ -181,12 +181,12 @@ func TestAnswersLegacyRoundTrip(t *testing.T) {
 func TestAnswersSaveLoad(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "state")
 	runShell(t, state, `A_USER=ubuntu A_PICKS='cli' A_MISE_EXTRA= A_MCP_LISTEN=127.0.0.1 A_MCP_SERVERS=github A_WIRE_AGENTS=yes A_GIT_NAME="Ada L" A_GIT_EMAIL=ada@example.com A_TZ=UTC
-A_GH_MODE=agent A_NPM_SCOPE=@acme A_NPM_REGISTRY=https://npm.pkg.github.com A_REGISTRIES='ghcr.io quay.io'
+A_GH_MODE=agent A_GH_KEY='~/.ssh/identities/github' A_NPM_SCOPE=@acme A_NPM_REGISTRY=https://npm.pkg.github.com A_REGISTRIES='ghcr.io quay.io'
 RUN_PICKS='zsh cli' RUN_MISE_EXTRA=starship
 save_answers`)
 	vals := loadAnswers(t, state)
 	want := map[string]string{"A_USER": "ubuntu", "A_PICKS": "cli zsh", "A_MISE_EXTRA": "starship", "A_MCP_LISTEN": "127.0.0.1", "A_MCP_SERVERS": "github", "A_WIRE_AGENTS": "yes", "A_GIT_NAME": "Ada L", "A_GIT_EMAIL": "ada@example.com", "A_TZ": "UTC",
-		"A_GH_MODE": "agent", "A_NPM_SCOPE": "@acme", "A_NPM_REGISTRY": "https://npm.pkg.github.com", "A_REGISTRIES": "ghcr.io quay.io"}
+		"A_GH_MODE": "agent", "A_GH_KEY": "~/.ssh/identities/github", "A_NPM_SCOPE": "@acme", "A_NPM_REGISTRY": "https://npm.pkg.github.com", "A_REGISTRIES": "ghcr.io quay.io"}
 	for k, v := range want {
 		if vals[k] != v {
 			t.Errorf("%s = %q, want %q", k, vals[k], v)

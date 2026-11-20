@@ -92,8 +92,9 @@ or another instance of one; **space** turns one off or on; **d** deletes
 one, asking first), **Connection**
 (every step to reach this machine from a laptop) and **Settings**: **Network access** (the
 MCP gateway and containers' published ports, each a row
-of choices with a sentence saying what it means), the **Look** (theme and accent colour),
-your **Git name and email**, **Shell prompt** and **Dotfiles repo**
+of choices with a sentence saying what it means), **Accept new hosts' SSH
+keys**, the **Look** (theme and accent colour),
+your **Git name and email**, each git host's **SSH key**, **Shell prompt** and **Dotfiles repo**
 (asked again, then applied) and **Check for updates**. Typing on the home searches the tools.
 
 yardo looks for newer versions (apt and mise) in the background while
@@ -554,14 +555,31 @@ for the VM's user) or membership of the docker group, it can; the
 up` without a key) leaves a note naming the command to run instead.
 
 **Git and SSH.** The Git item asks your name and email and sets them
-globally. git reaches every host over your own SSH key: one you already
-have (`~/.ssh/id_ed25519`, `id_ecdsa` or `id_rsa`), or
-`~/.ssh/id_ed25519` made here when there's none, shown with where to
-add it (GitHub: github.com/settings/keys). Nothing is uploaded and
-nothing logs in: run `gh auth login` yourself when you want gh to. A
-machine set up with a way per host (a forwarded agent, `~/.ssh/github`,
-a token, a sent key) keeps it. github.com's host keys come from
-GitHub's published list, not a first-use scan. **Sign commits with SSH**
+globally. Adding GitHub, GitLab or Bitbucket asks for its SSH key, on one
+page: **Make a new key** (ed25519, at `~/.ssh/identities/<github|gitlab|bitbucket>`,
+shown with where to add it), **Use a key on this machine** (one of your
+private keys under `~/.ssh`, left where it is), **Paste a key** (saved to
+`~/.ssh/identities/<host>`), or **No key here** (a forwarded agent, or
+HTTPS). A key in `~/.ssh/identities` is never replaced without asking: its
+type, fingerprint and comment are shown, with Use it or Replace it (the old
+one is moved to `<host>.old-<date>`). Change a host's key from its settings.
+`--yes` and profiles ask nothing: a new host gets `~/.ssh/identities/<host>`,
+made when missing. A machine set up by an earlier yardo keeps the key it
+uses (`~/.ssh/id_ed25519`, `~/.ssh/<host>`, a sent key, or an agent).
+
+yardo's SSH settings are in a file of their own, `~/.ssh/config.d/yardo-git`,
+which one `Include` line at the top of `~/.ssh/config` brings in; nothing
+else in your config changes (an earlier yardo's block there is moved out).
+A git host your own `~/.ssh/config` sets (`Host github.com`, say) is left to
+you, and yardo says so. Bitbucket is reached at `ssh.bitbucket.org` (remotes
+naming `bitbucket.org` keep working), and GitHub's and Bitbucket's host keys
+come from their published lists, not a first-use scan. **Accept new hosts'
+SSH keys** (Settings, off by default; `ssh_accept_new = true` in a profile)
+has ssh trust a host it hasn't seen before without the fingerprint prompt,
+still refusing a changed key; it's in `~/.ssh/config.d/yardo-defaults`,
+included at the end of `~/.ssh/config`, so a `StrictHostKeyChecking` of
+yours wins. Nothing is uploaded and nothing logs in: run `gh auth login`
+yourself when you want gh to. **Sign commits with SSH**
 signs commits and tags with the agent's key or the VM's key, uploads it as
 a signing key, and writes `~/.config/git/allowed_signers`.
 
@@ -593,18 +611,17 @@ on your GitHub, GitLab or Bitbucket account) from your machine:
 
 ```sh
 ssh ubuntu@web1 'sudo yardo gitkey' < ~/.ssh/deploy_key
-ssh ubuntu@web1 'sudo yardo gitkey --host gitlab.example.com' < ~/.ssh/id_ed25519
+ssh ubuntu@web1 'sudo yardo gitkey bitbucket' < ~/.ssh/bitbucket_key
+ssh ubuntu@web1 'sudo yardo gitkey --host git.example.com' < ~/.ssh/id_ed25519
 ```
 
-yardo puts it in `~/.ssh/yardo_git_key` (0600), switches the host's item
-(github.com by default; GitLab for your GitLab host, Bitbucket for
-bitbucket.org) to "a key you send", makes every connection to the host use
-it in `~/.ssh/config`, and adds GitHub's host keys (other hosts are trusted
-on first use). It then works for any repo the key may reach: a deploy key's
-one repo, or all of yours for an account key. yardo saves only the hosts;
-send it again to replace it. Choosing "a key you send" in `sudo yardo`
-before sending one makes one on the machine, and the closing notes show its
-public key and where to add it.
+GitHub's (the default), GitLab's and Bitbucket's key goes to
+`~/.ssh/identities/<host>`, as a pasted one does; a key already there is
+kept unless you add `--replace` (the old one is moved aside). Another
+host's goes to `~/.ssh/yardo_git_key`. `~/.ssh/config.d/yardo-git` points
+the host at it, so it works for any repo the key may reach: a deploy key's
+one repo, or all of yours for an account key. yardo saves only the hosts,
+never the key.
 
 **Your team's own items and MCP servers.** yardo reads extra items from
 `/etc/yardo/catalog.d/*.toml` (the catalog's format; see

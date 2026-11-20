@@ -31,7 +31,7 @@ Commands:
   export [--name N] [--lock] [FILE]
                                write the saved choices as a profile
   connect                      how to reach this machine from a laptop
-  gitkey [--host H]            set up the SSH key for git sent on stdin
+  gitkey [PROVIDER] [--host H] set up the SSH key for git sent on stdin
   version [up [--check]]       the version; upgrade to the latest release
   forget                       remove the keys, logins and secrets yardo set up
 
@@ -50,7 +50,7 @@ Flags:
 Examples:
   sudo yardo export --name team > team.toml
   sudo yardo --profile team.toml --yes --user ubuntu
-  ssh me@vm 'sudo yardo gitkey' < ~/.ssh/deploy_key
+  ssh me@vm 'sudo yardo gitkey bitbucket' < ~/.ssh/deploy_key
 
 yardo remembers what you picked (~/.config/yardo/answers.json), and
 ~/yardo.txt lists how each tool was installed and how to manage it.
@@ -97,13 +97,17 @@ stdout. Apply it elsewhere with: sudo yardo --profile FILE --yes
 Prints how to reach this machine from a laptop: Docker over SSH, the MCP
 gateway's URL and token, or an SSH tunnel to it.
 `,
-	"gitkey": `Usage: ssh me@vm 'sudo yardo gitkey [--host HOST]' < KEYFILE
+	"gitkey": `Usage: ssh me@vm 'sudo yardo gitkey [github|gitlab|bitbucket] [--host HOST] [--replace]' < KEYFILE
 
-Sets up the SSH private key on stdin for git: ~/.ssh/yardo_git_key, used
-for HOST in ~/.ssh/config.
+Sets up the SSH private key on stdin for git. GitHub's, GitLab's and
+Bitbucket's goes to ~/.ssh/identities/<provider>; another host's to
+~/.ssh/yardo_git_key. ~/.ssh/config.d/yardo-git points the host at it.
 
-  --host HOST  github.com (default), bitbucket.org, your GitLab or another
+  PROVIDER     github (the default), gitlab or bitbucket
+  --host HOST  github.com, bitbucket.org, your GitLab or another
                (repeatable)
+  --replace    a key in ~/.ssh/identities is never replaced unless asked:
+               this moves it aside (<provider>.old-<date>) first
 `,
 	"version": `Usage: yardo version [up [--check] [--yes] [--version vX.Y.Z]]
 
