@@ -82,18 +82,14 @@ func shellEnv(t *testing.T) *Env {
 func TestZshrcTheme(t *testing.T) {
 	e := shellEnv(t)
 	st := step(t, catalog.Step{Type: "go:zshrc"})
-	put(t, e.Path("~/.zshrc"), "mine\n")
 	apply(t, e, st)
-	if got := read(t, e.Path("~/.zshrc")); !strings.Contains(got, `ZSH_THEME="robbyrussell"`) {
-		t.Errorf("no default theme in\n%s", got)
-	}
-	if got := read(t, e.Path("~/.zshrc.orig")); got != "mine\n" {
-		t.Errorf(".zshrc.orig = %q", got)
+	if got := read(t, e.Path(yardoZshrc)); !strings.Contains(got, `ZSH_THEME="robbyrussell"`) || !strings.HasPrefix(got, "# yardo's zsh setup") {
+		t.Errorf("no default theme or header in\n%s", got)
 	}
 	if !check(t, e, st) {
 		t.Error("Check after Apply = false")
 	}
-	// Once p10k is cloned, re-rendering keeps its theme; .orig stays.
+	// Once p10k is cloned, re-rendering keeps its theme.
 	if err := os.MkdirAll(e.Path(p10kDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -101,11 +97,134 @@ func TestZshrcTheme(t *testing.T) {
 		t.Error("Check = true with p10k cloned and the default theme")
 	}
 	apply(t, e, st)
-	if got := read(t, e.Path("~/.zshrc")); !strings.Contains(got, `ZSH_THEME="powerlevel10k/powerlevel10k"`) {
+	if got := read(t, e.Path(yardoZshrc)); !strings.Contains(got, `ZSH_THEME="powerlevel10k/powerlevel10k"`) {
 		t.Errorf("no p10k theme in\n%s", got)
 	}
-	if got := read(t, e.Path("~/.zshrc.orig")); got != "mine\n" {
-		t.Errorf(".zshrc.orig = %q after a second render", got)
+}
+
+// ~/.zshrc is the user's: yardo keeps its block first and leaves the rest.
+func TestZshrcIsTheUsers(t *testing.T) {
+	e := shellEnv(t)
+	st := step(t, catalog.Step{Type: "go:zshrc"})
+	p := e.Path(zshrc)
+	// No .zshrc: created, the block alone.
+	apply(t, e, st)
+	if got := read(t, p); got != zshrcBlock {
+		t.Errorf("new .zshrc = %q", got)
+	}
+	// An alias added below survives a re-run, and isn't drift.
+	put(t, p, zshrcBlock+"\nalias k=kubectl\n")
+	if !check(t, e, st) {
+		t.Error("Check = false with the user's alias")
+	}
+	apply(t, e, st)
+	if got := read(t, p); got != zshrcBlock+"\nalias k=kubectl\n" {
+		t.Errorf("re-run changed .zshrc: %q", got)
+	}
+	// The block deleted: back on top, the rest unchanged.
+	put(t, p, "alias k=kubectl\nexport EDITOR=hx\n")
+	if check(t, e, st) {
+		t.Error("Check = true without the block")
+	}
+	apply(t, e, st)
+	if got := read(t, p); got != zshrcBlock+"\nalias k=kubectl\nexport EDITOR=hx\n" {
+		t.Errorf(".zshrc = %q", got)
+	}
+	for _, f := range []string{"~/.zshrc.orig", zshrcSaved} {
+		if exists(e.Path(f)) {
+			t.Errorf("%s made", f)
+		}
+	}
+}
+
+// A .zshrc of the user's own on a new install: kept under the block, no
+// .orig; one that loads oh-my-zsh itself gets a note, once.
+func TestZshrcOwnKept(t *testing.T) {
+	e := shellEnv(t)
+	var notes []string
+	e.Note = func(s string) { notes = append(notes, s) }
+	st := step(t, catalog.Step{Type: "go:zshrc"})
+	var own strings.Builder
+	for i := range 40 {
+		fmt.Fprintf(&own, "export V%d=%d\n", i, i)
+	}
+	put(t, e.Path(zshrc), own.String())
+	apply(t, e, st)
+	if got := read(t, e.Path(zshrc)); got != zshrcBlock+"\n"+own.String() {
+		t.Errorf(".zshrc = %q", got)
+	}
+	if exists(e.Path("~/.zshrc.orig")) || len(notes) != 0 {
+		t.Errorf(".orig made, or notes %q", notes)
+	}
+	put(t, e.Path(zshrc), "export ZSH=~/.oh-my-zsh\nsource $ZSH/oh-my-zsh.sh\n")
+	apply(t, e, st)
+	if len(notes) != 1 || !strings.Contains(notes[0], "loads twice") {
+		t.Errorf("notes %q", notes)
+	}
+	apply(t, e, st)
+	if len(notes) != 1 {
+		t.Errorf("noted again: %q", notes)
+	}
+}
+
+// A .zshrc an older yardo wrote (the template's marker, no block) is
+// saved once and replaced by the block, with a note; a second run saves
+// and notes nothing. Drop-in lines an older yardo appended to the user's
+// own file go.
+func TestZshrcMovedOver(t *testing.T) {
+	e := shellEnv(t)
+	var notes []string
+	e.Note = func(s string) { notes = append(notes, s) }
+	st := step(t, catalog.Step{Type: "go:zshrc"})
+	old := "export ZSH=\"$HOME/.oh-my-zsh\"\nalias mine=1\n\n" + Dropins[0].Line + "\n\n" + LastMark + "\n[[ -r ~/.zshrc.local ]] && source ~/.zshrc.local\n"
+	put(t, e.Path(zshrc), old)
+	apply(t, e, st)
+	if got := read(t, e.Path(zshrc)); got != zshrcBlock {
+		t.Errorf(".zshrc = %q", got)
+	}
+	if got := read(t, e.Path(zshrcSaved)); got != old {
+		t.Errorf("saved = %q", got)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "~/.zshrc.before-yardo-split") {
+		t.Errorf("notes %q", notes)
+	}
+	apply(t, e, st)
+	if len(notes) != 1 || read(t, e.Path(zshrc)) != zshrcBlock || !check(t, e, st) {
+		t.Errorf("second run: notes %q, .zshrc %q", notes, read(t, e.Path(zshrc)))
+	}
+	// The user's own file, with lines an older yardo appended.
+	put(t, e.Path(zshrc), "alias k=kubectl\n\n"+Dropins[0].Line+"\n\n"+Dropins[3].Line+"\n")
+	apply(t, e, st)
+	if got := read(t, e.Path(zshrc)); got != zshrcBlock+"\nalias k=kubectl\n" {
+		t.Errorf(".zshrc = %q", got)
+	}
+}
+
+// A .zshrc linked into a dotfiles repo isn't written through: the run
+// notes the lines to add.
+func TestZshrcLinked(t *testing.T) {
+	e := shellEnv(t)
+	var notes []string
+	e.Note = func(s string) { notes = append(notes, s) }
+	st := step(t, catalog.Step{Type: "go:zshrc"})
+	repo := e.Path("~/.dotfiles/zsh/.zshrc")
+	put(t, repo, "alias k=kubectl\n")
+	if err := os.Symlink(repo, e.Path(zshrc)); err != nil {
+		t.Fatal(err)
+	}
+	apply(t, e, st)
+	if got := read(t, repo); got != "alias k=kubectl\n" {
+		t.Errorf("wrote through the link: %q", got)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], repo) || !strings.Contains(notes[0], zshSourceLine) {
+		t.Errorf("notes %q", notes)
+	}
+	if !exists(e.Path(yardoZshrc)) {
+		t.Error("yardo's zsh file not written")
+	}
+	put(t, repo, zshSourceLine+"\nalias k=kubectl\n")
+	if !check(t, e, st) {
+		t.Error("Check = false with the line in the linked file")
 	}
 }
 
@@ -120,12 +239,12 @@ func TestZshrcStarship(t *testing.T) {
 		t.Fatal(err)
 	}
 	apply(t, e, step(t, catalog.Step{Type: "go:zshrc"}))
-	got := read(t, e.Path("~/.zshrc"))
+	got := read(t, e.Path(yardoZshrc))
 	if !strings.Contains(got, "ZSH_THEME=\"\"\n") || !strings.Contains(got, `eval "$(starship init zsh)"`) {
-		t.Errorf(".zshrc:\n%s", got)
+		t.Errorf("yardo's zshrc:\n%s", got)
 	}
 	if zsh, err := exec.LookPath("zsh"); err == nil {
-		if out, err := exec.Command(zsh, "-n", e.Path("~/.zshrc")).CombinedOutput(); err != nil {
+		if out, err := exec.Command(zsh, "-n", e.Path(yardoZshrc)).CombinedOutput(); err != nil {
 			t.Errorf("zsh -n: %v\n%s", err, out)
 		}
 	}
@@ -143,28 +262,80 @@ func TestZshrcStarship(t *testing.T) {
 	}
 }
 
-// The steps of zshcfg, shellcfg, p10k and agentkeys all touch .zshrc: once
-// each has run, none has more to do (a re-run changes nothing).
-func TestZshrcSettles(t *testing.T) {
+// With the zsh config, yardo's zsh file sources the drop-ins and .zshrc
+// has only the block; without it (zsh alone), the block holds them. No
+// .zshrc (bash): nothing. Once each step has run, none has more to do.
+func TestZshDropins(t *testing.T) {
 	e := shellEnv(t)
-	zshrc := step(t, catalog.Step{Type: "go:zshrc"})
-	dropin := step(t, catalog.Step{Type: "line", To: "~/.zshrc", Line: Dropins[0].Line, IfExists: true})
-	theme := step(t, catalog.Step{Type: "line", To: "~/.zshrc", Match: "^ZSH_THEME=", Line: `ZSH_THEME="` + P10kTheme + `"`, IfExists: true})
-	apply(t, e, zshrc)
+	dropin := step(t, catalog.Step{Type: "go:zshdropin"})
 	put(t, e.Path(Dropins[0].File), "# shell\n")
 	apply(t, e, dropin)
-	if err := os.MkdirAll(e.Path(p10kDir), 0o755); err != nil {
-		t.Fatal(err)
+	if exists(e.Path(zshrc)) || !check(t, e, dropin) {
+		t.Error("no .zshrc: made one, or not done")
 	}
-	apply(t, e, theme)
-	// agentkeys (still bash) appends its line the same way.
+	// zsh alone.
+	put(t, e.Path(zshrc), "")
+	if check(t, e, dropin) {
+		t.Error("Check = true without the block")
+	}
+	apply(t, e, dropin)
+	if got, want := read(t, e.Path(zshrc)), zshBlock([]string{Dropins[0].Line}); got != want {
+		t.Errorf(".zshrc = %q, want %q", got, want)
+	}
+	put(t, e.Path(Dropins[3].File), "# helpers\n")
+	apply(t, e, dropin)
+	if got, want := read(t, e.Path(zshrc)), zshBlock([]string{Dropins[0].Line, Dropins[3].Line}); got != want {
+		t.Errorf(".zshrc = %q, want %q", got, want)
+	}
+	// The zsh config: the drop-ins move into yardo's file.
+	zshrcSt := step(t, catalog.Step{Type: "go:zshrc"})
+	apply(t, e, zshrcSt)
+	if got := read(t, e.Path(zshrc)); got != zshrcBlock {
+		t.Errorf(".zshrc = %q", got)
+	}
 	put(t, e.Path(Dropins[1].File), "# agent\n")
-	b, _ := os.ReadFile(e.Path("~/.zshrc"))
-	put(t, e.Path("~/.zshrc"), string(WithLine(b, Dropins[1].Line, "")))
-	for name, st := range map[string]Step{"zshrc": zshrc, "dropin": dropin, "theme": theme} {
-		if !check(t, e, st) {
-			t.Errorf("%s: Check = false on a settled .zshrc", name)
+	if check(t, e, dropin) {
+		t.Error("Check = true with a new drop-in yardo's file lacks")
+	}
+	apply(t, e, dropin)
+	y := read(t, e.Path(yardoZshrc))
+	for _, i := range []int{0, 1, 3} {
+		if !strings.Contains(y, Dropins[i].Line) {
+			t.Errorf("yardo's file lacks %q", Dropins[i].Line)
 		}
+	}
+	for name, st := range map[string]Step{"zshrc": zshrcSt, "dropin": dropin} {
+		if !check(t, e, st) {
+			t.Errorf("%s: Check = false once settled", name)
+		}
+	}
+	if !catalog.GoUndone["zshdropin"] || !catalog.GoUndone["zshrc"] {
+		t.Error("zsh's steps don't undo themselves")
+	}
+}
+
+// A new zsh, in a temp HOME with a stand-in oh-my-zsh: the user's lines
+// below the block win, and ~/.zshrc.local still loads.
+func TestZshrcOrder(t *testing.T) {
+	z, err := exec.LookPath("zsh")
+	if err != nil {
+		t.Skip("zsh not installed")
+	}
+	e := shellEnv(t)
+	put(t, e.Path("~/.oh-my-zsh/oh-my-zsh.sh"), "alias k=omz\n")
+	put(t, e.Path(Dropins[0].File), "alias k=dropin\nexport FROM_DROPIN=1\n")
+	put(t, e.Path("~/.zshrc.local"), "export FROM_LOCAL=1\n")
+	put(t, e.Path(zshrc), "alias k=kubectl\nexport EDITOR=hx\n")
+	apply(t, e, step(t, catalog.Step{Type: "go:zshrc"}))
+	home := e.Path("~")
+	cmd := exec.Command(z, "-ic", `print -r -- "$EDITOR|$FROM_DROPIN|$FROM_LOCAL|$aliases[k]"`)
+	cmd.Env = []string{"HOME=" + home, "ZDOTDIR=" + home, "PATH=/usr/bin:/bin", "TERM=dumb"}
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("zsh: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); !strings.HasSuffix(got, "hx|1|1|kubectl") {
+		t.Errorf("got %q, want hx|1|1|kubectl", got)
 	}
 }
 
@@ -191,21 +362,21 @@ func TestAptKernel(t *testing.T) {
 	}
 }
 
-// The local override files are sourced last: drop-ins and line steps go
-// before the block that sources ~/.zshrc.local, and each config file
-// yardo writes ends by sourcing its local file.
+// The local override files are sourced last: drop-ins go before the
+// block that sources ~/.zshrc.local in yardo's zsh file, and each config
+// file yardo writes ends by sourcing its local file.
 func TestLocalOverridesLast(t *testing.T) {
 	e := shellEnv(t)
 	put(t, e.Path("~/.config/yardo/shell.sh"), "")
+	put(t, e.Path("~/.config/yardo/agent-env.sh"), "")
 	apply(t, e, step(t, catalog.Step{Type: "go:zshrc"}))
-	apply(t, e, step(t, catalog.Step{Type: "line", To: "~/.zshrc", Line: ". ~/.config/yardo/agent-env.sh", IfExists: true}))
-	got := read(t, e.Path("~/.zshrc"))
+	got := read(t, e.Path(yardoZshrc))
 	last := "[[ -r ~/.zshrc.local ]] && source ~/.zshrc.local\n"
 	if !strings.HasSuffix(got, last) {
-		t.Errorf(".zshrc doesn't end by sourcing .zshrc.local:\n%s", got)
+		t.Errorf("yardo's zshrc doesn't end by sourcing .zshrc.local:\n%s", got)
 	}
 	mark := strings.Index(got, LastMark)
-	for _, l := range []string{Dropins[0].Line, ". ~/.config/yardo/agent-env.sh"} {
+	for _, l := range []string{Dropins[0].Line, Dropins[1].Line} {
 		if i := strings.Index(got, l); i < 0 || i > mark {
 			t.Errorf("%q isn't before the local overrides:\n%s", l, got)
 		}

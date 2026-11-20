@@ -249,10 +249,8 @@ to = "~/.bashrc"
 line = '[ -r ~/.config/yardo/agent-env.sh ] && . ~/.config/yardo/agent-env.sh'
 
 [[item.step]]
-type = "line"
-to = "~/.zshrc"
+type = "go:zshdropin"
 line = '[ -r ~/.config/yardo/agent-env.sh ] && . ~/.config/yardo/agent-env.sh'
-if_exists = true
 
 [[item]]
 id = "mcpjungle-install"

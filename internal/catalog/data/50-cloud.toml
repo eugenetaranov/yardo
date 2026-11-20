@@ -61,10 +61,8 @@ to = "~/.bashrc"
 line = '[ -r ~/.config/yardo/aws.sh ] && . ~/.config/yardo/aws.sh'
 
 [[item.step]]
-type = "line"
-to = "~/.zshrc"
+type = "go:zshdropin"
 line = '[ -r ~/.config/yardo/aws.sh ] && . ~/.config/yardo/aws.sh'
-if_exists = true
 
 [[item]]
 id = "gcloud"

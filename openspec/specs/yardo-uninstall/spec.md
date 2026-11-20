@@ -10,7 +10,7 @@ Removing an item SHALL run its `remove` script, then undo its `file`, `template`
 
 #### Scenario: AWS tools
 - **WHEN** the user removes `aws` and Shell helpers stays installed
-- **THEN** aws-cli, aws-ssm-connect, ssmsearch and rds-mysql are taken off mise, session-manager-plugin and mariadb-client are removed, `~/.config/yardo/aws.sh` and its lines in `.bashrc` and `.zshrc` are deleted, fzf and curl stay, and `~/.aws` is untouched
+- **THEN** aws-cli, aws-ssm-connect, ssmsearch and rds-mysql are taken off mise, session-manager-plugin and mariadb-client are removed, `~/.config/yardo/aws.sh` and its lines in `.bashrc` and in yardo's zsh file (or its block in `.zshrc`) are deleted, fzf and curl stay, and `~/.aws` is untouched
 
 #### Scenario: Removing twice
 - **WHEN** a removal failed part way and the user removes the item again

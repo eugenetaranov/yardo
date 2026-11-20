@@ -304,3 +304,48 @@ func TestGitConfigAndCredUndo(t *testing.T) {
 		t.Errorf("kept %q", got)
 	}
 }
+
+// Uninstalling the zsh config takes yardo's block out of ~/.zshrc and
+// deletes yardo's zsh file; the user's lines stay.
+func TestRemoveZshrc(t *testing.T) {
+	e := shellEnv(t)
+	apply(t, e, step(t, catalog.Step{Type: "go:zshrc"}))
+	writeAt(t, e, zshrc, readAt(t, e, zshrc)+"\nalias k=kubectl\n")
+	it := &catalog.Item{ID: "zshrc", Steps: []catalog.Step{{Type: "go:zshrc"}}}
+	if !it.Removable() {
+		t.Fatal("the zsh config isn't removable")
+	}
+	if _, err := Remove(context.Background(), e, it, KeptBy(e, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAt(t, e, zshrc); got != "alias k=kubectl\n" {
+		t.Errorf(".zshrc = %q", got)
+	}
+	if exists(e.Path(yardoZshrc)) {
+		t.Error("yardo's zsh file is still there")
+	}
+}
+
+// Removing an item with a zsh drop-in takes its line out of yardo's zsh
+// file, or, without it, out of yardo's block in ~/.zshrc.
+func TestRemoveZshDropin(t *testing.T) {
+	e := shellEnv(t)
+	aws := Dropins[4]
+	it := &catalog.Item{ID: "aws", Steps: []catalog.Step{{Type: "go:zshdropin", Line: aws.Line}}}
+	writeAt(t, e, aws.File, "# aws\n")
+	writeAt(t, e, zshrc, "alias k=kubectl\n")
+	apply(t, e, step(t, catalog.Step{Type: "go:zshdropin", Line: aws.Line}))
+	if _, err := Remove(context.Background(), e, it, KeptBy(e, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAt(t, e, zshrc); strings.Contains(got, aws.Line) || !strings.Contains(got, "alias k=kubectl") {
+		t.Errorf(".zshrc = %q", got)
+	}
+	apply(t, e, step(t, catalog.Step{Type: "go:zshrc"}))
+	if _, err := Remove(context.Background(), e, it, KeptBy(e, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAt(t, e, yardoZshrc); strings.Contains(got, aws.Line) {
+		t.Error("yardo's zsh file still sources aws.sh")
+	}
+}

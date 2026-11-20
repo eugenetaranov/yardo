@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# yardo shell drop-in, sourced at the end of ~/.zshrc and ~/.bashrc.
+# yardo shell drop-in, sourced from yardo's zsh setup and ~/.bashrc.
 # Written by yardo ("Shell niceties"); re-running it overwrites this
 # file, so put your own changes in your rc file after the source line.
 # Each hook runs only if its tool is installed.

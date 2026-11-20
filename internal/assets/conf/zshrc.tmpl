@@ -1,3 +1,6 @@
+# yardo's zsh setup, loaded from the block at the top of ~/.zshrc. Written
+# by yardo: sudo yardo rewrites this file. Your own lines go in ~/.zshrc,
+# below yardo's block: they load after this, so yours win.
 export ZSH="$HOME/.oh-my-zsh"
 ZSH_THEME="{{ .yardo_zsh_theme }}"
 
@@ -49,6 +52,5 @@ elif [[ -z $ZSH_THEME ]] && (( $+commands[starship] )); then
 fi
 
 # yardo: local overrides (keep last)
-# Your own settings go in ~/.zshrc.local: yardo never writes it, and
-# rewrites this file on a re-run (your first .zshrc is kept as .zshrc.orig).
+# ~/.zshrc.local still loads, here; your lines in ~/.zshrc come after it.
 [[ -r ~/.zshrc.local ]] && source ~/.zshrc.local

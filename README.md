@@ -320,7 +320,8 @@ doesn't ask. Before it changes anything, yardo asks, saying for each tool:
   uninstalls it and deletes its keys". **List everything that goes**
   shows every package, mise tool, file and line it takes off: its
   packages, apt repo and mise tools, and what yardo set up for it (its
-  files, the lines it added to `.bashrc` and `.zshrc`, its config block,
+  files, the lines it added to `.bashrc`, yardo's block in `.zshrc` (the
+  rest of `.zshrc` stays), its config block,
   links, clones, services, sysctl and git settings, agent skills).
 - **what stays, and why**: what another installed tool uses ("fzf
   (Shell helpers uses it)"), a file or git setting you changed ("edited
@@ -401,8 +402,8 @@ installed by hand.
    delta, direnv, glow) turned on with keys and aliases (z, fzf keys, direnv
    with a quiet `direnv.toml` that loads `.env` files too,
    eza/bat aliases, a shared Terraform/OpenTofu provider cache, kubecolor)
-   through `~/.config/yardo/shell.sh` (sourced from `.zshrc` and `.bashrc`
-   too), and man pages + tldr. It asks for the prompt: Powerlevel10k (ready
+   through `~/.config/yardo/shell.sh` (sourced from yardo's zsh setup and
+   `.bashrc` too), and man pages + tldr. It asks for the prompt: Powerlevel10k (ready
    in a one-line lean style with the OS icon, time and Nerd Font icons;
    needs a Nerd Font in your terminal; `p10k configure` restyles it, and an
    existing `~/.p10k.zsh` is kept) or Starship (one line;
@@ -589,7 +590,17 @@ grouped by how it was installed, with how to update or remove it.
 
 ### Your own settings
 
-yardo rewrites `.zshrc`, `~/.config/nvim/init.lua`, `.tmux.conf` and
+`~/.zshrc` is yours. yardo keeps one small marked block at its top,
+which loads yardo's zsh setup (`~/.config/yardo/zshrc`: oh-my-zsh, the
+plugins, the prompt), and never touches another line. Add aliases,
+exports and tools' install lines below the block: they stay through every
+run, and they load after yardo's setup, so yours win. If you delete the
+block, the next run puts it back on top. On a machine set up by an older
+yardo, the first run saves the `.zshrc` it wrote as
+`~/.zshrc.before-yardo-split` and says so: copy any lines you'd added
+there into `.zshrc`.
+
+yardo rewrites `~/.config/nvim/init.lua`, `.tmux.conf` and
 `~/.config/yardo/shell.sh` on a re-run, so lines you add to them are
 lost (your first version of each is kept once, as `.orig`). Put your own
 settings in these files instead. yardo never creates or changes
@@ -597,7 +608,7 @@ them, and the files it writes source them last, so yours win:
 
 | File | Read by |
 | --- | --- |
-| `~/.zshrc.local` | zsh (end of `.zshrc`) |
+| `~/.zshrc.local` | zsh (end of yardo's zsh setup, still read) |
 | `~/.config/yardo/local.sh` | zsh and bash (end of `shell.sh`) |
 | `~/.tmux.local.conf` | tmux (end of `.tmux.conf`) |
 | `~/.config/nvim/local.lua` | Neovim (end of `init.lua`) |

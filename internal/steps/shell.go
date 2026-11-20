@@ -6,6 +6,9 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/eugenetaranov/yardo/internal/catalog"
 )
@@ -28,8 +31,8 @@ func Prompt(e *Env) string {
 	return "p10k"
 }
 
-// Drop-ins: a line in .zshrc and .bashrc for each file yardo keeps
-// shell settings in.
+// Drop-ins: a line in .bashrc, and in yardo's zsh file (or, without it,
+// yardo's block in .zshrc), for each file yardo keeps shell settings in.
 var Dropins = []struct{ File, Line string }{
 	{"~/.config/yardo/shell.sh", "[ -r ~/.config/yardo/shell.sh ] && . ~/.config/yardo/shell.sh"},
 	{"~/.config/yardo/agent-env.sh", "[ -r ~/.config/yardo/agent-env.sh ] && . ~/.config/yardo/agent-env.sh"},
@@ -40,6 +43,7 @@ var Dropins = []struct{ File, Line string }{
 
 func init() {
 	RegisterGo("zshrc", func(catalog.Step) Step { return zshrcStep{} })
+	RegisterGo("zshdropin", func(s catalog.Step) Step { return zshDropinStep{line: s.Line} })
 	RegisterGo("prompt", func(catalog.Step) Step { return promptStep{} })
 }
 
@@ -107,14 +111,140 @@ func (p promptStep) Apply(ctx context.Context, e *Env) error {
 	return applyAll(ctx, e, p.parts(e), false)
 }
 
-// zshrcStep writes ~/.zshrc from zshrc.tmpl: the theme is the chosen
-// prompt's (Powerlevel10k once it's cloned), and the drop-ins of the files
-// that exist are added back (the template replaced them).
+// yardo's zsh setup is its own file, loaded from a marked block first in
+// the user's ~/.zshrc; yardo never touches another line of .zshrc.
+const (
+	zshrc      = "~/.zshrc"
+	yardoZshrc = "~/.config/yardo/zshrc"
+	// ZshBlockBegin and ZshBlockEnd mark yardo's block in ~/.zshrc.
+	ZshBlockBegin = "# >>> yardo (managed: sudo yardo rewrites this block; your lines go below)"
+	ZshBlockEnd   = "# <<< yardo"
+	zshSourceLine = "[ -r ~/.config/yardo/zshrc ] && source ~/.config/yardo/zshrc"
+	// zshrcSaved is where a .zshrc an older yardo wrote is kept.
+	zshrcSaved = "~/.zshrc.before-yardo-split"
+)
+
+// zshBlock is yardo's block holding lines.
+func zshBlock(lines []string) string {
+	return ZshBlockBegin + "\n" + strings.Join(lines, "\n") + "\n" + ZshBlockEnd + "\n"
+}
+
+// dropinLines are the Dropins lines of the files that exist.
+func dropinLines(e *Env) []string {
+	var out []string
+	for _, d := range Dropins {
+		if _, err := os.Stat(e.Path(d.File)); err == nil {
+			out = append(out, d.Line)
+		}
+	}
+	return out
+}
+
+// yardoWrote reports whether a .zshrc is one an older yardo wrote whole
+// (from zshrc.tmpl, which always had LastMark), not yet split.
+func yardoWrote(b []byte) bool {
+	return bytes.Contains(b, []byte(LastMark)) && !bytes.Contains(b, []byte(ZshBlockBegin))
+}
+
+// zshrcPlan is what .zshrc should be with block in it: the block first,
+// the user's lines kept, the drop-in lines an older yardo appended taken
+// out; a .zshrc an older yardo wrote becomes the block alone (saved
+// first, see zshrcApply).
+func zshrcPlan(cur []byte, block string) []byte {
+	if yardoWrote(cur) {
+		return []byte(block)
+	}
+	for _, d := range Dropins {
+		cur = WithoutLine(cur, d.Line)
+	}
+	return WithBlock(cur, ZshBlockBegin, ZshBlockEnd, block)
+}
+
+// zshrcLink is where ~/.zshrc links to ("" when it's no link): a dotfiles
+// repo's, which yardo doesn't write through.
+func zshrcLink(e *Env) string {
+	p := e.Path(zshrc)
+	fi, err := os.Lstat(p)
+	if err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+		return ""
+	}
+	t, err := os.Readlink(p)
+	if err != nil {
+		return p
+	}
+	if !filepath.IsAbs(t) {
+		t = filepath.Join(filepath.Dir(p), t)
+	}
+	return t
+}
+
+// zshrcCheck reports whether .zshrc has block as zshrcPlan puts it (a
+// linked one: whether it loads yardo's lines at all).
+func zshrcCheck(e *Env, block string) (bool, error) {
+	if zshrcLink(e) != "" {
+		cur, err := os.ReadFile(e.Path(zshrc))
+		if err != nil {
+			return true, nil // a broken link: nothing to do here
+		}
+		for _, l := range strings.Split(strings.TrimSuffix(block, "\n"), "\n")[1:] {
+			if l != ZshBlockEnd && !bytes.Contains(cur, []byte(l)) {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+	cur, err := os.ReadFile(e.Path(zshrc))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	return err == nil && bytes.Equal(cur, zshrcPlan(cur, block)), nil
+}
+
+// zshrcApply puts block first in .zshrc (see zshrcPlan). A .zshrc an
+// older yardo wrote is saved once as .zshrc.before-yardo-split; one of the
+// user's own that loads oh-my-zsh itself, and one that links into a
+// dotfiles repo, get a note.
+func zshrcApply(e *Env, block string) error {
+	p := e.Path(zshrc)
+	if t := zshrcLink(e); t != "" {
+		e.note("~/.zshrc links to " + t + ", which yardo doesn't change: to load yardo's zsh setup, put these lines first in it:\n" + block)
+		return nil
+	}
+	cur, err := os.ReadFile(p)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	want := zshrcPlan(cur, block)
+	switch {
+	case yardoWrote(cur):
+		saved := e.Path(zshrcSaved)
+		if !exists(saved) {
+			if err := writeFile(saved, cur, 0o644); err != nil {
+				return err
+			}
+			if err := e.chown(saved, e.UID, e.GID); err != nil {
+				return err
+			}
+			e.note("yardo's zsh setup moved to ~/.config/yardo/zshrc, and ~/.zshrc is yours now: your lines there stay. The old ~/.zshrc is saved as ~/.zshrc.before-yardo-split: copy any lines you'd added to it into ~/.zshrc.")
+		}
+	case !bytes.Contains(cur, []byte(ZshBlockBegin)) && bytes.Contains(cur, []byte("oh-my-zsh.sh")):
+		e.note("~/.zshrc loads oh-my-zsh, and so does yardo's block now at its top: oh-my-zsh loads twice. Take out your oh-my-zsh lines (export ZSH, plugins=, source $ZSH/oh-my-zsh.sh) to keep yardo's, or remove the zsh config to keep yours.")
+	}
+	if err := writeFile(p, want, 0o644); err != nil {
+		return err
+	}
+	return e.chown(p, e.UID, e.GID)
+}
+
+// zshrcStep writes yardo's zsh setup, ~/.config/yardo/zshrc, from
+// zshrc.tmpl (the theme is the chosen prompt's, Powerlevel10k once it's
+// cloned; the drop-ins of the files that exist are sourced at its end),
+// and keeps the block that loads it first in ~/.zshrc.
 type zshrcStep struct{}
 
-const zshrc = "~/.zshrc"
-
-func (zshrcStep) Plan(*Env) []Action { return []Action{{"file", zshrc + " (from zshrc.tmpl)"}} }
+func (zshrcStep) Plan(*Env) []Action {
+	return []Action{{"file", yardoZshrc + " (from zshrc.tmpl)"}, {"block", zshrc + " (yardo's block, loading it)"}}
+}
 
 func (zshrcStep) want(e *Env) ([]byte, error) {
 	theme := DefaultZshTheme
@@ -127,21 +257,23 @@ func (zshrcStep) want(e *Env) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, d := range Dropins {
-		if _, err := os.Stat(e.Path(d.File)); err == nil {
-			b = WithLine(b, d.Line, "")
-		}
+	for _, l := range dropinLines(e) {
+		b = WithLine(b, l, "")
 	}
 	return b, nil
 }
+
+var zshrcBlock = zshBlock([]string{zshSourceLine})
 
 func (z zshrcStep) Check(_ context.Context, e *Env) (bool, error) {
 	want, err := z.want(e)
 	if err != nil {
 		return false, err
 	}
-	cur, err := os.ReadFile(e.Path(zshrc))
-	return err == nil && bytes.Equal(cur, want), nil
+	if cur, err := os.ReadFile(e.Path(yardoZshrc)); err != nil || !bytes.Equal(cur, want) {
+		return false, nil
+	}
+	return zshrcCheck(e, zshrcBlock)
 }
 
 func (z zshrcStep) Apply(_ context.Context, e *Env) error {
@@ -149,20 +281,102 @@ func (z zshrcStep) Apply(_ context.Context, e *Env) error {
 	if err != nil {
 		return err
 	}
-	p := e.Path(zshrc)
-	// The user's own .zshrc is kept once, as .zshrc.orig.
-	if cur, err := os.ReadFile(p); err == nil {
-		if _, err := os.Stat(p + ".orig"); errors.Is(err, fs.ErrNotExist) {
-			if err := writeFile(p+".orig", cur, 0o644); err != nil {
-				return err
-			}
-			if err := e.chown(p+".orig", e.UID, e.GID); err != nil {
-				return err
-			}
-		}
+	s := catalog.Step{To: yardoZshrc}
+	p := e.Path(yardoZshrc)
+	if err := mkdirFor(e, p, s); err != nil {
+		return err
 	}
 	if err := writeFile(p, want, 0o644); err != nil {
 		return err
 	}
-	return e.chown(p, e.UID, e.GID)
+	if err := e.chown(p, e.UID, e.GID); err != nil {
+		return err
+	}
+	return zshrcApply(e, zshrcBlock)
+}
+
+// PlanUndo plans taking yardo's block out of ~/.zshrc and deleting
+// yardo's zsh file; the rest of .zshrc stays.
+func (zshrcStep) PlanUndo(_ context.Context, e *Env, p *RemovePlan) error {
+	if path := e.Path(zshrc); zshrcLink(e) == "" {
+		if cur, err := os.ReadFile(path); err == nil && bytes.Contains(cur, []byte(ZshBlockBegin)) {
+			p.off("yardo's block in "+zshrc, func(context.Context) error {
+				return rewrite(path, func(b []byte, _ string) []byte { return WithoutBlock(b, ZshBlockBegin, ZshBlockEnd) })("")
+			})
+		}
+	}
+	if path := e.Path(yardoZshrc); exists(path) {
+		p.off(yardoZshrc, func(context.Context) error { return rmIfThere(path) })
+	}
+	return nil
+}
+
+// zshDropinStep keeps zsh loading yardo's drop-ins, for the items that
+// add one (shell niceties, helpers, Neovim, AWS, agent keys): with
+// yardo's zsh setup there, it's re-rendered (it sources them); without
+// it, yardo's block in ~/.zshrc holds their lines. No .zshrc (a bash
+// user): nothing to do. line is its item's drop-in line, for its undo.
+type zshDropinStep struct{ line string }
+
+func (zshDropinStep) Plan(*Env) []Action {
+	return []Action{{"block", zshrc + " (yardo's block, loading its shell files)"}}
+}
+
+// full reports whether yardo's zsh setup is there (or was, in a .zshrc
+// it wrote whole): the zshrc step's work then.
+func (zshDropinStep) full(e *Env) bool {
+	if exists(e.Path(yardoZshrc)) {
+		return true
+	}
+	cur, err := os.ReadFile(e.Path(zshrc))
+	return err == nil && zshrcLink(e) == "" && yardoWrote(cur)
+}
+
+func (z zshDropinStep) Check(ctx context.Context, e *Env) (bool, error) {
+	if !exists(e.Path(zshrc)) {
+		return true, nil
+	}
+	if z.full(e) {
+		return zshrcStep{}.Check(ctx, e)
+	}
+	lines := dropinLines(e)
+	if len(lines) == 0 {
+		return true, nil
+	}
+	return zshrcCheck(e, zshBlock(lines))
+}
+
+func (z zshDropinStep) Apply(ctx context.Context, e *Env) error {
+	if !exists(e.Path(zshrc)) {
+		return nil
+	}
+	if z.full(e) {
+		return zshrcStep{}.Apply(ctx, e)
+	}
+	lines := dropinLines(e)
+	if len(lines) == 0 {
+		return nil
+	}
+	return zshrcApply(e, zshBlock(lines))
+}
+
+// PlanUndo plans taking its line out of yardo's zsh file, or out of
+// yardo's block in ~/.zshrc (a re-run adds it back only while its file
+// is there).
+func (z zshDropinStep) PlanUndo(_ context.Context, e *Env, p *RemovePlan) error {
+	if z.line == "" {
+		return nil
+	}
+	for _, f := range []string{yardoZshrc, zshrc} {
+		path := e.Path(f)
+		if f == zshrc && zshrcLink(e) != "" {
+			continue
+		}
+		cur, err := os.ReadFile(path)
+		if err != nil || !slices.Contains(strings.Split(string(cur), "\n"), z.line) {
+			continue
+		}
+		p.off("a line in "+f, func(context.Context) error { return rewrite(path, WithoutLine)(z.line) })
+	}
+	return nil
 }

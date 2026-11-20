@@ -1,4 +1,4 @@
-# yardo zsh completions, sourced from ~/.zshrc before oh-my-zsh.
+# yardo zsh completions, sourced from yardo's zsh setup before oh-my-zsh.
 # Written by yardo ("zsh + oh-my-zsh"); re-running it overwrites
 # this file.
 #

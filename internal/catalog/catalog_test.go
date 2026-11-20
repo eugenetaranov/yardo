@@ -301,6 +301,22 @@ func TestUnverifiedList(t *testing.T) {
 	}
 }
 
+// ~/.zshrc is the user's: yardo's lines for zsh go through its own zsh
+// file or its block (go:zshdropin), never a line step; .bashrc keeps its.
+func TestNoLineIntoZshrc(t *testing.T) {
+	c, err := Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range c.Items {
+		for _, s := range it.Steps {
+			if s.Type == "line" && s.To == "~/.zshrc" {
+				t.Errorf("%s: a line step into ~/.zshrc (%s)", it.ID, s.Line)
+			}
+		}
+	}
+}
+
 func TestBlockStepNeedsSrcAndTo(t *testing.T) {
 	item := func(step string) fstest.MapFS {
 		return fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\n[[item.step]]\n" + step)}}
@@ -382,8 +398,10 @@ func TestChoices(t *testing.T) {
 // What yardo can uninstall: an item with a remove script, or one whose
 // steps it undoes on its own (apt, apt repo, mise, its files, lines,
 // links, clones, services, git settings); not one set up by scripts.
-// (Go steps that undo themselves: the steps package's test.)
+// (Go steps that undo themselves: the steps package's test; it registers
+// zsh's drop-in step as one.)
 func TestRemovable(t *testing.T) {
+	GoUndone["zshdropin"] = true
 	c, err := Load(nil, nil)
 	if err != nil {
 		t.Fatal(err)
