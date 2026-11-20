@@ -572,9 +572,13 @@ installed by hand.
    token you put in yourself is never replaced: gh's token reaches all you
    can, so put a fine-grained one there to narrow it.
    **Agent skills** (on by default): yardo's `git-commits`,
-   `pr-descriptions` and `jira-tickets` skills, in `~/.agents/skills`
+   `git-branches`, `pr-descriptions` and `jira-tickets` skills, in `~/.agents/skills`
    (Codex, Gemini CLI, OpenCode, Goose, pi, omp) and `~/.claude/skills`
-   (Claude Code): short commit messages that say why, a PR description
+   (Claude Code): short commit messages that say why, branches named
+   `DEVOPS-142-short-description` (the Jira key first, when there's one;
+   a project's own convention wins: its docs, its recent branches, or a
+   prefix kept with `git config yardo.branchPrefix tech/`, per repo or
+   `--global`; `git-make-branch` names them the same), a PR description
    that's a note to the reviewer, and tickets a teammate would write: a
    title, one to three plain sentences, and three to five acceptance
    criteria, each checkable (required), under a hundred words. yardo

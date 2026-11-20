@@ -171,13 +171,13 @@ type = "go:agentsafe"
 id = "agentskills"
 tab = "agents"
 after = ["agentcfg"]
-label = "Agent skills: git commits, PR descriptions, Jira tickets; no agent co-author lines"
+label = "Agent skills: git commits and branches, PR descriptions, Jira tickets; no agent co-author lines"
 default = true
 source = "~/.agents/skills, ~/.claude/skills (Claude Code, Codex, Gemini CLI, OpenCode, Goose, omp) · a git commit-msg hook (Git 2.54+; older git on Ubuntu upgraded from the git-core PPA) dropping agents' Co-authored-by"
 
 [[item.step]]
 type = "go:skills"
-skills = ["git-commits", "pr-descriptions", "jira-tickets"]
+skills = ["git-commits", "git-branches", "pr-descriptions", "jira-tickets"]
 
 [[item.step]]
 type = "go:gitattrib"

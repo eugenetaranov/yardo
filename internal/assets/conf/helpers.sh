@@ -15,7 +15,9 @@ _yardo_confirm() {
 # --- git ---------------------------------------------------------------
 
 # git-make-branch <ticket-URL-or-ID>: asks for a name, checks out
-# <ticket>/<name-with-dashes> (DEVOPS-12 + "fix login" → devops-12/fix-login).
+# <KEY>-<name-with-dashes> (DEVOPS-12 + "Fix login" → DEVOPS-12-fix-login),
+# as agents name them (the git-branches skill). A project's prefix goes in
+# front: git config yardo.branchPrefix tech/ (or --global) → tech/DEVOPS-12-….
 git-make-branch() {
   if [ -z "$1" ]; then
     echo "Usage: git-make-branch <ticket-URL-or-ID>"
@@ -27,7 +29,8 @@ git-make-branch() {
   printf 'Branch name: '
   read -r name
   [ -n "$name" ] || { echo "Branch name cannot be empty"; return 1; }
-  git checkout -b "$(printf '%s' "$ticket" | tr '[:upper:]' '[:lower:]')/$(printf '%s' "$name" | tr ' ' '-')"
+  name=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')
+  git checkout -b "$(git config --get yardo.branchPrefix)$ticket-$name"
 }
 
 # The remote's default branch, checked out and pulled.

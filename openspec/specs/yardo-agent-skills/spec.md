@@ -36,7 +36,7 @@ On Git 2.54 or later, yardo SHALL set a global config-based `commit-msg` hook th
 - **THEN** `~/yardo.txt` says Codex's attribution is a ChatGPT account setting, and where to turn it off
 
 ### Requirement: yardo's skills
-yardo SHALL ship `git-commits`, `pr-descriptions` and `jira-tickets` as skills in the agentskills.io format, with only portable frontmatter (`name`, `description`, `license`, `compatibility`, `metadata`), each under 100 lines. `jira-tickets` SHALL ask for a title, 2–5 plain sentences and at most 5 acceptance criteria, with no headings, bold labels, emojis or boilerplate sections.
+yardo SHALL ship `git-commits`, `git-branches`, `pr-descriptions` and `jira-tickets` as skills in the agentskills.io format, with only portable frontmatter (`name`, `description`, `license`, `compatibility`, `metadata`), each under 100 lines. `jira-tickets` SHALL ask for a title, 1–3 plain sentences and 3–5 acceptance criteria, each an observable pass/fail result and required on every story, task and bug, with no headings, bold labels, emojis or boilerplate sections. `git-branches` SHALL name a branch `<KEY>-<short-description>` when there's a Jira ticket (its key as Jira shows it, then 2–5 lowercase words joined with hyphens), else the description alone; a project's convention comes first: one its docs state, a prefix in `git config yardo.branchPrefix` (per repo or global, which `git-make-branch` uses too), or a prefix its recent branches share.
 
 #### Scenario: Installed for every agent
 - **WHEN** the agent skills item is applied
