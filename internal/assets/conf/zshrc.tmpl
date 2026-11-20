@@ -37,6 +37,10 @@ source "$ZSH/oh-my-zsh.sh"
 
 (( $+functions[yardo_bash_completers] )) && yardo_bash_completers
 
+# gcm: to the main branch, and its latest commits (oh-my-zsh's git plugin
+# only checks it out; gl is the pull alone).
+(( $+aliases[gcm] )) && alias gcm='git checkout $(git_main_branch) && git pull'
+
 if (( ${plugins[(Ie)fzf-tab]} )); then
   # fzf-tab draws the menu: turn off oh-my-zsh's menu select, which is set
   # on the more specific pattern and would otherwise win.

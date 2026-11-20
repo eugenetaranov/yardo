@@ -205,3 +205,26 @@ func TestP10kConfigSources(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+// gcm, after oh-my-zsh's git plugin defines it, checks out the main
+// branch and pulls it.
+func TestZshrcGcmPulls(t *testing.T) {
+	zsh, err := exec.LookPath("zsh")
+	if err != nil {
+		t.Skip("no zsh")
+	}
+	tmpl := readEmbedded(t, "conf/zshrc.tmpl")
+	i := strings.Index(tmpl, "# gcm:")
+	if i < 0 || i < strings.Index(tmpl, `source "$ZSH/oh-my-zsh.sh"`) {
+		t.Fatal("gcm isn't redefined after oh-my-zsh")
+	}
+	block := tmpl[i : i+strings.Index(tmpl[i:], "\n\n")]
+	out, err := exec.Command(zsh, "-fc", "alias gcm='git checkout $(git_main_branch)'\n"+block+"\nalias gcm").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "git checkout $(git_main_branch) && git pull") {
+		t.Errorf("%v: %s", err, out)
+	}
+	// Without the git plugin, no gcm.
+	if out, _ := exec.Command(zsh, "-fc", block+"\nalias gcm").CombinedOutput(); strings.Contains(string(out), "git") {
+		t.Errorf("gcm without the plugin: %s", out)
+	}
+}

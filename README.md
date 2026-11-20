@@ -412,7 +412,8 @@ installed by hand.
    previews), the modern CLI tools (ripgrep, ag, fd, bat, eza, zoxide, fzf,
    delta, direnv, glow) turned on with keys and aliases (z, fzf keys, direnv
    with a quiet `direnv.toml` that loads `.env` files too,
-   eza/bat aliases, a shared Terraform/OpenTofu provider cache, kubecolor)
+   eza/bat aliases, a shared Terraform/OpenTofu provider cache, kubecolor;
+   oh-my-zsh's `gcm` checks out the main branch and pulls it too)
    through `~/.config/yardo/shell.sh` (sourced from yardo's zsh setup and
    `.bashrc` too), and man pages + tldr. It asks for the prompt: Powerlevel10k (ready
    in a one-line lean style with the OS icon, time and Nerd Font icons;
