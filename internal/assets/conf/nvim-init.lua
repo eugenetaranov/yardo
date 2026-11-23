@@ -416,13 +416,20 @@ require("lazy").setup({
       vim.lsp.config("jsonls", {
         settings = { json = { schemas = schemas.json.schemas(), validate = { enable = true } } },
       })
-      -- terraform-ls's deeper checks (a var or attribute that doesn't
-      -- exist) take most of a minute in a big repo before gd and grr
-      -- answer; without them it's seconds, and syntax errors still show.
-      -- Back on: vim.lsp.config("terraformls", { init_options = {
-      -- validation = { enableEnhancedValidation = true } } }) in local.lua.
+      -- terraform-ls keeps nothing between starts: it reads the repo again
+      -- each time, and gd and grr wait for it. Two things made that most
+      -- of a minute in a big repo: its deeper checks (a var or attribute
+      -- that doesn't exist; syntax errors still show without them) and
+      -- asking registry.terraform.io about every registry module (docs
+      -- for their inputs; a module `terraform init` fetched is read from
+      -- .terraform either way), which can't be turned off but fails at
+      -- once through a proxy that isn't there. Without them: seconds.
+      -- Back on, in local.lua: vim.lsp.config("terraformls", {
+      --   init_options = { validation = { enableEnhancedValidation = true } },
+      --   cmd_env = { HTTPS_PROXY = vim.env.HTTPS_PROXY or "" } })
       vim.lsp.config("terraformls", {
         init_options = { validation = { enableEnhancedValidation = false } },
+        cmd_env = { HTTPS_PROXY = "http://127.0.0.1:1" },
       })
       -- Mason's servers start by themselves; a language added later gets
       -- its server installed in the background on the next start.
