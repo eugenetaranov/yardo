@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -182,5 +183,29 @@ func TestConnectScript(t *testing.T) {
 	conf2, _ := os.ReadFile(filepath.Join(home, ".ssh", "config"))
 	if string(conf2) != string(conf) || strings.Contains(out, "added") || strings.Contains(out, "made") || !strings.Contains(out, "iTerm2: takes copies from vm already") {
 		t.Errorf("second run changed something:\n%s", out)
+	}
+}
+
+func TestPagesSetup(t *testing.T) {
+	a := &answers.Answers{User: "ada", MCPPort: 8081, Picks: []string{"pages"}}
+	if s := pagesSetup(a, "100.1.2.3"); s.ID != "pages" || len(s.Lines) != 2 || s.Lines[0] != "ssh -N -L 9081:127.0.0.1:9081 ada@100.1.2.3" || s.Lines[1] != "http://127.0.0.1:9081/" {
+		t.Errorf("this machine only: %+v", s)
+	}
+	a.MCPListen = "vpn"
+	if s := pagesSetup(a, "100.1.2.3"); s.Lines[0] != "http://100.1.2.3:9081/" {
+		t.Errorf("vpn: %+v", s)
+	}
+	a.MCPListen, a.MCPDomain = "public", "mcp.example.com"
+	if s := pagesSetup(a, "100.1.2.3"); s.Lines[0] != "https://mcp.example.com/pages/" {
+		t.Errorf("public: %+v", s)
+	}
+	if ss := laptopSetups(a, nil, nil, false, "box"); !slices.ContainsFunc(ss, func(s ui.Setup) bool { return s.ID == "pages" }) {
+		t.Error("no Pages on the Connection screen with pages picked")
+	}
+	if rows := pagesRows(a, nil, true); len(rows) != 1 || rows[0].Use != "https://mcp.example.com/pages/" {
+		t.Errorf("home row: %+v", rows)
+	}
+	if got := parseServices("yardo-pages@ada.service loaded active running yardo pages\n"); len(got) != 1 || got[0].Name != "pages" || !got[0].Up {
+		t.Errorf("services: %+v", got)
 	}
 }

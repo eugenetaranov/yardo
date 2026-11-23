@@ -65,15 +65,47 @@ func mcpSite(e *Env) string { return filepath.Join(caddySites, "mcp-"+e.User+".c
 func mcpLog(e *Env) string { return filepath.Join(caddyLogDir, "yardo-mcp-"+e.User+".log") }
 
 func siteText(e *Env) []byte {
+	// ~/pages, under /pages/ with a login, once go:pages_public set it up.
 	return []byte(fmt.Sprintf(`# yardo: %s's MCP gateway, at its domain name (yardo rewrites this file).
 %s {
-	reverse_proxy 127.0.0.1:%d
+%s	reverse_proxy 127.0.0.1:%d
 	log {
 		output file %s
 		format json
 	}
 }
-`, e.User, e.Answers.MCPDomain, MCPPort(e), mcpLog(e)))
+`, e.User, e.Answers.MCPDomain, pagesSiteBlock(e), MCPPort(e), mcpLog(e)))
+}
+
+// installCaddy installs Caddy from its own apt repository, unless it's
+// there; fresh reports that this run installed it.
+func installCaddy(ctx context.Context, e *Env) (fresh bool, err error) {
+	for _, st := range []catalog.Step{
+		{Type: "apt_repo", Name: "caddy", KeyURL: caddyRepoKey, KeyFingerprint: caddyRepoFpr, Source: caddyRepoBody},
+		{Type: "apt", Packages: []string{"caddy"}},
+	} {
+		x, err := New("caddy", st)
+		if err != nil {
+			return false, err
+		}
+		if done, err := x.Check(ctx, e); err == nil && done {
+			continue
+		}
+		if r, ok := x.(aptRepoStep); ok {
+			if err := r.Apply(ctx, e); err != nil {
+				return false, err
+			}
+			if _, err := e.run(ctx, Cmd{Name: "apt-get", Args: append(slices.Clone(AptOpts), "update"), Env: AptEnv}); err != nil {
+				return false, err
+			}
+			continue
+		}
+		if err := x.Apply(ctx, e); err != nil {
+			return false, err
+		}
+		fresh = true
+	}
+	return fresh, nil
 }
 
 type mcpPublicStep struct{}
@@ -121,29 +153,8 @@ func (s mcpPublicStep) Apply(ctx context.Context, e *Env) error {
 	if !ValidDomain(e.Answers.MCPDomain) {
 		return fmt.Errorf("the MCP gateway's domain name %q isn't one (run 'sudo yardo' and choose it again)", e.Answers.MCPDomain)
 	}
-	for _, st := range []catalog.Step{
-		{Type: "apt_repo", Name: "caddy", KeyURL: caddyRepoKey, KeyFingerprint: caddyRepoFpr, Source: caddyRepoBody},
-		{Type: "apt", Packages: []string{"caddy"}},
-	} {
-		x, err := New("mcpjungle-install", st)
-		if err != nil {
-			return err
-		}
-		if done, err := x.Check(ctx, e); err == nil && done {
-			continue
-		}
-		if r, ok := x.(aptRepoStep); ok {
-			if err := r.Apply(ctx, e); err != nil {
-				return err
-			}
-			if _, err := e.run(ctx, Cmd{Name: "apt-get", Args: append(slices.Clone(AptOpts), "update"), Env: AptEnv}); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := x.Apply(ctx, e); err != nil {
-			return err
-		}
+	if _, err := installCaddy(ctx, e); err != nil {
+		return err
 	}
 	imp, err := os.ReadFile(e.Path(caddyfile))
 	if err != nil && !os.IsNotExist(err) {

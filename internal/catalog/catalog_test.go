@@ -296,7 +296,7 @@ func TestUnverifiedList(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	if want := "k8stools neovim neovim ollama omp tailscale-install"; strings.Join(got, " ") != want {
+	if want := "archify k8stools neovim neovim ollama omp tailscale-install"; strings.Join(got, " ") != want {
 		t.Errorf("unverified downloads: %s\nwant %s (update this list when that's intended)", strings.Join(got, " "), want)
 	}
 }

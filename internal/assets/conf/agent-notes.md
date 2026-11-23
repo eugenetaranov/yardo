@@ -8,3 +8,5 @@
 - `~/yardo.txt` lists what yardo installed and how;
   `sudo yardo` adds more.
 - Kubernetes config, if any, is in `~/.kube/config`.
+- HTML for the user to look at (diagrams, reports) goes in `~/pages`, if
+  it exists: `pages-url NAME.html` prints the link they open.

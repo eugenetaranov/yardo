@@ -210,6 +210,51 @@ source = "obra/superpowers systematic-debugging, verification-before-completion 
 type = "go:skills"
 skills = ["systematic-debugging", "verification-before-completion", "tdd", "grill-me", "find-bugs", "humanizer", "skill-creator", "webapp-testing"]
 
+# ~/pages over HTTP: the pages agents make (diagrams, reports), opened on
+# your laptop. Reached as the MCP gateway is (Settings › MCP gateway and web
+# pages): this machine only (an SSH tunnel), the VPNs, the internet under
+# the gateway's domain (/pages/, with a password) or everywhere.
+[[item]]
+id = "pages"
+tab = "agents"
+after = ["agentcfg", "mcpjungle-install"]
+label = "Web pages from your agents: ~/pages at a link you open on your laptop"
+remove_say = "stops serving ~/pages; the pages themselves stay"
+source = "apt caddy (its own repository) · caddy file-server as you (yardo-pages@you) on port 9080, a file list at / · pages-url NAME prints the link (the address your SSH session came in at) · skill pages: agents save HTML there and give you the link"
+
+[[item.step]]
+type = "go:pages_unit"
+
+[[item.step]]
+type = "go:pages_firewall"
+
+[[item.step]]
+type = "go:pages_public"
+
+[[item.step]]
+type = "go:skills"
+skills = ["pages"]
+
+# Archify: an agent turns a plan, system or repo into an interactive HTML
+# diagram or explainer, saved in ~/pages. Too big to ship inside yardo
+# (23 MB): its own installer fetches it, for Claude Code and Codex.
+[[item]]
+id = "archify"
+tab = "agents"
+needs = ["pages", "node"]
+after = ["claude", "codex"]
+label = "Archify: interactive diagrams of a plan, system or repo (open them from ~/pages)"
+remove = "rm -rf {{home}}/.claude/skills/archify {{home}}/.agents/skills/archify"
+remove_say = "removes the archify skill; diagrams in ~/pages stay"
+source = "npx skills add https://archify.si --skill archify (tt-a1i/archify, Apache-2.0) → ~/.claude/skills, ~/.agents/skills"
+
+[[item.step]]
+type = "run"
+cmd = "npx -y skills@latest add https://archify.si --skill archify --agent claude-code --agent codex --global --copy --yes </dev/null"
+as_user = true
+creates = "~/.claude/skills/archify/SKILL.md"
+unverified = "archify's own installer (the skills CLI from npm), which fetches its latest version from GitHub"
+
 [[item]]
 id = "agentkeys"
 remove_say = "takes your agent keys out of your shells; the file with them (~/.config/yardo/agent.env) stays"

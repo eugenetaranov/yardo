@@ -247,6 +247,10 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		fmt.Fprintln(w, "  the internet. Or, with nothing to change, through SSH, on the laptop:")
 		paste(w, "    ", setupLines(ss, "mcp-claude")...)
 	}
+	if l := setupLines(ss, "pages"); l != nil {
+		fmt.Fprintln(w, "\nPages (~/pages, what agents make to look at; pages-url NAME prints a page's link), on the laptop:")
+		paste(w, "  ", l...)
+	}
 }
 
 func mcpPort(a *answers.Answers) int {
@@ -319,6 +323,28 @@ func connectRows(a *answers.Answers, addrs []address, tokens []string, gateway b
 		mcp.Note = fmt.Sprintf("mcpjungle, then http://127.0.0.1:%d/mcp · no token: it's this machine's only, the tunnel is the login (Settings › Network access opens it, with a token)", p)
 	}
 	return append(rows, mcp, clip)
+}
+
+// pagesRows is the home's row for ~/pages (none when it isn't served):
+// its link from the laptop, as the Connection screen gives it.
+func pagesRows(a *answers.Answers, addrs []address, served bool) []ui.ConnectRow {
+	if !served {
+		return nil
+	}
+	host, _ := os.Hostname()
+	addr := host
+	if len(addrs) > 0 {
+		addr = addrs[0].ip
+	}
+	st := pagesSetup(a, addr)
+	r := ui.ConnectRow{What: "Pages", Use: st.Lines[0], Note: "~/pages: what agents make to look at (pages-url NAME prints a page's link)"}
+	switch {
+	case a.MCPListen == "public":
+		r.Note = "~/pages, " + st.Lines[1]
+	case len(st.Lines) == 2:
+		r.Note = "then " + st.Lines[1] + " · ~/pages, this machine's only (Settings › MCP gateway and web pages opens it to your VPNs)"
+	}
+	return []ui.ConnectRow{r}
 }
 
 // tildeOf is path with user's home as ~.

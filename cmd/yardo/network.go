@@ -263,6 +263,9 @@ func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway 
 					Lines: []string{tunnel, local}, Say: say})
 		}
 	}
+	if slices.Contains(a.Picks, "pages") {
+		out = append(out, pagesSetup(a, addr))
+	}
 	out = append(out, ui.Setup{ID: "clipboard", What: "Clipboard", How: "iTerm2  ·  let copies here (y in Neovim, a drag in tmux) reach the laptop",
 		Lines: []string{iterm2Clipboard},
 		Say: []string{"Run it once on the laptop, then quit and reopen iTerm2. Copies here travel through the terminal (OSC 52), which iTerm2 blocks until then.",
@@ -272,6 +275,31 @@ func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway 
 		Lines: []string{"ssh " + a.User + "@" + addr + " sudo yardo connect --script > " + file, "sh " + file},
 		Say: []string{"On the laptop: save it, read it, then run it. It adds the Host block, the Docker context, the gateway to Claude Code when claude is there, and lets iTerm2 take copies, each once; nothing else.",
 			"It holds no token: it reads the token over ssh when it runs."}})
+}
+
+// pagesSetup is how the laptop opens ~/pages (yardo-pages@user), reached
+// as the MCP gateway is.
+func pagesSetup(a *answers.Answers, addr string) ui.Setup {
+	p := mcpPort(a) + 1000 // steps.PagesPort
+	more := "pages-url NAME.html here prints a page's link; agents end their answers with it."
+	switch a.MCPListen {
+	case "vpn", "tailscale", "0.0.0.0":
+		url := fmt.Sprintf("http://%s:%d/", addr, p)
+		who := map[string]string{"vpn": "this machine and your VPNs", "tailscale": "this machine and your VPNs", "0.0.0.0": "everywhere (plain HTTP)"}[a.MCPListen]
+		return ui.Setup{ID: "pages", What: "Pages", How: url + "  ·  ~/pages in your browser",
+			Lines: []string{url}, Say: []string{"Open it in the laptop's browser: what agents made here (diagrams, reports), listed. Reachable from " + who + ".", more}}
+	case "public":
+		url := "https://" + a.MCPDomain + "/pages/"
+		return ui.Setup{ID: "pages", What: "Pages", How: url + "  ·  user pages, a password",
+			Lines: []string{url, "user pages, password: cat ~/.config/yardo/pages-password (here)"},
+			Say:   []string{"Open it in the laptop's browser; it asks for the login. On the internet, under the gateway's domain.", more}}
+	}
+	tunnel := fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s@%s", p, p, a.User, addr)
+	local := fmt.Sprintf("http://127.0.0.1:%d/", p)
+	return ui.Setup{ID: "pages", What: "Pages", How: "through an ssh tunnel  ·  " + local,
+		Lines: []string{tunnel, local},
+		Say: []string{"~/pages is this machine's only: on the laptop, the ssh tunnel first (it stays in the foreground), then the link in the browser.",
+			"Settings › MCP gateway and web pages opens it to your VPNs. " + more}}
 }
 
 // setupLines are the lines of the setup with id.

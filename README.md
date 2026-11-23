@@ -617,6 +617,21 @@ installed by hand.
    Sentry's `find-bugs`, `humanizer`, and Anthropic's `skill-creator` and
    `webapp-testing`. Nothing is fetched on the VM; `scripts/update-skills`
    re-vendors them (`internal/assets/skills.lock.toml`).
+   **Web pages** (off by default): `~/pages` served over HTTP by Caddy
+   (`caddy file-server` as you, `yardo-pages@you`, port 9080, a file list
+   at `/`; Caddy's own port-80 server stays off), so the HTML agents make
+   (diagrams, reports) opens on your laptop. It's reached as the MCP gateway is
+   (Settings › MCP gateway and web pages): this machine only (the home
+   shows the `ssh -N -L` tunnel), your VPNs (yardo's firewall keeps the
+   rest out), the internet under the gateway's domain (`/pages/`, user
+   `pages`, password in `~/.config/yardo/pages-password`) or everywhere.
+   `pages-url NAME` prints a page's link, at the address your SSH session
+   came in at; the `pages` skill has agents save there and end with it.
+   **Archify** (off by default; needs Web pages and Node): the
+   [archify](https://archify.si) skill (Apache-2.0) turns a plan, system or
+   repo into an interactive HTML diagram or explainer. It's 23 MB, so its
+   own installer (`npx skills add`) fetches it into `~/.claude/skills` and
+   `~/.agents/skills`, for Claude Code and Codex.
 4. **VPN logins** (in Tailscale's and NetBird's rows): the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later).

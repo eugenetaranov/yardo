@@ -98,6 +98,7 @@ var services = []struct{ unit, name string }{
 	{"openvpn-server@", "openvpn"}, {"openvpn@", "openvpn"}, {"openvpn-client@", "openvpn"},
 	{"wg-quick@", "wireguard"}, {"nfs-server.service", "nfs"}, {"smbd.service", "samba"},
 	{"fail2ban.service", "fail2ban"}, {"k3s.service", "k3s"}, {"ollama.service", "ollama"},
+	{"yardo-pages@", "pages"}, {"caddy.service", "caddy"},
 }
 
 // parseServices reads systemctl list-units: the services above that run,

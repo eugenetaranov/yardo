@@ -360,7 +360,9 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		return picked(id) || (first && cat.Item(id) != nil && cat.Item(id).Default)
 	}
 	var settings []*ui.BoardSetting
-	if has("mcpjungle-install") {
+	// Who reaches the gateway reaches ~/pages too (at the gateway's domain
+	// when public: offered only with the gateway).
+	if gw := has("mcpjungle-install"); gw || has("pages") {
 		v := a.MCPListen
 		switch v {
 		case "tailscale":
@@ -369,9 +371,22 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		default:
 			v = "127.0.0.1"
 		}
-		settings = append(settings, &ui.BoardSetting{Key: "mcp", Label: "MCP gateway", Value: v, Choices: [][2]string{
-			{"127.0.0.1", "this machine only"}, {"vpn", "this machine and your VPNs (with a token)"},
-			{"public", "the internet, at a domain name (HTTPS, with a token)"}, {"0.0.0.0", "everywhere, plain HTTP (with a token)"}}})
+		label := "MCP gateway"
+		switch {
+		case gw && has("pages"):
+			label = "MCP gateway and web pages"
+		case !gw:
+			label = "Web pages (~/pages)"
+		}
+		choices := [][2]string{{"127.0.0.1", "this machine only"}, {"vpn", "this machine and your VPNs (with a token)"},
+			{"public", "the internet, at a domain name (HTTPS, with a token)"}, {"0.0.0.0", "everywhere, plain HTTP (with a token)"}}
+		if !gw {
+			choices = [][2]string{{"127.0.0.1", "this machine only (an SSH tunnel)"}, {"vpn", "this machine and your VPNs"}, {"0.0.0.0", "everywhere, plain HTTP"}}
+			if v == "public" {
+				v = "127.0.0.1"
+			}
+		}
+		settings = append(settings, &ui.BoardSetting{Key: "mcp", Label: label, Value: v, Choices: choices})
 	}
 	if has("docker") {
 		ports := a.DockerPorts
@@ -425,7 +440,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	if len(addrs) > 0 {
 		sub += "  ·  " + addrs[0].ip
 	}
-	info := ui.HomeInfo{Host: host, User: a.User, Connect: connectRows(a, addrs, tokens, picked("mcpjungle"))}
+	info := ui.HomeInfo{Host: host, User: a.User, Connect: append(connectRows(a, addrs, tokens, picked("mcpjungle")), pagesRows(a, addrs, picked("pages"))...)}
 	if !first {
 		info.Dash = dashboard(ctx)
 	}
