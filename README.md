@@ -435,9 +435,10 @@ installed by hand.
    and wait to see the keys; space g y copies the link to the line on
    GitHub, GitLab or Bitbucket; `sudo nvim FILE` edits through sudoedit, with
    your config), tmux (with `~/.tmux.conf`: mouse, splits, 50k history),
-   zellij, mosh. Over SSH, `y` in Neovim and a mouse drag in tmux copy to
-   your laptop's clipboard (OSC 52); iTerm2 lets that through once you
-   allow it, on the laptop:
+   zellij, mosh. Over SSH, `y` in Neovim or Vim and a mouse drag in tmux
+   copy to your laptop's clipboard (OSC 52; Vim through
+   `~/.vim/plugin/yardo-clipboard.vim`, your `~/.vimrc` untouched);
+   iTerm2 lets that through once you allow it, on the laptop:
    `defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true`,
    then quit and reopen iTerm2 (Ghostty, kitty, WezTerm and Alacritty
    need nothing; Terminal.app can't). `.zshrc` stays yours; the

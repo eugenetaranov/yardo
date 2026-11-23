@@ -216,7 +216,7 @@ to = "~/.oh-my-zsh/custom/plugins/fzf-tab"
 id = "shellcfg"
 tab = "-"
 label = "Shell niceties for zsh and bash: z, fzf keys, direnv, eza/bat aliases"
-source = "~/.config/yardo/shell.sh, sourced from .zshrc and .bashrc · ~/.config/direnv/direnv.toml (quiet, loads .env)"
+source = "~/.config/yardo/shell.sh, sourced from .zshrc and .bashrc · ~/.config/direnv/direnv.toml (quiet, loads .env) · ~/.vim/plugin/yardo-clipboard.vim (Vim copies over SSH)"
 
 [[item.step]]
 type = "template"
@@ -230,6 +230,13 @@ type = "file"
 src = "direnv.toml"
 to = "~/.config/direnv/direnv.toml"
 if_absent = true
+
+# Vim copies to your computer's clipboard over SSH too (OSC 52), as
+# Neovim does: a plugin file, so it loads with or without your ~/.vimrc.
+[[item.step]]
+type = "file"
+src = "vim-clipboard.vim"
+to = "~/.vim/plugin/yardo-clipboard.vim"
 
 [[item.step]]
 type = "line"
