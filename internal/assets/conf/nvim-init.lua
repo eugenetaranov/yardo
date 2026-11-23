@@ -4,8 +4,9 @@
 --   <space>f  find a file        <space>/  search text in the project
 --   <space>b  open buffers       <space>e  browse files (edit it like text)
 --   <space>h  search the help    <space>?  every key map
---   y         copies to your computer's clipboard too (over SSH as well:
---             select with the mouse, then y); paste it with cmd+v / ctrl+v
+--   y         copies to your computer's clipboard too (over SSH as well);
+--             paste it with cmd+v / ctrl+v. The mouse is the terminal's:
+--             select and copy as you would anywhere else
 --   Language servers are ready for JSON, YAML, shell and the languages
 --   yardo installed (Go, Python, TypeScript, Java, Rust, Terraform,
 --   Dockerfiles, Helm): errors are underlined as you type.
@@ -27,7 +28,7 @@ vim.g.maplocalleader = " "
 
 local o = vim.opt
 o.number = true
-o.mouse = "a" -- drag selects in Neovim (then y); hold shift (iTerm2: option) for the terminal's
+o.mouse = "" -- the terminal selects and copies, not Neovim (mouse = "a" in local.lua for Neovim's)
 o.showmode = false -- the status line shows it
 o.breakindent = true
 o.linebreak = true
@@ -68,8 +69,7 @@ map("n", "<C-k>", "<C-w>k", { desc = "Window above" })
 map("n", "<C-l>", "<C-w>l", { desc = "Window right" })
 map("n", "<leader>w", "<cmd>write<CR>", { desc = "Save" })
 map({ "n", "x" }, "<leader>y", '"+y', { desc = "Copy to the clipboard" })
-map("n", "<leader>Y", '"+y$', { desc = "Copy to the end of the line to the clipboard" })
-map("t", "<Esc><Esc>", "<C-\\><C-n>", { desc = "Leave terminal mode" })
+map("n", "<leader>Y", '"+y$', { desc = "Copy to the end of the line to the clipboard" })map("t", "<Esc><Esc>", "<C-\\><C-n>", { desc = "Leave terminal mode" })
 map("n", "<leader>m", "<cmd>Mason<CR>", { desc = "Install language servers (Mason)" })
 
 vim.diagnostic.config({ severity_sort = true, virtual_text = true, float = { border = "rounded" } })
