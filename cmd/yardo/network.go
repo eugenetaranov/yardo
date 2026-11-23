@@ -298,7 +298,7 @@ func copyHint(term string) string {
 	if term == "iTerm2" {
 		return "iTerm2 needs it allowed, once, on the laptop: defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true (then quit and reopen it). The lines stay here to select by hand."
 	}
-	return "Ghostty, kitty, WezTerm and Alacritty copy as is; iTerm2 needs it allowed (defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true); Terminal.app can't (hold fn to select). The lines stay here to select by hand."
+	return "Ghostty, kitty, WezTerm and Alacritty copy as is; iTerm2 needs it allowed (defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true, then quit and reopen it); Terminal.app can't (hold fn to select). The lines stay here to select by hand."
 }
 
 // connData is the Connection screen's data, for user a.
@@ -444,7 +444,7 @@ fi
 if ! command -v defaults >/dev/null 2>&1 || ! defaults read com.googlecode.iterm2 >/dev/null 2>&1; then
   echo "iTerm2: not on this laptop; skipped."
 elif [ "$(defaults read com.googlecode.iterm2 AllowClipboardAccess 2>/dev/null)" = 1 ]; then
-  echo "iTerm2: takes copies from $name already."
+  echo "iTerm2: takes copies from $name already (once reopened since it was allowed: quit and reopen it if y in Neovim copies nothing)."
 else
   %s
   echo "iTerm2: takes copies from $name (y in Neovim, a drag in tmux) once you quit and reopen it."
