@@ -404,8 +404,10 @@ end, { nargs = "?" })
 -- <space>/: search the text in this directory and below, as IntelliJ's
 -- Find in Files does. What you type is matched as it is (/, ., ( and all;
 -- <C-r> switches to a regex and back), hidden files too, but not what
--- .gitignore leaves out or the directories below. Lines that are only a
--- comment come last, dimmed. Enter goes there, Esc closes it.
+-- .gitignore leaves out or the directories below. Results come grouped,
+-- as IntelliJ lists usages: where it's declared, where it's used, where a
+-- value is set, other lines, then lines that are only a comment (dimmed);
+-- by file and line within each. Enter goes there, Esc closes it.
 local skip_dirs = { ".git", ".terraform", ".terragrunt-cache", "node_modules", ".venv", "venv",
   ".pip", "__pycache__", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".cache", ".idea" }
 
@@ -463,8 +465,10 @@ local function find_in_files()
   local finders, pickers = require("telescope.finders"), require("telescope.pickers")
   local make_entry, conf = require("telescope.make_entry"), require("telescope.config").values
   local regex = false
+  -- --sort path: files in the same order every time (ripgrep otherwise
+  -- lists them as its threads finish).
   local args = { "rg", "--color=never", "--no-heading", "--with-filename", "--line-number",
-    "--column", "--smart-case", "--hidden" }
+    "--column", "--smart-case", "--hidden", "--sort", "path" }
   for _, d in ipairs(skip_dirs) do
     vim.list_extend(args, { "--glob", "!**/" .. d .. "/**" })
   end
@@ -476,7 +480,7 @@ local function find_in_files()
     if not e then return e end
     local show = e.display
     if comment_only(e.text or "") then
-      e.comment = true
+      e.rank = 5
       e.display = function(self, ...)
         local s, hl = show(self, ...)
         return s, vim.list_extend({ { { 0, #s }, "Comment" } }, hl or {})
@@ -485,6 +489,7 @@ local function find_in_files()
     end
     local ext = (e.filename or ""):match("%.(%w+)$")
     local name_hl, text_hl = file_colour[ext], line_colour(ext, e.text or "")
+    e.rank = ({ FindDeclares = 1, FindUses = 2, FindSets = 3 })[text_hl] or 4
     if name_hl or text_hl then
       e.display = function(self, ...)
         local s, hl = show(self, ...)
@@ -515,10 +520,24 @@ local function find_in_files()
     prompt_title = "Find in files (as typed · <C-r> regex)",
     finder = finder,
     previewer = conf.grep_previewer({}),
-    -- Code first, comments after: in the order ripgrep finds them otherwise.
+    -- By group (see above); within one, in the order ripgrep sorted them.
     sorter = require("telescope.sorters").Sorter:new({
-      scoring_function = function(_, _, _, e) return e.comment and 2 or 1 end,
-      highlighter = function(_, prompt, display) return fzy.positions(prompt, display) end,
+      scoring_function = function(_, _, _, e) return e.rank or 4 end,
+      -- What you typed, where it is in the line (not scattered over the
+      -- file name, as a fuzzy match would be); a regex keeps the fuzzy one.
+      highlighter = function(_, prompt, display)
+        if regex or prompt == "" then return fzy.positions(prompt, display) end
+        local caseless = prompt == prompt:lower()
+        local hay, needle = caseless and display:lower() or display, caseless and prompt:lower() or prompt
+        local start, out = #(display:match("^.-:%d+:%d+:") or "") + 1, {}
+        while true do
+          local from, to = hay:find(needle, start, true)
+          if not from then break end
+          for i = from, to do out[#out + 1] = i end
+          start = to + 1
+        end
+        return out
+      end,
     }),
     attach_mappings = function(bufnr, m)
       m("i", "<C-r>", function()
