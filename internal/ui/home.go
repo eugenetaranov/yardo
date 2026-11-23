@@ -2,9 +2,7 @@ package ui
 
 import (
 	"fmt"
-	"maps"
 	"math"
-	"slices"
 	"strings"
 	"time"
 
@@ -14,60 +12,55 @@ import (
 	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
-// The home is a board of panels: Needs you, the width of the screen, then
-// Machine in two lines, Services & containers and MCP servers side by
-// side, Connection, and a Go to strip. The cursor walks Needs you's rows,
-// Connection, then Go to's; tab jumps between the three. Under homeWide
-// columns, Services and MCP servers fold to a line each.
+// The home is a board of panels that show: Machine in two lines,
+// Services & containers and MCP servers side by side, and Connection.
+// Under them, the tabs: the only place the cursor goes, the one it's on
+// a block of the accent colour. Under homeWide columns, Services and MCP
+// servers fold to a line each.
 
 const homeWide = 96
 
 // homeView is the home's body, w by h.
 func (m *Menu) homeView(w, h int) string {
-	todo := m.todo()
 	rs := m.rows()
+	need := m.needs()
 	var b []string
 	add := func(s ...string) { b = append(b, s...) }
 
+	n := 0
+	var where []string
+	for _, r := range rs {
+		if len(need[r.id]) > 0 {
+			n += len(need[r.id])
+			where = append(where, r.label)
+		}
+	}
 	status := " " + green.Render(tui.Cur.Mark.OK+" All good") + muted.Render("  ·  nothing needs you")
-	if n := len(slices.DeleteFunc(slices.Clone(todo), func(r menuRow) bool { return r.id == "check" })); n > 0 {
-		status = " " + yellow.Render("▲ "+plural(n, "thing needs you", "things need you")) + muted.Render("  ·  everything else is working")
+	if n > 0 {
+		status = " " + yellow.Render("▲ "+plural(n, "thing needs you", "things need you")) + muted.Render("  ·  marked below: "+strings.Join(where, ", "))
 	}
 	add(status + strings.Repeat(" ", max(2, w-1-lipgloss.Width(status)-lipgloss.Width(m.sub))) + muted.Render(m.sub))
 	add("")
 
-	at := m.gotoAt()
-	con := slices.IndexFunc(rs, func(r menuRow) bool { return r.id == "connect" })
-	needOn := m.sel < len(todo)
 	// fw: a panel the width of the screen; pw: one of two side by side.
 	fw, pw := w-2, (w-3)/2
 	wide := w >= homeWide
 	if wide {
 		fw = 2*pw + 2
 	}
-	needL := m.needLines(todo, fw-4)
-	top := len(b)
-	for n := range todo {
-		y := top + 1 + n
-		m.hit(y, 0, fw, m.selects(n))
-	}
-	add(box("Needs you", fmt.Sprint(len(todo)), needL, fw, len(needL), needOn)...)
 	add(box("Machine", "", m.machineShort(), fw, 2, false)...)
 
 	conL := m.connectLines(fw - 4)
-	if con >= 0 && len(conL) == 0 {
-		conL = []string{muted.Render("Enter: the networks, and every way in from a laptop, ready to paste")}
-	}
-	// What's left for Services and Connection: Go to (4 and a gap) and a
-	// line under it.
+	// What's left for Services and Connection: the tabs (4 and a gap) and
+	// a line under them.
 	room := h - len(b) - 5
 	svcL, mcpL := m.serviceLines(), m.mcpLines()
 	if wide {
-		need := 0
-		if con >= 0 {
-			need = min(len(conL), max(1, room-6)) + 3
+		cn := 0
+		if len(conL) > 0 {
+			cn = min(len(conL), max(1, room-6)) + 3
 		}
-		if bh := min(max(len(svcL), len(mcpL)), room-need-3); bh >= 1 {
+		if bh := min(max(len(svcL), len(mcpL)), room-cn-3); bh >= 1 {
 			add("")
 			if m.hasMCP() {
 				add(beside2(box("Services & containers", "", cut(svcL, bh), pw, bh, false), box("MCP servers", "", cut(mcpL, bh), pw, bh, false))...)
@@ -83,20 +76,18 @@ func (m *Menu) homeView(w, h int) string {
 			add(" " + muted.Render(padTo("MCP", 10)) + m.mcpSummary())
 		}
 	}
-	if con >= 0 {
+	if len(conL) > 0 {
 		n := min(len(conL), max(1, h-len(b)-5-3))
 		add("")
-		y := len(b)
-		m.hits = append(m.hits, Hit{Y0: y, Y1: y + n + 1, X0: 0, X1: fw, Do: m.selects(con)})
-		add(box("Connection", "from a laptop", cut(conL, n), fw, n, m.sel == con)...)
+		add(box("Connection", "from a laptop", cut(conL, n), fw, n, false)...)
 	}
 	add("")
 	gy := len(b) + 1
-	gl, xs := m.gotoLines(rs[at:], fw-4)
+	gl, xs := m.gotoLines(rs, fw-4)
 	for n, x := range xs {
-		m.hit(gy, 2+x[0], 2+x[1], m.selects(at+n))
+		m.hit(gy, 2+x[0], 2+x[1], m.selects(n))
 	}
-	add(box("Go to", "", gl, fw, 2, !needOn && m.sel >= at)...)
+	add(box("Go to", "", gl, fw, 2, false)...)
 	return strings.Join(b, "\n")
 }
 
@@ -249,86 +240,14 @@ func uptime(d time.Duration) string {
 	return fmt.Sprintf("%dm", mins)
 }
 
-// needLines are the Needs you panel's: a row for each thing to do (the
-// cursor on one), then how the tools are and when updates were checked.
-func (m *Menu) needLines(todo []menuRow, w int) []string {
-	var out []string
-	if len(todo) == 0 {
-		out = append(out, green.Render("Nothing needs you."))
-	}
-	col := 8
-	for _, r := range todo {
-		col = max(col, len(r.label))
-	}
-	col = min(col, 32)
-	for n, r := range todo {
-		g, st := needMark(r.id)
-		note, _, _ := strings.Cut(r.note, " · ")
-		if n == m.sel {
-			out = append(out, rowOn.Render(" "+g+" "+padTo(r.label, col)+" ")) // its note is under the rows
-		} else {
-			out = append(out, " "+st.Render(g)+" "+padTo(r.label, col)+"  "+muted.Render(note))
-		}
-	}
-	// The row under the cursor, in full, in two lines kept for it.
-	var more []string
-	if m.sel < len(todo) {
-		more = wrap(todo[m.sel].note, max(10, w-3))
-		if len(more) > 2 {
-			more = []string{more[0], ansi.Truncate(strings.Join(more[1:], " "), max(10, w-3), "…")}
-		}
-	}
-	for n := 0; n < 3; n++ {
-		l := ""
-		if n < len(more) {
-			l = "   " + muted.Render(more[n])
-		}
-		out = append(out, l)
-	}
-	picked := len(m.filter(func(i *BoardItem) bool { return i.Picked }))
-	ok := len(m.filter(func(i *BoardItem) bool { return i.Picked && i.State == "ok" }))
-	s := green.Render(tui.Cur.Mark.OK) + " " + fmt.Sprintf("%d of %d tools working", ok, picked)
-	if n := len(m.filter(func(i *BoardItem) bool { return i.Picked && i.State == "unchecked" })); n > 0 {
-		s += muted.Render(fmt.Sprintf(" · %d not checked", n))
-	}
-	out = append(out, s)
-	// A machine set up from a team profile says how much is the team's.
-	team, teams := 0, map[string]bool{}
-	for _, i := range m.items {
-		if i.Picked && i.Team != "" {
-			team++
-			teams[i.Team] = true
-		}
-	}
-	if team > 0 {
-		out = append(out, "  "+muted.Render(fmt.Sprintf("%d from the team profile %s", team, strings.Join(slices.Sorted(maps.Keys(teams)), ", "))))
-	}
-	var sub string
-	switch us := len(m.filter(newer)); {
-	case m.wait != nil:
-		sub = "checking for updates…"
-	case us > 0:
-		sub = plural(us, "update", "updates")
-	case m.checked:
-		sub = "nothing newer"
-	default:
-		sub = "updates not checked"
-	}
-	if m.info.Checked != "" && m.wait == nil {
-		sub += " · checked " + m.info.Checked
-	}
-	return append(out, "  "+muted.Render(sub))
-}
-
-// needMark is a Needs you row's mark, by what it does.
+// needMark is the mark of something that needs you, by what it is: a
+// tab carries its first one's.
 func needMark(id string) (string, lipgloss.Style) {
 	mk := tui.Cur.Mark
 	switch {
 	case id == "updates":
 		return mk.Update, yellow
-	case id == "check":
-		return mk.Update, muted
-	case strings.HasPrefix(id, "key:") || id == "secrets":
+	case strings.HasPrefix(id, "key:") || id == "secrets" || id == "keys":
 		return mk.Need, accent
 	case strings.HasPrefix(id, "mcpkey:"):
 		return mk.Need, accent
@@ -491,9 +410,6 @@ func (m *Menu) connectLines(w int) []string {
 		}
 		out = append(out, accent.Render(tui.Cur.Mark.Need+" "+plural(n, "key", "keys")+" to add: "+strings.Join(fors, ", ")))
 	}
-	if len(out) > 0 {
-		out = append(out, muted.Render("Enter: every step, ready to paste, and the networks: start, stop, add, remove"))
-	}
 	return out
 }
 
@@ -524,9 +440,10 @@ func (m *Menu) mcpSummary() string {
 	return s
 }
 
-// gotoLines are Go to's: its entries in a line (the cursor on one), then
-// what the one under the cursor holds; and where each entry is on the
-// line (from, to).
+// gotoLines are the tabs': the tabs in a line, each with its count and
+// the mark of what on it needs you, the cursor's a block of the accent
+// colour; then what the one under the cursor holds; and where each tab is
+// on the line (from, to).
 func (m *Menu) gotoLines(nav []menuRow, w int) ([]string, [][2]int) {
 	count := map[string]string{}
 	count["tools"] = fmt.Sprint(len(m.filter(func(i *BoardItem) bool { return i.Picked })))
@@ -537,24 +454,34 @@ func (m *Menu) gotoLines(nav []menuRow, w int) ([]string, [][2]int) {
 		}
 	}
 	count["mcp"] = fmt.Sprint(n)
+	if us := len(m.filter(func(i *BoardItem) bool { return problem(i) || secret(i) || newer(i) })); us > 0 {
+		count["updates"] = fmt.Sprint(us)
+	}
+	need := m.needs()
 	var parts []string
 	var xs [][2]int
 	x := 0
 	note := muted.Render("or just start typing to search the tools")
-	at := m.sel - m.gotoAt()
 	for i, r := range nav {
 		l := r.label
 		if c := count[r.id]; c != "" {
 			l += " " + c
+		}
+		mark := ""
+		if ns := need[r.id]; len(ns) > 0 {
+			g, st := needMark(ns[0].id)
+			mark, l = st.Render(g), l+" "+g
 		}
 		if i > 0 {
 			x += 3
 		}
 		xs = append(xs, [2]int{x, x + lipgloss.Width(l) + 2})
 		x += lipgloss.Width(l) + 2
-		if i == at {
+		if i == m.sel {
 			parts = append(parts, rowOn.Render(" "+l+" "))
 			note = muted.Render(ansi.Truncate(r.note, w, "…"))
+		} else if mark != "" {
+			parts = append(parts, " "+strings.TrimSuffix(l, ansi.Strip(mark))+mark+" ")
 		} else {
 			parts = append(parts, " "+l+" ")
 		}

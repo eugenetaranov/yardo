@@ -319,12 +319,11 @@ func TestOSC52(t *testing.T) {
 	}
 }
 
-// The panel and Go to's entry open Connection; q comes back home, onto
-// the row it was opened from.
+// The Connection tab opens it; q comes back home, onto the tab.
 func TestAppConnection(t *testing.T) {
 	a := testApp()
 	a.Conn.d.Networks = []Network{{ID: "local", Name: "Local network", State: "up", Addr: "10.0.0.5"}}
-	for _, row := range []string{"connect", "conn"} {
+	for _, row := range []string{"conn"} {
 		onRow(a.Menu, row)
 		ak(a, "enter")
 		if !a.onConn || !strings.Contains(a.View(), "Home › Connection") || !strings.Contains(a.View(), "Local network") {

@@ -115,9 +115,9 @@ type BoardItem struct {
 	// Tab is the section it's listed in (a catalog tab id, or ExtraTab).
 	Tab string
 	// Picked: it's among the saved picks (installed). Pending is "add",
-	// "uninstall", "forget" (yardo stops checking it; it stays installed)
-	// or "update" (to its newer versions, from the Updates tab) when a
-	// change to it is queued.
+	// "uninstall", "forget" (yardo stops checking it; it stays installed),
+	// "update" (to its newer versions) or "fix" (applied again), these two
+	// from the Updates tab, when a change to it is queued.
 	Picked  bool
 	Pending string
 	// State is its status when picked (ok, down, drifted, partial,
@@ -199,8 +199,9 @@ type BoardResult struct {
 	Change        string
 	Adds, Forgets []string
 	// Uninstalls are the items to uninstall, with what needs them;
-	// Updates the ones to update (item IDs and mise: IDs).
-	Uninstalls, Updates []string
+	// Updates the ones to update (item IDs and mise: IDs); Fixes the ones
+	// to apply again.
+	Uninstalls, Updates, Fixes []string
 	// Settings are settings to change, key to value (the menu's).
 	Settings map[string]string
 }
@@ -242,10 +243,14 @@ type Board struct {
 // reports a check running.
 func (b *Board) SetChecking(f func() bool) { b.checking = f }
 
-// QueueUpdates queues every update that isn't pinned.
+// QueueUpdates queues every fix, and every update that isn't pinned.
 func (b *Board) QueueUpdates() {
 	for _, i := range b.items {
-		if newer(i) && !i.Pinned && !b.inRow(i) && i.Pending == "" {
+		switch {
+		case b.inRow(i) || i.Pending != "":
+		case fixable(i):
+			i.Pending = "fix"
+		case newer(i) && !i.Pinned:
 			i.Pending = "update"
 		}
 	}
@@ -270,8 +275,9 @@ const ShellSection = "__shell__"
 // tool installed, from all the tabs, to find one to fix or uninstall.
 const InstalledTab = "__installed__"
 
-// UpdatesTab follows Installed while a check for updates runs or found
-// newer versions: one row per tool, to queue for update.
+// UpdatesTab follows Installed while something needs you there: a tool
+// to fix, a value to fill in, a newer version, or a check for updates
+// running. One row per tool: the fixes, the values, then the updates.
 const UpdatesTab = "__updates__"
 
 // NewBoard builds the board: tabs (each with sections, or none) and the
@@ -336,7 +342,7 @@ func (b *Board) visibleTabs() []Tab {
 		return b.tabs
 	}
 	title := "Updates"
-	if n := b.count(func(i *BoardItem) bool { return newer(i) && !b.inRow(i) }); n > 0 && !b.isChecking() {
+	if n := b.count(func(i *BoardItem) bool { return b.onUpdatesTab(i) }); n > 0 {
 		title += " " + strconv.Itoa(n)
 	}
 	n := slices.IndexFunc(b.tabs, func(t Tab) bool { return t.ID == InstalledTab }) + 1
@@ -345,7 +351,13 @@ func (b *Board) visibleTabs() []Tab {
 
 // updating: the Updates tab is shown.
 func (b *Board) updating() bool {
-	return !b.first && (b.isChecking() || b.count(func(i *BoardItem) bool { return newer(i) && !b.inRow(i) }) > 0)
+	return !b.first && (b.isChecking() || b.count(func(i *BoardItem) bool { return b.onUpdatesTab(i) }) > 0)
+}
+
+// onUpdatesTab: i is a row of the Updates tab: to fix, to fill in, or
+// with a newer version.
+func (b *Board) onUpdatesTab(i *BoardItem) bool {
+	return !b.inRow(i) && (fixable(i) || secret(i) || newer(i))
 }
 
 func (b *Board) isChecking() bool { return b.checking != nil && b.checking() }
@@ -442,13 +454,18 @@ func (b *Board) rows() []row {
 	tabs := b.visibleTabs()
 	t := tabs[b.current(tabs)]
 	if t.ID == UpdatesTab {
-		if b.isChecking() {
-			return []row{{text: "Checking for updates…"}}
-		}
-		for _, i := range b.items {
-			if newer(i) && !b.inRow(i) {
-				out = append(out, row{item: i})
+		// The fixes, the values, then the updates (hidden while a check
+		// runs: what it finds replaces them).
+		only := func(i *BoardItem) bool { return newer(i) && !fixable(i) && !secret(i) && !b.isChecking() }
+		for _, f := range []func(*BoardItem) bool{fixable, secret, only} {
+			for _, i := range b.items {
+				if f(i) && !b.inRow(i) {
+					out = append(out, row{item: i})
+				}
 			}
+		}
+		if b.isChecking() {
+			out = append(out, row{text: "Checking for updates…"})
 		}
 		return out
 	}
@@ -562,6 +579,8 @@ func (b *Board) done(k BoardKind, id string) tea.Cmd {
 			b.result.Uninstalls = append(b.result.Uninstalls, i.ID)
 		case "update":
 			b.result.Updates = append(b.result.Updates, i.ID)
+		case "fix":
+			b.result.Fixes = append(b.result.Fixes, i.ID)
 		}
 	}
 	b.ended = true
@@ -570,9 +589,14 @@ func (b *Board) done(k BoardKind, id string) tea.Cmd {
 
 // toggle ticks i (queues installing it) or unticks it (queues
 // uninstalling it), or takes it off the queue. On the Updates tab, it
-// queues updating it instead (a pinned one only says why).
+// queues fixing or updating it instead (a pinned one only says why; a
+// value to fill in, that enter fills in).
 func (b *Board) toggle(i *BoardItem) {
 	switch {
+	case b.onUpdates() && i.Pending == "" && fixable(i):
+		i.Pending = "fix"
+	case b.onUpdates() && i.Pending == "" && secret(i) && !newer(i):
+		b.flash = "Enter fills in " + short(i.Label) + "'s " + plural(len(i.Inputs), "value", "values") + "."
 	case b.onUpdates() && i.Pending == "" && i.Pinned:
 		b.flash = short(i.Label) + " is pinned by your profile: it stays at its version."
 	case b.onUpdates() && i.Pending == "" && newer(i):
@@ -666,12 +690,12 @@ func (b *Board) listKey(m tea.KeyMsg) tea.Cmd {
 		if b.queued() == 0 {
 			b.flash = "Nothing queued. Space adds or uninstalls a tool."
 			if b.onUpdates() {
-				b.flash = "Nothing queued. Space queues a tool to update."
+				b.flash = "Nothing queued. Space queues a tool to fix or update."
 			}
 			return nil
 		}
-		// Only updates: nothing to ask, the run starts.
-		if b.count(func(i *BoardItem) bool { return i.Pending == "update" }) == b.queued() {
+		// Only fixes and updates: nothing to ask, the run starts.
+		if b.count(func(i *BoardItem) bool { return i.Pending == "update" || i.Pending == "fix" }) == b.queued() {
 			return b.done(BoardApply, "")
 		}
 		b.confirm(false)
@@ -924,6 +948,8 @@ func (b *Board) confirm(full bool) {
 			lines = append(lines, "+ Install "+short(i.Label))
 		case "update":
 			lines = append(lines, "↑ Update "+short(i.Label)+": "+strings.Join(i.Updates, ", "))
+		case "fix":
+			lines = append(lines, "~ Fix "+short(i.Label)+": "+stateWord(i.State))
 		}
 	}
 	lines = append(lines, "")
@@ -1030,6 +1056,16 @@ func (b *Board) note(r row) (string, lipgloss.Style) {
 		pre = r.where + " · "
 	}
 	switch {
+	case b.key() == UpdatesTab && i.Pending == "fix":
+		return "will fix: " + stateWord(i.State) + ": " + i.Detail, green
+	case b.key() == UpdatesTab && fixable(i):
+		return stateWord(i.State) + ": " + i.Detail, red
+	case b.key() == UpdatesTab && secret(i) && i.Pending == "":
+		say := "fill in " + strings.Join(i.Inputs, ", ")
+		if newer(i) {
+			say += " · " + strings.Join(i.Updates, " · ")
+		}
+		return say, accent
 	case b.key() == UpdatesTab:
 		say := strings.Join(i.Updates, " · ")
 		if from := updateFrom(i.Source); from != "" {
@@ -1194,6 +1230,8 @@ func (b *Board) queueSay() string {
 			q = append(q, "uninstall "+short(i.Label))
 		case "update":
 			q = append(q, "update "+short(i.Label))
+		case "fix":
+			q = append(q, "fix "+short(i.Label))
 		}
 	}
 	if n := b.count(func(i *BoardItem) bool { return i.Pending == "update" }); n > 1 {
@@ -1244,9 +1282,16 @@ func (b *Board) Keys() []Key {
 	var keys []Key
 	if b.onUpdates() {
 		switch {
-		case r == nil:
+		case r == nil || r.item == nil:
 		case r.item.Pending != "":
 			keys = append(keys, Key{Key: "space", What: "cancel"})
+		case fixable(r.item):
+			keys = append(keys, Key{Key: "space", What: "fix"}, Key{Key: "enter", What: "details"})
+		case secret(r.item):
+			keys = append(keys, Key{Key: "enter", What: "fill in"})
+			if newer(r.item) && !r.item.Pinned {
+				keys = append(keys, Key{Key: "space", What: "update"})
+			}
 		case !r.item.Pinned:
 			keys = append(keys, Key{Key: "space", What: "update"})
 		}
@@ -1283,7 +1328,7 @@ func (b *Board) Keys() []Key {
 // Help are every key the board takes, for the keys screen.
 func (b *Board) Help() []Key {
 	return []Key{
-		{Key: "space", What: "tick a tool to install, untick one to uninstall; again takes it off the queue (on Updates: queue it to update)"},
+		{Key: "space", What: "tick a tool to install, untick one to uninstall; again takes it off the queue (on Updates: queue it to fix or update)"},
 		{Key: "u", What: "on Updates: check for updates again"},
 		{Key: "enter", What: "the row's details: fix, fill in, change, reinstall, log in, forget"},
 		{Key: "a", What: "apply the queue, asked first"},
@@ -1394,6 +1439,8 @@ func (b *Board) Body(w, h int) string {
 			box = "[−]"
 		case i.Pending == "update":
 			box = "[↑]"
+		case i.Pending == "fix":
+			box = "[~]"
 		case i.Picked:
 			box = "[x]"
 		}

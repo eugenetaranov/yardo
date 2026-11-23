@@ -570,25 +570,6 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						upd = o.checkUpdates(ctx, cat, a)
 						app.Menu.Checking(upd.msg)
 						toast = "Checking for updates in the background: what it finds shows here."
-					case ui.MenuFix:
-						// Fix all: every problem, in one run.
-						fix = res.IDs
-						if len(fix) == 0 {
-							fix = []string{res.ID}
-						}
-						break loop
-					case ui.MenuEdit:
-						var said string
-						if fix, said, err = o.fillIn(ctx, a, res.Inputs); err != nil {
-							return err
-						}
-						if fix != nil {
-							break loop
-						}
-						d = nil
-						if said != "" {
-							open, toast = "home", said
-						}
 					case ui.MenuApply:
 						// Session on login is a file of the user's: written, and
 						// shown, without a run.
@@ -711,7 +692,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							if err != nil {
 								return err
 							}
-							if len(res.Adds) == 0 && len(res.Forgets) == 0 && len(res.Settings) == 0 && len(res.Updates) == 0 {
+							if len(res.Adds) == 0 && len(res.Forgets) == 0 && len(res.Settings) == 0 && len(res.Updates) == 0 && len(res.Fixes) == 0 {
 								done, d = &r, nil // back to the board, checked again
 								continue
 							}
@@ -720,9 +701,18 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							}
 						}
 						updates = res.Updates
-						if len(res.Adds)+len(res.Forgets)+len(res.Settings) == 0 && len(updates) > 0 {
-							// Only updates: those items, applied again, then updated.
+						if len(res.Adds)+len(res.Forgets)+len(res.Settings) == 0 && len(updates)+len(res.Fixes) > 0 {
+							// Only fixes and updates: those items (a tool's parts with
+							// it), applied again, then the updates. With more queued,
+							// the full run applies the fixes with everything else.
 							fix = slices.Clone(updates)
+							for _, id := range res.Fixes {
+								for _, f := range append([]string{id}, partsOf(cat, a.Picks, id)...) {
+									if !slices.Contains(fix, f) {
+										fix = append(fix, f)
+									}
+								}
+							}
 							break loop
 						}
 						board = &res

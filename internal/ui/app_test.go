@@ -77,7 +77,7 @@ func TestAppHop(t *testing.T) {
 	if cmd := ak(a, "q"); isQuit(cmd) || a.onBoard || a.result.Board != nil || a.result.Quit {
 		t.Fatalf("q on Tools: left %v, result %+v", isQuit(cmd), a.result)
 	}
-	if v := a.View(); !strings.Contains(v, "─ Needs you ") || !strings.Contains(v, "Home ") {
+	if v := a.View(); !strings.Contains(v, "─ Go to ") || !strings.Contains(v, "Home ") {
 		t.Errorf("not the home:\n%s", v)
 	}
 }
@@ -232,7 +232,7 @@ func TestAppKeys(t *testing.T) {
 }
 
 // The mouse: a click on a tab opens it; on a row selects it, twice acts;
-// on a footer key presses it; the wheel over Needs you moves its rows.
+// on a footer key presses it; the wheel on the home moves along the tabs.
 func TestAppMouse(t *testing.T) {
 	a := testApp()
 	at := time.Unix(1000, 0)
@@ -273,10 +273,9 @@ func TestAppMouse(t *testing.T) {
 		t.Errorf("footer ? click:\n%s", a.View())
 	}
 	ak(a, "q", "q")
-	// The wheel over Needs you.
+	// The wheel on the home.
 	a.Menu.info.Dash = Dashboard{}
-	a.Board.items[0].State = "down"
-	onHome(a, "fix:docker")
+	onHome(a, "updates")
 	start := a.Menu.sel
 	a.Update(tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
 	if a.Menu.sel == start {
@@ -370,7 +369,8 @@ func TestAppUpdatesPinned(t *testing.T) {
 }
 
 // While a check runs, the tab says so; when it's done, it fills in; with
-// nothing newer, it goes and Installed is up. u on the tab checks again.
+// nothing newer, the fixes stay, and with nothing to fix either, it goes
+// and Installed is up. u on the tab checks again.
 func TestAppUpdatesCheck(t *testing.T) {
 	a := testApp()
 	done := make(chan struct{})
@@ -398,8 +398,32 @@ func TestAppUpdatesCheck(t *testing.T) {
 		t.Fatalf("filled in:\n%s", v)
 	}
 	a.Update(UpdatesMsg{ByID: map[string][]string{}, At: "09:10"})
-	if v := a.View(); a.Board.tabID != InstalledTab || !strings.Contains(v, "No updates: everything is current.") {
-		t.Errorf("nothing newer: tab %s\n%s", a.Board.tabID, v)
+	if v := ansi.Strip(a.View()); a.Board.tabID != UpdatesTab || !strings.Contains(v, "No updates: everything is current.") || !strings.Contains(v, "stopped: docker isn't running") {
+		t.Errorf("nothing newer, Docker to fix: tab %s\n%s", a.Board.tabID, v)
+	}
+	a.Board.items[0].State, a.Board.items[4].State = "ok", "ok"
+	if a.View(); a.Board.tabID != InstalledTab {
+		t.Errorf("nothing at all: tab %s", a.Board.tabID)
+	}
+}
+
+// Updates holds the fixes too, all queued from the home: a applies them
+// with the updates, in one run, without asking.
+func TestAppFixes(t *testing.T) {
+	a := testUpdates(false)
+	a.Board.items[0].State = "drifted"
+	onHome(a, "updates")
+	ak(a, "enter")
+	if a.Board.tabID != UpdatesTab || a.Board.items[0].Pending != "fix" {
+		t.Fatalf("tab %s, docker %q", a.Board.tabID, a.Board.items[0].Pending)
+	}
+	if v := ansi.Strip(a.View()); !strings.Contains(v, "[~]") || !strings.Contains(v, "will fix: edited by hand") {
+		t.Errorf("the fix:\n%s", v)
+	}
+	ak(a, "a")
+	r := a.result.Board
+	if r == nil || r.Kind != BoardApply || strings.Join(r.Fixes, " ") != "docker" || len(r.Updates) == 0 {
+		t.Errorf("a: %+v", r)
 	}
 }
 

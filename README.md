@@ -57,18 +57,8 @@ account is created). Once something is set up, it opens on the home:
 
 ```
  yardo  ·  vm  ·  ada                                                                          Home
- ▲ 3 things need you  ·  everything else is working                     Ubuntu 24.04  ·  100.64.0.7
+ ▲ 3 things need you  ·  marked below: Updates, MCP servers             Ubuntu 24.04  ·  100.64.0.7
 
-┌─ Needs you ───────────────────────────────────────────────────────────────────────────────── 3 ┐
-│  ○ Fill in jira                                                                                │
-│  ▲ Check opensearch  didn't register: check its settings                                       │
-│  ↑ Install 1 update  node 22.12 → 24.11, gh 2.80 → 2.83                                        │
-│    JIRA_API_TOKEN                                                                              │
-│                                                                                                │
-│                                                                                                │
-│ ✓ 4 of 4 tools working                                                                         │
-│   1 update · checked 09:12                                                                     │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌─ Machine ──────────────────────────────────────────────────────────────────────────────────────┐
 │ CPU   3%   ▁▂▁▁▃▁  now  ·  0.12 0.08 0.05 on 4 cores                                           │
 │ Mem   ▰▰▱▱▱▱▱▱▱▱ 23%   1.8 GB of 7.8 GB  ·  Disk  ▰▰▰▱▱▱▱▱▱▱ 31%   of 78 GB  ·  Up    3d 4h     │
@@ -86,52 +76,59 @@ account is created). Once something is set up, it opens on the home:
 ┌─ Connection ──────────────────────────────────────────────────────────────────── from a laptop ┐
 │ SSH      ssh vm  ·  ada@vm.tail1234.ts.net                                                     │
 │ MCP      http://vm.tail1234.ts.net:8081/mcp  ·  token: sudo cat ~/.mcp/clients/laptop.token    │
-│ Enter: every step, ready to paste, and the networks: start, stop, add, remove                  │
+│ Copies   defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true  ·  iTerm2      │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─ Go to ────────────────────────────────────────────────────────────────────────────────────────┐
-│  Tools 4     MCP servers 4     Connection     Settings     Last run                            │
-│ or just start typing to search the tools                                                       │
+│  Updates 1 ↑     Tools 4     MCP servers 4 ○     Connection     Settings     Last run          │
+│ Install 1 update · node 22.12 → 24.11, gh 2.80 → 2.83 · checked 09:12                          │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
 
- ↑↓←→ choose   tab next   enter open   u updates   type search   ? keys   q quit
+ ←→ choose   enter open   u updates   type search   ? keys   q quit
 ```
 
-**Needs you**, the width of the screen, has a row for each thing that
-needs doing, named by what it does: **Start** something stopped,
-**Restore** a file edited by hand (putting back yardo's version) or
-**Update** what an older yardo set up (only what yardo set up: an item
-picked but never installed is on Tools, not a problem; three or more are
-one **Fix 3 things** row, a checklist with each one's details under it,
-all ticked: space unticks, enter fixes the ticked in one run), **Fill
-in** a value (opens its file in your editor), **Install 3 updates**
-(enter opens Tools on the Updates tab with all three queued: **a**
-updates them, space on one leaves it out, q goes home with the queue
-kept), **Check for updates** (while it was never
-done; **u** does it from anywhere on the home), and **See why the last
-run failed**. Under it, the **Machine** in two lines, **Services &
+The panels only show: the **Machine** in two lines, **Services &
 containers** (what's up or failed, the ports it listens on beyond this
-machine and who can reach them; the containers by image) and the **MCP
-servers**; then **Connection**, a panel tab reaches: enter opens the
-Connection screen (below), the same as Go to's Connection. **Go to** has
-what never moves: **Tools** (the full
-screen, below; with changes queued there, it says how many), **MCP
-servers** (the gateway's list: **space** marks one, or All servers, off
-or on, **a** applies what's marked, **n** adds one, or another instance
-of one, **e** edits its settings, **d** deletes one, asking first),
-**Connection**, **Settings** (**Network access**: the MCP gateway and containers'
-published ports, each a row of choices with a sentence saying what it
-means; **Accept new hosts' SSH keys**; **Session on login**; the
-**Look**, theme and accent
-colour; your **Git name and email**, each git host's **SSH key**, the
-**Shell prompt** and the **Dotfiles repo**, asked again, then applied)
-and **Last run**. Typing on the home searches the tools, live on the
+machine and who can reach them; the containers by image), the **MCP
+servers** and **Connection**. Everything opens from the tabs at the
+bottom, the one under the cursor a block of the accent colour; ←→ go
+along them, enter opens one. A tab with something on it that needs you
+carries its mark, its note under the tabs saying what, named by what it
+does; the line at the top counts them and names the tabs:
+
+- **Updates**: everything to bring back in line, marked while there's
+  anything. **Start** something stopped, **Restore** a file edited by
+  hand (putting back yardo's version), **Update** what an older yardo set
+  up (only what yardo set up: an item picked but never installed isn't a
+  problem), **Fill in** a value, and the newer versions. Enter opens
+  Tools on its Updates tab with every fix and update queued: **a**
+  applies them all in one run, space on one leaves it out, enter on a
+  value opens its file in your editor, q goes home with the queue kept.
+  With nothing there, enter checks for newer versions again, in the
+  background (**u** does it from anywhere on the home).
+- **Tools** (the full screen, below); its note says how many tools work,
+  or how many changes are queued there.
+- **MCP servers** (the gateway's list: **space** marks one, or All
+  servers, off or on, **a** applies what's marked, **n** adds one, or
+  another instance of one, **e** edits its settings, **d** deletes one,
+  asking first), marked when one needs a value or didn't register.
+- **Connection** (below), marked when there's a key to add.
+- **Settings** (**Network access**: the MCP gateway and containers'
+  published ports, each a row of choices with a sentence saying what it
+  means; **Accept new hosts' SSH keys**; **Session on login**; the
+  **Look**, theme and accent colour; your **Git name and email**, each
+  git host's **SSH key**, the **Shell prompt** and the **Dotfiles
+  repo**, asked again, then applied).
+- **Last run**, marked while it failed.
+
+The cursor starts on the first tab marked, else Tools. Typing on the
+home searches the tools, live on the
 Tools screen.
 
 yardo looks for newer versions (apt and mise) in the background while
 the home is up, once a day; a run waits for it, as both use apt.
 
-**One program, one key map.** The home, Tools, Settings, Fix, Updates,
+**One program, one key map.** The home, Tools, Settings, Updates,
 Connection, Last run and the MCP servers are one screen that changes,
 without a flicker: Tools keeps its queue, its tab, each tab's row and
 its filter while you go home and back (q on the home with changes queued
@@ -145,10 +142,10 @@ same everywhere:
 | Key | Does |
 |---|---|
 | ↑↓ (`j` `k`) | move |
-| ←→ (`h` `l`) | switch tabs on Tools; pick a choice on a setting; on the home, to and along Go to |
-| tab | the next panel (home) or tab (Tools) |
+| ←→ (`h` `l`) | switch tabs (the home, Tools); pick a choice on a setting |
+| tab | the next tab (the home, Tools) |
 | enter | open the row, or do what it says |
-| space | tick: queue a tool, tick a fix, turn a server off or on |
+| space | tick: queue a tool, turn a server off or on |
 | `a` | apply what's queued or changed (Tools, Network access, Look, MCP servers) |
 | `n` | add (an MCP server) |
 | `d` | delete or uninstall, asked first |
@@ -163,16 +160,16 @@ same everywhere:
 Every question (apply, uninstall, delete, quit with a queue) is the same
 framed box over the screen: enter, `y` or `n` answers it, `q` leaves it.
 The mouse works too, over SSH and in tmux or zellij with their mouse on:
-a click selects a row, a double-click opens it, a click on a tab, a Go
-to entry or a key in the bottom line does what it says, and the wheel
+a click selects a row, a double-click opens it, a click on a tab or a
+key in the bottom line does what it says, and the wheel
 scrolls. Nothing needs the mouse. Esc goes back too, but over SSH, in
 tmux or zellij it can arrive late or not at all, so it's kept for leaving
 a field you're typing in, where q types a q.
 
 **After a run** yardo comes back to the home, saying how it went on the
 line above the keys: `✓ Done: Docker Engine`, or `✗ Docker Engine failed ·
-Last run shows what happened`. **Last run** (Go to, and a Needs you row
-while it failed) keeps what the run printed, from one session to the
+Last run shows what happened`. **Last run** (a tab, marked while it
+failed) keeps what the run printed, from one session to the
 next: each step's result, the last lines of a failing step's output, the
 notes and hints, and the log's path. While a run is on, its line counts
 the steps: `12 of 43 · Docker Engine (1m20s)`.
@@ -211,8 +208,9 @@ it on its next run, once, before the home opens.
 
 **Tools** opens the full screen: tabs by area
 (**Installed** first, once anything is: every tool installed, from all
-the tabs, to fix or uninstall one; **Updates** next, while a check runs
-or has found newer versions; then **Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
+the tabs, to fix or uninstall one; **Updates** next, while something
+needs fixing or filling in, a check runs, or it has found newer
+versions; then **Dev**, **DevOps**, **AI**, **Shell & CLI**, **System**, **Git &
 SSH**) above a checklist, where a ticked box means installed and a mark
 beside it how it is, said in a word beside it: `✓` working, `✗` stopped
 or not installed, `~` half set up, edited by hand, or set up by an older
@@ -222,12 +220,15 @@ yardo (this one ships newer files; Fix applies them), `○` needs a value,
 - **space** ticks a tool to install (`[+]`), or unticks an installed one
   to uninstall it (`[−]`); space again takes it off the queue. The queue
   shows on a line above the keys, in words.
-- **Updates** lists each tool with a newer version, one row each: the
+- **Updates** lists what needs you, one row each: first the tools to
+  fix (stopped, edited by hand, set up by an older yardo, half set up),
+  then the empty values, then each tool with a newer version: the
   version it has and the one that's out (`node 22.12 → 24.11`), and
-  whether it comes from mise or apt. **space** queues one to update
-  (`[↑]`), in the same queue as adding and uninstalling, and **a**
-  applies it all in one run: only the queued tools are updated, each to
-  its latest version, and the others stay listed until the next check.
+  whether it comes from mise or apt. **space** queues a fix (`[~]`) or
+  an update (`[↑]`), in the same queue as adding and uninstalling;
+  **enter** on a value opens its file in your editor. **a** applies it
+  all in one run: the fixes applied again, the queued tools each updated
+  to its latest version, the others still listed until the next check.
   A tool a team profile pins says "pinned by your profile" and isn't
   queued. yardo looks for newer versions once a day, in the background;
   **u** there (or on the home) looks again, and every key keeps working

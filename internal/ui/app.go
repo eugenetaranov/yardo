@@ -258,7 +258,7 @@ func (a *App) Reload(d AppData) {
 	a.load(d)
 	for _, i := range a.Board.items {
 		switch p := pending[i.ID]; {
-		case p == "add" && !i.Picked, (p == "uninstall" || p == "forget") && i.Picked, p == "update" && newer(i):
+		case p == "add" && !i.Picked, (p == "uninstall" || p == "forget") && i.Picked, p == "update" && newer(i), p == "fix" && fixable(i):
 			i.Pending = p
 		}
 	}
@@ -427,7 +427,7 @@ func (a *App) after(cmd tea.Cmd) tea.Cmd {
 		c.left, a.onConn = false, false
 		m.screen = "home"
 		for n, r := range m.rows() {
-			if r.id == cmpOr(m.result.ID, "connect") && m.result.Kind == MenuConnection {
+			if r.id == cmpOr(m.result.ID, "conn") && m.result.Kind == MenuConnection {
 				m.sel = n
 			}
 		}
