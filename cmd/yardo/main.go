@@ -593,6 +593,28 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 								break
 							}
 						}
+						// The editor theme is a file of the user's too: written
+						// without a run; Vim and Neovim read it as they start.
+						if v, ok := res.Settings["editortheme"]; ok {
+							delete(res.Settings, "editortheme")
+							a.EditorTheme = v
+							if !o.dryRun {
+								env, err := newEnv(a.User, o.share(), io.Discard, false)
+								if err != nil {
+									return err
+								}
+								if err := steps.SetEditorTheme(env, v); err != nil {
+									return err
+								}
+								if err := st.Save(a); err != nil {
+									return err
+								}
+							}
+							if len(res.Settings) == 0 {
+								d, open, toast = nil, "settings", "Editor theme: "+steps.EditorThemeName(v)+". Vim and Neovim use it from their next start."
+								break
+							}
+						}
 						// The theme is yardo's own: kept, and shown, without a run.
 						if v, ok := res.Settings["theme"]; ok {
 							delete(res.Settings, "theme")

@@ -62,6 +62,10 @@ type Answers struct {
 	// (Settings, a profile): "tmux", "zellij" or "off"; "" leaves
 	// ~/.config/yardo/session to the login's question.
 	Session string `json:"session,omitempty"`
+	// EditorTheme is Vim's and Neovim's colour scheme, as Settings last
+	// set it (a key of steps.EditorThemes); "" leaves Neovim's Tokyo
+	// Night and Vim's own colours.
+	EditorTheme string `json:"editor_theme,omitempty"`
 	// Dotfiles is the user's dotfiles repo (cloned to ~/.dotfiles).
 	Dotfiles string `json:"dotfiles,omitempty"`
 	// SSHAcceptNew is "on" when ssh trusts a host it hasn't seen before

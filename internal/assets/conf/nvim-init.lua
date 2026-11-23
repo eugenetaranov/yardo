@@ -28,6 +28,8 @@
 -- Git                                   <space>g and one key
 --   <space>gb  who changed this line    <space>gB  ...each line (q closes)
 --   <space>gh  this file's history      <space>gd  diff with the last commit
+--   <space>gd  outside a file (the browser): the branch's changes, or the
+--             last commit on the default branch (q closes it)
 --   <space>gc  changed files            <space>gs  stage this change
 --   <space>gp  preview this change      <space>gu  undo this change
 --   ]h [h      next / previous change
@@ -47,6 +49,8 @@
 -- Language servers are ready for JSON, YAML, shell and the languages
 -- yardo installed (Go, Python, TypeScript, Java, Rust, Terraform,
 -- Dockerfiles, Helm): errors are underlined as you type.
+--
+-- Colours: yardo's Settings › Look › Editor theme (Vim's too).
 --
 -- yardo rewrites this file on a re-run. Your own settings go in
 -- ~/.config/nvim/local.lua: yardo never writes it, and it's read last.
@@ -610,12 +614,12 @@ end
 vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
-  -- A dark theme.
-  {
-    "folke/tokyonight.nvim",
-    priority = 1000,
-    config = function() vim.cmd.colorscheme("tokyonight-night") end,
-  },
+  -- Colour schemes, loaded when picked (yardo's Settings › Look › Editor
+  -- theme; the rest ship with Neovim).
+  { "folke/tokyonight.nvim", lazy = true },
+  { "rebelot/kanagawa.nvim", lazy = true },
+  { "rose-pine/neovim", name = "rose-pine", lazy = true },
+  { "ellisonleao/gruvbox.nvim", lazy = true },
 
   -- Shows the keys that follow a prefix: press <space> and wait.
   {
@@ -686,6 +690,47 @@ require("lazy").setup({
           end
         end,
       })
+    end,
+  },
+
+  -- <space>gd outside a file (the file browser, nothing open): what this
+  -- branch changed since it left the default branch, your uncommitted
+  -- changes too; on the default branch, the last commit. Changed files on
+  -- the left, each one side by side; <space>gd again or q closes it. In a
+  -- file, <space>gd is that file's diff (gitsigns, below).
+  {
+    "sindrets/diffview.nvim",
+    cmd = { "DiffviewOpen", "DiffviewClose" },
+    keys = {
+      { "<leader>gd", function()
+        if require("diffview.lib").get_current_view() then return vim.cmd("DiffviewClose") end
+        local function git(...)
+          local r = vim.system({ "git", ... }, { text = true }):wait()
+          return r.code == 0 and vim.trim(r.stdout) or nil
+        end
+        if not git("rev-parse", "--git-dir") then return vim.notify("Not in a git repository") end
+        local default = (git("symbolic-ref", "--short", "refs/remotes/origin/HEAD"))
+        if not default then
+          for _, b in ipairs({ "origin/main", "origin/master", "main", "master" }) do
+            if git("rev-parse", "--verify", "--quiet", b) then default = b break end
+          end
+        end
+        local branch = git("branch", "--show-current")
+        local base = default and branch ~= "" and branch ~= default:gsub("^origin/", "")
+          and git("merge-base", default, "HEAD")
+        if base and base ~= git("rev-parse", "HEAD") then
+          vim.cmd("DiffviewOpen " .. base)
+        else
+          vim.cmd("DiffviewOpen HEAD~1..HEAD")
+        end
+      end, desc = "Diff: this branch, or the last commit" },
+    },
+    opts = function()
+      local close = { "n", "q", "<cmd>DiffviewClose<CR>", { desc = "Close the diff" } }
+      return {
+        use_icons = false,
+        keymaps = { view = { close }, file_panel = { close }, file_history_panel = { close } },
+      }
     end,
   },
 
@@ -839,6 +884,18 @@ require("lazy").setup({
   rocks = { enabled = false },
   change_detection = { notify = false },
 })
+
+-- The colour scheme yardo's Settings › Look › Editor theme picked, as
+-- ~/.config/yardo/editor-theme names it; Tokyo Night without one. Another
+-- of your own: vim.cmd.colorscheme("...") in local.lua.
+local theme = "tokyonight-night"
+local picked = vim.fn.expand("~/.config/yardo/editor-theme")
+if vim.fn.filereadable(picked) == 1 then
+  for _, line in ipairs(vim.fn.readfile(picked)) do
+    theme = line:match("^nvim%s+(%S+)") or theme
+  end
+end
+if not pcall(vim.cmd.colorscheme, theme) then vim.cmd.colorscheme("tokyonight-night") end
 
 -- Your own settings, read last so they win.
 local mine = vim.fn.stdpath("config") .. "/local.lua"

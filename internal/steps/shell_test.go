@@ -521,3 +521,24 @@ func TestSessionSetting(t *testing.T) {
 		t.Errorf("ask: %v, file there %v", err, exists(e.Path(SessionFile)))
 	}
 }
+
+func TestEditorThemeSetting(t *testing.T) {
+	e := shellEnv(t)
+	e.Answers = &answers.Answers{}
+	st := step(t, catalog.Step{Type: "go:editortheme"})
+	if !check(t, e, st) || EditorTheme(e) != "tokyonight" {
+		t.Errorf("nothing set: Check false or theme %q", EditorTheme(e))
+	}
+	e.Answers.EditorTheme = "kanagawa"
+	if check(t, e, st) {
+		t.Error("Check = true with no file")
+	}
+	apply(t, e, st)
+	got := read(t, e.Path(EditorThemeFile))
+	if !strings.Contains(got, "\ntheme kanagawa\nnvim kanagawa-wave\nvim habamax\n") || !check(t, e, st) {
+		t.Errorf("editor theme file %q", got)
+	}
+	if err := SetEditorTheme(e, "nope"); err != nil || EditorTheme(e) != "tokyonight" {
+		t.Errorf("unknown key: %v, %q", err, EditorTheme(e))
+	}
+}

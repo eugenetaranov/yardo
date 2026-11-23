@@ -268,6 +268,14 @@ and orange). A theme is yardo's own screens only; it's kept at once,
 without a run. Your terminal's background and font stay yours, so it
 works over SSH anywhere.
 
+**Editor theme.** Settings → Look → Editor theme: Vim's and Neovim's
+colours. Tokyo Night (the default), Catppuccin, Kanagawa, Rose Pine,
+Gruvbox, and the schemes both editors ship: Retrobox, Habamax, Sorbet,
+Unokai, Wildcharm, Zaibatsu. Vim takes the nearest one it has for the
+four Neovim plugins. It's kept at once, in `~/.config/yardo/editor-theme`,
+and used from each editor's next start; a colorscheme in your `~/.vimrc`
+or Neovim's `local.lua` wins.
+
 **Accent colour.** Settings → Look → Accent colour: Coral (the default),
 Lagoon (aqua blue), Pistachio, Lavender, Amber or Rose. yardo's screen
 takes it in the Classic theme, and so does your shell, so each machine's terminals can be
@@ -440,7 +448,8 @@ installed by hand.
    finds one in the project, space R replaces in files with every change
    shown first; Terraform and Go are formatted on save; under space g:
    blame (b, B for the whole file), the file's history (h), a diff with
-   the last commit (d), changed files (c), stage (s) or undo (u) a
+   the last commit (d; from the file browser, the branch's changes since
+   the default branch, or the last commit on it), changed files (c), stage (s) or undo (u) a
    change, and the link to the line on GitHub, GitLab or Bitbucket (y); `sudo nvim FILE` edits through sudoedit, with
    your config), tmux (with `~/.tmux.conf`: mouse, splits, 50k history),
    zellij, mosh. Over SSH, `y` in Neovim or Vim and a mouse drag in tmux

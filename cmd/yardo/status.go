@@ -391,6 +391,16 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			Value: steps.Session(&steps.Env{Home: homeOf(a.User)}), Choices: [][2]string{
 				{"tmux", "tmux"}, {"zellij", "zellij"}, {"ask", "ask at the next ssh login"}, {"off", "off: a plain shell"}}})
 	}
+	// The editor theme: Vim's colours and Neovim's (the file's, which
+	// Settings writes).
+	if has("neovim") || has("zsh") || has("shellcfg") {
+		et := &ui.BoardSetting{Key: "editortheme", Label: "Editor theme", Section: ui.LookSection,
+			Value: steps.EditorTheme(&steps.Env{Home: homeOf(a.User)})}
+		for _, t := range steps.EditorThemes {
+			et.Choices = append(et.Choices, [2]string{t.Key, t.Name})
+		}
+		settings = append(settings, et)
+	}
 	// The theme: yardo's screens.
 	theme := &ui.BoardSetting{Key: "theme", Label: "Theme", Section: ui.LookSection, Value: cmp.Or(a.Theme, "classic"), Swatches: map[string]string{}}
 	for _, l := range tui.Looks {
