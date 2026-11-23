@@ -263,10 +263,14 @@ func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway 
 					Lines: []string{tunnel, local}, Say: say})
 		}
 	}
+	out = append(out, ui.Setup{ID: "clipboard", What: "Clipboard", How: "iTerm2  ·  let copies here (y in Neovim, a drag in tmux) reach the laptop",
+		Lines: []string{iterm2Clipboard},
+		Say: []string{"Run it once on the laptop, then quit and reopen iTerm2. Copies here travel through the terminal (OSC 52), which iTerm2 blocks until then.",
+			"Ghostty, kitty, WezTerm, Alacritty: nothing to do. Terminal.app can't (hold fn to select)."}})
 	file := "yardo-" + ctxName + ".sh"
 	return append(out, ui.Setup{ID: "script", What: "All of it", How: "one script for the laptop: " + file,
 		Lines: []string{"ssh " + a.User + "@" + addr + " sudo yardo connect --script > " + file, "sh " + file},
-		Say: []string{"On the laptop: save it, read it, then run it. It adds the Host block, the Docker context, and the gateway to Claude Code when claude is there, each once; nothing else.",
+		Say: []string{"On the laptop: save it, read it, then run it. It adds the Host block, the Docker context, the gateway to Claude Code when claude is there, and lets iTerm2 take copies, each once; nothing else.",
 			"It holds no token: it reads the token over ssh when it runs."}})
 }
 
@@ -408,8 +412,9 @@ func connectScript(w io.Writer, a *answers.Answers, addrs []address, tokens []st
 	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 	fmt.Fprintf(w, `#!/bin/sh
 # yardo connect --script: sets up this laptop to reach %s. It adds
-# what's missing, once: the ssh Host block, the Docker context, and the
-# MCP gateway to Claude Code when claude is installed. Nothing else.
+# what's missing, once: the ssh Host block, the Docker context, the MCP
+# gateway to Claude Code when claude is installed, and iTerm2's leave to
+# take copies from Neovim and tmux there. Nothing else.
 set -eu
 name=%s
 
@@ -435,7 +440,16 @@ else
   docker context create "$name" --docker "host=ssh://$name" >/dev/null
   echo "docker: made the context $name (docker context use $name)."
 fi
-`)
+
+if ! command -v defaults >/dev/null 2>&1 || ! defaults read com.googlecode.iterm2 >/dev/null 2>&1; then
+  echo "iTerm2: not on this laptop; skipped."
+elif [ "$(defaults read com.googlecode.iterm2 AllowClipboardAccess 2>/dev/null)" = 1 ]; then
+  echo "iTerm2: takes copies from $name already."
+else
+  %s
+  echo "iTerm2: takes copies from $name (y in Neovim, a drag in tmux) once you quit and reopen it."
+fi
+`, iterm2Clipboard)
 	if !gateway {
 		return
 	}

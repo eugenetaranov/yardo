@@ -127,8 +127,10 @@ func withNames(ctx context.Context, x steps.Execer, addrs []address) ([]address,
 	return addrs, &st
 }
 
-// printConnect writes how to reach Docker and the MCP gateway from a
-// laptop, for user a; ts is Tailscale's status, when it's up.
+// iterm2Clipboard lets iTerm2 take copies through the terminal (OSC 52),
+// on the laptop.
+const iterm2Clipboard = "defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true"
+
 // clipboardHint is how copying in Neovim or tmux here reaches the
 // laptop's clipboard: through the terminal (OSC 52), which iTerm2 lets
 // through only once allowed. term is the laptop's terminal when it says
@@ -137,7 +139,7 @@ func clipboardHint(term string) []string {
 	out := []string{
 		"Copy and paste (y in Neovim, a drag in tmux) reach your laptop's clipboard through the terminal.",
 		"  iTerm2, once on your laptop (then quit and reopen it):",
-		ui.Paste + "    defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true",
+		ui.Paste + "    " + iterm2Clipboard,
 	}
 	if term != "iTerm2" {
 		out = append(out, "  Ghostty, kitty, WezTerm, Alacritty: nothing to do · Terminal.app can't (hold fn to select).")
@@ -298,8 +300,9 @@ func connectRows(a *answers.Answers, addrs []address, tokens []string, gateway b
 		{What: "SSH", Use: "ssh " + ctxName, Note: ssh + ", your SSH key (Host " + ctxName + " in ~/.ssh/config)"},
 		{What: "Docker", Use: "docker context use " + ctxName, Note: "host=ssh://" + a.User + "@" + addr + " · " + ports},
 	}
+	clip := ui.ConnectRow{What: "Copies", Use: iterm2Clipboard, Note: "iTerm2, once, then reopen it: y in Neovim and a drag in tmux reach the laptop"}
 	if !gateway {
-		return rows
+		return append(rows, clip)
 	}
 	mcp := ui.ConnectRow{What: "MCP"}
 	if url, _, ok := gatewayURL(a, addr); ok {
@@ -315,7 +318,7 @@ func connectRows(a *answers.Answers, addrs []address, tokens []string, gateway b
 		mcp.Use = fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s", p, p, ctxName)
 		mcp.Note = fmt.Sprintf("mcpjungle, then http://127.0.0.1:%d/mcp · no token: it's this machine's only, the tunnel is the login (Settings › Network access opens it, with a token)", p)
 	}
-	return append(rows, mcp)
+	return append(rows, mcp, clip)
 }
 
 // tildeOf is path with user's home as ~.

@@ -104,7 +104,7 @@ func TestLaptopSetups(t *testing.T) {
 	ss := laptopSetups(a, addrs, nil, true, short)
 	var out bytes.Buffer
 	printConnect(&out, a, addrs, nil, "", nil)
-	for _, id := range []string{"ssh", "docker", "mcp-claude", "mcp-codex"} {
+	for _, id := range []string{"ssh", "docker", "mcp-claude", "mcp-codex", "clipboard"} {
 		for _, l := range setupLines(ss, id) {
 			if !strings.Contains(ui.Unmark(out.String()), l) {
 				t.Errorf("%s: yardo connect lacks %q", id, l)
@@ -125,7 +125,7 @@ func TestLaptopSetups(t *testing.T) {
 	if l := setupLines(ss, "mcp-claude"); len(l) != 2 || !strings.HasPrefix(l[0], "ssh -N -L 8081:127.0.0.1:8081 ada@100.64.1.7") || strings.Contains(l[1], "Bearer") {
 		t.Errorf("tunnel: %q", l)
 	}
-	if ss = laptopSetups(a, addrs, nil, false, short); len(ss) != 3 || ss[2].ID != "script" || !strings.Contains(ss[2].Lines[0], "sudo yardo connect --script > yardo-"+short+".sh") {
+	if ss = laptopSetups(a, addrs, nil, false, short); len(ss) != 4 || ss[2].ID != "clipboard" || ss[3].ID != "script" || !strings.Contains(ss[3].Lines[0], "sudo yardo connect --script > yardo-"+short+".sh") {
 		t.Errorf("no gateway: %+v", ss)
 	}
 }
@@ -139,6 +139,8 @@ func TestConnectScript(t *testing.T) {
 		"ssh":    `echo "ssh $*" >> ` + log + `; printf 'f00dfeed\r\n'`,
 		"docker": `echo "docker $*" >> ` + log + `; [ "$2" = inspect ] && [ -f ` + home + `/ctx ] && exit 0; [ "$2" = create ] && touch ` + home + `/ctx; [ "$2" = inspect ] && exit 1; exit 0`,
 		"claude": `echo "claude $*" >> ` + log + `; [ "$2" = get ] && [ -f ` + home + `/mcp ] && exit 0; [ "$2" = add ] && touch ` + home + `/mcp; [ "$2" = get ] && exit 1; exit 0`,
+		// iTerm2 is installed; its clipboard leave lands in a file.
+		"defaults": `echo "defaults $*" >> ` + log + `; [ "$1" = write ] && echo 1 > ` + home + `/clip; [ "$3" = AllowClipboardAccess ] && cat ` + home + `/clip 2>/dev/null; exit 0`,
 	}
 	for n, body := range fake {
 		if err := os.WriteFile(filepath.Join(bin, n), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
@@ -167,7 +169,8 @@ func TestConnectScript(t *testing.T) {
 	out := run()
 	conf, _ := os.ReadFile(filepath.Join(home, ".ssh", "config"))
 	if !strings.Contains(string(conf), "Host vm\n  HostName 100.64.1.7\n  User ada") || !strings.Contains(out, "added Host vm") ||
-		!strings.Contains(out, "made the context vm") || !strings.Contains(out, "added the MCP server vm") {
+		!strings.Contains(out, "made the context vm") || !strings.Contains(out, "added the MCP server vm") ||
+		!strings.Contains(out, "iTerm2: takes copies from vm (") {
 		t.Errorf("first run:\n%s\nconfig:\n%s", out, conf)
 	}
 	l, _ := os.ReadFile(log)
@@ -177,7 +180,7 @@ func TestConnectScript(t *testing.T) {
 	}
 	out = run()
 	conf2, _ := os.ReadFile(filepath.Join(home, ".ssh", "config"))
-	if string(conf2) != string(conf) || strings.Contains(out, "added") || strings.Contains(out, "made") {
+	if string(conf2) != string(conf) || strings.Contains(out, "added") || strings.Contains(out, "made") || !strings.Contains(out, "iTerm2: takes copies from vm already") {
 		t.Errorf("second run changed something:\n%s", out)
 	}
 }

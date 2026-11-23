@@ -507,7 +507,8 @@ func TestConnectRows(t *testing.T) {
 	}
 	all := strings.Join(got, "\n")
 	for _, want := range []string{"SSH|ssh ", "ada@100.64.1.7 over Tailscale", "Docker|docker context use ", "host=ssh://ada@100.64.1.7 · -p ports from the VPNs",
-		"MCP|http://100.64.1.7:8081/mcp|mcpjungle, with a token: sudo cat ~/.mcp/clients/client.token"} {
+		"MCP|http://100.64.1.7:8081/mcp|mcpjungle, with a token: sudo cat ~/.mcp/clients/client.token",
+		"Copies|defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true|iTerm2"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("rows lack %q:\n%s", want, all)
 		}
@@ -519,7 +520,7 @@ func TestConnectRows(t *testing.T) {
 	if r := connectRows(a, addrs, nil, true); !strings.HasPrefix(r[2].Use, "ssh -N -L 8081:127.0.0.1:8081 ") {
 		t.Errorf("this machine only: %+v", r[2])
 	}
-	if r := connectRows(a, addrs, nil, false); len(r) != 2 {
+	if r := connectRows(a, addrs, nil, false); len(r) != 3 || r[2].What != "Copies" {
 		t.Errorf("no gateway: %+v", r)
 	}
 	var out strings.Builder
