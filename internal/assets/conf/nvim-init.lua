@@ -170,22 +170,53 @@ vim.api.nvim_create_autocmd("TextYankPost", {
 -- File names in the lists (files, recent, open, changed, find in files,
 -- where it's used) are coloured by type: .tf green, .tfvars yellow, YAML
 -- blue, JSON orange, Go blue-cyan, Python teal, JavaScript and TypeScript
--- pink. Each colour is a highlight group, so
--- vim.api.nvim_set_hl(0, "FileTf", { fg = "#..." }) in local.lua
--- changes one.
+-- pink; the same in every editor theme. Each colour is a highlight
+-- group, so vim.api.nvim_set_hl(0, "FileTf", { fg = "#..." }) in
+-- local.lua changes one.
 local colours = {
-  FileTf = "String", FileTfvars = "DiagnosticWarn", FileYaml = "Function", FileJson = "Constant",
-  FileGo = "Type", FilePython = "DiagnosticHint", FileJs = "@variable.builtin",
-  FindDeclares = "Statement", FindUses = "DiagnosticInfo", FindSets = "Number",
+  FileTf = "#9ece6a", FileTfvars = "#e0af68", FileYaml = "#7aa2f7", FileJson = "#ff9e64",
+  FileGo = "#2ac3de", FilePython = "#73daca", FileJs = "#f7768e",
+  FindDeclares = "#bb9af7", FindUses = "#7dcfff", FindSets = "#ff9e64",
 }
 local file_colour = { tf = "FileTf", tfvars = "FileTfvars", yaml = "FileYaml", yml = "FileYaml",
   json = "FileJson", go = "FileGo", py = "FilePython", js = "FileJs", mjs = "FileJs", cjs = "FileJs",
   jsx = "FileJs", ts = "FileJs", tsx = "FileJs" }
 
 local function set_colours()
-  for group, link in pairs(colours) do
-    vim.api.nvim_set_hl(0, group, { link = link, default = true })
+  for group, fg in pairs(colours) do
+    vim.api.nvim_set_hl(0, group, { fg = fg, default = true })
   end
+end
+
+-- Where what you typed is in a list's line, after its file:line:col:
+-- (as typed, not letters scattered over the file name as a fuzzy match
+-- would mark them); smart case.
+local function as_typed(prompt, display)
+  local caseless = prompt == prompt:lower()
+  local hay, needle = caseless and display:lower() or display, caseless and prompt:lower() or prompt
+  local start, out = #(display:match("^.-:%d+:%d+:") or "") + 1, {}
+  while needle ~= "" do
+    local from, to = hay:find(needle, start, true)
+    if not from then break end
+    for i = from, to do out[#out + 1] = i end
+    start = to + 1
+  end
+  return out
+end
+
+-- Symbol lists keep the names that have what you typed in them, as
+-- typed (smart case), in their order: "module" doesn't find
+-- aws_iam_policy_document, as a fuzzy match would.
+local function names_sorter()
+  return require("telescope.sorters").Sorter:new({
+    scoring_function = function(_, prompt, line, e)
+      if prompt == "" then return 1 end
+      local text = e and e.text or line
+      if prompt == prompt:lower() then text = text:lower() end
+      return text:find(prompt, 1, true) and 1 or -1
+    end,
+    highlighter = function(_, prompt, display) return as_typed(prompt, display) end,
+  })
 end
 
 -- Wraps a telescope entry maker so the file name in each line takes its
@@ -233,6 +264,69 @@ local function list(picker, maker)
   end
 end
 
+-- Where the Terraform reference under the cursor is declared, by name in
+-- the directory's .tf files: var.x (variable "x"), local.x (x = in a
+-- locals block), module.x, data.t.x, t.x (a resource). terraform-ls finds
+-- nothing in a module's arguments until terraform init has fetched the
+-- module; this finds it anyway. A location, as a language server gives.
+local function tf_declared(buf)
+  local line, col = vim.api.nvim_get_current_line(), vim.api.nvim_win_get_cursor(0)[2] + 1
+  local from, to = col, col
+  while from > 1 and line:sub(from - 1, from - 1):match("[%w_%.%-]") do from = from - 1 end
+  while to <= #line and line:sub(to, to):match("[%w_%.%-]") do to = to + 1 end
+  local parts = vim.split(line:sub(from, to - 1), ".", { plain = true })
+  local kind, a, b = parts[1], parts[2], parts[3]
+  local pattern, in_locals
+  if kind == "var" and a then pattern = 'variable\\s+"' .. a .. '"'
+  elseif kind == "local" and a then pattern, in_locals = a .. "\\s*=", true
+  elseif kind == "module" and a then pattern = 'module\\s+"' .. a .. '"'
+  elseif kind == "data" and a and b then pattern = 'data\\s+"' .. a .. '"\\s+"' .. b .. '"'
+  elseif kind and a and kind:match("^%l[%w]*_") then pattern = 'resource\\s+"' .. kind .. '"\\s+"' .. a .. '"'
+  else return nil end
+  local dir = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":p:h")
+  local found = vim.fn.systemlist({ "rg", "--no-heading", "--with-filename", "--line-number", "--sort", "path",
+    "--max-depth", "1", "-g", "*.tf", "-e", "^\\s*" .. pattern, dir })
+  for _, hit in ipairs(found) do
+    local file, lnum = hit:match("^(.-):(%d+):")
+    lnum = tonumber(lnum)
+    local ok = file and not in_locals
+    if file and in_locals then
+      -- The block it's in: the last line above it that starts a block.
+      local lines = vim.fn.readfile(file, "", lnum)
+      for i = lnum - 1, 1, -1 do
+        if lines[i]:match("^%S") then ok = lines[i]:match("^locals%s*{") ~= nil break end
+      end
+    end
+    if ok then
+      local text = vim.fn.readfile(file, "", lnum)[lnum]
+      local name = kind == "data" and b or a
+      local at = (text:find('"' .. name .. '"', 1, true) or text:find(name, 1, true) or 0)
+      return { uri = vim.uri_from_fname(file), range = { start = { line = lnum - 1, character = at }, ["end"] = { line = lnum - 1, character = at } } }
+    end
+  end
+end
+
+-- gd: the language server's definition; in Terraform, the declaration by
+-- name when the server has none (tf_declared).
+local function definition()
+  local buf = vim.api.nvim_get_current_buf()
+  if vim.bo[buf].filetype ~= "terraform" then return vim.lsp.buf.definition() end
+  local client = vim.lsp.get_clients({ bufnr = buf, name = "terraformls" })[1]
+  local function go(loc, enc)
+    if not loc then return vim.notify("No definition found") end
+    vim.cmd("normal! m'")
+    vim.lsp.util.show_document(loc, enc or "utf-8", { focus = true })
+  end
+  if not client then return go(tf_declared(buf)) end
+  client:request("textDocument/definition", vim.lsp.util.make_position_params(0, client.offset_encoding), function(_, def)
+    def = def and (def[1] or def)
+    if def and (def.targetUri or def.uri) then
+      return go({ uri = def.targetUri or def.uri, range = def.targetSelectionRange or def.range }, client.offset_encoding)
+    end
+    go(tf_declared(buf))
+  end, buf)
+end
+
 -- grr: where it's used, from a use as well as from where it's declared,
 -- in a picker with a preview. Asked from the declaration: terraform-ls
 -- lists the uses only from there (var.x finds nothing, variable "x" does).
@@ -245,6 +339,9 @@ local function usages()
   local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
   client:request("textDocument/definition", params, function(_, def)
     def = def and (def[1] or def)
+    if not (def and (def.targetUri or def.uri)) and vim.bo[buf].filetype == "terraform" then
+      def = tf_declared(buf)
+    end
     if def and (def.targetUri or def.uri) then
       params = {
         textDocument = { uri = def.targetUri or def.uri },
@@ -278,7 +375,7 @@ end
 -- on save.
 vim.api.nvim_create_autocmd("LspAttach", {
   callback = function(ev)
-    map("n", "gd", vim.lsp.buf.definition, { buffer = ev.buf, desc = "Go to the definition" })
+    map("n", "gd", definition, { buffer = ev.buf, desc = "Go to the definition" })
     map("n", "grr", usages, { buffer = ev.buf, desc = "Where it's used" })
   end,
 })
@@ -327,7 +424,7 @@ local function symbols()
       prompt_title = "In this file",
       finder = finders.new_table({ results = items, entry_maker = make_entry.gen_from_quickfix(opts) }),
       previewer = conf.qflist_previewer(opts),
-      sorter = conf.generic_sorter(opts),
+      sorter = names_sorter(),
     }):find()
   end, buf)
 end
@@ -382,7 +479,7 @@ local function project_symbols()
       entry_maker = coloured(function() return make_entry.gen_from_quickfix(opts) end),
     }),
     previewer = conf.qflist_previewer(opts),
-    sorter = require("telescope.sorters").highlighter_only(opts),
+    sorter = names_sorter(),
   }):find()
 end
 
@@ -574,16 +671,7 @@ local function find_in_files()
       -- file name, as a fuzzy match would be); a regex keeps the fuzzy one.
       highlighter = function(_, prompt, display)
         if regex or prompt == "" then return fzy.positions(prompt, display) end
-        local caseless = prompt == prompt:lower()
-        local hay, needle = caseless and display:lower() or display, caseless and prompt:lower() or prompt
-        local start, out = #(display:match("^.-:%d+:%d+:") or "") + 1, {}
-        while true do
-          local from, to = hay:find(needle, start, true)
-          if not from then break end
-          for i = from, to do out[#out + 1] = i end
-          start = to + 1
-        end
-        return out
+        return as_typed(prompt, display)
       end,
     }),
     attach_mappings = function(bufnr, m)
@@ -664,8 +752,30 @@ require("lazy").setup({
             mirror = true, preview_cutoff = 1 },
         },
         sorting_strategy = "ascending",
+        -- The counter: where you are, of how many ("3 / 14"; "of 80"
+        -- when what you typed narrowed them; * while still searching).
+        get_status_text = function(self, o)
+          local total = self.stats.processed or 0
+          local shown = total - (self.stats.filtered or 0)
+          if shown == 0 then return (o and not o.completed) and "*" or "0" end
+          local at = self._selection_row and self:get_index(self._selection_row) or 1
+          return string.format("%s%d / %d%s", (o and not o.completed) and "* " or "", math.min(at, shown), shown,
+            shown < total and ("  of " .. total) or "")
+        end,
       },
     },
+    config = function(_, opts)
+      require("telescope").setup(opts)
+      -- The counter moves with the selection, not only as results come.
+      local Picker = require("telescope.pickers")._Picker
+      local select = Picker.set_selection
+      Picker.set_selection = function(self, ...)
+        select(self, ...)
+        if self.prompt_win and vim.api.nvim_win_is_valid(self.prompt_win) then
+          pcall(self:get_status_updater(self.prompt_win, self.prompt_bufnr), { completed = true })
+        end
+      end
+    end,
   },
 
   -- Browse files as a buffer: rename by editing a line, delete with dd,
