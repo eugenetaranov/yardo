@@ -254,11 +254,7 @@ local function usages()
       end
       local finders, pickers = require("telescope.finders"), require("telescope.pickers")
       local make_entry, conf = require("telescope.make_entry"), require("telescope.config").values
-      local opts = {
-        layout_strategy = "vertical",
-        layout_config = { width = 0.9, height = 0.8, preview_height = 0.4, prompt_position = "top", mirror = true },
-        sorting_strategy = "ascending",
-      }
+      local opts = {}
       pickers.new(opts, {
         prompt_title = "Where it's used",
         finder = finders.new_table({
@@ -322,9 +318,6 @@ local function symbols()
     local make_entry, conf = require("telescope.make_entry"), require("telescope.config").values
     local opts = {
       path_display = "hidden",
-      layout_strategy = "vertical",
-      layout_config = { width = 0.9, height = 0.8, preview_height = 0.4, prompt_position = "top", mirror = true },
-      sorting_strategy = "ascending",
     }
     pickers.new(opts, {
       prompt_title = "In this file",
@@ -333,6 +326,60 @@ local function symbols()
       sorter = conf.generic_sorter(opts),
     }):find()
   end, buf)
+end
+
+-- <space>S: anything the project declares, by name, from any window (the
+-- file browser too, where no language server is attached): every server
+-- running is asked. When none is, a file of this directory's language is
+-- loaded out of sight, which starts its server; terraform-ls also reads
+-- only the directories that have a file open.
+local function project_symbols()
+  local clients = vim.lsp.get_clients({ method = "workspace/symbol" })
+  if #clients == 0 then
+    local cwd = vim.uv.cwd()
+    for _, ext in ipairs({ "tf", "go", "py", "ts", "js", "rs" }) do
+      local found = vim.fn.glob(cwd .. "/*." .. ext, false, true)[1]
+        or vim.fs.find(function(name) return name:match("%." .. ext .. "$") ~= nil end, { path = cwd, limit = 1 })[1]
+      if found then
+        local buf = vim.fn.bufadd(found)
+        vim.fn.bufload(buf)
+        vim.bo[buf].buflisted = false
+        vim.wait(10000, function()
+          local c = vim.lsp.get_clients({ bufnr = buf, method = "workspace/symbol" })[1]
+          return c ~= nil and c.initialized
+        end)
+        clients = vim.lsp.get_clients({ bufnr = buf, method = "workspace/symbol" })
+        break
+      end
+    end
+  end
+  if #clients == 0 then
+    return vim.notify("No language server for this directory: open one of its files first")
+  end
+
+  local finders, pickers = require("telescope.finders"), require("telescope.pickers")
+  local make_entry, conf = require("telescope.make_entry"), require("telescope.config").values
+  local opts = {}
+  pickers.new(opts, {
+    prompt_title = "In the project (a language server reads it first: a moment)",
+    finder = finders.new_dynamic({
+      fn = function(prompt)
+        local items = {}
+        for _, client in ipairs(clients) do
+          local r = client:request_sync("workspace/symbol", { query = prompt or "" }, 5000)
+          for _, s in ipairs(r and r.result or {}) do
+            local at = s.location.range and s.location.range.start or { line = 0, character = 0 }
+            table.insert(items, { filename = vim.uri_to_fname(s.location.uri), lnum = at.line + 1,
+              col = at.character + 1, text = s.name })
+          end
+        end
+        return items
+      end,
+      entry_maker = coloured(function() return make_entry.gen_from_quickfix(opts) end),
+    }),
+    previewer = conf.qflist_previewer(opts),
+    sorter = require("telescope.sorters").highlighter_only(opts),
+  }):find()
 end
 
 -- <space>gh: this file's commits, the change each one made in the
@@ -512,11 +559,7 @@ local function find_in_files()
   end, entry, nil, vim.uv.cwd())
 
   local fzy = require("telescope.algos.fzy")
-  pickers.new({
-    layout_strategy = "vertical",
-    layout_config = { width = 0.9, height = 0.9, preview_height = 0.45, prompt_position = "top" },
-    sorting_strategy = "ascending",
-  }, {
+  pickers.new({}, {
     prompt_title = "Find in files (as typed · <C-r> regex)",
     finder = finder,
     previewer = conf.grep_previewer({}),
@@ -603,11 +646,22 @@ require("lazy").setup({
       { "<leader>h", "<cmd>Telescope help_tags<CR>", desc = "Neovim's help" },
       { "<leader>d", "<cmd>Telescope diagnostics<CR>", desc = "Problems" },
       { "<leader>s", symbols, desc = "Symbols in this file" },
-      { "<leader>S", "<cmd>Telescope lsp_dynamic_workspace_symbols<CR>", desc = "Symbols in the project" },
+      { "<leader>S", project_symbols, desc = "Symbols in the project" },
       { "<leader>gh", file_history, desc = "This file's history" },
       { "<leader>gc", list("git_status", "gen_from_git_status"), desc = "Changed files" },
     },
-    opts = {},
+    -- Every list the same way: what you type on top, the results below
+    -- it, and a large preview under them, at any window width.
+    opts = {
+      defaults = {
+        layout_strategy = "vertical",
+        layout_config = {
+          vertical = { width = 0.9, height = 0.95, preview_height = 0.6, prompt_position = "top",
+            mirror = true, preview_cutoff = 1 },
+        },
+        sorting_strategy = "ascending",
+      },
+    },
   },
 
   -- Browse files as a buffer: rename by editing a line, delete with dd,
