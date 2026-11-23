@@ -1,7 +1,7 @@
 -- yardo's Neovim: comfortable from the first start, without knowing the
 -- plugins. Press <space> and wait: which-key lists what's there.
 --
---   <space>f  find a file        <space>/  search text in the project
+--   <space>f  find a file        <space>/  find in files (comments last)
 --   <space>b  open buffers       <space>e  browse files (edit it like text)
 --   <space>h  search the help    <space>?  every key map
 --   y         copies to your computer's clipboard too (over SSH as well);
@@ -214,6 +214,79 @@ vim.api.nvim_create_user_command("YardoServers", function(c)
   end
 end, { nargs = "?" })
 
+-- --- Find in files -------------------------------------------------------------
+
+-- <space>/: search the text in this directory and below, as IntelliJ's
+-- Find in Files does. What you type is matched as it is (/, ., ( and all;
+-- <C-r> switches to a regex and back), hidden files too, but not what
+-- .gitignore leaves out or the directories below. Lines that are only a
+-- comment come last, dimmed. Enter goes there, Esc closes it.
+local skip_dirs = { ".git", ".terraform", ".terragrunt-cache", "node_modules", ".venv", "venv",
+  ".pip", "__pycache__", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".cache", ".idea" }
+
+local function comment_only(text)
+  return text:match("^%s*//") or text:match("^%s*/%*") or text:match("^%s*%*[%s/]") or text:match("^%s*%*$")
+    or text:match("^%s*#[%s#!]") or text:match("^%s*#$") or text:match("^%s*%-%-")
+    or text:match("^%s*<!%-%-") or text:match("^%s*;")
+end
+
+local function find_in_files()
+  local finders, pickers = require("telescope.finders"), require("telescope.pickers")
+  local make_entry, conf = require("telescope.make_entry"), require("telescope.config").values
+  local regex = false
+  local args = { "rg", "--color=never", "--no-heading", "--with-filename", "--line-number",
+    "--column", "--smart-case", "--hidden" }
+  for _, d in ipairs(skip_dirs) do
+    vim.list_extend(args, { "--glob", "!**/" .. d .. "/**" })
+  end
+
+  local base = make_entry.gen_from_vimgrep({})
+  local function entry(line)
+    local e = base(line)
+    if e and comment_only(e.text or "") then
+      e.comment = true
+      local show = e.display
+      e.display = function(self)
+        local s, hl = show(self)
+        return s, vim.list_extend({ { { 0, #s }, "Comment" } }, hl or {})
+      end
+    end
+    return e
+  end
+
+  local finder = finders.new_job(function(prompt)
+    if not prompt or prompt == "" then return nil end
+    return vim.iter({ args, regex and {} or { "--fixed-strings" }, "--", prompt }):flatten():totable()
+  end, entry, nil, vim.uv.cwd())
+
+  local fzy = require("telescope.algos.fzy")
+  pickers.new({
+    layout_strategy = "vertical",
+    layout_config = { width = 0.9, height = 0.9, preview_height = 0.45, prompt_position = "top" },
+    sorting_strategy = "ascending",
+  }, {
+    prompt_title = "Find in files (as typed · <C-r> regex)",
+    finder = finder,
+    previewer = conf.grep_previewer({}),
+    -- Code first, comments after: in the order ripgrep finds them otherwise.
+    sorter = require("telescope.sorters").Sorter:new({
+      scoring_function = function(_, _, _, e) return e.comment and 2 or 1 end,
+      highlighter = function(_, prompt, display) return fzy.positions(prompt, display) end,
+    }),
+    attach_mappings = function(bufnr, m)
+      m("i", "<C-r>", function()
+        regex = not regex
+        local picker = require("telescope.actions.state").get_current_picker(bufnr)
+        picker.prompt_border:change_title(regex and "Find in files (regex · <C-r> as typed)"
+          or "Find in files (as typed · <C-r> regex)")
+        picker:refresh(finder, { reset_prompt = false })
+      end)
+      return true
+    end,
+    push_cursor_on_edit = true,
+  }):find()
+end
+
 -- --- Plugins (lazy.nvim) -----------------------------------------------------
 
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
@@ -261,7 +334,7 @@ require("lazy").setup({
     cmd = "Telescope",
     keys = {
       { "<leader>f", "<cmd>Telescope find_files<CR>", desc = "Find a file" },
-      { "<leader>/", "<cmd>Telescope live_grep<CR>", desc = "Search text (ripgrep)" },
+      { "<leader>/", find_in_files, desc = "Find in files" },
       { "<leader>b", "<cmd>Telescope buffers<CR>", desc = "Open buffers" },
       { "<leader>r", "<cmd>Telescope oldfiles<CR>", desc = "Recent files" },
       { "<leader>h", "<cmd>Telescope help_tags<CR>", desc = "Search the help" },
