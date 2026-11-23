@@ -431,12 +431,17 @@ installed by hand.
    `~/.cache/yardo/zsh-completions` and refreshed only when the tool is
    upgraded. Also: Neovim (latest, from mise) with a curated
    `~/.config/nvim/init.lua` and plugins (fuzzy finding, a file browser,
-   git signs, language servers through `:Mason`, completion; press space
-   and wait to see the keys; space / finds text in files below the
+   git signs, language servers through `:Mason`, completion; space ?
+   lists the keys, and space then a pause shows what follows; `nvim`
+   alone opens the directory; space / finds text in files below the
    directory, as typed, slashes and all, as IntelliJ does, without
    `.terraform`, `node_modules`, `.venv` and the like, comment lines last;
-   space g y copies the link to the line on
-   GitHub, GitLab or Bitbucket; `sudo nvim FILE` edits through sudoedit, with
+   space s lists what the file declares (Terraform's blocks), space S
+   finds one in the project, space R replaces in files with every change
+   shown first; Terraform and Go are formatted on save; under space g:
+   blame (b, B for the whole file), the file's history (h), a diff with
+   the last commit (d), changed files (c), stage (s) or undo (u) a
+   change, and the link to the line on GitHub, GitLab or Bitbucket (y); `sudo nvim FILE` edits through sudoedit, with
    your config), tmux (with `~/.tmux.conf`: mouse, splits, 50k history),
    zellij, mosh. Over SSH, `y` in Neovim or Vim and a mouse drag in tmux
    copy to your laptop's clipboard (OSC 52; Vim through

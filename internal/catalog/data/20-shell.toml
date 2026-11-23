@@ -25,7 +25,7 @@ label = "Neovim, ready to use (fuzzy find, file browser, LSP, completion)"
 default = true
 # After the languages: their servers are installed with it.
 after = ["go", "python", "node", "java", "rust", "terraform", "docker", "k8s"]
-source = "mise neovim@latest node@lts · lazy.nvim · curated ~/.config/nvim/init.lua (.orig kept) · which-key, telescope, oil, gitsigns, sleuth, mini, mason + SchemaStore, blink.cmp"
+source = "mise neovim@latest node@lts · lazy.nvim · curated ~/.config/nvim/init.lua (.orig kept) · which-key, telescope, oil, gitsigns, gitlinker, grug-far, sleuth, mini, mason + SchemaStore, blink.cmp"
 
 [[item.step]]
 type = "mise"

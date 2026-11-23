@@ -1,26 +1,48 @@
 -- yardo's Neovim: comfortable from the first start, without knowing the
--- plugins. Press <space> and wait: which-key lists what's there.
+-- plugins. <space>? shows this list (/ searches it, q closes it); press
+-- <space> and wait, and which-key lists the keys that follow.
 --
---   <space>f  find a file        <space>/  find in files (comments last)
---   <space>b  open buffers       <space>e  browse files (edit it like text)
---   <space>h  search the help    <space>?  every key map
---   y         copies to your computer's clipboard too (over SSH as well);
---             paste it with cmd+v / ctrl+v. The mouse is the terminal's:
---             select and copy as you would anywhere else
---   Language servers are ready for JSON, YAML, shell and the languages
---   yardo installed (Go, Python, TypeScript, Java, Rust, Terraform,
---   Dockerfiles, Helm): errors are underlined as you type.
---   K docs · gd definition · grr where it's used · grn rename · gra fix ·
---   <space>d problems. Go is formatted on save.
---   <space>m  Mason, for more servers (used from the next start)
+-- Find                                  <space> and one key
+--   <space>f  a file                    <space>/  text in files
+--   <space>b  open files                <space>r  recent files
+--   <space>s  symbols in this file      <space>S  symbols in the project
+--   <space>e  browse files (edit it like text; - goes up a directory);
+--             nvim with no file opens it too
+--   <space>d  problems                  <space>h  Neovim's help
+--   <space>R  replace in files, every change shown first (<space>r in it
+--             replaces, g? its keys)
+--
+-- Code                                  with a language server
+--   gd   the definition                 grr  where it's used
+--   K    the docs                       grn  rename
+--   gra  fixes for this line            gcc  comment the line
+--   ]d [d  next / previous problem
 --   <space>[  back to where you jumped from (gd, a file you opened, a
 --             search...), across files; <space>] forward again
---   gcc       comment a line     <Esc><Esc>  leave a :terminal
---   <space>gy copies the link to this line (or the selected lines) on
---             GitHub, GitLab, Bitbucket...; <space>go opens it
+--   Go and Terraform are formatted when you save.
+--
+-- Git                                   <space>g and one key
+--   <space>gb  who changed this line    <space>gB  ...each line (q closes)
+--   <space>gh  this file's history      <space>gd  diff with the last commit
+--   <space>gc  changed files            <space>gs  stage this change
+--   <space>gp  preview this change      <space>gu  undo this change
+--   ]h [h      next / previous change
+--   <space>gy  copy the link to the line on GitHub, GitLab, Bitbucket...
+--   <space>go  open it in the browser
+--
+-- Edit
+--   <space>w  save                      <space>y  copy to the clipboard
+--   y copies to your computer's clipboard too (over SSH as well): paste
+--   it with cmd+v / ctrl+v. The mouse is the terminal's: select and copy
+--   as you would anywhere else.
 --   Completion: up/down to pick, <CR> to accept (only once you've picked).
---   ( [ { " ' ` close themselves (no thanks: vim.g.minipairs_disable = true
---   in local.lua).
+--   ( [ { " ' ` close themselves (no thanks: vim.g.minipairs_disable =
+--   true in local.lua).
+--   <Esc><Esc>  leave a :terminal       <space>m  Mason, more servers
+--
+-- Language servers are ready for JSON, YAML, shell and the languages
+-- yardo installed (Go, Python, TypeScript, Java, Rust, Terraform,
+-- Dockerfiles, Helm): errors are underlined as you type.
 --
 -- yardo rewrites this file on a re-run. Your own settings go in
 -- ~/.config/nvim/local.lua: yardo never writes it, and it's read last.
@@ -80,6 +102,34 @@ map({ "n", "x" }, "<leader>y", '"+y', { desc = "Copy to the clipboard" })
 map("n", "<leader>Y", '"+y$', { desc = "Copy to the end of the line to the clipboard" })
 map("t", "<Esc><Esc>", "<C-\\><C-n>", { desc = "Leave terminal mode" })
 map("n", "<leader>m", "<cmd>Mason<CR>", { desc = "Install language servers (Mason)" })
+
+-- <space>?: the keys listed at the top of this file, in a window of their
+-- own: / searches them, q closes it.
+local function keys_help()
+  local lines = {}
+  for line in io.lines((debug.getinfo(1, "S").source:gsub("^@", ""))) do
+    if not line:match("^%-%-") then break end
+    table.insert(lines, (line:gsub("^%-%- ?", "")))
+  end
+  local width = 0
+  for _, l in ipairs(lines) do width = math.max(width, vim.fn.strdisplaywidth(l)) end
+  width = math.min(width + 2, vim.o.columns - 4)
+  local height = math.min(#lines, vim.o.lines - 4)
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_open_win(buf, true, {
+    relative = "editor", style = "minimal", border = "rounded", title = " Keys ",
+    width = width, height = height,
+    row = math.floor((vim.o.lines - height) / 2) - 1, col = math.floor((vim.o.columns - width) / 2),
+  })
+  vim.fn.matchadd("Title", [[^\S.*]])
+  vim.fn.matchadd("Special", [[<space>\S*\|\<g[a-zA-Z]\{1,2}\>\|\<K\>\|[][][dh]\>]])
+  for _, k in ipairs({ "q", "<Esc>" }) do
+    map("n", k, "<cmd>close<CR>", { buffer = buf })
+  end
+end
+map("n", "<leader>?", keys_help, { desc = "The keys" })
 
 vim.diagnostic.config({ severity_sort = true, virtual_text = true, float = { border = "rounded" } })
 
@@ -172,6 +222,71 @@ vim.api.nvim_create_autocmd("BufWritePre", {
     vim.lsp.buf.format({ bufnr = ev.buf, async = false })
   end,
 })
+-- Terraform too, as `terraform fmt` does it (given longer: terraform-ls
+-- answers after what it's still reading).
+vim.api.nvim_create_autocmd("BufWritePre", {
+  pattern = { "*.tf", "*.tfvars" },
+  callback = function(ev)
+    if #vim.lsp.get_clients({ bufnr = ev.buf, name = "terraformls" }) > 0 then
+      vim.lsp.buf.format({ bufnr = ev.buf, name = "terraformls", async = false, timeout_ms = 5000 })
+    end
+  end,
+})
+
+-- <space>s: what this file declares. In Terraform its blocks, as
+-- IntelliJ's Structure lists them (resource "aws_s3_bucket" "logs",
+-- variable "region"...), not every attribute inside them.
+local function symbols()
+  local buf = vim.api.nvim_get_current_buf()
+  local client = vim.lsp.get_clients({ bufnr = buf, name = "terraformls" })[1]
+  if not client then
+    return require("telescope.builtin").lsp_document_symbols()
+  end
+  client:request("textDocument/documentSymbol", { textDocument = { uri = vim.uri_from_bufnr(buf) } }, function(_, result)
+    local file, items = vim.api.nvim_buf_get_name(buf), {}
+    for _, s in ipairs(result or {}) do
+      local at = (s.selectionRange or s.range or s.location.range).start
+      table.insert(items, { filename = file, lnum = at.line + 1, col = at.character + 1, text = s.name })
+    end
+    local finders, pickers = require("telescope.finders"), require("telescope.pickers")
+    local make_entry, conf = require("telescope.make_entry"), require("telescope.config").values
+    local opts = {
+      path_display = "hidden",
+      layout_strategy = "vertical",
+      layout_config = { width = 0.9, height = 0.8, preview_height = 0.4, prompt_position = "top", mirror = true },
+      sorting_strategy = "ascending",
+    }
+    pickers.new(opts, {
+      prompt_title = "In this file",
+      finder = finders.new_table({ results = items, entry_maker = make_entry.gen_from_quickfix(opts) }),
+      previewer = conf.qflist_previewer(opts),
+      sorter = conf.generic_sorter(opts),
+    }):find()
+  end, buf)
+end
+
+-- <space>gh: this file's commits, the change each one made in the
+-- preview; Enter opens that change beside the file (q closes it).
+-- Telescope's own Enter would check the file out as it was then.
+local function file_history()
+  local file = vim.api.nvim_buf_get_name(0)
+  require("telescope.builtin").git_bcommits({
+    attach_mappings = function()
+      local actions, state = require("telescope.actions"), require("telescope.actions.state")
+      actions.select_default:replace(function(bufnr)
+        local sha = state.get_selected_entry().value
+        actions.close(bufnr)
+        local out = vim.fn.systemlist({ "git", "-C", vim.fs.dirname(file), "show", sha, "--", file })
+        vim.cmd("vnew")
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, out)
+        vim.bo.buftype, vim.bo.bufhidden, vim.bo.filetype = "nofile", "wipe", "git"
+        vim.bo.modifiable = false
+        map("n", "q", "<cmd>close<CR>", { buffer = true })
+      end)
+      return true
+    end,
+  })
+end
 
 -- --- Language servers --------------------------------------------------------
 
@@ -319,9 +434,6 @@ require("lazy").setup({
         { "gr", group = "LSP" },
       },
     },
-    keys = {
-      { "<leader>?", function() require("which-key").show({ global = true }) end, desc = "Every key map" },
-    },
   },
 
   -- Indentation follows the file (tabs or spaces, and how many).
@@ -337,9 +449,12 @@ require("lazy").setup({
       { "<leader>/", find_in_files, desc = "Find in files" },
       { "<leader>b", "<cmd>Telescope buffers<CR>", desc = "Open buffers" },
       { "<leader>r", "<cmd>Telescope oldfiles<CR>", desc = "Recent files" },
-      { "<leader>h", "<cmd>Telescope help_tags<CR>", desc = "Search the help" },
-      { "<leader>k", "<cmd>Telescope keymaps<CR>", desc = "Search the key maps" },
+      { "<leader>h", "<cmd>Telescope help_tags<CR>", desc = "Neovim's help" },
       { "<leader>d", "<cmd>Telescope diagnostics<CR>", desc = "Problems" },
+      { "<leader>s", symbols, desc = "Symbols in this file" },
+      { "<leader>S", "<cmd>Telescope lsp_dynamic_workspace_symbols<CR>", desc = "Symbols in the project" },
+      { "<leader>gh", file_history, desc = "This file's history" },
+      { "<leader>gc", "<cmd>Telescope git_status<CR>", desc = "Changed files" },
     },
     opts = {},
   },
@@ -354,6 +469,19 @@ require("lazy").setup({
       { "-", "<cmd>Oil<CR>", desc = "Browse the file's directory" },
     },
     opts = { columns = {}, view_options = { show_hidden = true } },
+    -- nvim with no file opens this directory, as nvim . does.
+    init = function()
+      local stdin = false
+      vim.api.nvim_create_autocmd("StdinReadPre", { callback = function() stdin = true end })
+      vim.api.nvim_create_autocmd("VimEnter", {
+        callback = function()
+          if vim.fn.argc() == 0 and not stdin and #vim.api.nvim_list_uis() > 0
+            and vim.api.nvim_buf_get_name(0) == "" and vim.fn.line2byte("$") == -1 then
+            vim.schedule(function() vim.cmd.edit(".") end)
+          end
+        end,
+      })
+    end,
   },
 
   -- Changed lines in the sign column, and hunk actions.
@@ -368,9 +496,40 @@ require("lazy").setup({
         m("[h", function() gs.nav_hunk("prev") end, "Previous change")
         m("<leader>gp", gs.preview_hunk, "Preview the change")
         m("<leader>gu", gs.reset_hunk, "Undo the change")
+        m("<leader>gs", gs.stage_hunk, "Stage the change")
+        -- The file beside the last commit's, the changes lined up;
+        -- <space>gd again closes it.
+        m("<leader>gd", function()
+          for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+            if vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(w)):match("^gitsigns://") then
+              vim.api.nvim_win_close(w, true)
+              return vim.cmd("diffoff!")
+            end
+          end
+          gs.diffthis("HEAD")
+        end, "Diff with the last commit")
         m("<leader>gb", gs.blame_line, "Blame the line")
+        -- Who changed each line, in a column beside the file (IntelliJ's
+        -- Annotate); <space>gB again or q closes it.
+        m("<leader>gB", function()
+          for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+            if vim.bo[vim.api.nvim_win_get_buf(w)].filetype == "gitsigns-blame" then
+              return vim.api.nvim_win_close(w, true)
+            end
+          end
+          gs.blame()
+        end, "Blame the file")
       end,
     },
+    init = function()
+      vim.api.nvim_create_autocmd("FileType", {
+        pattern = "gitsigns-blame",
+        callback = function(ev)
+          map("n", "q", "<cmd>close<CR>", { buffer = ev.buf, desc = "Close the blame" })
+          map("n", "<leader>gB", "<cmd>close<CR>", { buffer = ev.buf, desc = "Close the blame" })
+        end,
+      })
+    end,
   },
 
   -- A link to the line, or the selected lines, where the repo is hosted
@@ -384,6 +543,17 @@ require("lazy").setup({
       { "<leader>go", "<cmd>GitLink!<CR>", mode = { "n", "x" }, desc = "Open the line in the browser" },
     },
     opts = {},
+  },
+
+  -- Replace in files, as IntelliJ's: what to find, what to put instead,
+  -- and every change shown before you make it.
+  {
+    "MagicDuck/grug-far.nvim",
+    cmd = "GrugFar",
+    keys = {
+      { "<leader>R", function() require("grug-far").open() end, desc = "Replace in files" },
+    },
+    opts = { icons = { enabled = false } },
   },
 
   -- A status line, more text objects (ci" in an argument, da( ...), and
