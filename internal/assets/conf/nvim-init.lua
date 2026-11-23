@@ -14,6 +14,8 @@
 --   <space>d problems. Go is formatted on save.
 --   <space>m  Mason, for more servers (used from the next start)
 --   gcc       comment a line     <Esc><Esc>  leave a :terminal
+--   <space>gy copies the link to this line (or the selected lines) on
+--             GitHub, GitLab, Bitbucket...; <space>go opens it
 --   Completion: up/down to pick, <CR> to accept (only once you've picked).
 --   ( [ { " ' ` close themselves (no thanks: vim.g.minipairs_disable = true
 --   in local.lua).
@@ -69,7 +71,8 @@ map("n", "<C-k>", "<C-w>k", { desc = "Window above" })
 map("n", "<C-l>", "<C-w>l", { desc = "Window right" })
 map("n", "<leader>w", "<cmd>write<CR>", { desc = "Save" })
 map({ "n", "x" }, "<leader>y", '"+y', { desc = "Copy to the clipboard" })
-map("n", "<leader>Y", '"+y$', { desc = "Copy to the end of the line to the clipboard" })map("t", "<Esc><Esc>", "<C-\\><C-n>", { desc = "Leave terminal mode" })
+map("n", "<leader>Y", '"+y$', { desc = "Copy to the end of the line to the clipboard" })
+map("t", "<Esc><Esc>", "<C-\\><C-n>", { desc = "Leave terminal mode" })
 map("n", "<leader>m", "<cmd>Mason<CR>", { desc = "Install language servers (Mason)" })
 
 vim.diagnostic.config({ severity_sort = true, virtual_text = true, float = { border = "rounded" } })
@@ -243,6 +246,19 @@ require("lazy").setup({
         m("<leader>gb", gs.blame_line, "Blame the line")
       end,
     },
+  },
+
+  -- A link to the line, or the selected lines, where the repo is hosted
+  -- (GitHub, GitLab, Bitbucket, Codeberg, self-hosted ones too): at the
+  -- last commit pushed, so it opens for whoever you send it to.
+  {
+    "linrongbin16/gitlinker.nvim",
+    cmd = "GitLink",
+    keys = {
+      { "<leader>gy", "<cmd>GitLink<CR>", mode = { "n", "x" }, desc = "Copy the link to the line" },
+      { "<leader>go", "<cmd>GitLink!<CR>", mode = { "n", "x" }, desc = "Open the line in the browser" },
+    },
+    opts = {},
   },
 
   -- A status line, more text objects (ci" in an argument, da( ...), and

@@ -431,7 +431,8 @@ installed by hand.
    upgraded. Also: Neovim (latest, from mise) with a curated
    `~/.config/nvim/init.lua` and plugins (fuzzy finding, a file browser,
    git signs, language servers through `:Mason`, completion; press space
-   and wait to see the keys; `sudo nvim FILE` edits through sudoedit, with
+   and wait to see the keys; space g y copies the link to the line on
+   GitHub, GitLab or Bitbucket; `sudo nvim FILE` edits through sudoedit, with
    your config), tmux (with `~/.tmux.conf`: mouse, splits, 50k history),
    zellij, mosh. Over SSH, `y` in Neovim and a mouse drag in tmux copy to
    your laptop's clipboard (OSC 52); iTerm2 lets that through once you
