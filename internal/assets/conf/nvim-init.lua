@@ -11,6 +11,10 @@
 --   <space>d  problems                  <space>h  Neovim's help
 --   <space>R  replace in files, every change shown first (<space>r in it
 --             replaces, g? its keys)
+--   File names in these lists are coloured by type (.tf green, .tfvars
+--   yellow, YAML blue, JSON orange, Go blue-cyan, Python teal, JS/TS
+--   pink); in <space>/ the line too: purple declares, orange sets a value,
+--   cyan uses a Terraform var., local., module. or data.
 --
 -- Code                                  with a language server
 --   gd   the definition                 grr  where it's used
@@ -159,6 +163,72 @@ vim.api.nvim_create_autocmd("TextYankPost", {
   end,
 })
 
+-- File names in the lists (files, recent, open, changed, find in files,
+-- where it's used) are coloured by type: .tf green, .tfvars yellow, YAML
+-- blue, JSON orange, Go blue-cyan, Python teal, JavaScript and TypeScript
+-- pink. Each colour is a highlight group, so
+-- vim.api.nvim_set_hl(0, "FileTf", { fg = "#..." }) in local.lua
+-- changes one.
+local colours = {
+  FileTf = "String", FileTfvars = "DiagnosticWarn", FileYaml = "Function", FileJson = "Constant",
+  FileGo = "Type", FilePython = "DiagnosticHint", FileJs = "@variable.builtin",
+  FindDeclares = "Statement", FindUses = "DiagnosticInfo", FindSets = "Number",
+}
+local file_colour = { tf = "FileTf", tfvars = "FileTfvars", yaml = "FileYaml", yml = "FileYaml",
+  json = "FileJson", go = "FileGo", py = "FilePython", js = "FileJs", mjs = "FileJs", cjs = "FileJs",
+  jsx = "FileJs", ts = "FileJs", tsx = "FileJs" }
+
+local function set_colours()
+  for group, link in pairs(colours) do
+    vim.api.nvim_set_hl(0, group, { link = link, default = true })
+  end
+end
+
+-- Wraps a telescope entry maker so the file name in each line takes its
+-- type's colour. `make` is called on first use: the picker fills in the
+-- options it needs (column widths...) before it makes the first entry.
+local function coloured(make)
+  set_colours()
+  local inner
+  return function(item)
+    inner = inner or make()
+    local e = inner(item)
+    local file = e and (e.filename or e.path or (type(e.value) == "string" and e.value))
+    local hl_name = file and file_colour[file:match("%.(%w+)$") or ""]
+    if not hl_name then return e end
+    local show = e.display
+    e.display = function(self, ...)
+      local s, hl = show, nil
+      if type(show) == "function" then s, hl = show(self, ...) end
+      hl = hl or {}
+      for _, name in ipairs({ vim.fn.fnamemodify(file, ":."), vim.fn.fnamemodify(file, ":~"), file,
+        vim.fn.fnamemodify(file, ":t") }) do
+        local from, to = s:find(name, 1, true)
+        if from then
+          table.insert(hl, { { from - 1, to }, hl_name })
+          break
+        end
+      end
+      return s, hl
+    end
+    return e
+  end
+end
+
+-- A telescope list with its file names coloured: maker is the name of
+-- telescope's own entry maker for that list, wrapped while the list is
+-- built so it gets the options telescope prepared (its own copy of them).
+local function list(picker, maker)
+  return function()
+    local make_entry = require("telescope.make_entry")
+    local own = make_entry[maker]
+    make_entry[maker] = function(opts) return coloured(function() return own(opts) end) end
+    local ok, err = pcall(require("telescope.builtin")[picker])
+    make_entry[maker] = own
+    if not ok then error(err, 0) end
+  end
+end
+
 -- grr: where it's used, from a use as well as from where it's declared,
 -- in a picker with a preview. Asked from the declaration: terraform-ls
 -- lists the uses only from there (var.x finds nothing, variable "x" does).
@@ -193,7 +263,7 @@ local function usages()
         prompt_title = "Where it's used",
         finder = finders.new_table({
           results = vim.lsp.util.locations_to_items(refs, client.offset_encoding),
-          entry_maker = make_entry.gen_from_quickfix(opts),
+          entry_maker = coloured(function() return make_entry.gen_from_quickfix(opts) end),
         }),
         previewer = conf.qflist_previewer(opts),
         sorter = conf.generic_sorter(opts),
@@ -345,6 +415,50 @@ local function comment_only(text)
     or text:match("^%s*<!%-%-") or text:match("^%s*;")
 end
 
+-- The matched line is coloured by what it does (the file name by type, as
+-- in every list): purple declares something (variable "x", resource,
+-- module in Terraform; def, class in Python; func, type, var, const in Go;
+-- function, class, const, let in JavaScript), orange sets a value (an
+-- assignment, a .tfvars line, a YAML or JSON key), cyan uses a Terraform
+-- name (var.x, local.x, module.x, data.x). Other lines stay plain.
+local line_rules = {
+  tf = {
+    declares = { '^%s*variable%s+"', '^%s*resource%s+"', '^%s*module%s+"', '^%s*output%s+"', '^%s*data%s+"' },
+    uses = { "%f[%w_]var%.[%a_]", "%f[%w_]local%.[%a_]", "%f[%w_]module%.[%a_]", "%f[%w_]data%.[%a_]" },
+  },
+  tfvars = { sets = { "^%s*[%w_-]+%s*=" } },
+  py = {
+    declares = { "^%s*def%s", "^%s*async%s+def%s", "^%s*class%s" },
+    sets = { "^%s*[%w_.,%s]+=[^=]", "^%s*[%w_.]+%s*:%s*[^=]+=[^=]" },
+  },
+  go = {
+    declares = { "^%s*func%s", "^%s*type%s", "^%s*var%s", "^%s*const%s" },
+    sets = { ":=", "^%s*[%w_.,%s]+=[^=]" },
+  },
+  js = {
+    declares = { "^%s*export%s+default%s", "^%s*export%s+[%a%s]*function", "^%s*export%s+[%a%s]*class%s",
+      "^%s*export%s+const%s", "^%s*export%s+let%s", "^%s*async%s+function", "^%s*function",
+      "^%s*class%s", "^%s*const%s", "^%s*let%s", "^%s*var%s", "^%s*interface%s", "^%s*type%s" },
+    sets = { "^%s*[%w_.$]+%s*=[^=>]" },
+  },
+  yaml = { sets = { "^%s*%-?%s*[%w_.\"'/-]+%s*:" } },
+  json = { sets = { '^%s*"[^"]+"%s*:' } },
+}
+line_rules.yml = line_rules.yaml
+for _, js in ipairs({ "mjs", "cjs", "jsx", "ts", "tsx" }) do line_rules[js] = line_rules.js end
+
+local function line_colour(ext, text)
+  local rules = line_rules[ext]
+  if not rules then return nil end
+  for _, kind in ipairs({ "declares", "uses", "sets" }) do
+    for _, pattern in ipairs(rules[kind] or {}) do
+      if text:match(pattern) then
+        return ({ declares = "FindDeclares", uses = "FindUses", sets = "FindSets" })[kind]
+      end
+    end
+  end
+end
+
 local function find_in_files()
   local finders, pickers = require("telescope.finders"), require("telescope.pickers")
   local make_entry, conf = require("telescope.make_entry"), require("telescope.config").values
@@ -354,16 +468,34 @@ local function find_in_files()
   for _, d in ipairs(skip_dirs) do
     vim.list_extend(args, { "--glob", "!**/" .. d .. "/**" })
   end
+  set_colours()
 
   local base = make_entry.gen_from_vimgrep({})
   local function entry(line)
     local e = base(line)
-    if e and comment_only(e.text or "") then
+    if not e then return e end
+    local show = e.display
+    if comment_only(e.text or "") then
       e.comment = true
-      local show = e.display
-      e.display = function(self)
-        local s, hl = show(self)
+      e.display = function(self, ...)
+        local s, hl = show(self, ...)
         return s, vim.list_extend({ { { 0, #s }, "Comment" } }, hl or {})
+      end
+      return e
+    end
+    local ext = (e.filename or ""):match("%.(%w+)$")
+    local name_hl, text_hl = file_colour[ext], line_colour(ext, e.text or "")
+    if name_hl or text_hl then
+      e.display = function(self, ...)
+        local s, hl = show(self, ...)
+        hl = hl or {}
+        local prefix = s:match("^(.-:%d+:%d+:)")
+        if prefix then
+          local name = prefix:match("^(.*):%d+:%d+:$")
+          if name_hl then table.insert(hl, { { 0, #name }, name_hl }) end
+          if text_hl then table.insert(hl, { { #prefix, #s }, text_hl }) end
+        end
+        return s, hl
       end
     end
     return e
@@ -445,16 +577,16 @@ require("lazy").setup({
     dependencies = { "nvim-lua/plenary.nvim" },
     cmd = "Telescope",
     keys = {
-      { "<leader>f", "<cmd>Telescope find_files<CR>", desc = "Find a file" },
+      { "<leader>f", list("find_files", "gen_from_file"), desc = "Find a file" },
       { "<leader>/", find_in_files, desc = "Find in files" },
-      { "<leader>b", "<cmd>Telescope buffers<CR>", desc = "Open buffers" },
-      { "<leader>r", "<cmd>Telescope oldfiles<CR>", desc = "Recent files" },
+      { "<leader>b", list("buffers", "gen_from_buffer"), desc = "Open buffers" },
+      { "<leader>r", list("oldfiles", "gen_from_file"), desc = "Recent files" },
       { "<leader>h", "<cmd>Telescope help_tags<CR>", desc = "Neovim's help" },
       { "<leader>d", "<cmd>Telescope diagnostics<CR>", desc = "Problems" },
       { "<leader>s", symbols, desc = "Symbols in this file" },
       { "<leader>S", "<cmd>Telescope lsp_dynamic_workspace_symbols<CR>", desc = "Symbols in the project" },
       { "<leader>gh", file_history, desc = "This file's history" },
-      { "<leader>gc", "<cmd>Telescope git_status<CR>", desc = "Changed files" },
+      { "<leader>gc", list("git_status", "gen_from_git_status"), desc = "Changed files" },
     },
     opts = {},
   },
