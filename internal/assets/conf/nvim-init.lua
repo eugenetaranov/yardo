@@ -10,9 +10,11 @@
 --   Language servers are ready for JSON, YAML, shell and the languages
 --   yardo installed (Go, Python, TypeScript, Java, Rust, Terraform,
 --   Dockerfiles, Helm): errors are underlined as you type.
---   K docs · gd definition · grr references · grn rename · gra fix ·
+--   K docs · gd definition · grr where it's used · grn rename · gra fix ·
 --   <space>d problems. Go is formatted on save.
 --   <space>m  Mason, for more servers (used from the next start)
+--   <space>[  back to where you jumped from (gd, a file you opened, a
+--             search...), across files; <space>] forward again
 --   gcc       comment a line     <Esc><Esc>  leave a :terminal
 --   <space>gy copies the link to this line (or the selected lines) on
 --             GitHub, GitLab, Bitbucket...; <space>go opens it
@@ -69,6 +71,10 @@ map("n", "<C-h>", "<C-w>h", { desc = "Window left" })
 map("n", "<C-j>", "<C-w>j", { desc = "Window below" })
 map("n", "<C-k>", "<C-w>k", { desc = "Window above" })
 map("n", "<C-l>", "<C-w>l", { desc = "Window right" })
+-- Back and forward through where you've jumped, across files: <C-o> and
+-- <C-i> are Neovim's, but zellij takes <C-o> for itself.
+map("n", "<leader>[", "<C-o>", { desc = "Back to where you jumped from" })
+map("n", "<leader>]", "<C-i>", { desc = "Forward again" })
 map("n", "<leader>w", "<cmd>write<CR>", { desc = "Save" })
 map({ "n", "x" }, "<leader>y", '"+y', { desc = "Copy to the clipboard" })
 map("n", "<leader>Y", '"+y$', { desc = "Copy to the end of the line to the clipboard" })
@@ -103,11 +109,57 @@ vim.api.nvim_create_autocmd("TextYankPost", {
   end,
 })
 
--- With a language server: gd goes to the definition (K, grr, grn, gra
--- are Neovim's own), and Go is formatted, imports included, on save.
+-- grr: where it's used, from a use as well as from where it's declared,
+-- in a picker with a preview. Asked from the declaration: terraform-ls
+-- lists the uses only from there (var.x finds nothing, variable "x" does).
+local function usages()
+  local buf = vim.api.nvim_get_current_buf()
+  local client = vim.lsp.get_clients({ bufnr = buf, method = "textDocument/references" })[1]
+  if not client then
+    return vim.notify("No language server here", vim.log.levels.WARN)
+  end
+  local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
+  client:request("textDocument/definition", params, function(_, def)
+    def = def and (def[1] or def)
+    if def and (def.targetUri or def.uri) then
+      params = {
+        textDocument = { uri = def.targetUri or def.uri },
+        position = (def.targetSelectionRange or def.range).start,
+      }
+    end
+    params.context = { includeDeclaration = false }
+    client:request("textDocument/references", params, function(_, refs)
+      if not refs or #refs == 0 then
+        return vim.notify("No uses found (a language server reads the project first: try again in a moment)")
+      end
+      local finders, pickers = require("telescope.finders"), require("telescope.pickers")
+      local make_entry, conf = require("telescope.make_entry"), require("telescope.config").values
+      local opts = {
+        layout_strategy = "vertical",
+        layout_config = { width = 0.9, height = 0.8, preview_height = 0.4, prompt_position = "top", mirror = true },
+        sorting_strategy = "ascending",
+      }
+      pickers.new(opts, {
+        prompt_title = "Where it's used",
+        finder = finders.new_table({
+          results = vim.lsp.util.locations_to_items(refs, client.offset_encoding),
+          entry_maker = make_entry.gen_from_quickfix(opts),
+        }),
+        previewer = conf.qflist_previewer(opts),
+        sorter = conf.generic_sorter(opts),
+      }):find()
+    end, buf)
+  end, buf)
+end
+
+-- With a language server: gd goes to the definition, grr lists where
+-- it's used in a picker with a preview (Enter goes there, Esc closes it;
+-- K, grn, gra are Neovim's own), and Go is formatted, imports included,
+-- on save.
 vim.api.nvim_create_autocmd("LspAttach", {
   callback = function(ev)
     map("n", "gd", vim.lsp.buf.definition, { buffer = ev.buf, desc = "Go to the definition" })
+    map("n", "grr", usages, { buffer = ev.buf, desc = "Where it's used" })
   end,
 })
 vim.api.nvim_create_autocmd("BufWritePre", {
@@ -290,6 +342,14 @@ require("lazy").setup({
       })
       vim.lsp.config("jsonls", {
         settings = { json = { schemas = schemas.json.schemas(), validate = { enable = true } } },
+      })
+      -- terraform-ls's deeper checks (a var or attribute that doesn't
+      -- exist) take most of a minute in a big repo before gd and grr
+      -- answer; without them it's seconds, and syntax errors still show.
+      -- Back on: vim.lsp.config("terraformls", { init_options = {
+      -- validation = { enableEnhancedValidation = true } } }) in local.lua.
+      vim.lsp.config("terraformls", {
+        init_options = { validation = { enableEnhancedValidation = false } },
       })
       -- Mason's servers start by themselves; a language added later gets
       -- its server installed in the background on the next start.
