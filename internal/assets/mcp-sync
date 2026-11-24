@@ -46,6 +46,17 @@
 set -eu
 
 me=$(id -un)
+# A spec is shell, and a team's is code yardo didn't write: it's never
+# sourced as root. Run with sudo, mcp-sync acts for the user who ran it,
+# as their gateway's user (below); with no one to act for, it stops.
+if [ "$(id -u)" = 0 ]; then
+  case "${SUDO_USER:-root}" in
+    root) echo "mcp-sync: not as root (it reads MCP specs): run it as the user whose servers these are" >&2; exit 1 ;;
+  esac
+  me=$SUDO_USER
+  id "mcp-$me" >/dev/null 2>&1 || { echo "mcp-sync: $me has no MCP gateway (mcp-$me): nothing to do as root" >&2; exit 1; }
+  unset MCP_DIR
+fi
 # This user's gateway port (yardo gives each user their own), and the
 # address it listens on (all interfaces: reached here on loopback).
 port=$(sed -n 's/^MCP_PORT=//p' "/etc/mcpjungle/$me.env" 2>/dev/null || true)

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -28,6 +29,17 @@ func mcpSync(t *testing.T, env []string, args ...string) (string, error) {
 	sync, _ := filepath.Abs("mcp-sync")
 	c := exec.Command("sh", append([]string{sync}, args...)...)
 	c.Env = env
+	if os.Geteuid() == 0 {
+		// mcp-sync won't run as root: these tests run it as a user, which
+		// id says they are (a fake id of the test's own still goes first).
+		bin := fakeBin(t, map[string]string{"id": `[ "$1" = -u ] && { echo 1000; exit 0; }; exec /usr/bin/id "$@"`})
+		c.Env = slices.Clone(env)
+		for n, e := range c.Env {
+			if p, ok := strings.CutPrefix(e, "PATH="); ok {
+				c.Env[n] = "PATH=" + strings.Replace(":"+p, ":/usr/bin", ":"+bin+":/usr/bin", 1)[1:]
+			}
+		}
+	}
 	out, err := c.CombinedOutput()
 	return string(out), err
 }
@@ -60,6 +72,38 @@ func TestMCPSyncReexecIgnoresCallerEnv(t *testing.T) {
 		if strings.Contains(args, bad) {
 			t.Errorf("sudo args carry the caller's %q:\n%s", bad, args)
 		}
+	}
+}
+
+// Run as root (sudo mcp-sync), it acts for the user who ran it, as their
+// gateway's user; with no one to act for, it reads no spec at all.
+func TestMCPSyncNotAsRoot(t *testing.T) {
+	got := filepath.Join(t.TempDir(), "sudo-args")
+	bin := fakeBin(t, map[string]string{
+		"id":     `case "$1" in -u) echo 0 ;; -un) echo root ;; mcp-ada) exit 0 ;; *) exit 1 ;; esac`,
+		"getent": `echo "ada:x:1000:1000::/home/ada:/bin/sh"`,
+		"sudo":   `printf '%s\n' "$@" > ` + got,
+	})
+	cat := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cat, "evil.spec"), []byte("touch "+got+".ran\nKIND=docker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "MCP_CATALOG=" + cat, "MCP_DIR=" + t.TempDir()}
+	out, err := mcpSync(t, env, "evil")
+	if err == nil || !strings.Contains(out, "not as root") {
+		t.Errorf("no SUDO_USER: %v: %s", err, out)
+	}
+	if out, err := mcpSync(t, append(env, "SUDO_USER=bob"), "evil"); err == nil || !strings.Contains(out, "bob has no MCP gateway") {
+		t.Errorf("no gateway: %v: %s", err, out)
+	}
+	if out, err := mcpSync(t, append(env, "SUDO_USER=ada"), "evil"); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if b, err := os.ReadFile(got); err != nil || !strings.Contains(string(b), "-u\nmcp-ada\n") || !strings.Contains(string(b), "MCP_DIR=/home/ada/.mcp\n") {
+		t.Errorf("sudo args: %q, %v", b, err)
+	}
+	if _, err := os.Stat(got + ".ran"); err == nil {
+		t.Error("a spec was sourced as root")
 	}
 }
 

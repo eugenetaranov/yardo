@@ -823,7 +823,9 @@ never the key.
 `/usr/local/share/mcp-catalog/*.spec`; specs named in that directory's
 `.team-files` win over yardo's own of the same name. yardo reads a spec's
 fields as `nobody`, with an empty environment, so a spec's commands can't
-act as root or see your secrets. A spec whose `DOCKER_ARGS` would let its
+act as root or see your secrets; `mcp-sync` reads them as the gateway's
+user, and `sudo mcp-sync` hands over to the gateway user of whoever ran it
+(as plain root it stops). A spec whose `DOCKER_ARGS` would let its
 container act on the machine isn't registered, and `sudo yardo mcp
 status` says it's refused and why: `--privileged`, a host namespace
 (`--network host`, `--pid host`…), `--cap-add`, a device, a published
