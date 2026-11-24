@@ -12,6 +12,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 
 	"github.com/eugenetaranov/yardo/internal/addon"
 	"github.com/eugenetaranov/yardo/internal/answers"
@@ -83,6 +88,12 @@ func (k *asker) addons(ctx context.Context) (*addonRun, error) {
 	u := k.a.User
 	addon.Token = func() string { return ghToken(ctx, u) }
 	r := &addonRun{k: k, env: env, cat: k.cat, out: k.out}
+	addon.Extra = func(ctx context.Context, h *addon.Held, files map[string][]byte, earlier []addon.Finding) (fs []addon.Finding, model string) {
+		r.progress(ctx, "Claude is reading "+h.Name+" ("+addon.QuickModel+")", func(ctx context.Context) {
+			fs, model = addon.ReviewLayer(ctx, h, files, earlier)
+		})
+		return fs, model
+	}
 	r.sync = func(ctx context.Context, name string) {
 		// Another server failing isn't this one's: only its line counts.
 		_ = k.syncAll(ctx, func(l string) {
@@ -360,6 +371,10 @@ func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
 				}
 			}
 		}
+		const careful = "Check again carefully (Claude, the larger model: slower, uses more of your plan)"
+		if !hasRule(h.Report, "claude", "not-checked") || h.Report.AI != "" {
+			opts = append(opts, careful)
+		}
 		opts = append(opts, decline, later)
 		pick, err := r.k.chooseOne(fmt.Sprintf("%s (%s): what now?", h.Name, verdictSays(v)), opts, opts[0])
 		if err != nil {
@@ -394,6 +409,14 @@ func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
 			if err := h.Check(ctx, r.taken(h)); err != nil {
 				return err
 			}
+		case pick == careful:
+			var err error
+			r.progress(ctx, "Claude is reading "+h.Name+" carefully ("+addon.CarefulModel+")", func(ctx context.Context) {
+				err = h.Recheck(ctx)
+			})
+			if err != nil {
+				return err
+			}
 		case pick == decline:
 			err := h.Decline(ctx)
 			if h.Existing {
@@ -411,6 +434,20 @@ func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
 
 func verdictSays(v string) string {
 	return map[string]string{"block": "can't be installed as it is", "ok": "needs your OK", "note": "notes only", "clean": "nothing found"}[v]
+}
+
+// hasRule says whether r has a finding of layer's rule.
+func hasRule(r addon.Report, layer, rule string) bool {
+	return slices.ContainsFunc(r.Findings, func(f addon.Finding) bool { return f.Layer == layer && f.Rule == rule })
+}
+
+// hasLayer says whether r has a finding of layer at one of levels, but
+// its notes on what it couldn't read.
+func hasLayer(r addon.Report, layer string, levels ...string) bool {
+	return slices.ContainsFunc(r.Findings, func(f addon.Finding) bool {
+		return f.Layer == layer && slices.Contains(levels, f.Level) &&
+			!slices.Contains([]string{"not-checked", "too-big", "image-program", "no-source"}, f.Rule)
+	})
 }
 
 // printReport shows h's report: what it is, the verdict, each finding.
@@ -436,6 +473,12 @@ func printReport(out io.Writer, h *addon.Held) {
 			fmt.Fprintf(out, "      → %s\n", f.Next)
 		}
 	}
+	switch {
+	case h.Report.AI != "" && !hasLayer(h.Report, "claude", "ok", "note"):
+		fmt.Fprintf(out, "  Claude (%s) read it and found nothing harmful. It can miss things, and it can be fooled.\n", h.Report.AI)
+	case h.Report.AI != "":
+		fmt.Fprintf(out, "  Claude (%s) read it: its findings are marked claude. It can miss things, and it can be fooled.\n", h.Report.AI)
+	}
 	if h.Kind == "mcp" {
 		if files, err := h.Files(); err == nil {
 			sp := addon.ParseSpec(string(files["spec"]))
@@ -450,8 +493,8 @@ func printReport(out io.Writer, h *addon.Held) {
 				}
 			}
 		}
-		if h.Image {
-			fmt.Fprintln(out, "  Not checked: the image's own files (its layers); phase limits keep its container in.")
+		if h.Image && h.Report.AI == "" {
+			fmt.Fprintln(out, "  Not checked: the image's own files (its layers).")
 		}
 	}
 }
@@ -733,5 +776,58 @@ func (r *addonRun) checkSkill(ctx context.Context, name string) error {
 func mcpForget(user, entry string) {
 	if _, name, err := mcp.Instance(entry); err == nil {
 		_ = addon.Forget(user, "mcp", name)
+	}
+}
+
+// progress runs do, saying what it's at and the seconds gone, a line
+// redrawn each second on a terminal; esc (or ctrl-c) there cancels do's
+// context.
+func (r *addonRun) progress(ctx context.Context, stage string, do func(ctx context.Context)) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	fd := int(os.Stdin.Fd())
+	if r.out != os.Stdout || !term.IsTerminal(fd) {
+		fmt.Fprintln(r.out, stage+"…")
+		do(ctx)
+		return
+	}
+	old, err := term.MakeRaw(fd)
+	if err != nil {
+		fmt.Fprintln(r.out, stage+"…")
+		do(ctx)
+		return
+	}
+	done := make(chan struct{})
+	stopped := false
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		start := time.Now()
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			fmt.Fprintf(r.out, "\r\033[K  %s… %ds · esc stops it", stage, int(time.Since(start).Seconds()))
+			// A key, polled so nothing is left reading after: esc stops.
+			if n, _ := unix.Poll([]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}, 0); n > 0 {
+				b := make([]byte, 16)
+				// esc alone (an arrow key's sequence starts with one too).
+				if k, _ := os.Stdin.Read(b); k == 1 && b[0] == 0x1b || k > 0 && b[0] == 0x03 {
+					stopped = true
+					cancel()
+				}
+			}
+			select {
+			case <-done:
+				fmt.Fprint(r.out, "\r\033[K")
+				return
+			case <-tick.C:
+			}
+		}
+	})
+	do(ctx)
+	close(done)
+	wg.Wait()
+	_ = term.Restore(fd, old)
+	if stopped {
+		fmt.Fprintln(r.out, "Stopped: not checked by AI.")
 	}
 }

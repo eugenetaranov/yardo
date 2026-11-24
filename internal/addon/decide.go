@@ -6,11 +6,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
-// Extra is a further layer of checks (phase 4's AI review), or nil.
-var Extra func(ctx context.Context, h *Held, files map[string][]byte) []Finding
+// Extra is a further layer of checks, given the others' findings, or
+// nil: the AI review (ReviewLayer), with the model that read it ("" not
+// read).
+var Extra func(ctx context.Context, h *Held, files map[string][]byte, earlier []Finding) ([]Finding, string)
 
 // Check runs every layer on h's files (basic, skill-veil, then Extra),
 // and saves the report. taken are the names of the other skills (or
@@ -23,10 +26,13 @@ func (h *Held) Check(ctx context.Context, taken []string) error {
 	fs := Basic(Subject{Kind: h.Kind, Name: h.Name, Files: files, Odd: h.Odd, Pinned: h.Pin != "" || h.Existing,
 		Image: h.Image, ImageUser: h.ImageUser, Taken: taken})
 	fs = append(fs, Veil(ctx, h.Kind, h.Name, files)...)
+	ai := ""
 	if Extra != nil {
-		fs = append(fs, Extra(ctx, h, files)...)
+		var more []Finding
+		more, ai = Extra(ctx, h, files, slices.Clone(fs))
+		fs = append(fs, more...)
 	}
-	h.Report = Report{Hash: Hash(files), At: time.Now().UTC().Truncate(time.Second), Findings: fs}
+	h.Report = Report{Hash: Hash(files), At: time.Now().UTC().Truncate(time.Second), Findings: fs, AI: ai}
 	h.Report.Sort()
 	return h.Save()
 }

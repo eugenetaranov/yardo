@@ -1,0 +1,8 @@
+#!/bin/sh
+# review-eval — run yardo's AI review on its testdata skills with your
+# own claude (logged in): the clean one should get no block, the others
+# one each. Uses your Claude plan (a few cents). REVIEW_MODEL=sonnet for
+# the careful model.
+set -eu
+cd "$(dirname "$0")/.."
+exec go test -count=1 -tags eval -run TestReviewEval -v ./internal/addon/

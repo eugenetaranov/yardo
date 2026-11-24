@@ -56,6 +56,8 @@ type Report struct {
 	Hash     string    `json:"hash"`
 	At       time.Time `json:"at"`
 	Findings []Finding `json:"findings"`
+	// AI is the model Claude read it with ("" when it didn't).
+	AI string `json:"ai,omitempty"`
 }
 
 // Verdict is the worst of the findings: block, ok (needs the user's OK),

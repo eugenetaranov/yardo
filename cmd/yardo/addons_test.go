@@ -20,8 +20,8 @@ import (
 // order from picks and typed.
 func addonTest(t *testing.T, picks, typed []string) (*addonRun, *bytes.Buffer) {
 	t.Helper()
-	oldB, oldD, oldV, oldS, oldC := addon.Base, addon.SpecsDir, addon.VeilBin, addon.VeilSum, addon.VeilCmd
-	addon.Base, addon.SpecsDir = t.TempDir(), t.TempDir()
+	oldB, oldD, oldV, oldS, oldC, oldE := addon.Base, addon.SpecsDir, addon.VeilBin, addon.VeilSum, addon.VeilCmd, addon.Extra
+	addon.Base, addon.SpecsDir, addon.Extra = t.TempDir(), t.TempDir(), nil
 	veil := filepath.Join(t.TempDir(), "skill-veil")
 	script := "#!/bin/sh\nif grep -q steal \"$2/SKILL.md\" 2>/dev/null; then printf '[{\"findings\":[{\"rule_id\":\"CRED\",\"severity\":\"critical\",\"recommended_action\":\"block\",\"line_number\":5,\"artifact_path\":\"%s/SKILL.md\",\"reason\":\"Steals keys\"}]}]' \"$2\"; else echo '[]'; fi\n"
 	if err := os.WriteFile(veil, []byte(script), 0o755); err != nil {
@@ -32,7 +32,7 @@ func addonTest(t *testing.T, picks, typed []string) (*addonRun, *bytes.Buffer) {
 		return exec.CommandContext(ctx, addon.VeilBin, "scan-package", pkg)
 	}
 	t.Cleanup(func() {
-		addon.Base, addon.SpecsDir, addon.VeilBin, addon.VeilSum, addon.VeilCmd = oldB, oldD, oldV, oldS, oldC
+		addon.Base, addon.SpecsDir, addon.VeilBin, addon.VeilSum, addon.VeilCmd, addon.Extra = oldB, oldD, oldV, oldS, oldC, oldE
 	})
 	var out bytes.Buffer
 	k := &asker{a: &answers.Answers{User: "ada"}, out: &out,
@@ -194,5 +194,57 @@ func TestAddonsForgetServer(t *testing.T) {
 	mcpForget("ada", "clock")
 	if _, ok := addon.Approved("ada", "mcp", "clock"); ok {
 		t.Error("still approved")
+	}
+}
+
+// What the report says of Claude's read: nothing harmful (and that it can
+// be fooled), its findings marked, or not checked and why.
+func TestAddonsReportAI(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		r    addon.Report
+		want string
+	}{
+		{"nothing", addon.Report{AI: "claude-haiku-5-5", Findings: []addon.Finding{{Layer: "claude", Rule: "too-big", Level: "note", Text: "too big"}}},
+			"Claude (claude-haiku-5-5) read it and found nothing harmful. It can miss things, and it can be fooled."},
+		{"findings", addon.Report{AI: "claude-sonnet-5-5", Findings: []addon.Finding{{Layer: "claude", Rule: "secret_access", Level: "ok", File: "SKILL.md", Line: 6, Text: "Reads your SSH key."}}},
+			"▲ SKILL.md:6: Reads your SSH key. [claude secret_access]"},
+		{"not checked", addon.Report{Findings: []addon.Finding{{Layer: "claude", Rule: "not-checked", Level: "note", Text: "Not checked by AI: Claude Code isn't logged in (claude, then /login)"}}},
+			"· Not checked by AI: Claude Code isn't logged in"},
+	} {
+		var out bytes.Buffer
+		printReport(&out, &addon.Held{Kind: "skill", Name: "x", Source: "a/b", Report: c.r})
+		if !strings.Contains(out.String(), c.want) || c.name == "not checked" && strings.Contains(out.String(), "read it") {
+			t.Errorf("%s:\n%s", c.name, out.String())
+		}
+	}
+}
+
+// Check again carefully re-reads with the larger model; it's offered once
+// Claude read it.
+func TestAddonsCareful(t *testing.T) {
+	r, _ := addonTest(t, []string{"Check again carefully", "Leave"}, nil)
+	h := holdSkill(t, r, "tidy", "Tidy up.", nil)
+	h.Report.AI = "claude-haiku-5-5"
+	var models []string
+	old := addon.ClaudeCmd
+	addon.ClaudeCmd = func(ctx context.Context, _, _ string, args ...string) *exec.Cmd {
+		models = append(models, strings.Join(args, " "))
+		return exec.CommandContext(ctx, "false")
+	}
+	t.Cleanup(func() { addon.ClaudeCmd = old })
+	if err := h.Check(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	h.Report.AI = "claude-haiku-5-5"
+	if err := r.decide(context.Background(), h); err != nil {
+		t.Fatal(err)
+	}
+	// claude --version failed: not installed, so it wasn't run, but it was asked.
+	if len(models) == 0 || !strings.Contains(models[0], "--version") {
+		t.Errorf("claude calls: %v", models)
+	}
+	if !hasRule(h.Report, "claude", "not-checked") || h.Report.AI != "" {
+		t.Errorf("report: %+v", h.Report)
 	}
 }

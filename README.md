@@ -688,6 +688,24 @@ installed by hand.
    registers a server from elsewhere only while its spec is the one you
    approved, and a skill reads as checked on the Skills tab. Check it, on
    a skill another tool put there, turns it off while a copy is checked.
+   Then Claude reads it: `claude -p` with your own Claude Code login (no
+   API key; it uses your plan, a cent or so on the quick model), as you,
+   from an empty folder, with no tools, no MCP servers, no skills and none
+   of your hooks or settings, the add-on given on its input. It reads each
+   text file (up to 32 KB each, about 150 KB in all; the report names any
+   it didn't read in full) and, for a Docker server, the `docker run`
+   yardo would use, the image's settings and, when the image names its
+   GitHub source, its Dockerfile and README at that version, but never
+   the program inside the image. Its findings are marked claude: one of
+   harm needs your typed OK, and it can only add to the other checks,
+   never clear them. Its answer must come back in a fixed form with the
+   run's marker, naming files and lines that exist, or it doesn't count.
+   Logged out, too old, or slower than 90 s, the report says Not checked
+   by AI, and why. When it finds nothing, the report says Claude read it
+   and found nothing harmful, and that it can miss things and be fooled.
+   esc stops a review; Check again carefully reads it again with the
+   larger model. A review is kept by content, so the same add-on isn't
+   read twice. `scripts/review-eval` runs it on test skills.
    Not checked: an image's own files, and anything a skill or server
    fetches when it runs; the checks stop simple attacks, not a careful
    one.
