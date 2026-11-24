@@ -514,7 +514,8 @@ installed by hand.
    repo = "…"` in a personal profile).
 3. **Agents:** one item for a `CLAUDE.md` / `AGENTS.md` describing the VM and settings for
    agents left to run unattended (Claude Code may not force-push, sudo, or
-   read `~/.mcp`, `~/.ssh` or the agent keys; Codex asks first and works in
+   read `~/.mcp`, `~/.ssh`, the agent keys, `~/.aws`, `~/.kube`, gh's,
+   Docker's or git's stored credentials; Codex asks first and works in
    a sandbox; both are told never to rewrite pushed history; merged
    into your settings, not replacing them), agent API keys (Anthropic,
    OpenAI, Gemini), and MCP servers on the MCPJungle gateway (GitHub,
@@ -641,9 +642,18 @@ installed by hand.
    came in at; the `pages` skill has agents save there and end with it.
    **Archify** (off by default; needs Web pages and Node): the
    [archify](https://archify.si) skill (Apache-2.0) turns a plan, system or
-   repo into an interactive HTML diagram or explainer. It's 23 MB, so its
-   own installer (`npx skills add`) fetches it into `~/.claude/skills` and
-   `~/.agents/skills`, for Claude Code and Codex.
+   repo into an interactive HTML diagram or explainer. It's 23 MB, too big
+   to ship inside yardo, so yardo downloads its folder from GitHub at the
+   commit in `skills.lock.toml`, checks every file against that commit and
+   the whole against the lock's hash, and only then puts it in
+   `~/.claude/skills` and `~/.agents/skills`, like the community skills
+   (no `npx`, nothing newer than what was reviewed). An Archify installed
+   before by its own installer isn't yardo's, so it's left as it is:
+   delete both folders and apply Archify again to have the pinned one.
+   yardo never writes a skill through a link: if `~/.agents/skills`, a
+   skill's folder or a file in it is a link, that place is skipped and
+   the run says so. Skill names must be lowercase letters, digits and
+   hyphens.
 4. **VPN logins** (in Tailscale's and NetBird's rows): the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later).
@@ -799,7 +809,18 @@ never the key.
 `/etc/yardo/catalog.d/*.toml` (the catalog's format; see
 `internal/catalog/data`) and extra MCP server specs from
 `/usr/local/share/mcp-catalog/*.spec`; specs named in that directory's
-`.team-files` win over yardo's own of the same name. A download in an item
+`.team-files` win over yardo's own of the same name. yardo reads a spec's
+fields as `nobody`, with an empty environment, so a spec's commands can't
+act as root or see your secrets. A spec whose `DOCKER_ARGS` would let its
+container act on the machine isn't registered, and `sudo yardo mcp
+status` says it's refused and why: `--privileged`, a host namespace
+(`--network host`, `--pid host`…), `--cap-add`, a device, a published
+port, a security option that turns confinement off, or a mount of `/`, a
+system folder, the Docker socket or a home (only the server's own
+`~/.mcp/<name>` is fine). Those are root on the VM in all but name. yardo's
+own Docker, MySQL and Postgres servers need some of that (the socket; the
+host's network, to reach a database at 127.0.0.1) and say so in
+`HOST_ACCESS`, which counts only in yardo's own specs. A download in an item
 must be pinned (`sha256`) or say why it can't be (`unverified = "…"`), or
 yardo refuses to load it.
 

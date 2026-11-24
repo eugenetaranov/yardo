@@ -287,7 +287,7 @@ func (m *Menu) todo() []menuRow {
 			case !x.Yardo:
 			case x.State == "secret":
 				out = append(out, menuRow{id: "mcpkey:" + x.Name, label: "Fill in " + x.Name, note: strings.Join(x.Keys, ", ")})
-			case x.State == "failed" || x.State == "retired" || x.State == "nospec":
+			case x.State == "failed" || x.State == "refused" || x.State == "retired" || x.State == "nospec":
 				out = append(out, menuRow{id: "mcp:" + x.Name, label: "Check " + x.Name, note: strings.TrimPrefix(ansi.Strip(mcpWord(x)), "▲ ")})
 			}
 		}

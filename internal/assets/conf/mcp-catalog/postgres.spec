@@ -6,6 +6,8 @@ IMAGE=crystaldba/postgres-mcp:0.3.0
 REQUIRED="DATABASE_URI"
 # Host networking, so a database on this VM is reachable at 127.0.0.1.
 DOCKER_ARGS="--network host"
+# What it needs beyond what mcp-sync allows a container (yardo's specs only).
+HOST_ACCESS=host-network
 # Read-only transactions; explain plans, health and index advice stay.
 # To let agents write, change it to --access-mode=unrestricted.
 IMAGE_ARGS="--access-mode=restricted"

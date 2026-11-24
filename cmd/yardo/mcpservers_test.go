@@ -218,6 +218,18 @@ func TestMCPStatus(t *testing.T) {
 	if rows[0].State != "failed" || rows[0].Detail != "Error: denied" || rows[1].State != "pending" || rows[2].State != "secret" || strings.Join(rows[2].Keys, " ") != "TOKEN URL" {
 		t.Errorf("rows = %+v", rows)
 	}
+	// Refused for its Docker options: says which, and it's not pending.
+	st, _ = parseStatus("x\trefused\t--privileged\n")
+	if got := mcpSays("x", "x", st["x"], true); !strings.Contains(got, "x wasn't registered: its spec's Docker options include --privileged") {
+		t.Errorf("refused says %q", got)
+	}
+	if len(mcpPending(st)) != 0 {
+		t.Error("refused is pending")
+	}
+	rows = mcpRows([]string{"x"}, []foundServer{{"x", true, false, false, false}}, nil, map[string]*mcp.Spec{"x": {}}, true, st)
+	if rows[0].State != "refused" || rows[0].Detail != "--privileged" {
+		t.Errorf("refused row = %+v", rows[0])
+	}
 }
 
 // mcp-sync source's lines: an image pulled here (its label, else its id),

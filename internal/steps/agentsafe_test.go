@@ -25,7 +25,7 @@ func TestAgentSafe(t *testing.T) {
 	}
 	apply(t, e, st)
 	cs := read(t, e.Path("~/.claude/settings.json"))
-	for _, want := range []string{`"FOO": "1"`, `"Bash(rm -rf /:*)"`, `"Bash(git push --force:*)"`, `"Read(~/.mcp/**)"`, `"Bash(sudo:*)"`,
+	for _, want := range []string{`"FOO": "1"`, `"Bash(rm -rf /:*)"`, `"Bash(git push --force:*)"`, `"Read(~/.mcp/**)"`, `"Bash(sudo:*)"`, `"Read(~/.aws/**)"`, `"Read(~/.kube/**)"`, `"Read(~/.git-credentials)"`,
 		`"attribution": {`, `"commit": ""`, `"pr": ""`} {
 		if !strings.Contains(cs, want) {
 			t.Errorf("settings.json lacks %s:\n%s", want, cs)

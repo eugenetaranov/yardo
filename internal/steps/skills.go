@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -30,6 +32,46 @@ type skillsStep struct{ s catalog.Step }
 var SkillDirs = []string{"~/.agents/skills", "~/.claude/skills"}
 
 const skillMark = ".yardo-skill"
+
+// skillName is a name agentskills.io allows: lowercase letters, digits and
+// single hyphens, 1–64 characters. It's a folder yardo writes as root, so
+// nothing else (a "..", a "/") may get that far.
+var skillName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// ValidSkillName says whether n is a skill name yardo installs.
+func ValidSkillName(n string) bool { return len(n) <= 64 && skillName.MatchString(n) }
+
+func checkNames(names []string) error {
+	for _, n := range names {
+		if !ValidSkillName(n) {
+			return fmt.Errorf("skill %q: not a valid name (lowercase letters, digits and hyphens, at most 64)", n)
+		}
+	}
+	return nil
+}
+
+// skillLink is the first link in the way of skill name in d: ~/.agents or
+// ~/.claude, the skills folder, the skill's folder, or anything in it.
+// yardo writes as root: a link there could send its writes anywhere
+// (~/.agents/skills → /etc/systemd/system), so it writes nothing there.
+func skillLink(e *Env, d, name string) string {
+	for _, p := range []string{path.Dir(d), d, path.Join(d, name)} {
+		if fi, err := os.Lstat(e.Path(p)); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			return p
+		}
+	}
+	found := ""
+	dir := e.Path(path.Join(d, name))
+	_ = filepath.WalkDir(dir, func(p string, de fs.DirEntry, err error) error {
+		if err == nil && de.Type()&fs.ModeSymlink != 0 {
+			rel, _ := filepath.Rel(dir, p)
+			found = path.Join(d, name, filepath.ToSlash(rel))
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
+}
 
 func (k skillsStep) Plan(*Env) []Action {
 	var out []Action
@@ -97,10 +139,32 @@ func onDisk(dir string) (map[string][]byte, string, error) {
 	return files, mark, err
 }
 
+// wantHash is the treeHash of skill name as yardo installs it: the copy
+// shipped inside yardo, or, for one fetched at install, its lock's.
+func wantHash(e *Env, name string) (string, error) {
+	if lock, err := lockedSkills(); err == nil && lock[name].Fetch {
+		return lock[name].Sha256, nil
+	}
+	files, err := shipped(e, name)
+	if err != nil {
+		return "", err
+	}
+	return treeHash(files), nil
+}
+
+// skillFiles are skill name's files to install: shipped inside yardo, or
+// fetched at the lock's commit (and checked against its hash).
+func skillFiles(ctx context.Context, e *Env, name string) (map[string][]byte, error) {
+	if lock, err := lockedSkills(); err == nil && lock[name].Fetch {
+		return fetchSkill(ctx, lock[name])
+	}
+	return shipped(e, name)
+}
+
 // state is what to do with a skill's folder: "ok" (as shipped), "write"
 // (missing, or yardo's and out of date) or "theirs" (edited or made by the
 // user: left alone).
-func skillState(dir string, want map[string][]byte) (string, error) {
+func skillState(dir, want string) (string, error) {
 	cur, mark, err := onDisk(dir)
 	switch {
 	case err != nil:
@@ -109,19 +173,25 @@ func skillState(dir string, want map[string][]byte) (string, error) {
 		return "write", nil
 	case mark == "" || treeHash(cur) != mark:
 		return "theirs", nil
-	case mark == treeHash(want):
+	case mark == want:
 		return "ok", nil
 	}
 	return "write", nil
 }
 
 func (k skillsStep) Check(_ context.Context, e *Env) (bool, error) {
+	if err := checkNames(k.s.Skills); err != nil {
+		return false, err
+	}
 	for _, n := range k.s.Skills {
-		want, err := shipped(e, n)
+		want, err := wantHash(e, n)
 		if err != nil {
 			return false, err
 		}
 		for _, d := range SkillDirs {
+			if skillLink(e, d, n) != "" {
+				continue // not yardo's to write: Apply says so
+			}
 			st, err := skillState(e.Path(path.Join(d, n)), want)
 			if err != nil || st == "write" {
 				return false, err
@@ -131,25 +201,34 @@ func (k skillsStep) Check(_ context.Context, e *Env) (bool, error) {
 	return true, nil
 }
 
-func (k skillsStep) Apply(_ context.Context, e *Env) error {
+func (k skillsStep) Apply(ctx context.Context, e *Env) error {
+	if err := checkNames(k.s.Skills); err != nil {
+		return err
+	}
 	for _, n := range k.s.Skills {
-		want, err := shipped(e, n)
+		want, err := wantHash(e, n)
 		if err != nil {
 			return err
 		}
+		var files map[string][]byte // fetched only when written
 		for _, d := range SkillDirs {
-			dir := e.Path(path.Join(d, n))
-			st, err := skillState(dir, want)
+			if l := skillLink(e, d, n); l != "" {
+				e.note(fmt.Sprintf("%s is a link: yardo didn't write skill %s through it (put a folder there to have it)", l, n))
+				continue
+			}
+			st, err := skillState(e.Path(path.Join(d, n)), want)
 			if err != nil {
 				return err
 			}
 			if st != "write" {
 				continue
 			}
-			if err := os.RemoveAll(dir); err != nil { // yardo's own, out of date
-				return err
+			if files == nil {
+				if files, err = skillFiles(ctx, e, n); err != nil {
+					return err
+				}
 			}
-			if err := k.write(e, d, n, want); err != nil {
+			if err := k.write(e, d, n, files); err != nil {
 				return err
 			}
 		}
@@ -169,6 +248,8 @@ func (k skillsStep) PlanUndo(_ context.Context, e *Env, p *RemovePlan) error {
 			case err != nil:
 				return err
 			case cur == nil || mark == "":
+			case skillLink(e, d, n) != "":
+				p.Keep = append(p.Keep, path.Join(d, n)+" (a link is in the way)")
 			case treeHash(cur) != mark:
 				p.Keep = append(p.Keep, path.Join(d, n)+" (edited by hand)")
 			default:
@@ -179,31 +260,56 @@ func (k skillsStep) PlanUndo(_ context.Context, e *Env, p *RemovePlan) error {
 	return nil
 }
 
-// write puts the skill's files in d/name, marked, owned by the user.
+// write puts the skill's files in d/name (replacing yardo's old copy),
+// marked, owned by the user. Everything goes through an os.Root on d, so
+// neither a link nor a ".." in a file's path takes a write out of it.
 func (skillsStep) write(e *Env, d, name string, files map[string][]byte) error {
-	dir := e.Path(path.Join(d, name))
+	// The folders it's in (~/.agents, ~/.agents/skills) are the user's.
+	if err := os.MkdirAll(e.Path(path.Dir(path.Dir(d))), 0o755); err != nil {
+		return err
+	}
+	for _, p := range []string{path.Dir(d), d} {
+		if err := os.Mkdir(e.Path(p), 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+		if err := e.chown(e.Path(p), e.UID, e.GID); err != nil {
+			return err
+		}
+	}
+	root, err := os.OpenRoot(e.Path(d))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.RemoveAll(name); err != nil {
+		return err
+	}
+	put := func(rel string, b []byte, mode fs.FileMode) error {
+		p := path.Join(name, rel)
+		if err := root.MkdirAll(path.Dir(p), 0o755); err != nil {
+			return err
+		}
+		return root.WriteFile(p, b, mode)
+	}
 	for rel, b := range files {
 		mode := fs.FileMode(0o644)
 		if bytes.HasPrefix(b, []byte("#!")) {
 			mode = 0o755
 		}
-		if err := writeFile(filepath.Join(dir, filepath.FromSlash(rel)), b, mode); err != nil {
+		if err := put(rel, b, mode); err != nil {
 			return err
 		}
 	}
-	if err := writeFile(filepath.Join(dir, skillMark), []byte(treeHash(files)+"\n"), 0o644); err != nil {
+	if err := put(skillMark, []byte(treeHash(files)+"\n"), 0o644); err != nil {
 		return err
 	}
-	// The user's, and the folders it's in (~/.agents, ~/.agents/skills).
-	for _, p := range []string{e.Path(path.Dir(d)), e.Path(d)} {
-		if err := e.chown(p, e.UID, e.GID); err != nil {
-			return err
-		}
+	if !e.Chown {
+		return nil
 	}
-	return filepath.WalkDir(dir, func(p string, _ fs.DirEntry, err error) error {
+	return fs.WalkDir(root.FS(), name, func(p string, _ fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		return e.chown(p, e.UID, e.GID)
+		return root.Lchown(p, e.UID, e.GID)
 	})
 }

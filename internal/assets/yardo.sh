@@ -342,10 +342,19 @@ spec_names() {
     for f in "$d"/*.spec; do [ -f "$f" ] && basename "$f" .spec; done
   done | sort -u
 }
+# spec_read FILE SCRIPT — run SCRIPT after the spec FILE's lines, with
+# nothing of ours: an empty environment, from /, and as nobody when root. A
+# spec is shell, and a team's is code yardo didn't write: reading its
+# fields mustn't run it as root, nor hand it our secrets.
+spec_read() {
+  local run=(env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin bash -c 'eval "$(cat)"; '"$2")
+  [ "$(id -u)" = 0 ] && run=(setpriv --reuid=65534 --regid=65534 --clear-groups --no-new-privs "${run[@]}")
+  (cd / && "${run[@]}") < "$1"
+}
 # spec_field NAME VAR — a variable from the server's spec.
-spec_field() { ( . "$(spec_file "$1")"; eval "printf '%s' \"\${$2:-}\"" ); }
-# spec_skeleton NAME — the env file template from the spec.
-spec_skeleton() { ( . "$(spec_file "$1")"; skeleton ) 2>/dev/null || true; }
+spec_field() { local f; f=$(spec_file "$1") || return 0; spec_read "$f" "printf '%s' \"\${$2:-}\""; }
+# spec_skeleton NAME — the env file a new server starts with.
+spec_skeleton() { local f; f=$(spec_file "$1") || return 0; spec_read "$f" skeleton 2>/dev/null || true; }
 
 home_of() { getent passwd "$1" | cut -d: -f6; }
 

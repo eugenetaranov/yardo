@@ -10,6 +10,8 @@ KIND=docker
 IMAGE=ghcr.io/astral-sh/uv:0.13.9-python3.13-trixie-slim
 IMAGE_ARGS="uvx mcp-server-docker@0.3.0"
 DOCKER_ARGS="-v /var/run/docker.sock:/var/run/docker.sock"
+# What it needs beyond what mcp-sync allows a container (yardo's specs only).
+HOST_ACCESS=docker-socket
 REQUIRED=""
 skeleton() {
   cat <<'SKEL'

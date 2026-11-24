@@ -7,6 +7,8 @@ Each skill's folder is copied from its repo at the lock's commit (with
 --latest, the default branch's head) into internal/assets/conf/skills/<name>,
 with the repo's licence as LICENSE when the folder has none. The lock's
 commit and sha256 are rewritten; review `git diff` and commit the result.
+A skill with `fetch = true` (too big to ship) isn't vendored: only its
+hash is recorded, which the skills step checks when it downloads it.
 """
 import hashlib, os, re, shutil, subprocess, sys, tempfile, tomllib
 
@@ -43,20 +45,26 @@ def git(*args, cwd=None):
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 
 
-def fetch(repo, commit, cache):
+def fetch(repo, commit, cache, path):
+    """The repo at commit (None: its default branch), with only path (and
+    the files at its top, for the licence) checked out: some repos are big."""
     d = os.path.join(cache, repo.replace("/", "_"))
     if not os.path.isdir(d):
-        git("clone", "-q", "--filter=blob:none", f"https://github.com/{repo}", d)
-    if commit:
-        git("checkout", "-q", commit, cwd=d)
+        git("clone", "-q", "--filter=blob:none", "--no-checkout", f"https://github.com/{repo}", d)
+        git("sparse-checkout", "init", "--cone", cwd=d)
+    paths = set(git("sparse-checkout", "list", cwd=d).split()) | {path}
+    git("sparse-checkout", "set", *sorted(paths), cwd=d)
+    git("checkout", "-q", commit or "origin/HEAD", cwd=d)
     return d, git("rev-parse", "HEAD", cwd=d)
 
 
 def vendor(s, latest, cache):
     if s["license"] not in LICENSES:
         sys.exit(f"{s['name']}: licence {s['license']} isn't one yardo ships")
-    src, commit = fetch(s["repo"], None if latest else s["commit"], cache)
+    src, commit = fetch(s["repo"], None if latest else s["commit"], cache, s["path"])
     dst = os.path.join(SKILLS, s["name"])
+    if s.get("fetch"):
+        dst = os.path.join(cache, "fetched", s["name"])
     shutil.rmtree(dst, ignore_errors=True)
     base = os.path.join(src, s["path"])
     if "files" in s:
@@ -70,7 +78,7 @@ def vendor(s, latest, cache):
         shutil.copy2(os.path.join(src, s["license_file"]), os.path.join(dst, "LICENSE"))
     if not os.path.isfile(os.path.join(dst, "SKILL.md")):
         sys.exit(f"{s['name']}: no SKILL.md at {s['repo']}/{s['path']}")
-    if (n := size(dst)) > MAX_BYTES:
+    if (n := size(dst)) > MAX_BYTES and not s.get("fetch"):
         sys.exit(f"{s['name']}: {n} bytes, over {MAX_BYTES}")
     return commit, tree_hash(dst)
 

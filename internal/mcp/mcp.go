@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -53,7 +54,28 @@ func Names(dirs []string) []string {
 	return out
 }
 
-// Load reads spec name from the first dir that has it (bash sources it).
+// readerCmd is bash running script with nothing of the caller's: an empty
+// environment, from /, and, when yardo is root, as nobody. A spec is shell,
+// and one a team ships (or that came from elsewhere) is code yardo didn't
+// write: reading its fields mustn't run it as root, nor hand it the
+// caller's secrets.
+func readerCmd(ctx context.Context, script string) (*exec.Cmd, error) {
+	args := []string{"bash", "-c", script}
+	if os.Geteuid() == 0 {
+		sp, err := exec.LookPath("setpriv")
+		if err != nil {
+			return nil, errors.New("setpriv is missing: not reading a spec as root")
+		}
+		args = append([]string{sp, "--reuid=65534", "--regid=65534", "--clear-groups", "--no-new-privs"}, args...)
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin"}
+	cmd.Dir = "/"
+	return cmd, nil
+}
+
+// Load reads spec name from the first dir that has it (bash sources it,
+// through readerCmd).
 func Load(ctx context.Context, dirs []string, name string) (*Spec, error) {
 	path := ""
 	for _, d := range dirs {
@@ -65,11 +87,20 @@ func Load(ctx context.Context, dirs []string, name string) (*Spec, error) {
 	if path == "" {
 		return nil, fmt.Errorf("no MCP spec %q", name)
 	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
 	const script = `set -eu
-. "$1"
+eval "$(cat)"
 printf '%s\0%s\0%s\0%s\0' "${DESCRIPTION:-}" "${IMAGE:-}" "${URL:-}" "${REQUIRED:-}"
 skeleton 2>/dev/null || true`
-	out, err := exec.CommandContext(ctx, "bash", "-c", script, "_", path).Output()
+	cmd, err := readerCmd(ctx, script)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	cmd.Stdin = bytes.NewReader(b)
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}

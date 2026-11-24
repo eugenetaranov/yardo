@@ -237,23 +237,21 @@ skills = ["pages"]
 
 # Archify: an agent turns a plan, system or repo into an interactive HTML
 # diagram or explainer, saved in ~/pages. Too big to ship inside yardo
-# (23 MB): its own installer fetches it, for Claude Code and Codex.
+# (23 MB): the skills step downloads its folder at the commit in
+# skills.lock.toml and installs it only if its hash matches. Its scripts
+# run on Node.
 [[item]]
 id = "archify"
 tab = "agents"
 needs = ["pages", "node"]
 after = ["claude", "codex"]
 label = "Archify: interactive diagrams of a plan, system or repo (open them from ~/pages)"
-remove = "rm -rf {{home}}/.claude/skills/archify {{home}}/.agents/skills/archify"
 remove_say = "removes the archify skill; diagrams in ~/pages stay"
-source = "npx skills add https://archify.si --skill archify (tt-a1i/archify, Apache-2.0) → ~/.claude/skills, ~/.agents/skills"
+source = "tt-a1i/archify's archify folder (Apache-2.0) at a pinned commit, its hash checked (skills.lock.toml) → ~/.claude/skills, ~/.agents/skills"
 
 [[item.step]]
-type = "run"
-cmd = "npx -y skills@latest add https://archify.si --skill archify --agent claude-code --agent codex --global --copy --yes </dev/null"
-as_user = true
-creates = "~/.claude/skills/archify/SKILL.md"
-unverified = "archify's own installer (the skills CLI from npm), which fetches its latest version from GitHub"
+type = "go:skills"
+skills = ["archify"]
 
 [[item]]
 id = "agentkeys"

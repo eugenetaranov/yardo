@@ -192,6 +192,8 @@ func mcpRows(entries []string, found []foundServer, inputs []string, specs map[s
 				r.State, r.Keys = "secret", strings.Fields(s.detail)
 			case "failed":
 				r.State, r.Detail = "failed", awsHint(spec, s.detail)
+			case "refused":
+				r.State, r.Detail = "refused", s.detail
 			case "changed", "unregistered":
 				r.State = "pending"
 			case "noenv":
@@ -603,6 +605,8 @@ func mcpSays(name, spec string, s syncState, ok bool) string {
 		return "○ " + name + ": not registered until " + s.detail + " is filled in (sudo yardo mcp edit " + name + ")."
 	case s.state == "failed":
 		return "✗ " + name + " didn't register: " + awsHint(spec, s.detail)
+	case s.state == "refused":
+		return "✗ " + name + " wasn't registered: its spec's Docker options include " + s.detail + ", which lets a container act as root on this machine."
 	case s.state == "nospec":
 		return "✗ " + name + ": no longer in the catalog."
 	case s.state == "off":

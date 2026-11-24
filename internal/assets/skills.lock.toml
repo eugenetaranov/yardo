@@ -77,3 +77,15 @@ commit = "ca45fc496a3436251f191354091d557da31c15b5"
 license = "Apache-2.0"
 license_file = "skills/webapp-testing/LICENSE.txt"
 sha256 = "abfaf4cc6cf572346e22fed42dc0cfaacd2f64c5d9667f44a94b02ea0d3b1342"
+
+# Too big to ship inside yardo (23 MB): the skills step downloads this
+# folder at the commit and installs it only if its hash matches.
+[[skill]]
+name = "archify"
+repo = "tt-a1i/archify"
+path = "archify"
+commit = "3ca198d867ce4b616332f846ff66e5c8e5e60f95"
+license = "Apache-2.0"
+license_file = "LICENSE"
+fetch = true
+sha256 = "7cc2ff33124789055e3836a301c07231a94129a89ab0a137486749cde7143201"

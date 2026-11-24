@@ -16,7 +16,8 @@
 #                          then synced: registered again, off ones still off
 #   mcp-sync status        each server's state, a line each: <name> TAB <state> TAB <detail>
 #                          (ok, waiting <keys>, changed, unregistered, failed <why>,
-#                          nospec, noenv, off <own|all>; "-  down" first when the gateway
+#                          nospec, noenv, off <own|all>, refused <option>: Docker options
+#                          that would let it act on the host; "-  down" first when the gateway
 #                          can't be reached, "*  off" when all servers are off)
 #   mcp-sync source [name ...]  where each server runs from, a line each:
 #                          <name> TAB <image or URL> [TAB <version> TAB <id> TAB <built>]
@@ -317,6 +318,73 @@ enabled() {
   done
 }
 
+# refusal NAME SPEC — why the spec's DOCKER_ARGS can't be run, if they
+# can't: the first option that would let the container act on the host
+# (root, in effect, as the docker group is). Empty when they're fine. Only
+# DOCKER_ARGS go to docker; IMAGE_ARGS and image_args() go to the server.
+# yardo's own catalog specs (not a team's, not one in ~/.mcp) may name what
+# they need beyond that in HOST_ACCESS: docker-socket (the Docker server),
+# host-network (a database on this machine at 127.0.0.1).
+refusal() {
+  _name=$1 _allow=
+  _cat=$(cd "$CATALOG" 2>/dev/null && pwd -P) || _cat=$CATALOG
+  case "$2" in
+    "$CATALOG"/*.spec|"$_cat"/*.spec) grep -qx "${2##*/}" "$CATALOG/.team-files" 2>/dev/null || _allow=" ${HOST_ACCESS:-} " ;;
+  esac
+  set -f
+  # shellcheck disable=SC2086 # split as render splits them
+  set -- ${DOCKER_ARGS:-}
+  set +f
+  while [ $# -gt 0 ]; do
+    a=$1; shift
+    case "$a" in
+      --*=*) opt=${a%%=*} val=${a#*=} ;;
+      -[vp]?*) opt=$(printf %.2s "$a") val=${a#??} ;;
+      *) opt=$a val= ;;
+    esac
+    case "$opt" in
+      --privileged) [ "$val" = false ] || { echo "$a"; return; } ;;
+      --cap-add|--device|--device-cgroup-rule|--volumes-from|--gpus|-p|-P|--publish|--publish-all)
+        echo "$opt"; return ;;
+      --network|--net|--pid|--ipc|--uts|--userns|--cgroupns|--security-opt|-v|--volume|--mount)
+        if [ -z "$val" ] && [ $# -gt 0 ]; then val=$1; shift; fi
+        case "$opt=$val" in
+          --security-opt=*unconfined*|--security-opt=label[=:]disable) echo "$opt $val"; return ;;
+          --security-opt=*) ;;
+          -v=*|--volume=*)
+            case "$_allow:${val%%:*}" in *" docker-socket "*:/var/run/docker.sock|*" docker-socket "*:/run/docker.sock) continue ;; esac
+            bad_source "$_name" "${val%%:*}" && { echo "$opt $val"; return; } ;;
+          --mount=*)
+            src=$(printf '%s\n' "$val" | tr ',' '\n' | sed -n -e 's/^source=//p' -e 's/^src=//p' | head -n 1)
+            bad_source "$_name" "$src" && { echo "$opt $val"; return; } ;;
+          --network=host|--net=host) case "$_allow" in *" host-network "*) ;; *) echo "$opt $val"; return ;; esac ;;
+          *=host|*=container:*) echo "$opt $val"; return ;;
+        esac ;;
+    esac
+  done
+  return 0
+}
+
+# bad_source NAME PATH — PATH, a mount's source, is the host's: /, a
+# system folder, the Docker socket, or a home (but NAME's own ~/.mcp/NAME).
+# A named volume (no leading /) is the container's own.
+bad_source() {
+  case "$2" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  p=$(printf '%s' "$2" | sed 's://*:/:g; s:/$::')
+  case "/$p/" in */../*|*/./*) return 0 ;; esac
+  case "$p" in
+    "$MCP_DIR/$1"|"$MCP_DIR/$1"/*) return 1 ;;
+    ''|*docker.sock) return 0 ;;
+  esac
+  for d in /etc /root /home /dev /proc /sys /boot /run /var/run /var/lib/docker /usr /bin /sbin /lib /lib64 /opt "$(dirname "$MCP_DIR")"; do
+    case "$p" in "$d"|"$d"/*) return 0 ;; esac
+  done
+  return 1
+}
+
 # kube_path KUBECONFIG HOME — KUBECONFIG (paths split by ':') with each
 # path under ~/.kube (~/, $HOME/ or HOME/) the one it has in the container.
 kube_path() {
@@ -440,7 +508,7 @@ for NAME in $want; do
   fi
   # Each spec's variables, none left from the one before (MOUNT_AWS
   # would give a server after an AWS one your ~/.aws).
-  KIND= IMAGE= DOCKER_ARGS= IMAGE_ARGS= MOUNT_AWS= MOUNT_KUBE= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION=
+  KIND= IMAGE= DOCKER_ARGS= HOST_ACCESS= IMAGE_ARGS= MOUNT_AWS= MOUNT_KUBE= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION=
   unset -f skeleton image_args 2>/dev/null || true
   # shellcheck disable=SC1090
   . "$spec"
@@ -454,6 +522,19 @@ for NAME in $want; do
   dir="$MCP_DIR/$NAME"
   if [ -n "$STATUS" ] && is_off "$NAME"; then
     if [ -f "$dir/off" ]; then state "$NAME" off own; else state "$NAME" off all; fi
+    continue
+  fi
+  why=
+  [ "$KIND" != docker ] || why=$(refusal "$NAME" "$spec")
+  if [ -n "$why" ]; then
+    if [ -n "$STATUS" ]; then state "$NAME" refused "$why"; continue; fi
+    # One registered before its spec changed comes off the gateway.
+    if [ -f "$dir/.registered.json" ]; then
+      mj --registry "$REGISTRY" deregister "$NAME" >/dev/null 2>&1 || true
+      rm -f "$dir/.registered.json" "$dir/.disabled"
+    fi
+    echo "$NAME: refused: its spec's Docker options include $why, which lets a container act as root on this machine — not registered"
+    failed=1
     continue
   fi
   if [ -n "$STATUS" ] && [ ! -f "$dir/env" ]; then state "$NAME" noenv; continue; fi

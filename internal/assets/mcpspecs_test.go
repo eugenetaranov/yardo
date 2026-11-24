@@ -2,6 +2,7 @@ package assets
 
 import (
 	"io/fs"
+	"os"
 	"os/exec"
 	"path"
 	"regexp"
@@ -106,6 +107,39 @@ func TestMCPSpecsPinned(t *testing.T) {
 					}
 				}
 			}
+		}
+	}
+}
+
+// yardo.sh reads a spec's fields with nothing of its own (and as nobody,
+// when root): a team's spec can't see its environment or act as root.
+func TestYardoShSpecRead(t *testing.T) {
+	d := t.TempDir()
+	spec := d + "/t.spec"
+	if err := os.WriteFile(spec, []byte("DESCRIPTION=\"x${YARDO_TEST_SECRET:-}\"\ntouch /root/yardo-spec-ran 2>/dev/null || true\nskeleton() { echo \"# $(id -u)\"; }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fns := `eval "$(sed -n '/^spec_read() {/,/^}/p' yardo.sh)"; spec_read "$1" "$2"`
+	run := func(script string) string {
+		t.Helper()
+		c := exec.Command("bash", "-c", fns, "_", spec, script)
+		c.Env = append(os.Environ(), "YARDO_TEST_SECRET=s3cret")
+		out, err := c.Output()
+		if err != nil {
+			t.Fatalf("%s: %v", script, err)
+		}
+		return string(out)
+	}
+	if got := run(`printf '%s' "${DESCRIPTION:-}"`); got != "x" {
+		t.Errorf("description = %q", got)
+	}
+	if os.Geteuid() == 0 {
+		if got := run("skeleton"); got != "# 65534\n" {
+			t.Errorf("skeleton ran as %q", got)
+		}
+		if _, err := os.Stat("/root/yardo-spec-ran"); err == nil {
+			_ = os.Remove("/root/yardo-spec-ran")
+			t.Error("the spec ran as root")
 		}
 	}
 }

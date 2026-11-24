@@ -58,7 +58,7 @@ remove_say = "stops Docker and uninstalls it, with its tools; images, containers
 tab = "k8s"
 scope = "system"
 label = "Docker Engine + Compose, lazydocker, dive, hadolint, crane, cosign"
-source = "apt docker-ce (download.docker.com repo) · log rotation, 10.200/16 networks · docker group = root"
+source = "apt docker-ce (download.docker.com repo) · log rotation, 10.200/16 networks · you in the docker group: anything run as you, coding agents and their skills included, can act as root on this machine"
 
 [[item.step]]
 type = "apt"
@@ -99,7 +99,7 @@ type = "go:docker_ports"
 type = "run"
 cmd = "usermod -aG docker {{user}}"
 check = "id -nG {{user}} | tr ' ' '\\n' | grep -qx docker"
-text = "{{user}} is now in the docker group: log in again (or run 'newgrp docker'). VS Code and Cursor remote servers keep the old groups until restarted: run 'Remote-SSH: Kill VS Code Server on Host' from the editor."
+text = "{{user}} is now in the docker group: anything run as {{user}}, coding agents and their skills included, can act as root on this machine. Log in again (or run 'newgrp docker'). VS Code and Cursor remote servers keep the old groups until restarted: run 'Remote-SSH: Kill VS Code Server on Host' from the editor."
 
 # Container tools: a TUI, image layers, Dockerfile lint, registries, signing.
 [[item.step]]

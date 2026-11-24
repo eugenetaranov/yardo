@@ -867,3 +867,139 @@ func TestMCPSpecsReadOnlyArgs(t *testing.T) {
 		t.Errorf("grafana: %s", a)
 	}
 }
+
+// A spec's Docker options that would let the container act on the host
+// (root, in effect) keep the server off the gateway, and status says why.
+func TestMCPSyncRefusesHostOptions(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	mkdirAll(t, filepath.Join(mcp, "x"), 0o700)
+	mkdirAll(t, cat, 0o755)
+	putFile(t, filepath.Join(mcp, "x", "env"), []byte("TOKEN=1\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(mcp, "servers"), []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reg := filepath.Join(root, "registered")
+	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
+	jq, _ := exec.LookPath("jq")
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	for _, c := range []struct{ args, why string }{
+		{"--privileged", "--privileged"},
+		{"--network=host", "--network host"},
+		{"--net host", "--net host"},
+		{"--pid=host", "--pid host"},
+		{"-v /:/h", "-v /:/h"},
+		{"-v /var/run/docker.sock:/s", "-v /var/run/docker.sock:/s"},
+		{"-v " + root + "/.ssh:/s:ro", "-v " + root + "/.ssh:/s:ro"},
+		{"-v " + mcp + "/x/../../.ssh:/s", "-v " + mcp + "/x/../../.ssh:/s"},
+		{"--mount type=bind,source=/etc,target=/e", "--mount type=bind,source=/etc,target=/e"},
+		{"-p 80:80", "-p"},
+		{"-p8080:80", "-p"},
+		{"--cap-add SYS_ADMIN", "--cap-add"},
+		{"--device=/dev/sda", "--device"},
+		{"--security-opt seccomp=unconfined", "--security-opt seccomp=unconfined"},
+		{"-e A=1 -v " + mcp + "/x/data:/data", ""},
+		{"-v cache:/cache --tmpfs /tmp --network none", ""},
+	} {
+		putFile(t, filepath.Join(cat, "x.spec"), []byte("DESCRIPTION=X\nKIND=docker\nIMAGE=img:1\nREQUIRED=TOKEN\nDOCKER_ARGS=\""+c.args+"\"\nIMAGE_ARGS=\"--privileged\"\n"), 0o644)
+		_ = os.Remove(reg)
+		_ = os.Remove(filepath.Join(mcp, "x", ".registered.json"))
+		st, err := mcpSync(t, env, "status")
+		if err != nil {
+			t.Fatalf("%s: status %v\n%s", c.args, err, st)
+		}
+		out, err := mcpSync(t, env)
+		_, regErr := os.Stat(reg)
+		if c.why == "" {
+			if err != nil || regErr != nil || strings.Contains(st, "refused") {
+				t.Errorf("%s: should register: %v\n%s\n%s", c.args, err, st, out)
+			}
+			continue
+		}
+		if want := "x\trefused\t" + c.why + "\n"; st != want {
+			t.Errorf("%s: status %q, want %q", c.args, st, want)
+		}
+		if err == nil || regErr == nil || !strings.Contains(out, "x: refused") {
+			t.Errorf("%s: registered or no error: %v\n%s", c.args, err, out)
+		}
+	}
+}
+
+// None of yardo's own servers asks for a Docker option mcp-sync refuses.
+func TestMCPSyncCatalogNotRefused(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	mkdirAll(t, cat, 0o755)
+	var names []string
+	for _, d := range []string{"mcp-catalog", "conf/mcp-catalog"} {
+		specs, _ := filepath.Glob(filepath.Join(d, "*.spec"))
+		for _, p := range specs {
+			b, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			name := strings.TrimSuffix(filepath.Base(p), ".spec")
+			putFile(t, filepath.Join(cat, name+".spec"), b, 0o644)
+			req, err := exec.Command("sh", "-c", `. "$1"; echo "${REQUIRED:-}"`, "_", p).Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := ""
+			for _, k := range strings.Fields(string(req)) {
+				env += k + "=x\n"
+			}
+			mkdirAll(t, filepath.Join(mcp, name), 0o700)
+			putFile(t, filepath.Join(mcp, name, "env"), []byte(env), 0o600)
+			names = append(names, name)
+		}
+	}
+	if len(names) < 10 {
+		t.Fatalf("only %d catalog specs", len(names))
+	}
+	putFile(t, filepath.Join(mcp, "servers"), []byte(strings.Join(names, "\n")+"\n"), 0o600)
+	bin := fakeBin(t, map[string]string{"mcpjungle": "exit 0", "docker": "exit 0"})
+	jq, _ := exec.LookPath("jq")
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	out, err := mcpSync(t, env, "status")
+	if err != nil || strings.Contains(out, "\trefused\t") || strings.Count(out, "\n") < len(names) {
+		t.Errorf("status: %v\n%s", err, out)
+	}
+}
+
+// HOST_ACCESS counts only in yardo's own catalog specs: not in a team's
+// (listed in .team-files), nor in a spec of one's own in ~/.mcp.
+func TestMCPSyncHostAccessOnlyYardos(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	mkdirAll(t, cat, 0o755)
+	spec := []byte("DESCRIPTION=D\nKIND=docker\nIMAGE=img:1\nDOCKER_ARGS=\"-v /var/run/docker.sock:/var/run/docker.sock\"\nHOST_ACCESS=docker-socket\n")
+	putFile(t, filepath.Join(cat, "dock.spec"), spec, 0o644)
+	putFile(t, filepath.Join(cat, "team.spec"), spec, 0o644)
+	putFile(t, filepath.Join(cat, ".team-files"), []byte("team.spec\n"), 0o644)
+	for _, n := range []string{"dock", "team", "own", "inst"} {
+		mkdirAll(t, filepath.Join(mcp, n), 0o700)
+		putFile(t, filepath.Join(mcp, n, "env"), nil, 0o600)
+	}
+	putFile(t, filepath.Join(mcp, "own", "spec"), spec, 0o600)
+	if err := os.Symlink(filepath.Join(cat, "dock.spec"), filepath.Join(mcp, "inst", "spec")); err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, filepath.Join(mcp, "servers"), []byte("dock\nteam\n"), 0o600)
+	bin := fakeBin(t, map[string]string{"mcpjungle": "exit 0", "docker": "exit 0"})
+	jq, _ := exec.LookPath("jq")
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	out, err := mcpSync(t, env, "status")
+	want := "dock\tunregistered\t\ninst\tunregistered\t\nown\trefused\t-v /var/run/docker.sock:/var/run/docker.sock\nteam\trefused\t-v /var/run/docker.sock:/var/run/docker.sock\n"
+	if err != nil || out != want {
+		t.Errorf("status: %v\n%q\nwant\n%q", err, out, want)
+	}
+}

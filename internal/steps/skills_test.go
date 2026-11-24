@@ -122,15 +122,9 @@ func TestShippedSkills(t *testing.T) {
 	}
 }
 
-type lockedSkill struct {
-	Name, Repo, Path, Commit, License, Sha256 string
-	LicenseFile                               string `toml:"license_file"`
-	Files                                     []string
-}
-
-func skillsLock(t *testing.T) []lockedSkill {
+func skillsLock(t *testing.T) []LockedSkill {
 	t.Helper()
-	var lock struct{ Skill []lockedSkill }
+	var lock struct{ Skill []LockedSkill }
 	if _, err := toml.DecodeFile("../assets/skills.lock.toml", &lock); err != nil {
 		t.Fatal(err)
 	}
@@ -151,6 +145,17 @@ func TestSkillsLock(t *testing.T) {
 		}
 		if !licences[s.License] {
 			t.Errorf("%s: licence %q", s.Name, s.License)
+		}
+		if s.Fetch {
+			// Fetched at install: a hash to check it by, a licence file to
+			// fall back on, and nothing vendored.
+			if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(s.Sha256) || s.LicenseFile == "" {
+				t.Errorf("%s: sha256 %q, license_file %q", s.Name, s.Sha256, s.LicenseFile)
+			}
+			if _, err := os.Stat("../assets/conf/skills/" + s.Name); err == nil {
+				t.Errorf("%s: fetched at install, but vendored too", s.Name)
+			}
+			continue
 		}
 		files, _, err := onDisk("../assets/conf/skills/" + s.Name)
 		if err != nil || files == nil {
@@ -174,6 +179,80 @@ func TestSkillsLock(t *testing.T) {
 		b, _ := os.ReadFile(filepath.Join(d, "SKILL.md"))
 		if n := filepath.Base(d); !locked[n] && !strings.Contains(string(b), "source: yardo") {
 			t.Errorf("%s: neither yardo's (metadata source: yardo) nor in skills.lock.toml", n)
+		}
+	}
+}
+
+// A link where a skill goes (the skills folder, the skill's folder, a
+// file in it) isn't written through: yardo writes as root, and the link
+// could point anywhere. The run says so; the other folder still gets it.
+func TestSkillsLinks(t *testing.T) {
+	files := fstest.MapFS{"skills/tdd/SKILL.md": {Data: []byte("---\nname: tdd\ndescription: d\n---\nv1\n")}}
+	st := step(t, catalog.Step{Type: "go:skills", Skills: []string{"tdd"}})
+	for _, c := range []struct{ name, link, at string }{
+		{"skills folder", "~/.agents/skills", "~/.agents/skills"},
+		{"agents folder", "~/.agents", "~/.agents"},
+		{"skill folder", "~/.agents/skills/tdd", "~/.agents/skills/tdd"},
+		{"file", "~/.agents/skills/tdd/SKILL.md", "~/.agents/skills/tdd/SKILL.md"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e := testEnv(t, &fakeExec{})
+			e.Files = files
+			var notes []string
+			e.Note = func(s string) { notes = append(notes, s) }
+			target := filepath.Join(e.Root, "etc", "target")
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			link := e.Path(c.link)
+			if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if strings.HasSuffix(c.link, "SKILL.md") {
+				target = filepath.Join(target, "config")
+				put(t, target, "secret\n")
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Fatal(err)
+			}
+			apply(t, e, st)
+			if got := read(t, e.Path("~/.claude/skills/tdd/SKILL.md")); !strings.HasSuffix(got, "v1\n") {
+				t.Errorf("~/.claude/skills/tdd = %q", got)
+			}
+			if strings.HasSuffix(c.link, "SKILL.md") {
+				if got := read(t, target); got != "secret\n" {
+					t.Errorf("wrote through the link: %q", got)
+				}
+			} else if ents, _ := os.ReadDir(target); len(ents) != 0 {
+				t.Errorf("wrote through the link: %v", ents)
+			}
+			if len(notes) != 1 || !strings.Contains(notes[0], c.at+" is a link") {
+				t.Errorf("notes = %q", notes)
+			}
+			if !check(t, e, st) {
+				t.Error("Check = false: the linked place keeps asking")
+			}
+		})
+	}
+}
+
+// A skill's name is checked before anything is written: it's a folder
+// yardo makes as root.
+func TestSkillNames(t *testing.T) {
+	for _, n := range []string{"../x", "x/y", "X", "-a", "a-", "a--b", "", strings.Repeat("a", 65)} {
+		e := testEnv(t, &fakeExec{})
+		e.Files = fstest.MapFS{"skills/" + n + "/SKILL.md": {Data: []byte("x")}}
+		st := step(t, catalog.Step{Type: "go:skills", Skills: []string{n}})
+		if err := st.Apply(t.Context(), e); err == nil || !strings.Contains(err.Error(), "not a valid name") {
+			t.Errorf("%q: %v", n, err)
+		}
+		if _, err := os.Stat(e.Path("~/.agents")); err == nil {
+			t.Errorf("%q: wrote something", n)
+		}
+	}
+	for _, n := range []string{"tdd", "git-commits", "a1", strings.Repeat("a", 64)} {
+		if !ValidSkillName(n) {
+			t.Errorf("%q refused", n)
 		}
 	}
 }

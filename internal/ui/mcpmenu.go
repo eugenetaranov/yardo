@@ -297,7 +297,7 @@ func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
 // canRestart says whether s can be started afresh: yardo's, registered
 // (or tried), and the gateway running.
 func (m *Menu) canRestart(s *MCPServer) bool {
-	return s.Yardo && !m.info.MCPDown && !m.info.MCPAllOff && !slices.Contains([]string{"off", "secret", "new", "nospec", "retired"}, s.State)
+	return s.Yardo && !m.info.MCPDown && !m.info.MCPAllOff && !slices.Contains([]string{"off", "secret", "new", "nospec", "retired", "refused"}, s.State)
 }
 
 // orphansOf says whose the orphaned containers are: jira ×2, aws.
@@ -330,6 +330,8 @@ func mcpWord(s *MCPServer) string {
 		return accent.Render("○ needs " + strings.Join(s.Keys, ", "))
 	case "failed":
 		return yellow.Render("▲ didn't register: check its settings")
+	case "refused":
+		return yellow.Render("▲ refused: its spec asks for " + s.Detail)
 	case "pending":
 		return accent.Render("○ not registered yet")
 	case "nospec":

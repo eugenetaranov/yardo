@@ -565,6 +565,24 @@ func TestMenuMCPFailed(t *testing.T) {
 	}
 }
 
+// A server refused for its Docker options asks for a look on the home,
+// says which option, and has nothing to retry or restart.
+func TestMenuMCPRefused(t *testing.T) {
+	m := mcpMenu()
+	m.info.MCP[3].State, m.info.MCP[3].Detail = "refused", "--privileged"
+	if v := m.View(); !strings.Contains(v, "2 things need you") || !strings.Contains(v, "▲ opensearch       refused") || strings.Contains(v, "Fill in opensearch") {
+		t.Errorf("home:\n%s", v)
+	}
+	onRow(m, "mcp")
+	mk(m, "enter")
+	if v := m.View(); !strings.Contains(v, "refused: its spec asks for --privileged") {
+		t.Errorf("list:\n%s", v)
+	}
+	if m.canRestart(&m.info.MCP[3]) {
+		t.Error("a refused server can restart")
+	}
+}
+
 // r restarts the server under the cursor, or all of them on All
 // servers; a server off, or not set up, has nothing to restart; its
 // screen offers Restart it after Edit.

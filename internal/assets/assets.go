@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed all:conf mcp-catalog mcp-sync yardo.sh picker.py
+//go:embed all:conf mcp-catalog mcp-sync yardo.sh picker.py skills.lock.toml
 var files embed.FS
 
 // ShareDir is where Extract puts the files on the machine.
@@ -28,6 +28,16 @@ const LegacyScript = "yardo.sh"
 
 // FS is every shipped file.
 func FS() fs.FS { return files }
+
+// SkillsLock is skills.lock.toml: the community skills' repos, commits
+// and hashes.
+func SkillsLock() []byte {
+	b, err := files.ReadFile("skills.lock.toml")
+	if err != nil {
+		panic(err) // embedded; cannot fail
+	}
+	return b
+}
 
 // Conf is yardo's own config files, for file steps.
 func Conf() fs.FS {

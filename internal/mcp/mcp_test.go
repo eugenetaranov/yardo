@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -118,6 +120,35 @@ func TestRenameEntry(t *testing.T) {
 	for _, c := range [][2]string{{"jira:work", "jira-work"}, {"jira:work", "jira"}, {"mine", "jira"}, {"mine", "a:b"}, {"mine", ""}} {
 		if _, err := RenameEntry(c[0], c[1], isSpec, taken); err == nil {
 			t.Errorf("RenameEntry(%q, %q): want an error", c[0], c[1])
+		}
+	}
+}
+
+// A spec is read with an empty environment, and, as root, as nobody: its
+// commands can't use the caller's secrets or write where root can.
+func TestLoadRunsWithNothingOfTheCaller(t *testing.T) {
+	d := t.TempDir()
+	t.Setenv("YARDO_TEST_SECRET", "s3cret")
+	spec := `DESCRIPTION="x${YARDO_TEST_SECRET:-}"
+KIND=http
+URL=https://example.com/mcp
+touch /root/yardo-spec-ran 2>/dev/null || true
+skeleton() { echo "# none"; }
+`
+	if err := os.WriteFile(filepath.Join(d, "t.spec"), []byte(spec), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(context.Background(), []string{d}, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Description != "x" || s.URL != "https://example.com/mcp" {
+		t.Errorf("spec = %+v", s)
+	}
+	if os.Geteuid() == 0 {
+		if _, err := os.Stat("/root/yardo-spec-ran"); err == nil {
+			os.Remove("/root/yardo-spec-ran")
+			t.Error("the spec ran as root")
 		}
 	}
 }
