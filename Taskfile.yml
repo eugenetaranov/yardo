@@ -60,11 +60,6 @@ tasks:
     cmds:
       - ./scripts/e2e.sh
 
-  mcp-audit:
-    desc: Each MCP server spec's pin next to its upstream's latest release (before a minor release)
-    cmds:
-      - ./scripts/mcp-audit
-
   clean:
     desc: Remove build output
     cmds:

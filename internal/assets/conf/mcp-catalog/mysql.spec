@@ -3,8 +3,8 @@
 # https://github.com/benborla/mcp-server-mysql
 DESCRIPTION="MySQL: schema and read-only queries"
 KIND=docker
-IMAGE=node:24.22.3-slim
-IMAGE_ARGS="npx -y @benborla29/mcp-server-mysql@2.0.9"
+IMAGE=node:lts-slim
+IMAGE_ARGS="npx -y @benborla29/mcp-server-mysql"
 REQUIRED="MYSQL_HOST MYSQL_USER MYSQL_PASS"
 # Host networking, so a database on this VM is reachable at 127.0.0.1.
 DOCKER_ARGS="--network host"

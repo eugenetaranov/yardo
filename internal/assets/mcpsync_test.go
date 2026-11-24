@@ -3,6 +3,7 @@ package assets
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,16 +31,18 @@ func mcpSync(t *testing.T, env []string, args ...string) (string, error) {
 	t.Helper()
 	sync, _ := filepath.Abs("mcp-sync")
 	c := exec.Command("sh", append([]string{sync}, args...)...)
-	c.Env = env
+	// No registry is reached: npm and PyPI can't be (a fake curl of the
+	// test's own still goes first). mcp-sync won't run as root: as root,
+	// these tests run it as a user, which id says they are.
+	fakes := map[string]string{"curl": "exit 22"}
 	if os.Geteuid() == 0 {
-		// mcp-sync won't run as root: these tests run it as a user, which
-		// id says they are (a fake id of the test's own still goes first).
-		bin := fakeBin(t, map[string]string{"id": `[ "$1" = -u ] && { echo 1000; exit 0; }; exec /usr/bin/id "$@"`})
-		c.Env = slices.Clone(env)
-		for n, e := range c.Env {
-			if p, ok := strings.CutPrefix(e, "PATH="); ok {
-				c.Env[n] = "PATH=" + strings.Replace(":"+p, ":/usr/bin", fmt.Sprintf(":%s:/usr/bin", bin), 1)[1:]
-			}
+		fakes["id"] = `[ "$1" = -u ] && { echo 1000; exit 0; }; exec /usr/bin/id "$@"`
+	}
+	bin := fakeBin(t, fakes)
+	c.Env = slices.Clone(env)
+	for n, e := range c.Env {
+		if p, ok := strings.CutPrefix(e, "PATH="); ok {
+			c.Env[n] = "PATH=" + strings.Replace(":"+p, ":/usr/bin", fmt.Sprintf(":%s:/usr/bin", bin), 1)[1:]
 		}
 	}
 	out, err := c.CombinedOutput()
@@ -277,7 +280,7 @@ func TestMCPSyncAWSArgs(t *testing.T) {
 			t.Fatalf("%v:\n%s", err, out)
 		}
 		out, err := exec.Command(jq, "-c", ".args", reg).Output()
-		if err != nil || !strings.HasSuffix(strings.TrimSpace(string(out)), `"public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:1.8.0",`+c.want) {
+		if err != nil || !strings.HasSuffix(strings.TrimSpace(string(out)), `"public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:latest",`+c.want) {
 			t.Errorf("%q: args %s", c.env, out)
 		}
 	}
@@ -881,7 +884,7 @@ func TestMCPSpecsReadOnlyArgs(t *testing.T) {
 		}
 		return string(out)
 	}
-	if a := args("postgres", "DATABASE_URI=postgresql://u:p@127.0.0.1/db\n"); !strings.HasSuffix(a, `"crystaldba/postgres-mcp:0.3.0","--access-mode=restricted"]`) {
+	if a := args("postgres", "DATABASE_URI=postgresql://u:p@127.0.0.1/db\n"); !strings.HasSuffix(a, `"crystaldba/postgres-mcp:latest","--access-mode=restricted"]`) {
 		t.Errorf("postgres: %s", a)
 	}
 	os := skel("opensearch")
@@ -893,7 +896,7 @@ func TestMCPSpecsReadOnlyArgs(t *testing.T) {
 		"OPENSEARCH_URL=https://s:9200\n":                                                  "false",
 		"OPENSEARCH_URL=https://s:9200\nOPENSEARCH_SETTINGS_ALLOW_WRITE=true\n":            "true",
 	} {
-		if a := args("opensearch", envFile); !strings.HasSuffix(a, fmt.Sprintf("-slim\",\"env\",\"OPENSEARCH_SETTINGS_ALLOW_WRITE=%s\",\"uvx\",\"opensearch-mcp-server-py@0.12.0\"]", want)) {
+		if a := args("opensearch", envFile); !strings.HasSuffix(a, fmt.Sprintf("-slim\",\"env\",\"OPENSEARCH_SETTINGS_ALLOW_WRITE=%s\",\"uvx\",\"opensearch-mcp-server-py\"]", want)) {
 			t.Errorf("opensearch %q: %s", envFile, a)
 		}
 	}
@@ -1183,5 +1186,73 @@ func TestMCPSyncToolsChanged(t *testing.T) {
 	}
 	if st, _ := mcpSync(t, env, "status"); !strings.Contains(st, "r\toff\ttools-changed\n") {
 		t.Errorf("status:\n%s", st)
+	}
+}
+
+// A catalog server runs what was resolved: its image's digest and its
+// package's newest version, kept until mcp-sync update looks again; one
+// from elsewhere runs as approved. source says the version and digest.
+func TestMCPSyncResolve(t *testing.T) {
+	jq, err := exec.LookPath("jq")
+	if err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
+	mkdirAll(t, filepath.Join(mcp, "seq"), 0o700)
+	mkdirAll(t, cat, 0o755)
+	putFile(t, filepath.Join(cat, "seq.spec"), []byte("KIND=docker\nIMAGE=node:lts-slim\nIMAGE_ARGS=\"npx -y @mcp/seq --stdio\"\n"), 0o644)
+	putFile(t, filepath.Join(mcp, "seq", "env"), nil, 0o600)
+	reg, digest, version := filepath.Join(root, "registered"), filepath.Join(root, "digest"), filepath.Join(root, "version")
+	putFile(t, digest, []byte("aaa"), 0o644)
+	putFile(t, version, []byte("2.1.1"), 0o644)
+	bin := fakeBin(t, map[string]string{
+		"mcpjungle": fmt.Sprintf(`case "$3" in register) cp "$6" %s ;; list) echo "1. seq" ;; esac; exit 0`, reg),
+		"docker": fmt.Sprintf(`case "$1 $2" in
+  "image inspect") case "$4" in
+    *RepoDigests*) echo "node@sha256:$(cat %[1]s)" ;;
+    *) echo '{"Id":"sha256:id","Created":"2026-11-01T00:00:00Z","Config":{}}' ;;
+  esac ;;
+esac; exit 0`, digest),
+		"curl": fmt.Sprintf(`case "$*" in *registry.npmjs.org/@mcp%%2Fseq/latest*) echo "{\"version\":\"$(cat %s)\"}" ;; *) exit 22 ;; esac`, version),
+	})
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	runs := func() string {
+		t.Helper()
+		b, err := os.ReadFile(reg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var c struct{ Args []string }
+		_ = json.Unmarshal(b, &c)
+		return strings.Join(c.Args, " ")
+	}
+	// Never resolved: resolved on the first sync.
+	if out, err := mcpSync(t, env, "seq"); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if got := runs(); !strings.HasSuffix(got, " node@sha256:aaa npx -y @mcp/seq@2.1.1 --stdio") {
+		t.Errorf("first: %q", got)
+	}
+	// Newer upstream: a plain sync keeps what it runs; update moves it.
+	putFile(t, digest, []byte("bbb"), 0o644)
+	putFile(t, version, []byte("2.2.0"), 0o644)
+	if out, err := mcpSync(t, env); err != nil || !strings.Contains(out, "seq: up to date") || !strings.Contains(runs(), "@mcp/seq@2.1.1") {
+		t.Errorf("plain sync: %v %s, runs %q", err, out, runs())
+	}
+	out, err := mcpSync(t, env, "update")
+	if err != nil || !strings.Contains(out, "seq: now @mcp/seq@2.2.0, node@sha256:bbb") || !strings.Contains(out, "seq: registered") {
+		t.Errorf("update: %v %s", err, out)
+	}
+	if got := runs(); !strings.HasSuffix(got, " node@sha256:bbb npx -y @mcp/seq@2.2.0 --stdio") {
+		t.Errorf("updated: %q", got)
+	}
+	// Registry down: update keeps what was resolved.
+	putFile(t, version, []byte(""), 0o644)
+	if out, err := mcpSync(t, env, "update"); err != nil || !strings.Contains(out, "seq: up to date") {
+		t.Errorf("registry down: %v %s", err, out)
+	}
+	if out, _ := mcpSync(t, env, "source", "seq"); out != "seq\tnode:lts-slim\t2.2.0\tsha256:bbb\t2026-11-01T00:00:00Z\n" {
+		t.Errorf("source %q", out)
 	}
 }

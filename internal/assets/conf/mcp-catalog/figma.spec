@@ -4,8 +4,8 @@
 # https://github.com/GLips/Figma-Context-MCP
 DESCRIPTION="Figma: read files, frames, layouts and styles to build from a design"
 KIND=docker
-IMAGE=node:24.22.3-slim
-IMAGE_ARGS="npx -y figma-developer-mcp@0.13.2 --stdio"
+IMAGE=node:lts-slim
+IMAGE_ARGS="npx -y figma-developer-mcp --stdio"
 REQUIRED="FIGMA_API_KEY"
 skeleton() {
   cat <<'SKEL'

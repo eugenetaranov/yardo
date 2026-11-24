@@ -428,10 +428,10 @@ func (m *Menu) skillsView(w, room int) []string {
 // shortRef is a commit or an image digest, shortened to read.
 func shortRef(r string) string {
 	if len(r) == 40 && !strings.Contains(r, "@") {
-		return r[:12]
+		return r[:7]
 	}
-	if i := strings.Index(r, "@sha256:"); i >= 0 && len(r) > i+20 {
-		return r[:i+20]
+	if i := strings.Index(r, "@sha256:"); i >= 0 && len(r) > i+15 {
+		return r[:i+15]
 	}
 	return r
 }

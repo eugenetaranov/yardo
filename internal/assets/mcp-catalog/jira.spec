@@ -2,7 +2,7 @@
 # https://github.com/sooperset/mcp-atlassian
 DESCRIPTION="Jira and Confluence: search, read and update issues and pages"
 KIND=docker
-IMAGE=ghcr.io/sooperset/mcp-atlassian:0.24.6
+IMAGE=ghcr.io/sooperset/mcp-atlassian:latest
 REQUIRED="JIRA_URL JIRA_USERNAME JIRA_API_TOKEN"
 skeleton() {
   cat <<'SKEL'

@@ -24,10 +24,11 @@ Commands:
   status [--json] [--updates]  what's installed, down, partial or waiting for a value
   remove ITEM… [--dry-run] [--yes]
                                uninstall tools (say what goes and stays, then ask)
-  mcp [edit NAME | sync | status | on|off [NAME…]]
+  mcp [edit NAME | sync | update | status | on|off [NAME…]]
                                the MCP servers: the screen; edit one's settings (then
-                               it registers); register what changed; how each is;
-                               turn servers on or off (none named: all of them)
+                               it registers); register what changed; move each to
+                               its newest image and package (each run does too);
+                               how each is; turn servers on or off (none named: all)
   skills [on|off [SKILL…]]     the agent skills and whether each is on; turn some off
                                or on (none named: all of them); off moves a skill
                                out of every agent's reach, on puts it back

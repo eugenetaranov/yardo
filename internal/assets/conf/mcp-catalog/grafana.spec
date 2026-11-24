@@ -3,7 +3,7 @@
 # https://github.com/grafana/mcp-grafana
 DESCRIPTION="Grafana: dashboards, Prometheus and Loki queries, alerts and incidents (read-only)"
 KIND=docker
-IMAGE=grafana/mcp-grafana:2.3.0
+IMAGE=grafana/mcp-grafana:latest
 # Read-only by default: drop --disable-write here to let agents edit
 # dashboards, alert rules and incidents.
 # No usage reports to Grafana Labs (they're on by default).

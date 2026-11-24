@@ -3,7 +3,7 @@
 # https://github.com/sooperset/mcp-atlassian
 DESCRIPTION="Confluence: search, read and update pages"
 KIND=docker
-IMAGE=ghcr.io/sooperset/mcp-atlassian:0.24.6
+IMAGE=ghcr.io/sooperset/mcp-atlassian:latest
 REQUIRED="CONFLUENCE_URL CONFLUENCE_USERNAME CONFLUENCE_API_TOKEN"
 skeleton() {
   cat <<'SKEL'

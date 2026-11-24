@@ -392,3 +392,38 @@ func TestSkillsListDrift(t *testing.T) {
 		t.Errorf("edited:\n%s", l)
 	}
 }
+
+// Each skill says its version (its own, else the yardo that installed it)
+// and its files' hash.
+func TestSkillVersion(t *testing.T) {
+	r, _ := addonTest(t, nil, nil)
+	put := func(name, body string) {
+		p := r.env.Path(fmt.Sprintf("~/.claude/skills/%s/SKILL.md", name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("own", "---\nname: own\nmetadata:\n  version: \"1.4.0\"\n---\nx\n")
+	put("ours", "---\nname: ours\n---\nx\n")
+	put("plain", "no front matter\n")
+	hash := func(name string) string {
+		files, _ := steps.SkillOnDisk(r.env, "~/.claude/skills", name)
+		return addon.Hash(files)[:7]
+	}
+	for _, c := range []struct {
+		s    steps.Skill
+		want string
+	}{
+		{steps.Skill{Name: "own", Places: []string{"~/.claude/skills"}, Source: "theirs"}, "1.4.0 · " + hash("own")},
+		{steps.Skill{Name: "ours", Places: []string{"~/.claude/skills"}, Source: "yardo"}, fmt.Sprintf("yardo %s · %s", version, hash("ours"))},
+		{steps.Skill{Name: "plain", Places: []string{"~/.claude/skills"}, Source: "theirs"}, "content " + hash("plain")},
+		{steps.Skill{Name: "gone"}, ""},
+	} {
+		if got := skillVersion(r.env, c.s); got != c.want {
+			t.Errorf("%s: %q, want %q", c.s.Name, got, c.want)
+		}
+	}
+}

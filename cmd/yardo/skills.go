@@ -65,6 +65,8 @@ func skillsDo(stdout io.Writer, env *steps.Env, args []string) error {
 				if !skillAsApproved(env, s, ap) {
 					l += fmt.Sprintf("\n  ▲ changed since it was checked: sudo yardo skills restore %s puts the approved files back, sudo yardo skills check %s approves these", s.Name, s.Name)
 				}
+			} else if v := skillVersion(env, s); v != "" {
+				l += " · " + v
 			}
 			fmt.Fprintln(stdout, l)
 		}
@@ -93,7 +95,7 @@ func skillSays(s steps.Skill, all bool) string {
 // skillChecked is skillSays for a skill from elsewhere, approved as ap.
 func skillChecked(line string, ap addon.Approval) string {
 	from, _ := strings.CutSuffix(line, " · yardo's")
-	return fmt.Sprintf("%s · checked %s, from %s @ %s", from, ap.At.Format("2006-01-02"), ap.Source, shortPin(ap.Pin))
+	return fmt.Sprintf("%s · checked %s: %s", from, ap.At.Format("2006-01-02"), addon.What(ap.Kind, ap.Source, ap.Pin, ap.Hash))
 }
 
 // skillFrom says where a skill is from.
@@ -139,12 +141,15 @@ func skillRows(env *steps.Env) ([]ui.SkillRow, bool, error) {
 		}
 		r.Where = skillWhere(s)
 		if a, ok := approved[s.Name]; ok {
+			what := addon.What(a.Kind, a.Source, a.Pin, a.Hash)
 			r.Source, r.Checked = "checked", a.At.Format("2006-01-02")
-			r.Where += fmt.Sprintf(" · from %s @ %s", a.Source, shortPin(a.Pin))
+			r.Where += " · " + what
 			if !skillAsApproved(env, s, a) {
 				r.Source = "drifted"
-				r.Where = "Changed since it was checked: Restore puts the approved files back, Check it again approves these"
+				r.Where = fmt.Sprintf("Changed since it was checked (%s): Restore puts the approved files back, Check it again approves these", what)
 			}
+		} else if v := skillVersion(env, s); v != "" {
+			r.Where += " · " + v
 		}
 		if h := held[s.Name]; h != nil {
 			r.Source, r.Off = "held", "held"
@@ -155,7 +160,7 @@ func skillRows(env *steps.Env) ([]ui.SkillRow, bool, error) {
 	}
 	for _, h := range held {
 		out = append(out, ui.SkillRow{Name: h.Name, Source: "held", Off: "held",
-			Where: fmt.Sprintf("From %s @ %s: %s", h.Source, shortPin(h.Pin), verdictSays(h.Report.Verdict()))})
+			Where: fmt.Sprintf("%s: %s", addon.What(h.Kind, h.Source, h.Pin, ""), verdictSays(h.Report.Verdict()))})
 	}
 	slices.SortStableFunc(out, func(a, b ui.SkillRow) int { return strings.Compare(a.Name, b.Name) })
 	return out, all, err
@@ -228,4 +233,52 @@ func skillAsApproved(env *steps.Env, s steps.Skill, a addon.Approval) bool {
 		}
 	}
 	return true
+}
+
+// skillVersion is a skill's version (its SKILL.md's, else the yardo that
+// installed it, for one of yardo's) and the hash of its files, cut to 7.
+func skillVersion(env *steps.Env, s steps.Skill) string {
+	dirs := slices.Clone(s.Places)
+	for _, h := range s.Held {
+		dirs = append(dirs, steps.HeldDir(h))
+	}
+	if len(dirs) == 0 {
+		return ""
+	}
+	files, err := steps.SkillOnDisk(env, dirs[0], s.Name)
+	if err != nil || len(files) == 0 {
+		return ""
+	}
+	hash := addon.Hash(files)[:7]
+	v := frontVersion(files["SKILL.md"])
+	switch {
+	case v == "" && s.Source == "yardo":
+		v = "yardo " + version
+	case v == "" && s.Source == "changed":
+		v = fmt.Sprintf("yardo %s, edited", version)
+	case v == "":
+		return "content " + hash
+	}
+	return fmt.Sprintf("%s · %s", v, hash)
+}
+
+// frontVersion is the version a SKILL.md's front matter gives (version:,
+// or under metadata:), "" for none.
+func frontVersion(b []byte) string {
+	rest, ok := strings.CutPrefix(string(b), "---\n")
+	if !ok {
+		return ""
+	}
+	front, _, ok := strings.Cut(rest, "\n---")
+	if !ok {
+		return ""
+	}
+	for _, l := range strings.Split(front, "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(l), "version:"); ok {
+			if v = strings.Trim(strings.TrimSpace(v), `"'`); v != "" {
+				return v
+			}
+		}
+	}
+	return ""
 }

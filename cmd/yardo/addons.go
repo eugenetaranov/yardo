@@ -941,7 +941,7 @@ func (o *options) addonsCmd(ctx context.Context, cat *catalog.Catalog, st *answe
 	if len(held) > 0 {
 		fmt.Fprintln(out, "Held (waiting for you: sudo yardo addons review NAME):")
 		for _, h := range held {
-			fmt.Fprintf(out, "  %-24s %-5s %s @ %s · %s\n", h.Name, h.Kind, h.Source, shortPin(h.Pin), verdictSays(h.Report.Verdict()))
+			fmt.Fprintf(out, "  %-24s %-5s %s · %s\n", h.Name, h.Kind, addon.What(h.Kind, h.Source, h.Pin, ""), verdictSays(h.Report.Verdict()))
 		}
 	}
 	if len(approved) > 0 {
@@ -951,7 +951,7 @@ func (o *options) addonsCmd(ctx context.Context, cat *catalog.Catalog, st *answe
 			if ap.OK {
 				ok = " · with your OK"
 			}
-			fmt.Fprintf(out, "  %-24s %-5s %s @ %s · %s by %s%s\n", ap.Name, ap.Kind, ap.Source, shortPin(ap.Pin), ap.At.Format("2006-01-02"), ap.By, ok)
+			fmt.Fprintf(out, "  %-24s %-5s %s · %s by %s%s\n", ap.Name, ap.Kind, addon.What(ap.Kind, ap.Source, ap.Pin, ap.Hash), ap.At.Format("2006-01-02"), ap.By, ok)
 		}
 	}
 	return nil
@@ -959,10 +959,10 @@ func (o *options) addonsCmd(ctx context.Context, cat *catalog.Catalog, st *answe
 
 func shortPin(p string) string {
 	if len(p) == 40 {
-		return p[:12]
+		return p[:7]
 	}
-	if i := strings.Index(p, "@sha256:"); i >= 0 && len(p) > i+20 {
-		return p[:i+20]
+	if i := strings.Index(p, "@sha256:"); i >= 0 && len(p) > i+15 {
+		return p[:i+15]
 	}
 	return p
 }

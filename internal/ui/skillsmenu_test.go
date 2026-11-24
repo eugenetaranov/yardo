@@ -177,7 +177,7 @@ func TestMenuSkillsDriftUpdate(t *testing.T) {
 	m.result = MenuResult{}
 	m.screen, m.sel = "skills", 1
 	mk(m, "enter")
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "Update it") || !strings.Contains(v, "to cccccccccccc") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Update it") || !strings.Contains(v, "to ccccccc") {
 		t.Fatalf("update:\n%s", v)
 	}
 	mk(m, "down", "enter")

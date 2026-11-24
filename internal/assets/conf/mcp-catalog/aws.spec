@@ -5,7 +5,7 @@
 # https://github.com/aws/mcp-proxy-for-aws
 DESCRIPTION="AWS: call AWS APIs, search the docs and follow AWS's guides (AWS's managed MCP server)"
 KIND=docker
-IMAGE=public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:1.8.0
+IMAGE=public.ecr.aws/mcp-proxy-for-aws/mcp-proxy-for-aws:latest
 REQUIRED="AWS_REGION"
 # The image's healthcheck looks for a process named aws.* holding a socket;
 # the proxy, run over stdio, is mcp-proxy-for-aws-cli: it would always say

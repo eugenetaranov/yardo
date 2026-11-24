@@ -580,8 +580,16 @@ installed by hand.
    again). yardo keeps watch: opening it registers servers whose settings
    changed since. From the shell: `sudo yardo mcp` (the screen),
    `sudo yardo mcp edit <name>`, `sudo yardo mcp sync`,
-   `sudo yardo mcp status`, `sudo yardo mcp off|on [<name>…]` (no name:
-   all of them), `sudo yardo mcp restart [<name>…]`. **Restart** (`r` on
+   `sudo yardo mcp update`, `sudo yardo mcp status`,
+   `sudo yardo mcp off|on [<name>…]` (no name: all of them),
+   `sudo yardo mcp restart [<name>…]`. **Versions**: yardo pins none, so
+   none it ships is outdated. Each run (and `sudo yardo mcp update`) moves
+   each server to what's newest: its image's tag pulled and its digest
+   kept, its npx/uvx package's newest version on npm or PyPI, both in
+   `~/.mcp/<name>/.resolved`. Between runs a server runs exactly that, and
+   its row says which (`2.2.0 · sha256:abc1234`); a registry that can't be
+   reached leaves it as it was. A server added from elsewhere runs the
+   digest you approved until you update it (`sudo yardo addons update`). **Restart** (`r` on
    the list, or Restart it on a server's screen; on All servers, every
    one) starts a server afresh: it's taken off the gateway, its Docker
    containers are removed, and it registers again as it was (one off
@@ -1072,14 +1080,13 @@ task build:linux  # bin/yardo-linux-amd64, -arm64
 task test         # go test -race ./...
 task lint
 HOST=ubuntu@10.0.0.5 task e2e   # every item on a throwaway machine over SSH
-task mcp-audit    # each MCP server's pin next to its latest release
 ```
 
-Before a minor release, `task mcp-audit` and each server's changelog:
-pin the newest release that's settled (a few days old, not a new major
-without reading what broke), drop a server its maker retired, and check
-that a description saying read-only still is. Every image carries a tag
-and every `npx`/`uvx` package an exact version, or the spec test fails.
+MCP server specs pin nothing: an image is named by a tag (`:latest`,
+`node:lts-slim`) and an `npx`/`uvx` package by its name, or the spec test
+fails. mcp-sync resolves them on each run (see MCP servers). Before a
+release, drop a server its maker retired and check that a description
+saying read-only still is.
 
 The bash part (`internal/assets/yardo.sh`, `picker.py`) still runs the GitHub
 login and commit-signing items, and is the fallback on other architectures;

@@ -135,3 +135,22 @@ func TestSetTools(t *testing.T) {
 		t.Errorf("list %q", b)
 	}
 }
+
+func TestWhat(t *testing.T) {
+	c := "e4bb5d960d87126ff3b3a8af1a104b7db67560ba"
+	d := "mcp/time@sha256:9c46a918633fb474bf8035e3ee90ebac6bcf2b18ccb00679ac4c179cba0ebfcf"
+	for _, w := range []struct{ kind, source, pin, hash, want string }{
+		{"skill", "anthropics/skills/skills/internal-comms", c, "", "anthropics/skills/skills/internal-comms · default branch · commit e4bb5d9"},
+		{"skill", "acme/skills@v1.2.0", c, "", "acme/skills · v1.2.0 · commit e4bb5d9"},
+		{"skill", "acme/skills@" + c, c, "", "acme/skills · commit e4bb5d9"},
+		{"skill", "found in ~/.claude/skills", "as found", "abcdef0123", "found in ~/.claude/skills · content abcdef0"},
+		{"mcp", "mcp/time", d, "h", "mcp/time:latest · sha256:9c46a91"},
+		{"mcp", "ghcr.io/acme/srv:2.1", "ghcr.io/acme/srv@sha256:1234567890", "h", "ghcr.io/acme/srv:2.1 · sha256:1234567"},
+		{"mcp", d, d, "h", "mcp/time · sha256:9c46a91"},
+		{"mcp", "https://mcp.example.com/mcp", "https://mcp.example.com/mcp", "8910e72ccc", "https://mcp.example.com/mcp · spec 8910e72"},
+	} {
+		if got := What(w.kind, w.source, w.pin, w.hash); got != w.want {
+			t.Errorf("%s %s: %q, want %q", w.kind, w.source, got, w.want)
+		}
+	}
+}

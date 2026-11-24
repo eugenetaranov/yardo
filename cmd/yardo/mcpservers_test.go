@@ -241,8 +241,8 @@ func TestParseSources(t *testing.T) {
 		"c7\thttps://mcp.context7.com/mcp\n" +
 		"bad line\nempty\t\n")
 	for name, want := range map[string]string{
-		"jira": "ghcr.io/x/atlassian:0.23.1 (cached: 0.23.1, built 2026-03-02)",
-		"seq":  "mcp/seq:latest (cached: abcdef012345, built 2026-01-05)",
+		"jira": "ghcr.io/x/atlassian:0.23.1 (cached: 0.23.1 · sha256:0123456, built 2026-03-02)",
+		"seq":  "mcp/seq:latest (cached: sha256:abcdef0, built 2026-01-05)",
 		"gh":   "ghcr.io/github/gh:1 (not pulled yet)",
 		"c7":   "https://mcp.context7.com/mcp",
 	} {

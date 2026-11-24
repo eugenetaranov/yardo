@@ -3,7 +3,7 @@
 # https://github.com/microsoft/mcp/tree/main/servers/Azure.Mcp.Server
 DESCRIPTION="Azure: list and inspect resources, query logs and metrics (read-only)"
 KIND=docker
-IMAGE=mcr.microsoft.com/azure-sdk/azure-mcp:3.0.0
+IMAGE=mcr.microsoft.com/azure-sdk/azure-mcp:latest
 # The image starts the server; drop --read-only to let agents change things.
 IMAGE_ARGS="--read-only"
 REQUIRED="AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET"

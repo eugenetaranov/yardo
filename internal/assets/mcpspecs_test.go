@@ -42,7 +42,7 @@ func TestMCPSpecNamesDistinct(t *testing.T) {
 	}
 }
 
-// Each yardo spec parses, pins its image, and its skeleton has every
+// Each yardo spec parses, names its image by tag, and its skeleton has every
 // required key with a comment saying where to get it.
 func TestMCPSpecsValid(t *testing.T) {
 	bash := bashPath(t)
@@ -58,8 +58,8 @@ func TestMCPSpecsValid(t *testing.T) {
 		kind, image, url, required := f[0], f[1], f[2], strings.Fields(f[3])
 		switch kind {
 		case "docker":
-			if i := strings.LastIndex(image, ":"); i < 0 || image[i+1:] == "latest" {
-				t.Errorf("%s: image %q is not pinned to a tag", n, image)
+			if i := strings.LastIndex(image, ":"); i < 0 || strings.Contains(image, "@") {
+				t.Errorf("%s: image %q isn't named by a tag", n, image)
 			}
 		case "http":
 			if !strings.HasPrefix(url, "https://") {
@@ -79,10 +79,11 @@ func TestMCPSpecsValid(t *testing.T) {
 	}
 }
 
-// Every spec, yardo's and the vendored ones, pins what it runs: an image
-// with a tag that isn't latest, and a package run with npx -y or uvx at
-// an exact version.
-func TestMCPSpecsPinned(t *testing.T) {
+// No spec, yardo's or the vendored ones, pins what it runs: mcp-sync
+// resolves an image's tag and an npx or uvx package to what's newest on
+// each run, so an image is named by a tag (not a digest) and a package
+// by its name alone.
+func TestMCPSpecsUnpinned(t *testing.T) {
 	run := regexp.MustCompile(`(?:npx -y|uvx) +(@?[a-z0-9][a-z0-9._/-]*)(@[0-9]\S*)?`)
 	for _, dir := range []string{"conf/mcp-catalog", "mcp-catalog"} {
 		for n := range specNames(t, dir) {
@@ -92,8 +93,8 @@ func TestMCPSpecsPinned(t *testing.T) {
 			}
 			s := string(b)
 			if m := regexp.MustCompile(`(?m)^IMAGE=(\S+)`).FindStringSubmatch(s); m != nil {
-				if i := strings.LastIndex(m[1], ":"); i < 0 || m[1][i+1:] == "latest" {
-					t.Errorf("%s/%s: image %q is not pinned to a tag", dir, n, m[1])
+				if i := strings.LastIndex(m[1], ":"); i < 0 || strings.Contains(m[1], "@") {
+					t.Errorf("%s/%s: image %q isn't named by a tag", dir, n, m[1])
 				}
 			}
 			// What image_args runs is a line each: uvx, then the package.
@@ -103,8 +104,8 @@ func TestMCPSpecsPinned(t *testing.T) {
 					continue
 				}
 				for _, m := range run.FindAllStringSubmatch(l, -1) {
-					if m[2] == "" {
-						t.Errorf("%s/%s: %q runs without an exact version", dir, n, m[1])
+					if m[2] != "" {
+						t.Errorf("%s/%s: %q is pinned to %s", dir, n, m[1], m[2][1:])
 					}
 				}
 			}

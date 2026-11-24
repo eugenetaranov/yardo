@@ -347,3 +347,42 @@ func SetTools(user, name, hash string) error {
 	}
 	return fmt.Errorf("no approved server %s", name)
 }
+
+// What says what was checked, to read: a skill's source, the ref it was
+// asked for and the commit; an image's tag and digest; else the hash of
+// the spec (or files) checked. Commits and digests are cut to 7.
+func What(kind, source, pin, hash string) string {
+	short := func(s string) string { return s[:min(7, len(s))] }
+	if kind == "skill" {
+		src, err := ParseSource(source)
+		switch {
+		case err != nil && hash != "":
+			return fmt.Sprintf("%s · content %s", source, short(hash))
+		case err != nil:
+			return source
+		case commitRe.MatchString(src.Ref):
+			src.Ref = ""
+			return fmt.Sprintf("%s · commit %s", src, short(pin))
+		}
+		ref := src.Ref
+		if ref == "" {
+			ref = "default branch"
+		}
+		src.Ref = ""
+		return fmt.Sprintf("%s · %s · commit %s", src, ref, short(pin))
+	}
+	if repo, d, ok := strings.Cut(pin, "@sha256:"); ok {
+		tag := source
+		switch {
+		case strings.Contains(source, "@sha256:"):
+			tag = repo
+		case !strings.Contains(source[strings.LastIndex(source, "/")+1:], ":"):
+			tag = source + ":latest"
+		}
+		return fmt.Sprintf("%s · sha256:%s", tag, short(d))
+	}
+	if hash == "" {
+		return source
+	}
+	return fmt.Sprintf("%s · spec %s", source, short(hash))
+}

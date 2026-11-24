@@ -19,6 +19,10 @@
 #                          nospec, noenv, off <own|all>, refused <option>: Docker options
 #                          that would let it act on the host; "-  down" first when the gateway
 #                          can't be reached, "*  off" when all servers are off)
+#   mcp-sync update [name ...]  sync, first resolving each catalog server's image tag
+#                          and npx/uvx package to what's newest now (pulled, recorded
+#                          in ~/.mcp/<name>/.resolved); otherwise a server runs what
+#                          was resolved last
 #   mcp-sync source [name ...]  where each server runs from, a line each:
 #                          <name> TAB <image or URL> [TAB <version> TAB <id> TAB <built>]
 #                          (the last three for an image pulled here)
@@ -290,6 +294,8 @@ if [ "${1:-}" = restart ]; then
   set --
 fi
 
+UPDATE=
+[ "${1:-}" = update ] && { UPDATE=1; shift; }
 STATUS=
 [ "${1:-}" = status ] && { STATUS=1; shift; }
 SOURCE=
@@ -456,6 +462,72 @@ kube_path() {
   done | paste -sd: -
 }
 
+# Catalog specs name an image by tag and an npx or uvx package with no
+# version: yardo ships no pins, so nothing it ships is outdated. What a
+# server runs is resolved, recorded in its .resolved (image <repo@digest>,
+# package <name@version>) and kept until mcp-sync update resolves again:
+# the same thing on every start between, and its version and digest to show.
+
+# resolved NAME KEY — what NAME's KEY (image, package) was resolved to.
+resolved() { sed -n "s/^$2 //p" "$MCP_DIR/$1/.resolved" 2>/dev/null | head -n 1; }
+
+# pkg_of ARG ... — "npx PKG" or "uvx PKG": the package npx or uvx runs
+# (the first word after it that isn't a flag), when it names no version.
+pkg_of() {
+  _after=
+  for _a in "$@"; do
+    if [ -n "$_after" ]; then
+      case "$_a" in -*) continue ;; esac
+      case "$_after:$_a" in
+        npx:@*/*@*|npx:[!@]*@*|uvx:*@*|uvx:*==*) ;;
+        *) echo "$_after $_a" ;;
+      esac
+      return 0
+    fi
+    case "$_a" in npx|uvx) _after=$_a ;; esac
+  done
+}
+
+# latest_pkg npx|uvx PKG — PKG's newest version on npm or PyPI.
+latest_pkg() {
+  case "$1" in
+    npx) curl -fsSL --max-time 20 "https://registry.npmjs.org/$(printf %s "$2" | sed 's#/#%2F#')/latest" 2>/dev/null | jq -r '.version // empty' 2>/dev/null ;;
+    uvx) curl -fsSL --max-time 20 "https://pypi.org/pypi/$2/json" 2>/dev/null | jq -r '.info.version // empty' 2>/dev/null ;;
+  esac
+}
+
+# resolve NAME — NAME's image tag and package resolved to what's newest
+# (spec vars in scope), when updating or never resolved. One it can't
+# look up keeps what it was; never resolved, it runs by tag and name.
+resolve() {
+  _f="$MCP_DIR/$1/.resolved"
+  [ -n "$UPDATE" ] || [ ! -f "$_f" ] || return 0
+  _img= _pkg=
+  case "$IMAGE" in
+    *@sha256:*) ;;
+    *) if docker pull -q "$IMAGE" >/dev/null 2>&1; then
+         _img=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE" 2>/dev/null |
+           grep -F "${IMAGE%:*}@sha256:" | head -n 1)
+       fi ;;
+  esac
+  set -f
+  # shellcheck disable=SC2046,SC2086 # words, as the server gets them
+  _p=$(pkg_of ${IMAGE_ARGS:-} $(if command -v image_args >/dev/null 2>&1; then ENV_FILE="$MCP_DIR/$1/env" image_args; fi))
+  set +f
+  if [ -n "$_p" ]; then
+    _v=$(latest_pkg "${_p%% *}" "${_p#* }")
+    [ -z "$_v" ] || _pkg="${_p#* }@$_v"
+  fi
+  [ -n "$_img" ] || _img=$(resolved "$1" image)
+  [ -n "$_pkg" ] || _pkg=$(resolved "$1" package)
+  _was=$(cat "$_f" 2>/dev/null || true)
+  { [ -z "$_img" ] || echo "image $_img"; [ -z "$_pkg" ] || echo "package $_pkg"; } > "$_f.new"
+  mv "$_f.new" "$_f"
+  if [ -n "$_was" ] && [ "$_was" != "$(cat "$_f")" ]; then
+    echo "$1: now ${_pkg:+$_pkg, }${_img:-$IMAGE}"
+  fi
+}
+
 # render NAME — print the MCPJungle JSON config for NAME (spec vars in scope).
 render() {
   dir="$MCP_DIR/$1" rname=$1
@@ -515,7 +587,12 @@ render() {
         set -- "$@" $(ENV_FILE="$dir/env" image_args)
         set +f; IFS=$_ifs
       fi
-      printf '%s\n' "$@" | jq -Rn --arg name "$NAME" --arg desc "${DESCRIPTION:-}" \
+      # The image and package as resolved (resolve), where they were.
+      _ri=$(resolved "$rname" image) _rp=$(resolved "$rname" package)
+      printf '%s\n' "$@" | awk -v img="$IMAGE" -v ri="$_ri" -v pk="${_rp%@*}" -v rp="$_rp" '
+        ri != "" && $0 == img && !di { $0 = ri; di = 1 }
+        rp != "" && $0 == pk && !dp { $0 = rp; dp = 1 }
+        { print }' | jq -Rn --arg name "$NAME" --arg desc "${DESCRIPTION:-}" \
         '{name: $name, description: $desc, transport: "stdio", command: "docker", args: [inputs], session_mode: "stateful"}' ;;
     http)
       url="${URL:-}"
@@ -552,9 +629,13 @@ if [ -n "$SOURCE" ]; then
     . "$spec"
     case "$KIND" in
       docker)
+        # As resolved: the package's version, else the image's label; the
+        # digest it was resolved to, else the image's id.
+        ri=$(resolved "$NAME" image) rp=$(resolved "$NAME" package)
         # jq, not a template: one with no labels at all would fail it.
-        here=$(docker image inspect --format '{{json .}}' "$IMAGE" 2>/dev/null |
-          jq -r '[(.Config.Labels // {})["org.opencontainers.image.version"] // "", .Id, .Created] | @tsv' 2>/dev/null) || here=
+        here=$(docker image inspect --format '{{json .}}' "${ri:-$IMAGE}" 2>/dev/null |
+          jq -r --arg v "${rp##*@}" --arg d "${ri##*@}" \
+            '[if $v != "" then $v else (.Config.Labels // {})["org.opencontainers.image.version"] // "" end, if $d != "" then $d else .Id end, .Created] | @tsv' 2>/dev/null) || here=
         if [ -n "$here" ]; then printf '%s\t%s\t%s\n' "$NAME" "$IMAGE" "$here"; else printf '%s\t%s\n' "$NAME" "$IMAGE"; fi ;;
       http)
         url="${URL:-}"
@@ -678,6 +759,7 @@ for NAME in $want; do
     continue
   fi
 
+  if [ "$KIND" = docker ] && ! elsewhere "$NAME"; then resolve "$NAME"; fi
   render "$NAME" > "$dir/.config.json.new"
   if [ -f "$dir/.registered.json" ] && cmp -s "$dir/.config.json.new" "$dir/.registered.json" \
      && echo "$live" | grep -qx "$NAME"; then
@@ -686,10 +768,11 @@ for NAME in $want; do
     tools_check "$NAME" || failed=1
     continue
   fi
-  if [ "$KIND" = docker ] && ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    echo "$NAME: pulling $IMAGE"
-    docker pull -q "$IMAGE" >/dev/null || {
-      echo "$NAME: docker pull failed"; echo "couldn't pull $IMAGE" > "$dir/.error"; failed=1; continue; }
+  img=$(resolved "$NAME" image); img=${img:-$IMAGE}
+  if [ "$KIND" = docker ] && ! docker image inspect "$img" >/dev/null 2>&1; then
+    echo "$NAME: pulling $img"
+    docker pull -q "$img" >/dev/null || {
+      echo "$NAME: docker pull failed"; echo "couldn't pull $img" > "$dir/.error"; failed=1; continue; }
   fi
   out=$(mj --registry "$REGISTRY" register --force -c "$dir/.config.json.new" 2>&1) && rc=0 || rc=$?
   if [ "$rc" -eq 0 ]; then

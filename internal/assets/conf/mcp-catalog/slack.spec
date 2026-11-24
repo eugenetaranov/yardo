@@ -3,7 +3,7 @@
 # https://github.com/korotovsky/slack-mcp-server
 DESCRIPTION="Slack: read channels, threads and DMs, search messages (posting off)"
 KIND=docker
-IMAGE=ghcr.io/korotovsky/slack-mcp-server:v1.3.0
+IMAGE=ghcr.io/korotovsky/slack-mcp-server:latest
 IMAGE_ARGS="--transport stdio"
 REQUIRED="SLACK_MCP_XOXP_TOKEN"
 # Its read tools only, unless SLACK_MCP_ENABLED_TOOLS lists others: with

@@ -2,7 +2,7 @@
 # https://github.com/github/github-mcp-server
 DESCRIPTION="GitHub: repositories, issues, pull requests and Actions"
 KIND=docker
-IMAGE=ghcr.io/github/github-mcp-server:v2.2.0
+IMAGE=ghcr.io/github/github-mcp-server:latest
 REQUIRED="GITHUB_PERSONAL_ACCESS_TOKEN"
 skeleton() {
   cat <<'SKEL'

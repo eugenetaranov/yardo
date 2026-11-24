@@ -1240,14 +1240,15 @@ func (w mcpWireStep) gemini(ctx context.Context, e *Env, hdr map[string]string) 
 
 // --- go:mcp_sync: register the picked servers with the gateway ---------------
 
-// mcpSyncStep runs mcp-sync, which registers servers whose keys are filled
-// in and re-registers those whose config changed: on every run.
+// mcpSyncStep runs mcp-sync update, which resolves each catalog server's
+// image and package to what's newest, registers servers whose keys are
+// filled in and re-registers those whose config changed: on every run.
 type mcpSyncStep struct{}
 
 func (mcpSyncStep) Always() bool { return true }
 
 func (mcpSyncStep) Plan(e *Env) []Action {
-	return []Action{{"run", strings.TrimSpace("mcp-sync " + strings.Join(servers(e), " "))}}
+	return []Action{{"run", strings.TrimSpace("mcp-sync update " + strings.Join(servers(e), " "))}}
 }
 
 func (mcpSyncStep) Check(context.Context, *Env) (bool, error) { return true, nil }
@@ -1260,7 +1261,7 @@ func (mcpSyncStep) Apply(ctx context.Context, e *Env) error {
 			return err
 		}
 	}
-	if err := mcpSyncRun(ctx, e, servers(e)...); err != nil {
+	if err := mcpSyncRun(ctx, e, append([]string{"update"}, servers(e)...)...); err != nil {
 		return fmt.Errorf("some MCP servers did not register (see the log); sudo yardo mcp status says why; sudo yardo mcp edit <server> fixes one: %w", err)
 	}
 	return nil

@@ -2,7 +2,7 @@
 # https://github.com/crystaldba/postgres-mcp
 DESCRIPTION="Postgres: schema, read-only queries, explain plans and index advice"
 KIND=docker
-IMAGE=crystaldba/postgres-mcp:0.3.0
+IMAGE=crystaldba/postgres-mcp:latest
 REQUIRED="DATABASE_URI"
 # Host networking, so a database on this VM is reachable at 127.0.0.1.
 DOCKER_ARGS="--network host"

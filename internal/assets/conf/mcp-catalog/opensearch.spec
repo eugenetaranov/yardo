@@ -3,7 +3,7 @@
 # https://github.com/opensearch-project/opensearch-mcp-server-py
 DESCRIPTION="OpenSearch: search indices, read mappings and cluster health (read-only)"
 KIND=docker
-IMAGE=ghcr.io/astral-sh/uv:0.13.9-python3.13-trixie-slim
+IMAGE=ghcr.io/astral-sh/uv:python3.13-trixie-slim
 REQUIRED="OPENSEARCH_URL"
 # uvx fetches its dependencies (scipy among them) at start: more than the
 # 256 MB scratch /tmp holds, so its root stays writable.
@@ -17,7 +17,7 @@ image_args() {
   echo env
   echo "OPENSEARCH_SETTINGS_ALLOW_WRITE=$w"
   echo uvx
-  echo opensearch-mcp-server-py@0.12.0
+  echo opensearch-mcp-server-py
 }
 skeleton() {
   cat <<'SKEL'

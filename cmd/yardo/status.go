@@ -483,7 +483,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			for _, ap := range as {
 				for n := range info.MCP {
 					if ap.Kind == "mcp" && info.MCP[n].Name == ap.Name {
-						info.MCP[n].About = strings.TrimSpace(fmt.Sprintf("%s · checked %s, %s", info.MCP[n].About, ap.At.Format("2006-01-02"), shortPin(ap.Pin)))
+						info.MCP[n].About = strings.TrimSpace(fmt.Sprintf("%s · checked %s: %s", info.MCP[n].About, ap.At.Format("2006-01-02"), addon.What(ap.Kind, ap.Source, ap.Pin, ap.Hash)))
 					}
 				}
 			}

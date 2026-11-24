@@ -565,9 +565,7 @@ func parseSources(out string) map[string]mcpSource {
 		s := mcpSource{from: f[1]}
 		if len(f) == 5 {
 			s.here, s.version, s.id = true, f[2], strings.TrimPrefix(f[3], "sha256:")
-			if len(s.id) > 12 {
-				s.id = s.id[:12]
-			}
+			s.id = s.id[:min(7, len(s.id))]
 			s.built, _ = time.Parse(time.RFC3339Nano, f[4])
 		}
 		src[f[0]] = s
@@ -575,9 +573,9 @@ func parseSources(out string) map[string]mcpSource {
 	return src
 }
 
-// cached says which of a server's image is pulled here: its version (else
-// its id) and when it was built; "" for a URL, "not pulled yet" for an
-// image that isn't.
+// cached says which of a server's image is pulled here: its version (the
+// package's, else the image's) and digest, and when it was built; "" for
+// a URL, "not pulled yet" for an image that isn't.
 func (s mcpSource) cached() string {
 	if !s.here {
 		if strings.Contains(s.from, "://") {
@@ -585,9 +583,9 @@ func (s mcpSource) cached() string {
 		}
 		return "not pulled yet"
 	}
-	v := s.version
-	if v == "" {
-		v = s.id
+	v := "sha256:" + s.id
+	if s.version != "" {
+		v = fmt.Sprintf("%s · %s", s.version, v)
 	}
 	if !s.built.IsZero() {
 		v += ", built " + s.built.Format("2006-01-02")
@@ -716,8 +714,17 @@ func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Stor
 		fmt.Fprintf(stdout, "Registering %s…\n", args[1])
 		_ = o.mcpSyncNow(ctx, a, io.Discard)
 		show([]string{args[1]})
-	case "sync":
-		err := o.mcpSyncNow(ctx, a, stdout)
+	case "sync", "update":
+		var err error
+		if args[0] == "update" {
+			// Each server's image and package resolved to what's newest
+			// first, as each yardo run does.
+			c := mcpSyncCmd(ctx, o.share(), a, append([]string{"update"}, mcpNames(a.MCPServers)...)...)
+			c.Stdout, c.Stderr = stdout, stdout
+			err = c.Run()
+		} else {
+			err = o.mcpSyncNow(ctx, a, stdout)
+		}
 		show(mcpNames(a.MCPServers))
 		if err != nil {
 			return errors.New("some MCP servers didn't register (above)")
@@ -747,7 +754,7 @@ func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Stor
 		}
 		show(names)
 	default:
-		return fmt.Errorf("unknown: yardo mcp %s (yardo mcp, mcp edit <server>, mcp sync, mcp status, mcp on|off|restart [server ...], mcp cleanup)", args[0])
+		return fmt.Errorf("unknown: yardo mcp %s (yardo mcp, mcp edit <server>, mcp sync, mcp update, mcp status, mcp on|off|restart [server ...], mcp cleanup)", args[0])
 	}
 	return nil
 }

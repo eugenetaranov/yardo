@@ -252,7 +252,7 @@ func TestMCPSyncAlways(t *testing.T) {
 		t.Fatal("mcp_sync is not an Always step")
 	}
 	apply(t, e, st)
-	if got := x.commands(); len(got) != 1 || got[0] != "(as user) env MCP_DIR=/home/ada/.mcp MCP_CATALOG=/usr/local/share/mcp-catalog MCPJUNGLE_REGISTRY=http://127.0.0.1:8080 /usr/local/bin/mcp-sync github" {
+	if got := x.commands(); len(got) != 1 || got[0] != "(as user) env MCP_DIR=/home/ada/.mcp MCP_CATALOG=/usr/local/share/mcp-catalog MCPJUNGLE_REGISTRY=http://127.0.0.1:8080 /usr/local/bin/mcp-sync update github" {
 		t.Errorf("ran %q", got)
 	}
 }
