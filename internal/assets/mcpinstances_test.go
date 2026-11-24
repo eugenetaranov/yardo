@@ -37,7 +37,7 @@ A_MCP_SERVERS="grafana grafana:prod" RUN_MCP_SERVERS="grafana:prod"
 ask_mcp_keys
 mcp_dirs "$H/.mcp" ` + g.Name + `
 echo "names: $(mcp_names)"`
-	out := credShell(t, home, body, "spec_skeleton", "spec_field", "mcp_spec", "mcp_name", "mcp_names", "ask_mcp_keys", "mcp_dirs", "mcp_from_logins", "login_fill", "tomlget")
+	out := credShell(t, home, body, "spec_read", "spec_skeleton", "spec_field", "mcp_spec", "mcp_name", "mcp_names", "ask_mcp_keys", "mcp_dirs", "mcp_from_logins", "login_fill", "tomlget")
 	if !strings.Contains(out, "names: grafana grafana-prod\n") {
 		t.Errorf("out = %q", out)
 	}

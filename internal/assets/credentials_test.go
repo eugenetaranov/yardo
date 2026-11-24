@@ -200,7 +200,7 @@ func TestMissingSecrets(t *testing.T) {
 A_MCP_SERVERS="linear linear:work" A_NPM_SCOPE=
 HAVE="claude codex gemini"
 missing_secrets "agentkeys npmrc mcpjungle github"`
-	out := credShell(t, home, body, "spec_field", "cred_logged_in", "npmrc_token", "mcp_spec", "mcp_name", "missing_secrets")
+	out := credShell(t, home, body, "spec_read", "spec_field", "cred_logged_in", "npmrc_token", "mcp_spec", "mcp_name", "missing_secrets")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	want := []string{
 		home + "/.config/yardo/agent.env  OPENAI_API_KEY — https://platform.openai.com/api-keys",
