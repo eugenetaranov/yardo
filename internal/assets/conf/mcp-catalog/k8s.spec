@@ -9,10 +9,8 @@ IMAGE=flux159/mcp-server-kubernetes:latest
 # them for the server too).
 MOUNT_KUBE=1
 MOUNT_AWS=1
-# Root in the container (it wins over your user, the mounts': files in
-# ~/.mcp/<name>, the gateway's user's only, stay readable for a
-# KUBECONFIG=/mcp/... of before).
-DOCKER_ARGS="--user 0:0"
+# No --user: mcp-sync runs it as you, whose ~/.kube and ~/.aws it reads
+# (0600, yours); root in the container has no capabilities, so couldn't.
 REQUIRED="KUBECONFIG"
 skeleton() {
   cat <<'SKEL'

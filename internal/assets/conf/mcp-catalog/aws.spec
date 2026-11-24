@@ -10,11 +10,9 @@ REQUIRED="AWS_REGION"
 # The image's healthcheck looks for a process named aws.* holding a socket;
 # the proxy, run over stdio, is mcp-proxy-for-aws-cli: it would always say
 # unhealthy, working or not.
-#
-# As root in the container (as the kubernetes server is): the image's own
-# user, app, can't read the env file's directory (~/.mcp/aws, mode 700),
-# nor your ~/.aws (0600, yours).
-DOCKER_ARGS="--no-healthcheck --user 0:0"
+# No --user: mcp-sync runs it as you, whose ~/.aws it reads (0600, yours);
+# root in the container has no capabilities, so couldn't.
+DOCKER_ARGS="--no-healthcheck"
 # Your ~/.aws, read-only: the AWS CLI's profiles and its SSO logins (aws
 # sso login here renews them for the server too, as it runs).
 MOUNT_AWS=1

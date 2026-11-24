@@ -318,9 +318,8 @@ func TestMCPSyncAWSMount(t *testing.T) {
 		}
 		return string(out)
 	}
-	// Root in the container either way: the image's own user can't read
-	// the env file's directory (~/.mcp/aws, 700).
-	if a := args(); strings.Contains(a, "/aws/.aws") || !strings.Contains(a, `"--no-healthcheck","--user","0:0","public.ecr.aws/`) {
+	// No ~/.aws: nobody, keys in the env file only.
+	if a := args(); strings.Contains(a, "/aws/.aws") || !strings.Contains(a, `"--user","65534:65534","--no-healthcheck","public.ecr.aws/`) {
 		t.Errorf("no ~/.aws: %s", a)
 	}
 	mkdirAll(t, filepath.Join(root, ".aws"), 0o700)
@@ -329,7 +328,7 @@ func TestMCPSyncAWSMount(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids := fmt.Sprintf("%d:%d", fi.Sys().(*syscall.Stat_t).Uid, fi.Sys().(*syscall.Stat_t).Gid)
-	want := fmt.Sprintf("\"-v\",\"%s/.aws:/aws/.aws:ro\",\"-e\",\"HOME=/aws\",\"--user\",\"%s\",\"--no-healthcheck\",\"--user\",\"0:0\",\"public.ecr.aws/", root, ids)
+	want := fmt.Sprintf("\"-v\",\"%s/.aws:/aws/.aws:ro\",\"-e\",\"HOME=/aws\",\"--user\",\"%s\",\"--no-healthcheck\",\"public.ecr.aws/", root, ids)
 	if a := args(); !strings.Contains(a, want) || strings.Contains(a, "/etc") {
 		t.Errorf("args %s\nwant %s", a, want)
 	}
@@ -337,7 +336,7 @@ func TestMCPSyncAWSMount(t *testing.T) {
 
 // k8s.spec's MOUNT_KUBE and MOUNT_AWS: ~/.kube and ~/.aws (EKS's
 // get-token), read-only; a KUBECONFIG under ~/.kube made the container's
-// path, any other left be; root in the container all the same.
+// path, any other left be; the owner in the container all the same.
 func TestMCPSyncKubeMount(t *testing.T) {
 	jq, err := exec.LookPath("jq")
 	if err != nil {
@@ -363,7 +362,7 @@ func TestMCPSyncKubeMount(t *testing.T) {
 	}
 	ids := fmt.Sprintf("%d:%d", fi.Sys().(*syscall.Stat_t).Uid, fi.Sys().(*syscall.Stat_t).Gid)
 	mounts := fmt.Sprintf("\"-v\",\"%s/.aws:/aws/.aws:ro\",\"-v\",\"%s/.kube:/aws/.kube:ro\",", root, root)
-	user := fmt.Sprintf("\"-e\",\"HOME=/aws\",\"--user\",\"%s\",\"--user\",\"0:0\",\"flux159/", ids)
+	user := fmt.Sprintf("\"-e\",\"HOME=/aws\",\"--user\",\"%s\",\"flux159/", ids)
 	for kc, want := range map[string]string{
 		"~/.kube/config/dev1":                         fmt.Sprintf("%s\"-e\",\"KUBECONFIG=/aws/.kube/config/dev1\",%s", mounts, user),
 		root + "/.kube/a:$HOME/.kube/b":               fmt.Sprintf("%s\"-e\",\"KUBECONFIG=/aws/.kube/a:/aws/.kube/b\",%s", mounts, user),

@@ -113,6 +113,24 @@ func TestMCPSpecsUnpinned(t *testing.T) {
 	}
 }
 
+// A spec that mounts your ~/.aws or ~/.kube runs as you (mcp-sync's
+// --user): one of its own would win, and root, with no capabilities,
+// can't read your 0600 files.
+func TestMCPSpecsMountsRunAsOwner(t *testing.T) {
+	bash := bashPath(t)
+	for n := range specNames(t, "conf/mcp-catalog") {
+		p := path.Join("conf/mcp-catalog", n+".spec")
+		out, err := exec.Command(bash, "-c", `set -eu; . "$1"; printf '%s%s\n%s' "${MOUNT_AWS:-}" "${MOUNT_KUBE:-}" "${DOCKER_ARGS:-}"`, "_", p).Output()
+		if err != nil {
+			t.Fatalf("%s: %v", n, err)
+		}
+		mounts, args, _ := strings.Cut(string(out), "\n")
+		if mounts != "" && regexp.MustCompile(`(^|\s)(--user|-u)(\s|=|$)`).MatchString(args) {
+			t.Errorf("%s mounts your files but sets --user: %q", n, args)
+		}
+	}
+}
+
 // yardo.sh reads a spec's fields with nothing of its own (and as nobody,
 // when root): a team's spec can't see its environment or act as root.
 func TestYardoShSpecRead(t *testing.T) {
