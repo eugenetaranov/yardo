@@ -19,7 +19,7 @@ func fakeBin(t *testing.T, cmds map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	for name, body := range cmds {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(fmt.Sprintf("#!/bin/sh\n%s\n", body)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -38,7 +38,7 @@ func mcpSync(t *testing.T, env []string, args ...string) (string, error) {
 		c.Env = slices.Clone(env)
 		for n, e := range c.Env {
 			if p, ok := strings.CutPrefix(e, "PATH="); ok {
-				c.Env[n] = "PATH=" + strings.Replace(":"+p, ":/usr/bin", ":"+bin+":/usr/bin", 1)[1:]
+				c.Env[n] = "PATH=" + strings.Replace(":"+p, ":/usr/bin", fmt.Sprintf(":%s:/usr/bin", bin), 1)[1:]
 			}
 		}
 	}
@@ -55,7 +55,7 @@ func TestMCPSyncReexecIgnoresCallerEnv(t *testing.T) {
 		"getent": `echo "ada:x:1000:1000::/home/ada:/bin/sh"`,
 		"sudo":   `printf '%s\n' "$@" > ` + got,
 	})
-	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=/tmp/attacker", "MCP_CATALOG=/tmp/evil",
+	env := []string{fmt.Sprintf("PATH=%s:/usr/bin:/bin", bin), "HOME=/tmp/attacker", "MCP_CATALOG=/tmp/evil",
 		"MCPJUNGLE_REGISTRY=http://evil.example", "VISUAL=sh -c pwn", "EDITOR=/tmp/evil/ed"}
 	if out, err := mcpSync(t, env, "github"); err != nil {
 		t.Fatalf("%v: %s", err, out)
@@ -87,10 +87,10 @@ func TestMCPSyncNotAsRoot(t *testing.T) {
 		"sudo":   `printf '%s\n' "$@" > ` + got,
 	})
 	cat := t.TempDir()
-	if err := os.WriteFile(filepath.Join(cat, "evil.spec"), []byte("touch "+got+".ran\nKIND=docker\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cat, "evil.spec"), []byte(fmt.Sprintf("touch %s.ran\nKIND=docker\n", got)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "MCP_CATALOG=" + cat, "MCP_DIR=" + t.TempDir()}
+	env := []string{fmt.Sprintf("PATH=%s:/usr/bin:/bin", bin), "MCP_CATALOG=" + cat, "MCP_DIR=" + t.TempDir()}
 	out, err := mcpSync(t, env, "evil")
 	if err == nil || !strings.Contains(out, "not as root") {
 		t.Errorf("no SUDO_USER: %v: %s", err, out)
@@ -120,7 +120,7 @@ func TestMCPSyncNamesAndLinks(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(evil, "x.spec"), []byte("touch "+marker+"\nKIND=docker\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(evil, "x.spec"), []byte(fmt.Sprintf("touch %s\nKIND=docker\n", marker)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cat, "grafana.spec"), []byte("KIND=docker\nIMAGE=x\nREQUIRED=GRAFANA_URL\n"), 0o644); err != nil {
@@ -133,7 +133,7 @@ func TestMCPSyncNamesAndLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := fakeBin(t, map[string]string{"mcpjungle": "exit 0"})
-	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:/usr/bin:/bin", bin), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 
 	for _, name := range []string{"../../tmp/evil", ".hidden", "a__b", "-x"} {
 		if out, err := mcpSync(t, env, name); err == nil || !strings.Contains(out, "not a server name") {
@@ -176,11 +176,11 @@ func TestMCPSyncInstanceDescription(t *testing.T) {
 	}
 	reg := filepath.Join(root, "registered")
 	bin := fakeBin(t, map[string]string{
-		"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`,
+		"mcpjungle": fmt.Sprintf("[ \"$3\" = register ] && cp \"$6\" %s; exit 0", reg),
 		"docker":    "exit 0",
 	})
 	jq, _ := exec.LookPath("jq")
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	if out, err := mcpSync(t, env); err != nil || !strings.Contains(out, "grafana-prod: registered") {
 		t.Fatalf("%v:\n%s", err, out)
 	}
@@ -205,7 +205,7 @@ func TestMCPSyncRenameRemove(t *testing.T) {
 	putFile(t, filepath.Join(mcp, "servers"), []byte("github\njira-jira\ngrafana-old\n"), 0o600)
 	log := filepath.Join(root, "mj.log")
 	bin := fakeBin(t, map[string]string{"mcpjungle": `echo "$*" >> ` + log})
-	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:/usr/bin:/bin", bin), "HOME=" + root, "MCP_DIR=" + mcp, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 
 	if out, err := mcpSync(t, env, "rename", "jira-jira", "jira"); err != nil {
 		t.Fatalf("rename: %v\n%s", err, out)
@@ -254,9 +254,9 @@ func TestMCPSyncAWSArgs(t *testing.T) {
 	}
 	putFile(t, filepath.Join(cat, "aws.spec"), spec, 0o644)
 	reg := filepath.Join(root, "registered")
-	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
+	bin := fakeBin(t, map[string]string{"mcpjungle": fmt.Sprintf("[ \"$3\" = register ] && cp \"$6\" %s; exit 0", reg), "docker": "exit 0"})
 	jq, _ := exec.LookPath("jq")
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	// A new server's env, as the skeleton makes it (its region filled in):
 	// it calls AWS APIs, not read-only.
 	skel, err := exec.Command("sh", "-c", `. "$1"; skeleton`, "_", filepath.Join(cat, "aws.spec")).Output()
@@ -300,9 +300,9 @@ func TestMCPSyncAWSMount(t *testing.T) {
 	putFile(t, filepath.Join(cat, "aws.spec"), spec, 0o644)
 	putFile(t, filepath.Join(mcp, "aws", "env"), []byte("AWS_REGION=us-east-1\nHOME=/etc\n"), 0o600)
 	reg := filepath.Join(root, "registered")
-	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
+	bin := fakeBin(t, map[string]string{"mcpjungle": fmt.Sprintf("[ \"$3\" = register ] && cp \"$6\" %s; exit 0", reg), "docker": "exit 0"})
 	jq, _ := exec.LookPath("jq")
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	args := func() string {
 		t.Helper()
 		_ = os.Remove(filepath.Join(mcp, "aws", ".registered.json"))
@@ -326,7 +326,7 @@ func TestMCPSyncAWSMount(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids := fmt.Sprintf("%d:%d", fi.Sys().(*syscall.Stat_t).Uid, fi.Sys().(*syscall.Stat_t).Gid)
-	want := `"-v","` + root + `/.aws:/aws/.aws:ro","-e","HOME=/aws","--user","` + ids + `","--no-healthcheck","--user","0:0","public.ecr.aws/`
+	want := fmt.Sprintf("\"-v\",\"%s/.aws:/aws/.aws:ro\",\"-e\",\"HOME=/aws\",\"--user\",\"%s\",\"--no-healthcheck\",\"--user\",\"0:0\",\"public.ecr.aws/", root, ids)
 	if a := args(); !strings.Contains(a, want) || strings.Contains(a, "/etc") {
 		t.Errorf("args %s\nwant %s", a, want)
 	}
@@ -352,22 +352,22 @@ func TestMCPSyncKubeMount(t *testing.T) {
 	}
 	putFile(t, filepath.Join(cat, "k8s.spec"), spec, 0o644)
 	reg := filepath.Join(root, "registered")
-	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	bin := fakeBin(t, map[string]string{"mcpjungle": fmt.Sprintf("[ \"$3\" = register ] && cp \"$6\" %s; exit 0", reg), "docker": "exit 0"})
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	fi, err := os.Stat(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ids := fmt.Sprintf("%d:%d", fi.Sys().(*syscall.Stat_t).Uid, fi.Sys().(*syscall.Stat_t).Gid)
-	mounts := `"-v","` + root + `/.aws:/aws/.aws:ro","-v","` + root + `/.kube:/aws/.kube:ro",`
-	user := `"-e","HOME=/aws","--user","` + ids + `","--user","0:0","flux159/`
+	mounts := fmt.Sprintf("\"-v\",\"%s/.aws:/aws/.aws:ro\",\"-v\",\"%s/.kube:/aws/.kube:ro\",", root, root)
+	user := fmt.Sprintf("\"-e\",\"HOME=/aws\",\"--user\",\"%s\",\"--user\",\"0:0\",\"flux159/", ids)
 	for kc, want := range map[string]string{
-		"~/.kube/config/dev1":                         mounts + `"-e","KUBECONFIG=/aws/.kube/config/dev1",` + user,
-		root + "/.kube/a:$HOME/.kube/b":               mounts + `"-e","KUBECONFIG=/aws/.kube/a:/aws/.kube/b",` + user,
+		"~/.kube/config/dev1":                         fmt.Sprintf("%s\"-e\",\"KUBECONFIG=/aws/.kube/config/dev1\",%s", mounts, user),
+		root + "/.kube/a:$HOME/.kube/b":               fmt.Sprintf("%s\"-e\",\"KUBECONFIG=/aws/.kube/a:/aws/.kube/b\",%s", mounts, user),
 		"/mcp/config":                                 mounts + user,
-		"~/.kube/../../etc/passwd:/elsewhere/.kube/x": mounts + `"-e","KUBECONFIG=/aws/.kube/../../etc/passwd:/elsewhere/.kube/x",` + user,
+		"~/.kube/../../etc/passwd:/elsewhere/.kube/x": fmt.Sprintf("%s\"-e\",\"KUBECONFIG=/aws/.kube/../../etc/passwd:/elsewhere/.kube/x\",%s", mounts, user),
 	} {
-		putFile(t, filepath.Join(mcp, "k8s", "env"), []byte("KUBECONFIG="+kc+"\n"), 0o600)
+		putFile(t, filepath.Join(mcp, "k8s", "env"), []byte(fmt.Sprintf("KUBECONFIG=%s\n", kc)), 0o600)
 		_ = os.Remove(filepath.Join(mcp, "k8s", ".registered.json"))
 		if out, err := mcpSync(t, env, "k8s"); err != nil {
 			t.Fatalf("%v:\n%s", err, out)
@@ -401,13 +401,13 @@ func TestMCPSyncAWSMountNotCarried(t *testing.T) {
 		putFile(t, filepath.Join(mcp, n, "env"), []byte(env), 0o600)
 	}
 	reg := filepath.Join(root, "registered")
-	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" "` + reg + `.$(jq -r .name "$6")"; exit 0`, "docker": "exit 0"})
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	bin := fakeBin(t, map[string]string{"mcpjungle": fmt.Sprintf("[ \"$3\" = register ] && cp \"$6\" \"%s.$(jq -r .name \"$6\")\"; exit 0", reg), "docker": "exit 0"})
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	if out, err := mcpSync(t, env, "aws", "zz"); err != nil {
 		t.Fatalf("%v:\n%s", err, out)
 	}
 	for n, mounted := range map[string]bool{"aws": true, "zz": false} {
-		out, err := exec.Command(jq, "-c", ".args", reg+"."+n).Output()
+		out, err := exec.Command(jq, "-c", ".args", fmt.Sprintf("%s.%s", reg, n)).Output()
 		if err != nil {
 			t.Fatalf("%s: %v", n, err)
 		}
@@ -447,7 +447,7 @@ esac; exit 0`,
 		"docker": "exit 0",
 	})
 	jq, _ := exec.LookPath("jq")
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	status := func() string {
 		t.Helper()
 		out, err := mcpSync(t, env, "status")
@@ -484,7 +484,7 @@ esac; exit 0`,
 	}
 	// No gateway: said first, the rest still from what's on disk.
 	bin2 := fakeBin(t, map[string]string{"mcpjungle": "exit 1", "docker": "exit 0"})
-	env[0] = "PATH=" + bin2 + ":" + filepath.Dir(jq) + ":/usr/bin:/bin"
+	env[0] = fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin2, filepath.Dir(jq))
 	if got := status(); !strings.HasPrefix(got, "-\tdown\t") {
 		t.Errorf("down:\n%s", got)
 	}
@@ -505,7 +505,7 @@ func TestMCPSyncClient(t *testing.T) {
 	bin := fakeBin(t, map[string]string{
 		"mcpjungle": `[ "$3 $4 $5" = "create mcp-client --conf" ] || exit 1; cp "$6" ` + conf,
 	})
-	env := []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:/usr/bin:/bin", bin), "HOME=" + root, "MCP_DIR=" + mcp, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	out, err := mcpSync(t, env, "client", "laptop")
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
@@ -521,7 +521,7 @@ func TestMCPSyncClient(t *testing.T) {
 	if strings.Contains(out, strings.TrimSpace(string(tok))) || !strings.Contains(out, "sudo cat "+tokFile) {
 		t.Errorf("out:\n%s", out)
 	}
-	if b, _ := os.ReadFile(conf); !strings.Contains(string(b), `"access_token_ref": {"file": "`+tokFile+`"}`) || !strings.Contains(string(b), `"allowed_servers": ["*"]`) {
+	if b, _ := os.ReadFile(conf); !strings.Contains(string(b), fmt.Sprintf("\"access_token_ref\": {\"file\": \"%s\"}", tokFile)) || !strings.Contains(string(b), `"allowed_servers": ["*"]`) {
 		t.Errorf("client conf: %s", b)
 	}
 	if out, err := mcpSync(t, env, "client", "laptop"); err == nil || !strings.Contains(out, "there's a laptop already") {
@@ -564,7 +564,7 @@ func TestMCPSyncSource(t *testing.T) {
   *) exit 1 ;;
 esac`,
 	})
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	out, err := mcpSync(t, env, "source", "jira", "seq", "k8s", "jenkins", "nope")
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
@@ -601,7 +601,7 @@ case "$3" in
 esac; exit 0`,
 		"docker": "exit 0",
 	})
-	env = []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env = []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	for _, d := range []string{"a", "b"} {
 		mkdirAll(t, filepath.Join(mcp, d), 0o700)
 		if err := os.Symlink(filepath.Join(cat, "svc.spec"), filepath.Join(mcp, d, "spec")); err != nil {
@@ -714,7 +714,7 @@ func TestMCPSyncRestart(t *testing.T) {
   inspect) printf 'id-a ` + mcp + `/a\nid-b ` + mcp + `/b\nid-x /elsewhere/a\nid-n\n' ;;
   rm) echo "$3" >> ` + rm + ` ;;
 esac; exit 0`})
-	env[0] = "PATH=" + docker + ":" + strings.TrimPrefix(env[0], "PATH=")
+	env[0] = fmt.Sprintf("PATH=%s:%s", docker, strings.TrimPrefix(env[0], "PATH="))
 	servers := "a\nb\n"
 	putFile(t, filepath.Join(mcp, "servers"), []byte(servers), 0o600)
 	if _, err := mcpSync(t, env, "off", "b"); err != nil {
@@ -810,9 +810,9 @@ func TestMCPSyncClientRm(t *testing.T) {
 	putFile(t, mcp+"/clients/ci.token", []byte("secret\n"), 0o600)
 	putFile(t, mcp+"/clients/ci.json", []byte("{}\n"), 0o600)
 	seen := filepath.Join(root, "seen")
-	ok := `case "$3 $4" in "list mcp-clients") echo "1. ci";; "delete mcp-client") echo "$5" >> ` + seen + `;; *) exit 1;; esac`
+	ok := fmt.Sprintf("case \"$3 $4\" in \"list mcp-clients\") echo \"1. ci\";; \"delete mcp-client\") echo \"$5\" >> %s;; *) exit 1;; esac", seen)
 	env := func(fake string) []string {
-		return []string{"PATH=" + fakeBin(t, map[string]string{"mcpjungle": fake}) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+		return []string{fmt.Sprintf("PATH=%s:/usr/bin:/bin", fakeBin(t, map[string]string{"mcpjungle": fake})), "HOME=" + root, "MCP_DIR=" + mcp, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	}
 	refuse := `case "$3 $4" in "list mcp-clients") echo "1. ci";; *) exit 1;; esac`
 	if out, err := mcpSync(t, env(refuse), "client-rm", "ci"); err == nil || !strings.Contains(out, "still works") {
@@ -829,7 +829,7 @@ func TestMCPSyncClientRm(t *testing.T) {
 		t.Errorf("deleted on the gateway: %q", b)
 	}
 	for _, f := range []string{"ci.token", "ci.json"} {
-		if _, err := os.Stat(mcp + "/clients/" + f); err == nil {
+		if _, err := os.Stat(fmt.Sprintf("%s/clients/%s", mcp, f)); err == nil {
 			t.Errorf("%s stays", f)
 		}
 	}
@@ -852,11 +852,11 @@ func TestMCPSpecsReadOnlyArgs(t *testing.T) {
 	mcp, cat := filepath.Join(root, "mcp"), filepath.Join(root, "catalog")
 	mkdirAll(t, cat, 0o755)
 	reg := filepath.Join(root, "registered")
-	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	bin := fakeBin(t, map[string]string{"mcpjungle": fmt.Sprintf("[ \"$3\" = register ] && cp \"$6\" %s; exit 0", reg), "docker": "exit 0"})
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	args := func(name, envFile string) string {
 		t.Helper()
-		spec, err := os.ReadFile("conf/mcp-catalog/" + name + ".spec")
+		spec, err := os.ReadFile(fmt.Sprintf("conf/mcp-catalog/%s.spec", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -875,7 +875,7 @@ func TestMCPSpecsReadOnlyArgs(t *testing.T) {
 	}
 	skel := func(name string) string {
 		t.Helper()
-		out, err := exec.Command("sh", "-c", `. "$1"; skeleton`, "_", "conf/mcp-catalog/"+name+".spec").Output()
+		out, err := exec.Command("sh", "-c", `. "$1"; skeleton`, "_", fmt.Sprintf("conf/mcp-catalog/%s.spec", name)).Output()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -893,7 +893,7 @@ func TestMCPSpecsReadOnlyArgs(t *testing.T) {
 		"OPENSEARCH_URL=https://s:9200\n":                                                  "false",
 		"OPENSEARCH_URL=https://s:9200\nOPENSEARCH_SETTINGS_ALLOW_WRITE=true\n":            "true",
 	} {
-		if a := args("opensearch", envFile); !strings.HasSuffix(a, `-slim","env","OPENSEARCH_SETTINGS_ALLOW_WRITE=`+want+`","uvx","opensearch-mcp-server-py@0.12.0"]`) {
+		if a := args("opensearch", envFile); !strings.HasSuffix(a, fmt.Sprintf("-slim\",\"env\",\"OPENSEARCH_SETTINGS_ALLOW_WRITE=%s\",\"uvx\",\"opensearch-mcp-server-py@0.12.0\"]", want)) {
 			t.Errorf("opensearch %q: %s", envFile, a)
 		}
 	}
@@ -905,7 +905,7 @@ func TestMCPSpecsReadOnlyArgs(t *testing.T) {
 		"SLACK_MCP_XOXP_TOKEN=xoxp-1\nSLACK_MCP_ADD_MESSAGE_TOOL=C123\n":       read + ",conversations_add_message",
 		"SLACK_MCP_XOXP_TOKEN=xoxp-1\nSLACK_MCP_ENABLED_TOOLS=channels_list\n": "channels_list",
 	} {
-		if a := args("slack", envFile); !strings.HasSuffix(a, `"--transport","stdio","--enabled-tools","`+want+`"]`) {
+		if a := args("slack", envFile); !strings.HasSuffix(a, fmt.Sprintf("\"--transport\",\"stdio\",\"--enabled-tools\",\"%s\"]", want)) {
 			t.Errorf("slack %q: %s", envFile, a)
 		}
 	}
@@ -929,9 +929,9 @@ func TestMCPSyncRefusesHostOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	reg := filepath.Join(root, "registered")
-	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
+	bin := fakeBin(t, map[string]string{"mcpjungle": fmt.Sprintf("[ \"$3\" = register ] && cp \"$6\" %s; exit 0", reg), "docker": "exit 0"})
 	jq, _ := exec.LookPath("jq")
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	for _, c := range []struct{ args, why string }{
 		{"--privileged", "--privileged"},
 		{"--network=host", "--network host"},
@@ -939,18 +939,18 @@ func TestMCPSyncRefusesHostOptions(t *testing.T) {
 		{"--pid=host", "--pid host"},
 		{"-v /:/h", "-v /:/h"},
 		{"-v /var/run/docker.sock:/s", "-v /var/run/docker.sock:/s"},
-		{"-v " + root + "/.ssh:/s:ro", "-v " + root + "/.ssh:/s:ro"},
-		{"-v " + mcp + "/x/../../.ssh:/s", "-v " + mcp + "/x/../../.ssh:/s"},
+		{fmt.Sprintf("-v %s/.ssh:/s:ro", root), fmt.Sprintf("-v %s/.ssh:/s:ro", root)},
+		{fmt.Sprintf("-v %s/x/../../.ssh:/s", mcp), fmt.Sprintf("-v %s/x/../../.ssh:/s", mcp)},
 		{"--mount type=bind,source=/etc,target=/e", "--mount type=bind,source=/etc,target=/e"},
 		{"-p 80:80", "-p"},
 		{"-p8080:80", "-p"},
 		{"--cap-add SYS_ADMIN", "--cap-add"},
 		{"--device=/dev/sda", "--device"},
 		{"--security-opt seccomp=unconfined", "--security-opt seccomp=unconfined"},
-		{"-e A=1 -v " + mcp + "/x/data:/data", ""},
+		{fmt.Sprintf("-e A=1 -v %s/x/data:/data", mcp), ""},
 		{"-v cache:/cache --tmpfs /tmp --network none", ""},
 	} {
-		putFile(t, filepath.Join(cat, "x.spec"), []byte("DESCRIPTION=X\nKIND=docker\nIMAGE=img:1\nREQUIRED=TOKEN\nDOCKER_ARGS=\""+c.args+"\"\nIMAGE_ARGS=\"--privileged\"\n"), 0o644)
+		putFile(t, filepath.Join(cat, "x.spec"), []byte(fmt.Sprintf("DESCRIPTION=X\nKIND=docker\nIMAGE=img:1\nREQUIRED=TOKEN\nDOCKER_ARGS=\"%s\"\nIMAGE_ARGS=\"--privileged\"\n", c.args)), 0o644)
 		_ = os.Remove(reg)
 		_ = os.Remove(filepath.Join(mcp, "x", ".registered.json"))
 		st, err := mcpSync(t, env, "status")
@@ -965,7 +965,7 @@ func TestMCPSyncRefusesHostOptions(t *testing.T) {
 			}
 			continue
 		}
-		if want := "x\trefused\t" + c.why + "\n"; st != want {
+		if want := fmt.Sprintf("x\trefused\t%s\n", c.why); st != want {
 			t.Errorf("%s: status %q, want %q", c.args, st, want)
 		}
 		if err == nil || regErr == nil || !strings.Contains(out, "x: refused") {
@@ -1011,7 +1011,7 @@ func TestMCPSyncCatalogNotRefused(t *testing.T) {
 	putFile(t, filepath.Join(mcp, "servers"), []byte(strings.Join(names, "\n")+"\n"), 0o600)
 	bin := fakeBin(t, map[string]string{"mcpjungle": "exit 0", "docker": "exit 0"})
 	jq, _ := exec.LookPath("jq")
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	out, err := mcpSync(t, env, "status")
 	if err != nil || strings.Contains(out, "\trefused\t") || strings.Count(out, "\n") < len(names) {
 		t.Errorf("status: %v\n%s", err, out)
@@ -1042,7 +1042,7 @@ func TestMCPSyncHostAccessOnlyYardos(t *testing.T) {
 	putFile(t, filepath.Join(mcp, "servers"), []byte("dock\nteam\n"), 0o600)
 	bin := fakeBin(t, map[string]string{"mcpjungle": "exit 0", "docker": "exit 0"})
 	jq, _ := exec.LookPath("jq")
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp, "MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1"}
 	out, err := mcpSync(t, env, "status")
 	want := "dock\tunregistered\t\ninst\tunregistered\t\nown\trefused\t-v /var/run/docker.sock:/var/run/docker.sock\nteam\trefused\t-v /var/run/docker.sock:/var/run/docker.sock\n"
 	if err != nil || out != want {
@@ -1067,17 +1067,17 @@ func TestMCPSyncApprovedSpec(t *testing.T) {
 	spec := filepath.Join(mcp, "x", "spec")
 	sum := sha256.Sum256([]byte("DESCRIPTION=\"X\"\nKIND=http\nURL=https://x.example/mcp\nAUTH=none\n"))
 	approved := filepath.Join(root, "ada.approved")
-	putFile(t, approved, []byte("x "+hex.EncodeToString(sum[:])+"\n"), 0o644)
+	putFile(t, approved, []byte(fmt.Sprintf("x %s\n", hex.EncodeToString(sum[:]))), 0o644)
 	ran := filepath.Join(root, "ran")
 	bin := fakeBin(t, map[string]string{"mcpjungle": `exit 0`, "docker": "exit 0"})
 	jq, _ := exec.LookPath("jq")
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp,
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp,
 		"MCP_CATALOG=" + filepath.Join(root, "catalog"), "MCPJUNGLE_REGISTRY=http://127.0.0.1:1", "MCP_APPROVED=" + approved}
 	st, err := mcpSync(t, env, "status")
 	if err != nil || strings.Contains(st, "refused") {
 		t.Fatalf("approved: %v\n%s", err, st)
 	}
-	putFile(t, spec, []byte("touch "+ran+"\nDESCRIPTION=\"X\"\nKIND=http\nURL=https://evil.example/mcp\nAUTH=none\n"), 0o600)
+	putFile(t, spec, []byte(fmt.Sprintf("touch %s\nDESCRIPTION=\"X\"\nKIND=http\nURL=https://evil.example/mcp\nAUTH=none\n", ran)), 0o600)
 	st, err = mcpSync(t, env, "status")
 	if err != nil || !strings.Contains(st, "x\trefused\tunapproved") || strings.Contains(st, "mine\trefused") {
 		t.Errorf("edited: %v\n%s", err, st)
@@ -1104,8 +1104,8 @@ func TestMCPSyncLimits(t *testing.T) {
 	mkdirAll(t, cat, 0o755)
 	approved := filepath.Join(root, "ada.approved")
 	reg := filepath.Join(root, "registered")
-	bin := fakeBin(t, map[string]string{"mcpjungle": `[ "$3" = register ] && cp "$6" ` + reg + `; exit 0`, "docker": "exit 0"})
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp,
+	bin := fakeBin(t, map[string]string{"mcpjungle": fmt.Sprintf("[ \"$3\" = register ] && cp \"$6\" %s; exit 0", reg), "docker": "exit 0"})
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp,
 		"MCP_CATALOG=" + cat, "MCPJUNGLE_REGISTRY=http://127.0.0.1:1", "MCP_APPROVED=" + approved}
 	args := func(name, spec string, own bool) string {
 		t.Helper()
@@ -1114,7 +1114,7 @@ func TestMCPSyncLimits(t *testing.T) {
 		if own {
 			putFile(t, filepath.Join(mcp, name, "spec"), []byte(spec), 0o600)
 			sum := sha256.Sum256([]byte(spec))
-			putFile(t, approved, []byte(name+" "+hex.EncodeToString(sum[:])+"\n"), 0o644)
+			putFile(t, approved, []byte(fmt.Sprintf("%s %s\n", name, hex.EncodeToString(sum[:]))), 0o644)
 		} else {
 			putFile(t, filepath.Join(cat, name+".spec"), []byte(spec), 0o644)
 		}
@@ -1161,10 +1161,10 @@ func TestMCPSyncToolsChanged(t *testing.T) {
 	putFile(t, tools, []byte(`[{"ID":2,"name":"r__b","description":"B","input_schema":{"type":"object"}},{"ID":1,"name":"r__a","description":"A","input_schema":{}}]`), 0o644)
 	bin := fakeBin(t, map[string]string{
 		"mcpjungle": `[ "$3" = list ] && echo "1. r"; exit 0`,
-		"curl":      `cat > /dev/null; case "$*" in *"/api/v0/tools?server=r"*) cat ` + tools + ` ;; *) exit 22 ;; esac`,
+		"curl":      fmt.Sprintf("cat > /dev/null; case \"$*\" in *\"/api/v0/tools?server=r\"*) cat %s ;; *) exit 22 ;; esac", tools),
 		"docker":    "exit 0"})
 	approved := filepath.Join(root, "ada.approved")
-	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp,
+	env := []string{fmt.Sprintf("PATH=%s:%s:/usr/bin:/bin", bin, filepath.Dir(jq)), "HOME=" + root, "MCP_DIR=" + mcp,
 		"MCP_CATALOG=" + filepath.Join(root, "catalog"), "MCPJUNGLE_REGISTRY=http://127.0.0.1:1", "MCP_APPROVED=" + approved}
 	list, err := mcpSync(t, env, "tools", "r")
 	want := `[{"description":"A","input_schema":{},"name":"a"},{"description":"B","input_schema":{"type":"object"},"name":"b"}]` + "\n"
@@ -1172,7 +1172,7 @@ func TestMCPSyncToolsChanged(t *testing.T) {
 		t.Fatalf("tools (%v): %q", err, list)
 	}
 	sum, ts := sha256.Sum256([]byte(spec)), sha256.Sum256([]byte(list))
-	putFile(t, approved, []byte("r "+hex.EncodeToString(sum[:])+" "+hex.EncodeToString(ts[:])+"\n"), 0o644)
+	putFile(t, approved, []byte(fmt.Sprintf("r %s %s\n", hex.EncodeToString(sum[:]), hex.EncodeToString(ts[:]))), 0o644)
 	if out, err := mcpSync(t, env, "r"); err != nil || !strings.Contains(out, "r: registered") || strings.Contains(out, "off") {
 		t.Fatalf("same tools (%v):\n%s", err, out)
 	}

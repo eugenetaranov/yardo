@@ -108,7 +108,7 @@ func awsProfiles(home string) []awsProfile {
 }
 
 func (p awsProfile) label() string {
-	l := p.name + "  ·  " + p.kind
+	l := fmt.Sprintf("%s  ·  %s", p.name, p.kind)
 	if p.region != "" {
 		l += "  ·  " + p.region
 	}
@@ -202,7 +202,7 @@ func (k *asker) askAWS(ctx context.Context, name string) (awsChoice, bool, error
 		role = "This one is an admin role: it can change or delete anything you can."
 	}
 	apis, err := ui.Confirm("Let the agent call AWS APIs in this account?",
-		"Yes: it does what the role allows. "+role+" No: read-only, AWS's docs and guides only.", true)
+		fmt.Sprintf("Yes: it does what the role allows. %s No: read-only, AWS's docs and guides only.", role), true)
 	if err != nil {
 		return awsChoice{}, false, err
 	}
@@ -220,7 +220,7 @@ func (k *asker) awsSignIn(ctx context.Context, p awsProfile) (string, error) {
 	who, err := awsWho(ctx, k.a.User, p.name)
 	if err != nil && p.kind == "SSO" {
 		fmt.Fprintf(k.out, "%s: %v\n", p.name, err)
-		login, cerr := ui.Confirm("Log in to AWS now?", "aws sso login --profile "+p.name+" --use-device-code: open the link it shows, on any device.", true)
+		login, cerr := ui.Confirm("Log in to AWS now?", fmt.Sprintf("aws sso login --profile %s --use-device-code: open the link it shows, on any device.", p.name), true)
 		if cerr != nil {
 			return "", cerr
 		}
@@ -294,5 +294,5 @@ func awsHint(spec, detail string) string {
 	if spec != "aws" || !awsLoginNeeded.MatchString(detail) {
 		return detail
 	}
-	return "no AWS login: run aws sso login (--profile <its profile>) here, then Try again. (" + detail + ")"
+	return fmt.Sprintf("no AWS login: run aws sso login (--profile <its profile>) here, then Try again. (%s)", detail)
 }

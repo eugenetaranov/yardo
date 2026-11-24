@@ -52,7 +52,7 @@ func nftSet(names []string) string {
 	for i, n := range names {
 		q[i] = fmt.Sprintf("%q", n)
 	}
-	return "{ " + strings.Join(q, ", ") + " }"
+	return fmt.Sprintf("{ %s }", strings.Join(q, ", "))
 }
 
 // fwTable is one of yardo's tables: its file, and its chains ("" means the

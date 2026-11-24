@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -119,7 +120,7 @@ func dialogKey(d **Dialog, k string) tea.Cmd {
 // are added to hits.
 func dialogLines(d *Dialog, w, y int, hits *[]Hit) []string {
 	var out []string
-	out = append(out, " "+accentBd.Render("┌ "+d.Title+" "+strings.Repeat("─", max(0, w-6-runewidth.StringWidth(d.Title)))))
+	out = append(out, " "+accentBd.Render(fmt.Sprintf("┌ %s %s", d.Title, strings.Repeat("─", max(0, w-6-runewidth.StringWidth(d.Title))))))
 	for _, l := range d.Lines {
 		// An indented line stays indented, wrapped.
 		body := strings.TrimLeft(l, " ")
@@ -129,7 +130,7 @@ func dialogLines(d *Dialog, w, y int, hits *[]Hit) []string {
 			continue
 		}
 		for _, wl := range wrap(body, w-8-len(pad)) {
-			out = append(out, " "+accentBd.Render("│")+"  "+pad+wl)
+			out = append(out, fmt.Sprintf(" %s  %s%s", accentBd.Render("│"), pad, wl))
 		}
 	}
 	for n, o := range d.Opts {
@@ -141,7 +142,7 @@ func dialogLines(d *Dialog, w, y int, hits *[]Hit) []string {
 			n := n
 			*hits = append(*hits, Hit{Y0: y + len(out), Y1: y + len(out), Do: func() { d.Sel = n }})
 		}
-		out = append(out, " "+accentBd.Render("│")+line)
+		out = append(out, fmt.Sprintf(" %s%s", accentBd.Render("│"), line))
 	}
 	return append(out, " "+accentBd.Render("└"+strings.Repeat("─", max(0, w-4))))
 }
@@ -201,8 +202,8 @@ type App struct {
 	Conn  *Connection
 	// onBoard: the board is the view; onConn: Connection is.
 	onBoard, onConn bool
-	first   bool
-	toast   string
+	first           bool
+	toast           string
 	// keys: the keys screen is up; dialog the app's own question (quit
 	// with a queue).
 	keys   bool
@@ -379,8 +380,8 @@ func (a *App) key(v tea.KeyMsg) tea.Cmd {
 			if !a.onBoard && a.Menu.screen == "home" && a.Board.queued() > 0 {
 				n := a.Board.queued()
 				a.dialog = &Dialog{Title: plural(n, "change isn't", "changes aren't") + " applied", YN: true, Q: "yes", Sel: 1,
-					Lines: []string{"Tools has " + plural(n, "change", "changes") + " queued: " + a.Board.queueSay() + ".", "q again quits without " + map[bool]string{true: "it", false: "them"}[n == 1] + "."},
-					Opts:  [][2]string{{"Quit without " + map[bool]string{true: "it", false: "them"}[n == 1] + " (y)", "yes"}, {"Stay (n)", "no"}, {"Go to Tools to apply", "tools"}},
+					Lines: []string{fmt.Sprintf("Tools has %s queued: %s.", plural(n, "change", "changes"), a.Board.queueSay()), fmt.Sprintf("q again quits without %s.", map[bool]string{true: "it", false: "them"}[n == 1])},
+					Opts:  [][2]string{{fmt.Sprintf("Quit without %s (y)", map[bool]string{true: "it", false: "them"}[n == 1]), "yes"}, {"Stay (n)", "no"}, {"Go to Tools to apply", "tools"}},
 					On: func(v string) tea.Cmd {
 						switch v {
 						case "yes":
@@ -623,7 +624,7 @@ func frame(info HomeInfo, path, body, toast, foot string, w, h int) string {
 // header is a screen's top line: yardo, the host and the user, then
 // where the screen is.
 func header(info HomeInfo, path string, w int) string {
-	left := " " + accentBd.Render(tui.Cur.Brand) + muted.Render("  ·  "+info.Host+"  ·  "+info.User)
+	left := fmt.Sprintf(" %s%s", accentBd.Render(tui.Cur.Brand), muted.Render(fmt.Sprintf("  ·  %s  ·  %s", info.Host, info.User)))
 	parts := strings.Split(path, " › ")
 	right := ""
 	for n, p := range parts {
@@ -657,7 +658,7 @@ func footer(keys []Key, back string, w, y int) (string, []Hit) {
 		if k.On {
 			st, wt = accentBd, accentBd
 		}
-		return st.Render(k.Key) + " " + wt.Render(k.What)
+		return fmt.Sprintf("%s %s", st.Render(k.Key), wt.Render(k.What))
 	}
 	room := w - 2
 	for _, k := range tail {
@@ -716,7 +717,7 @@ func keysBody(own []Key, w int) string {
 	list := func(title string, ks []Key) {
 		out = append(out, "  "+bold.Render(title))
 		for _, k := range ks {
-			out = append(out, "    "+keyOn.Render(padTo(k.Key, col))+"  "+runewidth.Truncate(k.What, max(10, w-col-8), "…"))
+			out = append(out, fmt.Sprintf("    %s  %s", keyOn.Render(padTo(k.Key, col)), runewidth.Truncate(k.What, max(10, w-col-8), "…")))
 		}
 		out = append(out, "")
 	}

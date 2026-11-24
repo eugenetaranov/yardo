@@ -172,10 +172,10 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		case x.kind() == vpnClient:
 			where += " · " + x.vpn
 		case x.vpn != "":
-			where += " · " + x.vpn + " (bring it up on your laptop too)"
+			where += fmt.Sprintf(" · %s (bring it up on your laptop too)", x.vpn)
 		}
 		if x.name != "" {
-			where = x.name + " · " + where
+			where = fmt.Sprintf("%s · %s", x.name, where)
 		}
 		fmt.Fprintf(w, "  %-15s %s\n", x.ip, where)
 		if i == 0 {
@@ -198,7 +198,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 			fmt.Fprintf(w, "Its name, %s, works too where the laptop resolves %s's names\n", addrs[0].name, addrs[0].vpn)
 			fmt.Fprintln(w, "(another VPN's DNS can take them over); the address always does.")
 		}
-		fmt.Fprintln(w, "\nSSH: add to your laptop's ~/.ssh/config (then: ssh "+ctxName+", and VS Code Remote-SSH to "+ctxName+"):")
+		fmt.Fprintf(w, "\nSSH: add to your laptop's ~/.ssh/config (then: ssh %s, and VS Code Remote-SSH to %s):\n", ctxName, ctxName)
 		paste(w, "  ", setupLines(ss, "ssh")...)
 		if addrs[0].kind() == vpnMesh && addrs[0].name == "" {
 			fmt.Fprintf(w, "  (%s gave no name: its DNS off? Its address works the same.)\n", addrs[0].vpn)
@@ -270,7 +270,7 @@ func gatewayURL(a *answers.Answers, addr string) (url, who string, ok bool) {
 	case "0.0.0.0":
 		return fmt.Sprintf("http://%s:%d/mcp", addr, mcpPort(a)), "everywhere (plain HTTP)", true
 	case "public":
-		return "https://" + a.MCPDomain + "/mcp", "the internet, over HTTPS", true
+		return fmt.Sprintf("https://%s/mcp", a.MCPDomain), "the internet, over HTTPS", true
 	}
 	return "", "", false
 }
@@ -296,14 +296,14 @@ func connectRows(a *answers.Answers, addrs []address, tokens []string, gateway b
 	if len(addrs) > 0 {
 		addr = addrs[0].ip // see printConnect
 	}
-	ssh := a.User + "@" + addr
+	ssh := fmt.Sprintf("%s@%s", a.User, addr)
 	if len(addrs) > 0 && addrs[0].vpn != "" && addrs[0].kind() != vpnClient {
 		ssh += " over " + addrs[0].vpn
 	}
 	ports := map[string]string{"": "-p ports open everywhere", "vpn": "-p ports from the VPNs", "local": "-p ports here only"}[a.DockerPorts]
 	rows := []ui.ConnectRow{
-		{What: "SSH", Use: "ssh " + ctxName, Note: ssh + ", your SSH key (Host " + ctxName + " in ~/.ssh/config)"},
-		{What: "Docker", Use: "docker context use " + ctxName, Note: "host=ssh://" + a.User + "@" + addr + " · " + ports},
+		{What: "SSH", Use: "ssh " + ctxName, Note: fmt.Sprintf("%s, your SSH key (Host %s in ~/.ssh/config)", ssh, ctxName)},
+		{What: "Docker", Use: "docker context use " + ctxName, Note: fmt.Sprintf("host=ssh://%s@%s · %s", a.User, addr, ports)},
 	}
 	clip := ui.ConnectRow{What: "Copies", Use: iterm2Clipboard, Note: "iTerm2, once, then reopen it: y in Neovim and a drag in tmux reach the laptop"}
 	if !gateway {
@@ -343,7 +343,7 @@ func pagesRows(a *answers.Answers, addrs []address, served bool) []ui.ConnectRow
 	case a.MCPListen == "public":
 		r.Note = "~/pages, " + st.Lines[1]
 	case len(st.Lines) == 2:
-		r.Note = "then " + st.Lines[1] + " · ~/pages, this machine's only (Settings › MCP gateway and web pages opens it to your VPNs)"
+		r.Note = fmt.Sprintf("then %s · ~/pages, this machine's only (Settings › MCP gateway and web pages opens it to your VPNs)", st.Lines[1])
 	}
 	return []ui.ConnectRow{r}
 }

@@ -77,7 +77,7 @@ func (l *Live) label(title string, d time.Duration) string {
 	}
 	suffix := ""
 	if d >= time.Second {
-		suffix = " (" + d.Truncate(time.Second).String() + ")"
+		suffix = fmt.Sprintf(" (%s)", d.Truncate(time.Second).String())
 	}
 	// The spinner's frame and a space come first.
 	room := w - 3 - len([]rune(suffix))

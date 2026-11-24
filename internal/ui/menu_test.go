@@ -354,7 +354,7 @@ func TestMenuMCPList(t *testing.T) {
 	// it: moving down, the rows stay where they are.
 	at := func(v, name string) int {
 		for n, l := range strings.Split(ansi.Strip(v), "\n") {
-			if strings.Contains(l, " "+name+" ") {
+			if strings.Contains(l, fmt.Sprintf(" %s ", name)) {
 				return n
 			}
 		}
@@ -1365,7 +1365,7 @@ func TestMenuMCPUpdateRecheck(t *testing.T) {
 		for range 15 {
 			mk(m, "up")
 		}
-		for n := 0; n < 30 && !strings.Contains(ansi.Strip(m.View()), "› "+c.name+" "); n++ {
+		for n := 0; n < 30 && !strings.Contains(ansi.Strip(m.View()), fmt.Sprintf("› %s ", c.name)); n++ {
 			mk(m, "down")
 		}
 		if c.name == "remote" && !strings.Contains(ansi.Strip(m.View()), "▲ off: its tools changed since you approved it") {

@@ -87,7 +87,7 @@ func veil(ctx context.Context, kind, name string, files map[string][]byte) ([]Fi
 	// skill-veil scans packages with an entrypoint: a server's gets a
 	// stub one, which nothing it finds in counts against.
 	if kind == "mcp" {
-		stub := "---\nname: " + name + "\ndescription: An MCP server's spec, in spec.sh.\n---\n"
+		stub := fmt.Sprintf("---\nname: %s\ndescription: An MCP server's spec, in spec.sh.\n---\n", name)
 		if err := os.WriteFile(filepath.Join(pkg, "SKILL.md"), []byte(stub), 0o644); err != nil {
 			return nil, err
 		}

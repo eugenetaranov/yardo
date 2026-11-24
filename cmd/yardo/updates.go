@@ -137,7 +137,7 @@ func (o *options) checkUpdates(ctx context.Context, cat *catalog.Catalog, a *ans
 		}
 		for _, t := range extra {
 			if v := mise[steps.MiseName(t)]; v != "" {
-				by["mise:"+t] = []string{steps.MiseName(t) + " " + v}
+				by["mise:"+t] = []string{fmt.Sprintf("%s %s", steps.MiseName(t), v)}
 			}
 		}
 		u.ByID, u.At = by, time.Now()

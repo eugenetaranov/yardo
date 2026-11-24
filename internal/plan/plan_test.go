@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -128,12 +129,12 @@ func TestAfterOrdersWithoutPulling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := " " + strings.Join(IDs(items), " ") + " "
+	ids := fmt.Sprintf(" %s ", strings.Join(IDs(items), " "))
 	if strings.Index(ids, " go ") > strings.Index(ids, " neovim ") {
 		t.Errorf("order %s: want go before neovim", ids)
 	}
 	items, _ = Resolve(c, []string{"neovim"}, false)
-	if strings.Contains(" "+strings.Join(IDs(items), " ")+" ", " go ") {
+	if strings.Contains(fmt.Sprintf(" %s ", strings.Join(IDs(items), " ")), " go ") {
 		t.Errorf("neovim pulled in go: %v", IDs(items))
 	}
 }

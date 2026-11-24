@@ -143,7 +143,7 @@ func gitHosts(e *Env) []gitHost {
 		out = append(out, g)
 	}
 	add("github", "github.com", a.GitHub, gitHubKeys)
-	add("gitlab", a.GitLabHost(), a.GitLab, "a deploy key (project → Settings → Repository → Deploy keys) or on your account (https://"+a.GitLabHost()+"/-/user_settings/ssh_keys)")
+	add("gitlab", a.GitLabHost(), a.GitLab, fmt.Sprintf("a deploy key (project → Settings → Repository → Deploy keys) or on your account (https://%s/-/user_settings/ssh_keys)", a.GitLabHost()))
 	add("bitbucket", "bitbucket.org", a.Bitbucket, "an access key (repository settings → Access keys) or on your account (https://bitbucket.org/account/settings/ssh-keys/)")
 	for _, h := range a.GitKeyHosts {
 		if !slices.ContainsFunc(out, func(g gitHost) bool { return g.host == h }) {
@@ -189,22 +189,22 @@ func (gitKeyStep) Plan(e *Env) []Action {
 		if sentKey(e) != nil {
 			key = "write the key sent on stdin to " + GitKeyPath
 		}
-		out = append(out, Action{"file", key + " for " + names(sent)})
+		out = append(out, Action{"file", fmt.Sprintf("%s for %s", key, names(sent))})
 	}
 	for _, g := range withMode(hosts, "key") {
-		out = append(out, Action{"file", "keep ~/.ssh/" + g.id + " (or generate one) for " + g.host})
+		out = append(out, Action{"file", fmt.Sprintf("keep ~/.ssh/%s (or generate one) for %s", g.id, g.host)})
 	}
 	for _, g := range withMode(hosts, "path") {
 		key, replace := given(e, g.id)
 		switch {
 		case !g.identity():
-			out = append(out, Action{"file", "use " + g.key + " for " + g.host})
+			out = append(out, Action{"file", fmt.Sprintf("use %s for %s", g.key, g.host)})
 		case key != nil:
-			out = append(out, Action{"file", "write the key given to " + g.key + " for " + g.host})
+			out = append(out, Action{"file", fmt.Sprintf("write the key given to %s for %s", g.key, g.host)})
 		case replace:
-			out = append(out, Action{"file", "replace " + g.key + " (the old one moved aside) for " + g.host})
+			out = append(out, Action{"file", fmt.Sprintf("replace %s (the old one moved aside) for %s", g.key, g.host)})
 		default:
-			out = append(out, Action{"file", "keep " + g.key + " (or generate one) for " + g.host})
+			out = append(out, Action{"file", fmt.Sprintf("keep %s (or generate one) for %s", g.key, g.host)})
 		}
 	}
 	if wantsOwnKey(hosts) {
@@ -256,8 +256,7 @@ func entries(hosts []gitHost, own map[string]int) (cfg string, left []string) {
 	if b.Len() == 0 {
 		return "", left
 	}
-	return "# yardo's SSH settings for your git hosts (sudo yardo rewrites this file).\n" +
-		"# A host your ~/.ssh/config sets is left to you.\n" + b.String(), left
+	return fmt.Sprintf("# yardo's SSH settings for your git hosts (sudo yardo rewrites this file).\n# A host your ~/.ssh/config sets is left to you.\n%s", b.String()), left
 }
 
 func cmpOr(a, b string) string {
@@ -407,7 +406,7 @@ func sshMove(ctx context.Context, e *Env, from, to string) error {
 // moveAside moves the key at p and its .pub to p.old-<date> (-2, -3… when
 // that's taken), and returns where.
 func moveAside(ctx context.Context, e *Env, p string) (string, error) {
-	base := p + ".old-" + time.Now().Format("2006-01-02")
+	base := fmt.Sprintf("%s.old-%s", p, time.Now().Format("2006-01-02"))
 	to := base
 	for n := 2; ; n++ {
 		b, err := sshRead(ctx, e, to)
@@ -419,7 +418,7 @@ func moveAside(ctx context.Context, e *Env, p string) (string, error) {
 		} else if b == nil && pub == nil {
 			break
 		}
-		to = base + "-" + strconv.Itoa(n)
+		to = fmt.Sprintf("%s-%s", base, strconv.Itoa(n))
 	}
 	if err := sshMove(ctx, e, p, to); err != nil {
 		return "", err
@@ -581,7 +580,7 @@ func (s gitKeyStep) identityKey(ctx context.Context, e *Env, g gitHost) error {
 		return nil
 	}
 	if !bytes.Contains(key, []byte("PRIVATE KEY-----")) && key != nil {
-		return errors.New("the key given for " + g.host + " isn't an SSH private key")
+		return fmt.Errorf("the key given for %s isn't an SSH private key", g.host)
 	}
 	if cur != nil {
 		if !replace {
@@ -591,19 +590,19 @@ func (s gitKeyStep) identityKey(ctx context.Context, e *Env, g gitHost) error {
 		if err != nil {
 			return err
 		}
-		e.note("SSH key for " + g.host + ": the one replaced is at " + to)
+		e.note(fmt.Sprintf("SSH key for %s: the one replaced is at %s", g.host, to))
 	}
 	if e.Secrets != nil {
 		delete(e.Secrets.GitReplace, g.id) // done: not again this run
 	}
 	if key == nil {
-		return generate(ctx, e, g.key, e.User+"@"+hostname()+" ("+g.id+")", []gitHost{g})
+		return generate(ctx, e, g.key, fmt.Sprintf("%s@%s (%s)", e.User, hostname(), g.id), []gitHost{g})
 	}
 	if err := sshWrite(ctx, e, g.key, key); err != nil {
 		return err
 	}
 	if err := s.publicKey(ctx, e, g.key); err != nil {
-		e.note("SSH key for " + g.host + ": " + err.Error())
+		e.note(fmt.Sprintf("SSH key for %s: %s", g.host, err.Error()))
 	}
 	showKey(ctx, e, g.key, []gitHost{g})
 	return nil
@@ -631,7 +630,7 @@ func (s gitKeyStep) Apply(ctx context.Context, e *Env) error {
 				e.note("git SSH key: " + err.Error())
 			}
 		case key == nil:
-			if err := generate(ctx, e, GitKeyPath, e.User+"@"+hostname()+" (git)", sent); err != nil {
+			if err := generate(ctx, e, GitKeyPath, fmt.Sprintf("%s@%s (git)", e.User, hostname()), sent); err != nil {
 				return err
 			}
 		}
@@ -642,7 +641,7 @@ func (s gitKeyStep) Apply(ctx context.Context, e *Env) error {
 			return err
 		}
 		if key == nil {
-			if err := generate(ctx, e, g.key, e.User+"@"+hostname()+" ("+g.id+")", []gitHost{g}); err != nil {
+			if err := generate(ctx, e, g.key, fmt.Sprintf("%s@%s (%s)", e.User, hostname(), g.id), []gitHost{g}); err != nil {
 				return err
 			}
 		}
@@ -664,12 +663,12 @@ func (s gitKeyStep) Apply(ctx context.Context, e *Env) error {
 		return err
 	} else if !has && wantsOwnKey(hosts) {
 		own := withMode(hosts, "own")
-		if err := generate(ctx, e, ownKey, e.User+"@"+hostname(), own); err != nil {
+		if err := generate(ctx, e, ownKey, fmt.Sprintf("%s@%s", e.User, hostname()), own); err != nil {
 			return err
 		}
 		if len(own) == 0 {
 			pub, _ := sshRead(ctx, e, ownKey+".pub")
-			e.note("SSH key: " + ownKey + ".pub, made here; add it where your repos are (GitHub: https://github.com/settings/keys): " + strings.TrimSpace(string(pub)))
+			e.note(fmt.Sprintf("SSH key: %s.pub, made here; add it where your repos are (GitHub: https://github.com/settings/keys): %s", ownKey, strings.TrimSpace(string(pub))))
 		}
 	}
 	cfg, err := sshRead(ctx, e, sshConfig)

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/base64"
+	"fmt"
 	"strings"
 	"time"
 
@@ -339,11 +340,11 @@ func (c *Connection) run(key, busy, say string, do func() error) tea.Cmd {
 func (c *Connection) act(n Network, act string) tea.Cmd {
 	busy := map[string]string{"start": "starting…", "stop": "stopping…", "boot": "turning boot on…", "noboot": "turning boot off…", "remove": "removing…"}[act]
 	say := map[string]string{
-		"start":  "✓ " + n.Name + " started.",
-		"stop":   "✓ " + n.Name + " stopped" + map[bool]string{true: " (still logged in: space starts it again).", false: "."}[n.mesh()],
-		"boot":   "✓ " + n.Name + " starts at boot.",
-		"noboot": "✓ " + n.Name + " no longer starts at boot.",
-		"remove": "✓ " + n.Name + " removed.",
+		"start":  fmt.Sprintf("✓ %s started.", n.Name),
+		"stop":   fmt.Sprintf("✓ %s stopped%s", n.Name, map[bool]string{true: " (still logged in: space starts it again).", false: "."}[n.mesh()]),
+		"boot":   fmt.Sprintf("✓ %s starts at boot.", n.Name),
+		"noboot": fmt.Sprintf("✓ %s no longer starts at boot.", n.Name),
+		"remove": fmt.Sprintf("✓ %s removed.", n.Name),
 	}[act]
 	do := c.h.Act
 	return c.run(n.ID, busy, say, func() error {
@@ -366,13 +367,13 @@ func (c *Connection) warning(n Network) []string {
 	}
 	first := "You came in through " + n.Name
 	if n.Addr != "" {
-		first += " (" + n.Addr + ")"
+		first += fmt.Sprintf(" (%s)", n.Addr)
 	}
 	first += ": this ends this session, and yardo with it."
 	if !n.Via {
-		first = "yardo can't tell which network this ssh session came in on: if it's " + n.Name + ", this ends it."
+		first = fmt.Sprintf("yardo can't tell which network this ssh session came in on: if it's %s, this ends it.", n.Name)
 	}
-	return []string{first, "To get back in: " + back + "."}
+	return []string{first, fmt.Sprintf("To get back in: %s.", back)}
 }
 
 // removeSay is what removing n takes, and what stays.
@@ -385,8 +386,8 @@ func removeSay(n Network) []string {
 		return []string{"Disconnects this machine and logs it out of NetBird (netbird down, netbird logout).",
 			"Stays: NetBird itself, and the peer in your NetBird dashboard until you delete it there."}
 	}
-	return []string{"Stops " + n.Name + ", stops it starting at boot, and deletes its file, " + n.File + ".",
-		"Stays: " + n.Kind + " itself, and your other profiles."}
+	return []string{fmt.Sprintf("Stops %s, stops it starting at boot, and deletes its file, %s.", n.Name, n.File),
+		fmt.Sprintf("Stays: %s itself, and your other profiles.", n.Kind)}
 }
 
 func (c *Connection) key(v tea.KeyMsg) tea.Cmd {
@@ -430,15 +431,15 @@ func (c *Connection) key(v tea.KeyMsg) tea.Cmd {
 			c.naming, c.name = true, nil
 		case k == "d" && r.kind == "token":
 			t := c.d.Tokens[r.n]
-			c.dialog = &Dialog{Title: "Revoke " + t.Name + "'s token?", YN: true, Q: "no",
-				Lines: []string{"The gateway refuses it from now on, and " + t.File + " is deleted.", "A client using it loses the MCP servers until it gets a new one."},
+			c.dialog = &Dialog{Title: fmt.Sprintf("Revoke %s's token?", t.Name), YN: true, Q: "no",
+				Lines: []string{fmt.Sprintf("The gateway refuses it from now on, and %s is deleted.", t.File), "A client using it loses the MCP servers until it gets a new one."},
 				Opts:  [][2]string{{"Keep it (n)", "no"}, {"Revoke it (y)", "yes"}},
 				On: func(a string) tea.Cmd {
 					if a != "yes" {
 						return nil
 					}
 					rm := c.h.RevokeToken
-					return c.run("token:"+t.Name, "revoking…", "✓ "+t.Name+"'s token is revoked: the gateway refuses it.", func() error {
+					return c.run("token:"+t.Name, "revoking…", fmt.Sprintf("✓ %s's token is revoked: the gateway refuses it.", t.Name), func() error {
 						if rm == nil {
 							return nil
 						}
@@ -459,7 +460,7 @@ func (c *Connection) key(v tea.KeyMsg) tea.Cmd {
 				}
 			}
 			c.keys = append(append([]AddKey{}, c.keys[:r.n]...), c.keys[r.n+1:]...)
-			c.toast = "Dismissed the " + key.For() + " key."
+			c.toast = fmt.Sprintf("Dismissed the %s key.", key.For())
 		}
 	}
 	return nil
@@ -477,7 +478,7 @@ func (c *Connection) netKey(k string, r connRow) tea.Cmd {
 	n := c.d.Networks[r.n]
 	acts := n.mesh() || n.profile()
 	if b := c.busy[n.ID]; b != "" && (k == " " || k == "b" || k == "d" || k == "enter") {
-		c.toast = n.Name + ": " + b
+		c.toast = fmt.Sprintf("%s: %s", n.Name, b)
 		return nil
 	}
 	switch {
@@ -499,8 +500,8 @@ func (c *Connection) netKey(k string, r connRow) tea.Cmd {
 			act = "stop"
 		}
 		if act == "stop" && c.cuts(n) {
-			c.dialog = &Dialog{Title: "Stop " + n.Name + "?", YN: true, Q: "no", Lines: c.warning(n),
-				Opts: [][2]string{{"Keep it running (n)", "no"}, {"Stop " + n.Name + " (y)", "yes"}},
+			c.dialog = &Dialog{Title: fmt.Sprintf("Stop %s?", n.Name), YN: true, Q: "no", Lines: c.warning(n),
+				Opts: [][2]string{{"Keep it running (n)", "no"}, {fmt.Sprintf("Stop %s (y)", n.Name), "yes"}},
 				On: func(a string) tea.Cmd {
 					if a == "yes" {
 						return c.act(n, "stop")
@@ -524,8 +525,8 @@ func (c *Connection) netKey(k string, r connRow) tea.Cmd {
 		if c.cuts(n) {
 			lines = append(append(c.warning(n), ""), lines...)
 		}
-		c.dialog = &Dialog{Title: "Remove " + n.Name + "?", YN: true, Q: "no", Lines: lines,
-			Opts: [][2]string{{"Keep it (n)", "no"}, {"Remove " + n.Name + " (y)", "yes"}},
+		c.dialog = &Dialog{Title: fmt.Sprintf("Remove %s?", n.Name), YN: true, Q: "no", Lines: lines,
+			Opts: [][2]string{{"Keep it (n)", "no"}, {fmt.Sprintf("Remove %s (y)", n.Name), "yes"}},
 			On: func(a string) tea.Cmd {
 				if a == "yes" {
 					return c.act(n, "remove")
@@ -567,13 +568,13 @@ func (c *Connection) nameKey(v tea.KeyMsg) tea.Cmd {
 		}
 		for _, t := range c.d.Tokens {
 			if t.Name == name {
-				c.toast = "There's a " + name + " already: d revokes it first."
+				c.toast = fmt.Sprintf("There's a %s already: d revokes it first.", name)
 				return nil
 			}
 		}
 		c.naming = false
 		mk := c.h.NewToken
-		return c.run("token:"+name, "making…", "✓ "+name+"'s token is made; c on an MCP row copies it with the line.", func() error {
+		return c.run("token:"+name, "making…", fmt.Sprintf("✓ %s's token is made; c on an MCP row copies it with the line.", name), func() error {
 			if mk == nil {
 				return nil
 			}
@@ -596,7 +597,7 @@ func (c *Connection) copyLines(lines []string, file string) {
 	if file != "" && strings.Contains(s, "<token>") && c.h.ReadToken != nil {
 		tok, err := c.h.ReadToken(file)
 		if err != nil {
-			c.toast = "✗ The token isn't there to read (" + lastOf(err.Error()) + "): n on an MCP row makes one."
+			c.toast = fmt.Sprintf("✗ The token isn't there to read (%s): n on an MCP row makes one.", lastOf(err.Error()))
 			return
 		}
 		s = strings.ReplaceAll(s, "<token>", strings.TrimSpace(tok))
@@ -612,7 +613,7 @@ func (c *Connection) copyLines(lines []string, file string) {
 	if len(lines) > 1 {
 		what = plural(len(lines), "line", "lines")
 	}
-	c.toast = "Copied " + what + " to your laptop's clipboard, if your terminal lets it (see below)."
+	c.toast = fmt.Sprintf("Copied %s to your laptop's clipboard, if your terminal lets it (see below).", what)
 }
 
 // nextSection moves to the next section's first row (or the last's).
@@ -786,7 +787,7 @@ func (c *Connection) Body(w, h int) string {
 		}
 	}
 	head := func(t, note string) {
-		add(-1, "", "  "+bold.Render(t)+muted.Render(note))
+		add(-1, "", fmt.Sprintf("  %s%s", bold.Render(t), muted.Render(note)))
 	}
 	mark := func(n int, s string, col int) string {
 		if n == c.sel {
@@ -819,7 +820,7 @@ func (c *Connection) Body(w, h int) string {
 		case "off":
 			bits = append(bits, "not at boot")
 		}
-		l := mark(at, runewidth.Truncate(n.Name, col, "…"), col) + "  " + padTo(c.netState(n), 20) + "  "
+		l := fmt.Sprintf("%s  %s  ", mark(at, runewidth.Truncate(n.Name, col, "…"), col), padTo(c.netState(n), 20))
 		if n.Via {
 			l += accent.Render("← this session") + "  "
 		}
@@ -832,7 +833,7 @@ func (c *Connection) Body(w, h int) string {
 			}
 			add(at, "        "+yellow.Render(why))
 		case c.linkOf(n) != "":
-			add(at, "        Log in at "+keyOn.Render(c.linkOf(n))+muted.Render("  ·  c copies it; this turns connected once you have"))
+			add(at, fmt.Sprintf("        Log in at %s%s", keyOn.Render(c.linkOf(n)), muted.Render("  ·  c copies it; this turns connected once you have")))
 		case n.ID == "tailscale" && c.linking:
 			add(at, "        "+muted.Render("Asking Tailscale for a login link…"))
 		case n.State == "login":
@@ -854,7 +855,7 @@ func (c *Connection) Body(w, h int) string {
 		wcol = max(wcol, runewidth.StringWidth(s.What))
 	}
 	for n, s := range c.d.Setups {
-		add(at, mark(at, s.What, wcol)+"  "+muted.Render(s.How))
+		add(at, fmt.Sprintf("%s  %s", mark(at, s.What, wcol), muted.Render(s.How)))
 		if at == c.sel {
 			for _, l := range s.Lines {
 				for _, p := range pasteLines(l, w-10) {
@@ -880,18 +881,18 @@ func (c *Connection) Body(w, h int) string {
 			} else if f := c.failed["token:"+t.Name]; f != "" {
 				state = yellow.Render("✗ " + f)
 			}
-			add(at, mark(at, t.Name, wcol)+"  "+state)
+			add(at, fmt.Sprintf("%s  %s", mark(at, t.Name, wcol), state))
 			at++
 		}
 		// One being made, not listed yet.
 		for k, b := range c.busy {
 			if name, ok := strings.CutPrefix(k, "token:"); ok && b == "making…" {
-				add(-1, "     "+padTo(name, wcol)+"  "+accent.Render(b))
+				add(-1, fmt.Sprintf("     %s  %s", padTo(name, wcol), accent.Render(b)))
 			}
 		}
 		newRow := "+ Make a token for a client"
 		if c.naming {
-			newRow = "Name: " + string(c.name) + "▏"
+			newRow = fmt.Sprintf("Name: %s▏", string(c.name))
 		}
 		add(at, mark(at, newRow, wcol+24))
 		if c.naming {
@@ -954,9 +955,9 @@ func (c *Connection) Body(w, h int) string {
 // OSC52 is the escape sequence that puts s on the terminal's clipboard
 // (the laptop's, over ssh); under tmux, wrapped for it to pass on.
 func OSC52(s string, tmux bool) string {
-	seq := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(s)) + "\a"
+	seq := fmt.Sprintf("\x1b]52;c;%s\a", base64.StdEncoding.EncodeToString([]byte(s)))
 	if tmux {
-		return "\x1bPtmux;" + strings.ReplaceAll(seq, "\x1b", "\x1b\x1b") + "\x1b\\"
+		return fmt.Sprintf("\x1bPtmux;%s\x1b\\", strings.ReplaceAll(seq, "\x1b", "\x1b\x1b"))
 	}
 	return seq
 }

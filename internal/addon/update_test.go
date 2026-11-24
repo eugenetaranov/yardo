@@ -2,6 +2,7 @@ package addon
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,7 +94,7 @@ func TestFindOutdated(t *testing.T) {
 	// buildx imagetools inspect: the fake prints its inspect for "image
 	// inspect" only, so give buildx its own answer.
 	d := filepath.Dir(Docker)
-	_ = os.WriteFile(filepath.Join(d, "docker"), []byte("#!/bin/sh\necho \"$*\" >> "+filepath.Join(d, "calls")+"\ncase \"$1\" in buildx) echo '{\"digest\":\"sha256:"+strings.Repeat("9", 64)+"\"}' ;; esac\n"), 0o755)
+	_ = os.WriteFile(filepath.Join(d, "docker"), []byte(fmt.Sprintf("#!/bin/sh\necho \"$*\" >> %s\ncase \"$1\" in buildx) echo '{\"digest\":\"sha256:%s\"}' ;; esac\n", filepath.Join(d, "calls"), strings.Repeat("9", 64))), 0o755)
 	for _, a := range []Approval{
 		{Kind: "skill", Name: "moved", Source: "acme/skills/tidy@main", Pin: strings.Repeat("a", 40)},
 		{Kind: "skill", Name: "same", Source: "acme/skills/same", Pin: sha},

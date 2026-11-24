@@ -1,6 +1,7 @@
 package addon
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -80,7 +81,9 @@ func spec(text string) Subject {
 
 // Each warning: which rule, and the file and line it's on.
 func TestBasicNotes(t *testing.T) {
-	body := func(line string) map[string]string { return map[string]string{"SKILL.md": okSkill + line + "\n"} }
+	body := func(line string) map[string]string {
+		return map[string]string{"SKILL.md": fmt.Sprintf("%s%s\n", okSkill, line)}
+	}
 	for _, c := range []struct {
 		name, rule, where string
 		s                 Subject

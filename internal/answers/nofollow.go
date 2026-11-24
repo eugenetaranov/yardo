@@ -104,7 +104,7 @@ func writeNoFollow(acct Account, path []string, b []byte, chown bool) error {
 	if _, err := rand.Read(rnd[:]); err != nil {
 		return err
 	}
-	tmp := "." + name + "." + hex.EncodeToString(rnd[:])
+	tmp := fmt.Sprintf(".%s.%s", name, hex.EncodeToString(rnd[:]))
 	fd, err := unix.Openat(dfd, tmp, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if err != nil {
 		return noFollowErr(tmp, err)

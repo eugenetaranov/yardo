@@ -75,9 +75,9 @@ func Basic(s Subject) []Finding {
 		case len(b) > maxFile:
 			block("size", p, 0, fmt.Sprintf("%d KB: more than a skill's file needs (1 MB at most)", len(b)>>10), "remove this file", "remove:"+p)
 		case program(b) != "":
-			block("program", p, 0, "a program ("+program(b)+"): code that can't be read before it runs", "remove this file", "remove:"+p)
+			block("program", p, 0, fmt.Sprintf("a program (%s): code that can't be read before it runs", program(b)), "remove this file", "remove:"+p)
 		case archive(p, b) != "":
-			block("archive", p, 0, "an archive ("+archive(p, b)+"): files that can't be read here", "remove this file", "remove:"+p)
+			block("archive", p, 0, fmt.Sprintf("an archive (%s): files that can't be read here", archive(p, b)), "remove this file", "remove:"+p)
 		default:
 			out = append(out, textRules(s, p, b)...)
 		}
@@ -233,7 +233,7 @@ func frontmatter(b []byte) []Finding {
 			}
 			if m := grants.FindString(all); m != "" {
 				out = append(out, Finding{Layer: "basic", Rule: "frontmatter", Level: "block", File: "SKILL.md", Line: n + 2,
-					Text: "it grants itself " + m + " without asking you", Next: "drop the grant (yardo edits its copy): the agent asks as usual", Fix: "drop-key:" + strings.TrimSpace(k)})
+					Text: fmt.Sprintf("it grants itself %s without asking you", m), Next: "drop the grant (yardo edits its copy): the agent asks as usual", Fix: "drop-key:" + strings.TrimSpace(k)})
 			}
 		}
 	}
@@ -277,7 +277,7 @@ func specRules(s Subject) []Finding {
 	switch sp.Fields["KIND"] {
 	case "docker":
 		if img := sp.Fields["IMAGE"]; !strings.Contains(img, "@sha256:") {
-			block("pin", line("IMAGE"), "IMAGE "+img+" isn't pinned to a digest", "use the image by its digest (repo@sha256:…)", "")
+			block("pin", line("IMAGE"), fmt.Sprintf("IMAGE %s isn't pinned to a digest", img), "use the image by its digest (repo@sha256:…)", "")
 		}
 		if s.Image && (s.ImageUser == "" || s.ImageUser == "root" || s.ImageUser == "0" || strings.HasPrefix(s.ImageUser, "0:")) {
 			out = append(out, Finding{Layer: "basic", Rule: "root-image", Level: "note", File: "spec", Line: line("IMAGE"),
@@ -294,18 +294,18 @@ func specRules(s Subject) []Finding {
 	}
 	for _, k := range []string{"HOST_ACCESS", "MOUNT_AWS", "MOUNT_KUBE"} {
 		if v, ok := sp.Fields[k]; ok && v != "" && v != "0" {
-			block("docker", line(k), k+"="+v+": access to the machine, or your cloud keys, that only yardo's own servers get", "drop it (yardo edits its copy)", "drop-key:"+k)
+			block("docker", line(k), fmt.Sprintf("%s=%s: access to the machine, or your cloud keys, that only yardo's own servers get", k, v), "drop it (yardo edits its copy)", "drop-key:"+k)
 		}
 	}
 	if v, ok := sp.Fields["LIMITS"]; ok && v != "" {
-		block("docker", line("LIMITS"), "LIMITS="+v+": a server from elsewhere runs with every limit", "drop it (yardo edits its copy)", "drop-key:LIMITS")
+		block("docker", line("LIMITS"), fmt.Sprintf("LIMITS=%s: a server from elsewhere runs with every limit", v), "drop it (yardo edits its copy)", "drop-key:LIMITS")
 	}
 	for _, o := range disallowed(sp.Fields["DOCKER_ARGS"]) {
-		block("docker", line("DOCKER_ARGS"), "Docker option "+o+": not one a server from elsewhere may have", "drop it (yardo edits its copy)", "drop-opt:"+o)
+		block("docker", line("DOCKER_ARGS"), fmt.Sprintf("Docker option %s: not one a server from elsewhere may have", o), "drop it (yardo edits its copy)", "drop-opt:"+o)
 	}
 	if !sp.Data() {
 		for _, k := range []string{"DOCKER_ARGS", "HOST_ACCESS", "MOUNT_AWS", "MOUNT_KUBE", "LIMITS", "NETWORK"} {
-			if regexp.MustCompile(`\b`+k+`\b`).Match(s.Files["spec"]) && sp.Fields[k] == "" {
+			if regexp.MustCompile(fmt.Sprintf("\\b%s\\b", k)).Match(s.Files["spec"]) && sp.Fields[k] == "" {
 				block("docker", 0, k+" is set by code: yardo can't tell what it is", "decline it, or ask its author for a spec of settings only", "")
 			}
 		}

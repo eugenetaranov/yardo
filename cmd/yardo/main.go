@@ -625,7 +625,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 								}
 							}
 							if len(res.Settings) == 0 {
-								d, open, toast = nil, "settings", "Session on login: "+v+"."
+								d, open, toast = nil, "settings", fmt.Sprintf("Session on login: %s.", v)
 								break
 							}
 						}
@@ -647,7 +647,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 								}
 							}
 							if len(res.Settings) == 0 {
-								d, open, toast = nil, "settings", "Editor theme: "+steps.EditorThemeName(v)+". Vim and Neovim use it from their next start."
+								d, open, toast = nil, "settings", fmt.Sprintf("Editor theme: %s. Vim and Neovim use it from their next start.", steps.EditorThemeName(v))
 								break
 							}
 						}
@@ -663,7 +663,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							}
 							if len(res.Settings) == 0 {
 								l, _ := tui.LookOf(v)
-								d, open, toast = nil, "settings", "Theme: "+l.Name+"."
+								d, open, toast = nil, "settings", fmt.Sprintf("Theme: %s.", l.Name)
 								break
 							}
 						}
@@ -1080,7 +1080,7 @@ var errQuitFirst = errors.New("quit")
 type runFailed struct{ ids []string }
 
 func (e *runFailed) Error() string {
-	return "failed: " + strings.Join(e.ids, " ") + " — fix and re-run yardo"
+	return fmt.Sprintf("failed: %s — fix and re-run yardo", strings.Join(e.ids, " "))
 }
 
 // ranSays is the home's line after a run of fix (or of what was queued),
@@ -1103,10 +1103,10 @@ func ranSays(cat *catalog.Catalog, fix, updated []string, err error) string {
 	case errors.Is(err, errCancelled):
 		return "Cancelled: nothing changed."
 	case errors.As(err, &failed):
-		return "✗ " + names(failed.ids) + " failed · Last run shows what happened"
+		return fmt.Sprintf("✗ %s failed · Last run shows what happened", names(failed.ids))
 	case err != nil:
 		msg := err.Error()
-		return "✗ " + strings.ToUpper(msg[:1]) + msg[1:]
+		return fmt.Sprintf("✗ %s%s", strings.ToUpper(msg[:1]), msg[1:])
 	}
 	if n := names(updated); n != "" {
 		return "✓ Updated " + n
@@ -1629,7 +1629,7 @@ func ghLogin(items []*catalog.Item, before func(string) bool, fix []string) bool
 func handoff(script string, args []string) error {
 	if _, err := os.Stat(script); err != nil {
 		// Not unpacked yet (run without root, e.g. --help): a private copy.
-		dir := filepath.Join(os.TempDir(), "yardo-"+strconv.Itoa(os.Getuid())+"-"+version)
+		dir := filepath.Join(os.TempDir(), fmt.Sprintf("yardo-%s-%s", strconv.Itoa(os.Getuid()), version))
 		if err := assets.Extract(dir, version); err != nil {
 			return err
 		}

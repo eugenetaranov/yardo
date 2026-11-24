@@ -139,13 +139,13 @@ func execAWSProfile(command string, args []string, env []struct{ Name, Value str
 // region.
 func (c kubeContext) short() string {
 	if region, n, ok := eksARN(c.name); ok {
-		return n + " (EKS, " + region + ")"
+		return fmt.Sprintf("%s (EKS, %s)", n, region)
 	}
 	return c.name
 }
 
 func (c kubeContext) label() string {
-	l := c.short() + "  ·  ~/.kube/" + c.file
+	l := fmt.Sprintf("%s  ·  ~/.kube/%s", c.short(), c.file)
 	if c.awsProfile != "" {
 		l += "  ·  AWS profile " + c.awsProfile
 	}

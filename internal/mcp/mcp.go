@@ -169,7 +169,7 @@ func Instance(entry string) (spec, name string, err error) {
 	if !ValidLabel(label) {
 		return "", "", fmt.Errorf("%q: name it with lowercase letters, digits and '-' (e.g. %s:prod)", entry, spec)
 	}
-	return spec, spec + "-" + label, nil
+	return spec, fmt.Sprintf("%s-%s", spec, label), nil
 }
 
 // ValidLabel says whether l can name another instance of a server: short,
@@ -217,10 +217,10 @@ func EntryFor(spec, typed string, isSpec func(string) bool, taken []string) (str
 			return "", fmt.Errorf("that's %s itself: name it %s", spec, spec)
 		case !ValidLabel(label):
 			return "", errors.New("use lowercase letters, digits and '-', such as work")
-		case isSpec(spec + "-" + label):
+		case isSpec(fmt.Sprintf("%s-%s", spec, label)):
 			return "", fmt.Errorf("%s-%s is a server of its own; name it otherwise", spec, label)
 		}
-		entry = spec + ":" + label
+		entry = fmt.Sprintf("%s:%s", spec, label)
 	}
 	if _, name, _ := Instance(entry); slices.Contains(taken, name) {
 		return "", fmt.Errorf("there's a %s already", name)

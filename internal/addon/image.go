@@ -53,7 +53,7 @@ func PullImage(ctx context.Context, ref string) (Image, error) {
 	}
 	for _, d := range in.RepoDigests {
 		if r, digest, ok := strings.Cut(d, "@"); ok && (r == repo || strings.HasSuffix(r, "/"+repo)) {
-			return Image{Ref: r + "@" + digest, User: in.Config.User, New: !had}, nil
+			return Image{Ref: fmt.Sprintf("%s@%s", r, digest), User: in.Config.User, New: !had}, nil
 		}
 	}
 	return Image{}, fmt.Errorf("%s: no digest to pin it by (a local build?): refused", ref)

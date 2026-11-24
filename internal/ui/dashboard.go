@@ -67,7 +67,7 @@ func services(d Dashboard) []string {
 			local++
 			continue
 		}
-		p := l.Port + "/" + l.Proto
+		p := fmt.Sprintf("%s/%s", l.Port, l.Proto)
 		switch l.Scope {
 		case "all":
 		case "vpn":

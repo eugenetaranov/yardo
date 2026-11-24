@@ -150,7 +150,7 @@ func TestZshrcOwnKept(t *testing.T) {
 	}
 	put(t, e.Path(zshrc), own.String())
 	apply(t, e, st)
-	if got := read(t, e.Path(zshrc)); got != zshrcBlock+"\n"+own.String() {
+	if got := read(t, e.Path(zshrc)); got != fmt.Sprintf("%s\n%s", zshrcBlock, own.String()) {
 		t.Errorf(".zshrc = %q", got)
 	}
 	if exists(e.Path("~/.zshrc.orig")) || len(notes) != 0 {
@@ -176,7 +176,7 @@ func TestZshrcMovedOver(t *testing.T) {
 	var notes []string
 	e.Note = func(s string) { notes = append(notes, s) }
 	st := step(t, catalog.Step{Type: "go:zshrc"})
-	old := "export ZSH=\"$HOME/.oh-my-zsh\"\nalias mine=1\n\n" + Dropins[0].Line + "\n\n" + LastMark + "\n[[ -r ~/.zshrc.local ]] && source ~/.zshrc.local\n"
+	old := fmt.Sprintf("export ZSH=\"$HOME/.oh-my-zsh\"\nalias mine=1\n\n%s\n\n%s\n[[ -r ~/.zshrc.local ]] && source ~/.zshrc.local\n", Dropins[0].Line, LastMark)
 	put(t, e.Path(zshrc), old)
 	apply(t, e, st)
 	if got := read(t, e.Path(zshrc)); got != zshrcBlock {
@@ -193,7 +193,7 @@ func TestZshrcMovedOver(t *testing.T) {
 		t.Errorf("second run: notes %q, .zshrc %q", notes, read(t, e.Path(zshrc)))
 	}
 	// The user's own file, with lines an older yardo appended.
-	put(t, e.Path(zshrc), "alias k=kubectl\n\n"+Dropins[0].Line+"\n\n"+Dropins[3].Line+"\n")
+	put(t, e.Path(zshrc), fmt.Sprintf("alias k=kubectl\n\n%s\n\n%s\n", Dropins[0].Line, Dropins[3].Line))
 	apply(t, e, st)
 	if got := read(t, e.Path(zshrc)); got != zshrcBlock+"\nalias k=kubectl\n" {
 		t.Errorf(".zshrc = %q", got)

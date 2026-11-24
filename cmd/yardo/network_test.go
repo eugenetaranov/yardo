@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -113,7 +114,7 @@ func TestLaptopSetups(t *testing.T) {
 		}
 	}
 	claude := setupLines(ss, "mcp-claude")
-	if len(claude) != 1 || claude[0] != `claude mcp add --transport http `+short+` http://100.64.1.7:8081/mcp --header "Authorization: Bearer <token>"` {
+	if len(claude) != 1 || claude[0] != fmt.Sprintf("claude mcp add --transport http %s http://100.64.1.7:8081/mcp --header \"Authorization: Bearer <token>\"", short) {
 		t.Errorf("claude: %q", claude)
 	}
 	for _, s := range ss {
@@ -126,7 +127,7 @@ func TestLaptopSetups(t *testing.T) {
 	if l := setupLines(ss, "mcp-claude"); len(l) != 2 || !strings.HasPrefix(l[0], "ssh -N -L 8081:127.0.0.1:8081 ada@100.64.1.7") || strings.Contains(l[1], "Bearer") {
 		t.Errorf("tunnel: %q", l)
 	}
-	if ss = laptopSetups(a, addrs, nil, false, false, short); len(ss) != 4 || ss[2].ID != "clipboard" || ss[3].ID != "script" || !strings.Contains(ss[3].Lines[0], "sudo yardo connect --script > yardo-"+short+".sh") {
+	if ss = laptopSetups(a, addrs, nil, false, false, short); len(ss) != 4 || ss[2].ID != "clipboard" || ss[3].ID != "script" || !strings.Contains(ss[3].Lines[0], fmt.Sprintf("sudo yardo connect --script > yardo-%s.sh", short)) {
 		t.Errorf("no gateway: %+v", ss)
 	}
 }
@@ -137,14 +138,14 @@ func TestConnectScript(t *testing.T) {
 	home, bin := t.TempDir(), t.TempDir()
 	log := filepath.Join(home, "log")
 	fake := map[string]string{
-		"ssh":    `echo "ssh $*" >> ` + log + `; printf 'f00dfeed\r\n'`,
-		"docker": `echo "docker $*" >> ` + log + `; [ "$2" = inspect ] && [ -f ` + home + `/ctx ] && exit 0; [ "$2" = create ] && touch ` + home + `/ctx; [ "$2" = inspect ] && exit 1; exit 0`,
-		"claude": `echo "claude $*" >> ` + log + `; [ "$2" = get ] && [ -f ` + home + `/mcp ] && exit 0; [ "$2" = add ] && touch ` + home + `/mcp; [ "$2" = get ] && exit 1; exit 0`,
+		"ssh":    fmt.Sprintf("echo \"ssh $*\" >> %s; printf 'f00dfeed\\r\\n'", log),
+		"docker": fmt.Sprintf("echo \"docker $*\" >> %s; [ \"$2\" = inspect ] && [ -f %s/ctx ] && exit 0; [ \"$2\" = create ] && touch %s/ctx; [ \"$2\" = inspect ] && exit 1; exit 0", log, home, home),
+		"claude": fmt.Sprintf("echo \"claude $*\" >> %s; [ \"$2\" = get ] && [ -f %s/mcp ] && exit 0; [ \"$2\" = add ] && touch %s/mcp; [ \"$2\" = get ] && exit 1; exit 0", log, home, home),
 		// iTerm2 is installed; its clipboard leave lands in a file.
-		"defaults": `echo "defaults $*" >> ` + log + `; [ "$1" = write ] && echo 1 > ` + home + `/clip; [ "$3" = AllowClipboardAccess ] && cat ` + home + `/clip 2>/dev/null; exit 0`,
+		"defaults": fmt.Sprintf("echo \"defaults $*\" >> %s; [ \"$1\" = write ] && echo 1 > %s/clip; [ \"$3\" = AllowClipboardAccess ] && cat %s/clip 2>/dev/null; exit 0", log, home, home),
 	}
 	for n, body := range fake {
-		if err := os.WriteFile(filepath.Join(bin, n), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+		if err := os.WriteFile(filepath.Join(bin, n), []byte(fmt.Sprintf("#!/bin/sh\n%s\n", body)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -160,7 +161,7 @@ func TestConnectScript(t *testing.T) {
 	}
 	run := func() string {
 		c := exec.Command("sh", path)
-		c.Env = []string{"HOME=" + home, "PATH=" + bin + ":/usr/bin:/bin"}
+		c.Env = []string{"HOME=" + home, fmt.Sprintf("PATH=%s:/usr/bin:/bin", bin)}
 		out, err := c.CombinedOutput()
 		if err != nil {
 			t.Fatalf("%v: %s\n%s", err, out, script.String())

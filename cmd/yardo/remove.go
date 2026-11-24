@@ -226,7 +226,7 @@ func (o *options) uninstall(ctx context.Context, cat *catalog.Catalog, st *answe
 	}
 	r := planRemoval(cat, a.Picks, ids)
 	fail := func(id, name string, err error) {
-		res.Lines = append(res.Lines, "✗ "+name+": the uninstall stopped ("+err.Error()+"). Retry picks up where it stopped. Log: "+o.log)
+		res.Lines = append(res.Lines, fmt.Sprintf("✗ %s: the uninstall stopped (%s). Retry picks up where it stopped. Log: %s", name, err.Error(), o.log))
 		res.Failed = append(res.Failed, id)
 	}
 	purged := false
@@ -239,7 +239,7 @@ func (o *options) uninstall(ctx context.Context, cat *catalog.Catalog, st *answe
 				continue
 			}
 			a.MiseExtra = slices.DeleteFunc(a.MiseExtra, func(x string) bool { return x == t })
-			res.Lines, res.Done = append(res.Lines, "✓ "+t+" uninstalled."), append(res.Done, id)
+			res.Lines, res.Done = append(res.Lines, fmt.Sprintf("✓ %s uninstalled.", t)), append(res.Done, id)
 			if err := st.Save(a); err != nil {
 				return res, err
 			}
@@ -267,15 +267,15 @@ func (o *options) uninstall(ctx context.Context, cat *catalog.Catalog, st *answe
 		}
 		purged = purged || slices.ContainsFunc(p.Off, func(x string) bool { return !strings.ContainsAny(x, "/ ") })
 		a.Uninstalled(id)
-		line := "✓ " + name + " uninstalled."
+		line := fmt.Sprintf("✓ %s uninstalled.", name)
 		if kept := slices.DeleteFunc(slices.Clone(p.Keep), func(k string) bool {
 			return !strings.Contains(k, "by hand") && !strings.Contains(k, "local changes") && !strings.Contains(k, "your keys")
 		}); len(kept) > 0 {
-			line += " Kept " + strings.Join(kept, ", ") + "."
+			line += fmt.Sprintf(" Kept %s.", strings.Join(kept, ", "))
 		}
 		if f := r.Forget[id]; len(f) > 0 {
 			a.Unpick(f)
-			line += " Forgot " + strings.Join(labels(cat, f), ", ") + ": they needed it, and stay installed."
+			line += fmt.Sprintf(" Forgot %s: they needed it, and stay installed.", strings.Join(labels(cat, f), ", "))
 		}
 		res.Lines, res.Done = append(res.Lines, line), append(res.Done, id)
 		if err := st.Save(a); err != nil {

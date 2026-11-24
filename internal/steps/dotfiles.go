@@ -34,7 +34,7 @@ func (dotfilesStep) Plan(e *Env) []Action {
 	if dotfilesRepo(e) == "" {
 		return []Action{{"note", "no dotfiles repo set"}}
 	}
-	return []Action{{"run", "git clone " + dotfilesRepo(e) + " ~/.dotfiles (or pull), then " + strings.Join(DotfilesScripts, ", ") + " or stow"}}
+	return []Action{{"run", fmt.Sprintf("git clone %s ~/.dotfiles (or pull), then %s or stow", dotfilesRepo(e), strings.Join(DotfilesScripts, ", "))}}
 }
 
 func (dotfilesStep) Check(context.Context, *Env) (bool, error) { return true, nil }
@@ -79,7 +79,7 @@ func (dotfilesStep) Apply(ctx context.Context, e *Env) error {
 		}
 	}
 	if len(pkgs) == 0 {
-		e.note("dotfiles: " + dir + " has no install script and no directories to stow")
+		e.note(fmt.Sprintf("dotfiles: %s has no install script and no directories to stow", dir))
 		return nil
 	}
 	if _, err := e.run(ctx, Cmd{Name: "stow", Args: append([]string{"-d", dir, "-t", e.Home, "--restow"}, pkgs...), AsUser: true}); err != nil {

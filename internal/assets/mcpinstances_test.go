@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -23,7 +24,7 @@ func TestMCPInstancesBash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := `spec_file() { [ -f "` + cat + `/$1.spec" ] && echo "` + cat + `/$1.spec"; }
+	body := fmt.Sprintf("spec_file() { [ -f \"%s/$1.spec\" ] && echo \"%s", cat, cat) + `/$1.spec"; }
 home_of() { echo "$H"; }
 header() { :; }
 faint() { :; }

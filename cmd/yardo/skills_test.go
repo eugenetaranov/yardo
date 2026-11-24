@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,11 +16,11 @@ func skillsEnv(t *testing.T, names ...string) *steps.Env {
 	e := &steps.Env{Root: t.TempDir(), Home: "/home/ada"}
 	for _, n := range names {
 		for _, d := range steps.SkillDirs {
-			p := e.Path(d + "/" + n + "/SKILL.md")
+			p := e.Path(fmt.Sprintf("%s/%s/SKILL.md", d, n))
 			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(p, []byte("---\nname: "+n+"\n---\n"), 0o644); err != nil {
+			if err := os.WriteFile(p, []byte(fmt.Sprintf("---\nname: %s\n---\n", n)), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}

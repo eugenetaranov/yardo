@@ -73,7 +73,7 @@ func networks(ctx context.Context, x steps.Execer, root string, has func(string)
 			n.DNS = strings.TrimSuffix(st.Self.DNSName, ".")
 		}
 		if n.State == "up" && len(st.Self.Tags) == 0 && st.Self.KeyExpiry != nil {
-			n.Note = "its key expires on " + st.Self.KeyExpiry.Format("2006-01-02") + ": the admin console's Disable key expiry keeps it"
+			n.Note = fmt.Sprintf("its key expires on %s: the admin console's Disable key expiry keeps it", st.Self.KeyExpiry.Format("2006-01-02"))
 		}
 		out = append(out, n)
 	}
@@ -200,7 +200,7 @@ func wayBack(nets []ui.Network, user string) string {
 	} {
 		for _, n := range nets {
 			if pass(n) && !n.Via && n.State == "up" && n.Addr != "" {
-				return "ssh " + user + "@" + n.Addr + " (" + strings.ToLower(n.Name[:1]) + n.Name[1:] + ")"
+				return fmt.Sprintf("ssh %s@%s (%s%s)", user, n.Addr, strings.ToLower(n.Name[:1]), n.Name[1:])
 			}
 		}
 	}
@@ -218,15 +218,15 @@ func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway,
 		addr = addrs[0].ip // a name needs the laptop to resolve it; the address doesn't
 	}
 	out := []ui.Setup{
-		{ID: "ssh", What: "SSH", How: "ssh " + ctxName + "  ·  a Host in the laptop's ~/.ssh/config; your SSH key signs you in",
+		{ID: "ssh", What: "SSH", How: fmt.Sprintf("ssh %s  ·  a Host in the laptop's ~/.ssh/config; your SSH key signs you in", ctxName),
 			Lines: []string{"Host " + ctxName, "  HostName " + addr, "  User " + a.User, "  HostKeyAlias " + ctxName, "  ServerAliveInterval 15", "  ServerAliveCountMax 8"},
-			Say: []string{"Add it to ~/.ssh/config on the laptop; then ssh " + ctxName + ", and VS Code's Remote-SSH to " + ctxName + ".",
+			Say: []string{fmt.Sprintf("Add it to ~/.ssh/config on the laptop; then ssh %s, and VS Code's Remote-SSH to %s.", ctxName, ctxName),
 				"You sign in with your SSH key: the one this machine has in ~/.ssh/authorized_keys."}},
-		{ID: "docker", What: "Docker", How: "docker context use " + ctxName + "  ·  over SSH, no port to open",
+		{ID: "docker", What: "Docker", How: fmt.Sprintf("docker context use %s  ·  over SSH, no port to open", ctxName),
 			Lines: []string{fmt.Sprintf("docker context create %s --docker \"host=ssh://%s@%s\"", ctxName, a.User, addr),
 				fmt.Sprintf("docker context use %s        # back: docker context use default", ctxName)},
-			Say: []string{"Your SSH key signs you in. With the Host above, \"host=ssh://" + ctxName + "\" does too.",
-				"Just one terminal: export DOCKER_CONTEXT=" + ctxName + ". Just one command: docker --context " + ctxName + " ps."}},
+			Say: []string{fmt.Sprintf("Your SSH key signs you in. With the Host above, \"host=ssh://%s\" does too.", ctxName),
+				fmt.Sprintf("Just one terminal: export DOCKER_CONTEXT=%s. Just one command: docker --context %s ps.", ctxName, ctxName)}},
 	}
 	if gateway {
 		port := mcpPort(a)
@@ -235,17 +235,17 @@ func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway,
 			if len(tokens) > 0 {
 				tok = tokens[0]
 			}
-			sign := "You sign in with the gateway's token for this client: " + tildeOf(a.User, tok) + " (sudo cat it here). c copies the line with it filled in; it's never shown."
+			sign := fmt.Sprintf("You sign in with the gateway's token for this client: %s (sudo cat it here). c copies the line with it filled in; it's never shown.", tildeOf(a.User, tok))
 			if len(tokens) == 0 {
-				sign = "You sign in with a token for this client: none yet. n makes one (or sudo yardo --yes makes " + tildeOf(a.User, tok) + ")."
+				sign = fmt.Sprintf("You sign in with a token for this client: none yet. n makes one (or sudo yardo --yes makes %s).", tildeOf(a.User, tok))
 			}
-			reach := "The gateway is reachable from " + who + "."
+			reach := fmt.Sprintf("The gateway is reachable from %s.", who)
 			out = append(out,
-				ui.Setup{ID: "mcp-claude", What: "Claude Code", How: "claude mcp add " + ctxName + " " + url, Token: tok,
+				ui.Setup{ID: "mcp-claude", What: "Claude Code", How: fmt.Sprintf("claude mcp add %s %s", ctxName, url), Token: tok,
 					Lines: []string{fmt.Sprintf("claude mcp add --transport http %s %s --header \"Authorization: Bearer <token>\"", ctxName, url)},
 					Say:   []string{"Run it on the laptop. " + reach, sign}},
-				ui.Setup{ID: "mcp-codex", What: "Codex", How: "~/.codex/config.toml  ·  [mcp_servers." + ctxName + "]", Token: tok,
-					Lines: []string{"[mcp_servers." + ctxName + "]", fmt.Sprintf("url = %q", url), `http_headers = { "Authorization" = "Bearer <token>" }`},
+				ui.Setup{ID: "mcp-codex", What: "Codex", How: fmt.Sprintf("~/.codex/config.toml  ·  [mcp_servers.%s]", ctxName), Token: tok,
+					Lines: []string{fmt.Sprintf("[mcp_servers.%s]", ctxName), fmt.Sprintf("url = %q", url), `http_headers = { "Authorization" = "Bearer <token>" }`},
 					Say:   []string{"Add it to ~/.codex/config.toml on the laptop. " + reach, sign}},
 				ui.Setup{ID: "mcp-other", What: "Other clients", How: url + "  ·  streamable HTTP, a bearer token", Token: tok,
 					Lines: []string{url, "Authorization: Bearer <token>"},
@@ -259,7 +259,7 @@ func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway,
 				ui.Setup{ID: "mcp-claude", What: "Claude Code", How: "through an ssh tunnel  ·  " + local,
 					Lines: []string{tunnel, fmt.Sprintf("claude mcp add --transport http %s %s", ctxName, local)}, Say: say},
 				ui.Setup{ID: "mcp-codex", What: "Codex", How: "through an ssh tunnel  ·  ~/.codex/config.toml",
-					Lines: []string{tunnel, "[mcp_servers." + ctxName + "]", fmt.Sprintf("url = %q", local)}, Say: say},
+					Lines: []string{tunnel, fmt.Sprintf("[mcp_servers.%s]", ctxName), fmt.Sprintf("url = %q", local)}, Say: say},
 				ui.Setup{ID: "mcp-other", What: "Other clients", How: "through an ssh tunnel  ·  " + local,
 					Lines: []string{tunnel, local}, Say: say})
 		}
@@ -271,9 +271,9 @@ func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway,
 		Lines: []string{iterm2Clipboard},
 		Say: []string{"Run it once on the laptop, then quit and reopen iTerm2. Copies here travel through the terminal (OSC 52), which iTerm2 blocks until then.",
 			"Ghostty, kitty, WezTerm, Alacritty: nothing to do. Terminal.app can't (hold fn to select)."}})
-	file := "yardo-" + ctxName + ".sh"
+	file := fmt.Sprintf("yardo-%s.sh", ctxName)
 	return append(out, ui.Setup{ID: "script", What: "All of it", How: "one script for the laptop: " + file,
-		Lines: []string{"ssh " + a.User + "@" + addr + " sudo yardo connect --script > " + file, "sh " + file},
+		Lines: []string{fmt.Sprintf("ssh %s@%s sudo yardo connect --script > %s", a.User, addr, file), "sh " + file},
 		Say: []string{"On the laptop: save it, read it, then run it. It adds the Host block, the Docker context, the gateway to Claude Code when claude is there, and lets iTerm2 take copies, each once; nothing else.",
 			"It holds no token: it reads the token over ssh when it runs."}})
 }
@@ -288,9 +288,9 @@ func pagesSetup(a *answers.Answers, addr string) ui.Setup {
 		url := fmt.Sprintf("http://%s:%d/", addr, p)
 		who := map[string]string{"vpn": "this machine and your VPNs", "tailscale": "this machine and your VPNs", "0.0.0.0": "everywhere (plain HTTP)"}[a.MCPListen]
 		return ui.Setup{ID: "pages", What: "Pages", How: url + "  ·  ~/pages in your browser",
-			Lines: []string{url}, Say: []string{"Open it in the laptop's browser: what agents made here (diagrams, reports), listed. Reachable from " + who + ".", more}}
+			Lines: []string{url}, Say: []string{fmt.Sprintf("Open it in the laptop's browser: what agents made here (diagrams, reports), listed. Reachable from %s.", who), more}}
 	case "public":
-		url := "https://" + a.MCPDomain + "/pages/"
+		url := fmt.Sprintf("https://%s/pages/", a.MCPDomain)
 		return ui.Setup{ID: "pages", What: "Pages", How: url + "  ·  user pages, a password",
 			Lines: []string{url, "user pages, password: cat ~/.config/yardo/pages-password (here)"},
 			Say:   []string{"Open it in the laptop's browser; it asks for the login. On the internet, under the gateway's domain.", more}}
@@ -438,7 +438,7 @@ func lastOfLines(s string) string {
 // holds no token: it reads it over ssh as it runs.
 func connectScript(w io.Writer, a *answers.Answers, addrs []address, tokens []string, gateway, pages bool, ctxName string) {
 	ss := laptopSetups(a, addrs, tokens, gateway, pages, ctxName)
-	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+	q := func(s string) string { return fmt.Sprintf("'%s'", strings.ReplaceAll(s, "'", `'\''`)) }
 	fmt.Fprintf(w, `#!/bin/sh
 # yardo connect --script: sets up this laptop to reach %s. It adds
 # what's missing, once: the ssh Host block, the Docker context, the MCP
@@ -601,12 +601,12 @@ func (o *options) askProfile(ctx context.Context, a *answers.Answers, out io.Wri
 	}
 	name = strings.TrimSpace(name)
 	if err := steps.CheckProfileName(name); err != nil {
-		return connDone{toast: "✗ " + err.Error() + ": nothing stored."}, nil
+		return connDone{toast: fmt.Sprintf("✗ %s: nothing stored.", err.Error())}, nil
 	}
 	if _, err := os.Lstat(filepath.Join(steps.ProfileDir(kind), name+".conf")); err == nil {
-		return connDone{toast: "✗ There's a profile called " + name + " already: nothing stored."}, nil
+		return connDone{toast: fmt.Sprintf("✗ There's a profile called %s already: nothing stored.", name)}, nil
 	}
-	file, err := ui.Input("The profile", "A file on this machine ("+map[string]string{steps.NetWireGuard: "~/office.conf", steps.NetOpenVPN: "~/office.ovpn"}[kind]+"), or empty to paste it.", "")
+	file, err := ui.Input("The profile", fmt.Sprintf("A file on this machine (%s), or empty to paste it.", map[string]string{steps.NetWireGuard: "~/office.conf", steps.NetOpenVPN: "~/office.ovpn"}[kind]), "")
 	if err != nil {
 		return quit(err)
 	}
@@ -622,11 +622,11 @@ func (o *options) askProfile(ctx context.Context, a *answers.Answers, out io.Wri
 			file = filepath.Join(homeOf(a.User), rest)
 		}
 		if conf, err = os.ReadFile(file); err != nil {
-			return connDone{toast: "✗ " + err.Error() + ": nothing stored."}, nil
+			return connDone{toast: fmt.Sprintf("✗ %s: nothing stored.", err.Error())}, nil
 		}
 	}
 	if err := steps.CheckProfile(kind, conf); err != nil {
-		return connDone{toast: "✗ " + strings.ToUpper(err.Error()[:1]) + err.Error()[1:] + ": nothing stored."}, nil
+		return connDone{toast: fmt.Sprintf("✗ %s%s: nothing stored.", strings.ToUpper(err.Error()[:1]), err.Error()[1:])}, nil
 	}
 	if steps.FullTunnel(kind, conf) {
 		ok, err := ui.Confirm(name+" sends all of this machine's traffic through it",
@@ -667,7 +667,7 @@ func (o *options) addProfile(ctx context.Context, a *answers.Answers, p newProfi
 	case err != nil:
 		return "✗ " + err.Error()
 	case !ok:
-		return p.name + " is up, but nothing answered yet: its server, or its keys? (sudo journalctl -u " + steps.ProfileUnit(p.kind, p.name) + ")"
+		return fmt.Sprintf("%s is up, but nothing answered yet: its server, or its keys? (sudo journalctl -u %s)", p.name, steps.ProfileUnit(p.kind, p.name))
 	}
-	return "✓ " + p.name + " is connected, and starts at boot."
+	return fmt.Sprintf("✓ %s is connected, and starts at boot.", p.name)
 }

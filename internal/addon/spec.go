@@ -94,7 +94,7 @@ func (s Spec) Text(header string) string {
 	var b strings.Builder
 	if header != "" {
 		for _, l := range strings.Split(strings.TrimRight(header, "\n"), "\n") {
-			b.WriteString("# " + l + "\n")
+			fmt.Fprintf(&b, "# %s\n", l)
 		}
 	}
 	for _, k := range s.Order {
@@ -108,9 +108,9 @@ func (s Spec) Text(header string) string {
 func quote(v string) string {
 	v = strings.Join(strings.Fields(strings.ReplaceAll(v, "\x00", "")), " ")
 	if !strings.ContainsAny(v, "$`\\\"") {
-		return `"` + v + `"`
+		return fmt.Sprintf("\"%s\"", v)
 	}
-	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+	return fmt.Sprintf("'%s'", strings.ReplaceAll(v, "'", `'\''`))
 }
 
 // Set sets key to v, in order.

@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,7 @@ func testConn(acts *[]string) *Connection {
 	}, []AddKey{{Pub: "ssh-ed25519 AAAA ada@vm", Where: []string{"github.com: add it at github.com/settings/keys"}}})
 	c.Hooks(ConnHooks{
 		Act: func(id, act string) error {
-			*acts = append(*acts, act+" "+id)
+			*acts = append(*acts, fmt.Sprintf("%s %s", act, id))
 			if id == "wg:office" && act == "start" {
 				return errors.New("systemctl start wg-quick@office: Job failed.\nRTNETLINK answers: File exists")
 			}
@@ -311,7 +312,7 @@ func TestConnectionTokens(t *testing.T) {
 // OSC 52 puts the text on the terminal's clipboard; under tmux, wrapped.
 func TestOSC52(t *testing.T) {
 	b := base64.StdEncoding.EncodeToString([]byte("Host vm\n  HostName 1.2.3.4"))
-	if got := OSC52("Host vm\n  HostName 1.2.3.4", false); got != "\x1b]52;c;"+b+"\a" {
+	if got := OSC52("Host vm\n  HostName 1.2.3.4", false); got != fmt.Sprintf("\x1b]52;c;%s\a", b) {
 		t.Errorf("plain: %q", got)
 	}
 	if got := OSC52("x", true); got != "\x1bPtmux;\x1b\x1b]52;c;eA==\a\x1b\\" {

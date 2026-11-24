@@ -2,6 +2,7 @@ package assets
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,7 +26,7 @@ func shellFns(t *testing.T, names ...string) string {
 	}
 	out.WriteString(vars + "\n")
 	for _, n := range names {
-		i := strings.Index(script, "\n"+n+"() {")
+		i := strings.Index(script, fmt.Sprintf("\n%s() {", n))
 		if i < 0 {
 			t.Fatalf("no %s() in yardo", n)
 		}
@@ -56,7 +57,7 @@ func bashPath(t *testing.T) string {
 // directory (picker.py) and STATE at state.
 func runShell(t *testing.T, state, body string, env ...string) (string, string) {
 	t.Helper()
-	cmd := exec.Command(bashPath(t), "-c", "set -euo pipefail\n"+shellFns(t, "load_answers", "save_answers", "merge")+body)
+	cmd := exec.Command(bashPath(t), "-c", fmt.Sprintf("set -euo pipefail\n%s%s", shellFns(t, "load_answers", "save_answers", "merge"), body))
 	cmd.Env = append(append(os.Environ(), "SHARE=.", "STATE="+state), env...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -128,9 +129,9 @@ func TestAnswersTamperedRunsNothing(t *testing.T) {
 	state := writeLegacy(t, strings.Join([]string{
 		"A_PICKS=cli; touch " + pwned,
 		"touch " + pwned,
-		"A_TZ=$(touch " + pwned + ")",
-		"A_GIT_NAME=\"$(touch " + pwned + ")\"",
-		"A_GIT_EMAIL=`touch " + pwned + "`",
+		fmt.Sprintf("A_TZ=$(touch %s)", pwned),
+		fmt.Sprintf("A_GIT_NAME=\"$(touch %s)\"", pwned),
+		fmt.Sprintf("A_GIT_EMAIL=`touch %s`", pwned),
 		"A_USER=ubuntu",
 		"",
 	}, "\n"))

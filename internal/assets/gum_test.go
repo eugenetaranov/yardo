@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,17 +19,17 @@ func TestGumPinsMatchRelease(t *testing.T) {
 	if ver == nil {
 		t.Fatal("no GUM_VERSION")
 	}
-	sums, err := os.ReadFile(filepath.Join("testdata", "gum-"+string(ver[1])+"-checksums.txt"))
+	sums, err := os.ReadFile(filepath.Join("testdata", fmt.Sprintf("gum-%s-checksums.txt", string(ver[1]))))
 	if err != nil {
 		t.Fatalf("record gum's checksums.txt for v%s: %v", ver[1], err)
 	}
 	for _, arch := range []string{"x86_64", "arm64"} {
-		pin := regexp.MustCompile(`(?m)^GUM_SHA256_` + arch + `=([0-9a-f]{64})$`).FindSubmatch(script)
+		pin := regexp.MustCompile(fmt.Sprintf("(?m)^GUM_SHA256_%s=([0-9a-f]{64})$", arch)).FindSubmatch(script)
 		if pin == nil {
 			t.Errorf("no GUM_SHA256_%s pin", arch)
 			continue
 		}
-		line := string(pin[1]) + "  gum_" + string(ver[1]) + "_Linux_" + arch + ".tar.gz"
+		line := fmt.Sprintf("%s  gum_%s_Linux_%s.tar.gz", string(pin[1]), string(ver[1]), arch)
 		if !strings.Contains(string(sums), line) {
 			t.Errorf("GUM_SHA256_%s does not match the release's checksums.txt", arch)
 		}
@@ -45,7 +46,7 @@ func TestGumMismatchInstallsNothing(t *testing.T) {
 	b, _ := os.ReadFile("yardo.sh")
 	script := string(b)
 	fn := func(name string) string {
-		i := strings.Index(script, "\n"+name+"() {")
+		i := strings.Index(script, fmt.Sprintf("\n%s() {", name))
 		if i < 0 {
 			t.Fatalf("no %s()", name)
 		}
@@ -70,11 +71,9 @@ func TestGumMismatchInstallsNothing(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	body := strings.Join(pins, "\n") + "\nBIN=" + bin + "\n" +
-		"say() { :; }\ndie() { echo \"die: $*\" >&2; exit 1; }\nrel_arch() { echo x86_64; }\n" +
-		fn("ensure_gum") + "ensure_gum\n"
+	body := fmt.Sprintf("%s\nBIN=%s\nsay() { :; }\ndie() { echo \"die: $*\" >&2; exit 1; }\nrel_arch() { echo x86_64; }\n%sensure_gum\n", strings.Join(pins, "\n"), bin, fn("ensure_gum"))
 	cmd := exec.Command(bash, "-c", body)
-	cmd.Env = append(os.Environ(), "PATH="+fake+":"+os.Getenv("PATH"))
+	cmd.Env = append(os.Environ(), fmt.Sprintf("PATH=%s:%s", fake, os.Getenv("PATH")))
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("ensure_gum succeeded with a bad download:\n%s", out)

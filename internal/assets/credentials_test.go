@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,12 +21,12 @@ func scriptDecls(t *testing.T, names ...string) string {
 	script := string(b)
 	var out strings.Builder
 	for _, n := range names {
-		if i := strings.Index(script, "\n"+n+"=(\n"); i >= 0 {
+		if i := strings.Index(script, fmt.Sprintf("\n%s=(\n", n)); i >= 0 {
 			body := script[i+1:]
 			out.WriteString(body[:strings.Index(body, "\n)\n")+3])
 			continue
 		}
-		line := regexp.MustCompile(`(?m)^` + n + `=.*$`).FindString(script)
+		line := regexp.MustCompile(fmt.Sprintf("(?m)^%s=.*$", n)).FindString(script)
 		if line == "" {
 			t.Fatalf("no %s= in yardo", n)
 		}
@@ -63,9 +64,7 @@ have() { case " $HAVE " in *" $1 "*) return 0 ;; esac; return 1; }
 gh_logged_in() { [ -n "${GH_IN:-}" ]; }
 declare -A CRED=() REG_USER=() REG_PASS=()
 `
-	src := "set -euo pipefail\n" +
-		scriptDecls(t, "NPMRC_BEGIN", "AGENTENV_LINE", "CRED_ROWS") +
-		shellFns(t, append([]string{"envget", "envset"}, fns...)...) + stubs + body
+	src := fmt.Sprintf("set -euo pipefail\n%s%s%s%s", scriptDecls(t, "NPMRC_BEGIN", "AGENTENV_LINE", "CRED_ROWS"), shellFns(t, append([]string{"envget", "envset"}, fns...)...), stubs, body)
 	cmd := exec.Command(bashPath(t), "-c", src)
 	cmd.Env = append(os.Environ(), "H="+home, "SHARE=.", "STATE="+filepath.Join(home, "state"))
 	out, err := cmd.CombinedOutput()
@@ -138,7 +137,7 @@ install_agentkeys`
 			t.Errorf("%s sources agent-env.sh %d times, want 1", rc, n)
 		}
 	}
-	if rec := readFile(t, filepath.Join(home, "record")); rec != "file "+f+"\n" {
+	if rec := readFile(t, filepath.Join(home, "record")); rec != fmt.Sprintf("file %s\n", f) {
 		t.Errorf("record = %q, want the file once", rec)
 	}
 }
@@ -164,7 +163,7 @@ npmrc_token`
 	if fi, _ := os.Stat(f); fi.Mode().Perm() != 0o600 {
 		t.Errorf(".npmrc mode %v, want 0600", fi.Mode().Perm())
 	}
-	if rec := readFile(t, filepath.Join(home, "record")); rec != "block "+f+"\n" {
+	if rec := readFile(t, filepath.Join(home, "record")); rec != fmt.Sprintf("block %s\n", f) {
 		t.Errorf("an existing .npmrc should be recorded as a block, got %q", rec)
 	}
 }
@@ -178,7 +177,7 @@ install_npmrc
 install_npmrc`
 	credShell(t, home, body, "new_user_file", "npmrc_token", "install_npmrc")
 	f := filepath.Join(home, ".npmrc")
-	if rec := readFile(t, filepath.Join(home, "record")); rec != "file "+f+"\n" {
+	if rec := readFile(t, filepath.Join(home, "record")); rec != fmt.Sprintf("file %s\n", f) {
 		t.Errorf("record = %q, want only the file", rec)
 	}
 }
@@ -196,7 +195,7 @@ func TestMissingSecrets(t *testing.T) {
 	mkdirAll(t, filepath.Join(home, ".mcp/linear-work"), 0o700)
 	putFile(t, filepath.Join(home, ".mcp/linear-work/env"), []byte("LINEAR_API_KEY=\n"), 0o600)
 	putFile(t, filepath.Join(cat, "linear.spec"), []byte("REQUIRED=\"LINEAR_API_KEY\"\nskeleton() { :; }\n"), 0o644)
-	body := `spec_file() { [ -f "` + cat + `/$1.spec" ] && echo "` + cat + `/$1.spec"; }
+	body := fmt.Sprintf("spec_file() { [ -f \"%s/$1.spec\" ] && echo \"%s", cat, cat) + `/$1.spec"; }
 A_MCP_SERVERS="linear linear:work" A_NPM_SCOPE=
 HAVE="claude codex gemini"
 missing_secrets "agentkeys npmrc mcpjungle github"`
@@ -259,7 +258,7 @@ func TestGitHubKnownHostsPinned(t *testing.T) {
 func TestBitbucketKnownHostsPinned(t *testing.T) {
 	hosts := readFile(t, "conf/bitbucket_known_hosts")
 	for _, name := range []string{"bitbucket.org", "ssh.bitbucket.org"} {
-		if !strings.Contains(hosts, "\n"+name+" ssh-ed25519 ") && !strings.HasPrefix(hosts, name+" ssh-ed25519 ") {
+		if !strings.Contains(hosts, fmt.Sprintf("\n%s ssh-ed25519 ", name)) && !strings.HasPrefix(hosts, name+" ssh-ed25519 ") {
 			t.Errorf("conf/bitbucket_known_hosts has no ed25519 key for %s:\n%s", name, hosts)
 		}
 	}
@@ -356,7 +355,7 @@ forget`
 		}
 	}
 	left, _ := exec.Command("python3", "picker.py", "created", "list", state).Output()
-	if string(left) != "file\t"+agent+"\n" {
+	if string(left) != fmt.Sprintf("file\t%s\n", agent) {
 		t.Errorf("record after forget = %q, want only the credential file (it stays yardo's)", left)
 	}
 }

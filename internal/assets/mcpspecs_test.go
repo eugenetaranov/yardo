@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -68,7 +69,7 @@ func TestMCPSpecsValid(t *testing.T) {
 			t.Errorf("%s: KIND %q", n, kind)
 		}
 		for _, k := range required {
-			if !strings.Contains(skel, "\n"+k+"=\n") && !strings.HasPrefix(skel, k+"=\n") {
+			if !strings.Contains(skel, fmt.Sprintf("\n%s=\n", k)) && !strings.HasPrefix(skel, k+"=\n") {
 				t.Errorf("%s: skeleton has no empty %s= line", n, k)
 			}
 		}

@@ -21,7 +21,9 @@ import (
 // them, to tell what an update changes and to put back a skill edited
 // since it was checked.
 
-func copyDir(user, kind, name string) string { return filepath.Join(Base, "approved", user, kind, name) }
+func copyDir(user, kind, name string) string {
+	return filepath.Join(Base, "approved", user, kind, name)
+}
 
 // KeepCopy keeps files as kind name's approved copy (replacing one).
 func KeepCopy(user, kind, name string, files map[string][]byte) error {
@@ -278,7 +280,7 @@ func Latest(ctx context.Context, a Approval) (string, error) {
 		return "", fmt.Errorf("%s: no digest in the registry's answer", from)
 	}
 	repo, _, _ := strings.Cut(a.Pin, "@")
-	return repo + "@" + m.Digest, nil
+	return fmt.Sprintf("%s@%s", repo, m.Digest), nil
 }
 
 func outdatedFile() string { return filepath.Join(Base, "addons-outdated.json") }
@@ -309,7 +311,7 @@ func FindOutdated(ctx context.Context, user string, fresh bool) ([]Outdated, map
 		if Updatable(a) == "" {
 			continue
 		}
-		key := a.Kind + "/" + a.Name + "@" + a.Pin
+		key := fmt.Sprintf("%s/%s@%s", a.Kind, a.Name, a.Pin)
 		l, ok := c.Latest[key]
 		if !ok {
 			if l, err = Latest(ctx, a); err != nil {

@@ -270,12 +270,12 @@ func githubGet(ctx context.Context, url, accept string) (*http.Response, error) 
 
 // fetchRelease returns the latest release, or the one tagged tag.
 func fetchRelease(ctx context.Context, tag string) (*release, error) {
-	url := githubAPIBase + "/repos/" + upgradeRepo + "/releases/latest"
+	url := fmt.Sprintf("%s/repos/%s/releases/latest", githubAPIBase, upgradeRepo)
 	if tag != "" {
 		if !strings.HasPrefix(tag, "v") {
 			tag = "v" + tag
 		}
-		url = githubAPIBase + "/repos/" + upgradeRepo + "/releases/tags/" + tag
+		url = fmt.Sprintf("%s/repos/%s/releases/tags/%s", githubAPIBase, upgradeRepo, tag)
 	}
 	resp, err := githubGet(ctx, url, "application/vnd.github+json")
 	if err != nil {

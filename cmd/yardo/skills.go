@@ -63,7 +63,7 @@ func skillsDo(stdout io.Writer, env *steps.Env, args []string) error {
 			if ap, ok := addon.Approved(env.User, "skill", s.Name); ok && s.Source == "yardo" {
 				l = skillChecked(l, ap)
 				if !skillAsApproved(env, s, ap) {
-					l += "\n  ▲ changed since it was checked: sudo yardo skills restore " + s.Name + " puts the approved files back, sudo yardo skills check " + s.Name + " approves these"
+					l += fmt.Sprintf("\n  ▲ changed since it was checked: sudo yardo skills restore %s puts the approved files back, sudo yardo skills check %s approves these", s.Name, s.Name)
 				}
 			}
 			fmt.Fprintln(stdout, l)
@@ -77,23 +77,23 @@ func skillsDo(stdout io.Writer, env *steps.Env, args []string) error {
 
 // skillSays is a skill's line: on or off, and where it's from.
 func skillSays(s steps.Skill, all bool) string {
-	word := "● " + s.Name + ": on"
+	word := fmt.Sprintf("● %s: on", s.Name)
 	switch {
 	case s.Off && all && !s.Own:
-		word = "○ " + s.Name + ": off, with all skills"
+		word = fmt.Sprintf("○ %s: off, with all skills", s.Name)
 	case s.Off:
-		word = "○ " + s.Name + ": off"
+		word = fmt.Sprintf("○ %s: off", s.Name)
 	}
 	if !s.Off && len(s.Held) > 0 {
-		word += " (a copy is held off too: " + strings.Join(s.Held, ", ") + ")"
+		word += fmt.Sprintf(" (a copy is held off too: %s)", strings.Join(s.Held, ", "))
 	}
-	return word + " · " + skillFrom(s.Source)
+	return fmt.Sprintf("%s · %s", word, skillFrom(s.Source))
 }
 
 // skillChecked is skillSays for a skill from elsewhere, approved as ap.
 func skillChecked(line string, ap addon.Approval) string {
 	from, _ := strings.CutSuffix(line, " · yardo's")
-	return from + " · checked " + ap.At.Format("2006-01-02") + ", from " + ap.Source + " @ " + shortPin(ap.Pin)
+	return fmt.Sprintf("%s · checked %s, from %s @ %s", from, ap.At.Format("2006-01-02"), ap.Source, shortPin(ap.Pin))
 }
 
 // skillFrom says where a skill is from.
@@ -140,7 +140,7 @@ func skillRows(env *steps.Env) ([]ui.SkillRow, bool, error) {
 		r.Where = skillWhere(s)
 		if a, ok := approved[s.Name]; ok {
 			r.Source, r.Checked = "checked", a.At.Format("2006-01-02")
-			r.Where += " · from " + a.Source + " @ " + shortPin(a.Pin)
+			r.Where += fmt.Sprintf(" · from %s @ %s", a.Source, shortPin(a.Pin))
 			if !skillAsApproved(env, s, a) {
 				r.Source = "drifted"
 				r.Where = "Changed since it was checked: Restore puts the approved files back, Check it again approves these"
@@ -155,7 +155,7 @@ func skillRows(env *steps.Env) ([]ui.SkillRow, bool, error) {
 	}
 	for _, h := range held {
 		out = append(out, ui.SkillRow{Name: h.Name, Source: "held", Off: "held",
-			Where: "From " + h.Source + " @ " + shortPin(h.Pin) + ": " + verdictSays(h.Report.Verdict())})
+			Where: fmt.Sprintf("From %s @ %s: %s", h.Source, shortPin(h.Pin), verdictSays(h.Report.Verdict()))})
 	}
 	slices.SortStableFunc(out, func(a, b ui.SkillRow) int { return strings.Compare(a.Name, b.Name) })
 	return out, all, err
@@ -167,15 +167,15 @@ func skillWhere(s steps.Skill) string {
 		var w []string
 		for _, d := range ds {
 			if d == "~/.claude/skills" {
-				w = append(w, "Claude Code ("+d+")")
+				w = append(w, fmt.Sprintf("Claude Code (%s)", d))
 			} else {
-				w = append(w, "the other agents ("+d+")")
+				w = append(w, fmt.Sprintf("the other agents (%s)", d))
 			}
 		}
 		return strings.Join(w, " and ")
 	}
 	if s.Off {
-		return "Held off in " + steps.SkillsOff + ", for " + who(s.Held)
+		return fmt.Sprintf("Held off in %s, for %s", steps.SkillsOff, who(s.Held))
 	}
 	say := "For " + who(s.Places)
 	if len(s.Held) > 0 {
@@ -202,13 +202,13 @@ func (o *options) skillSwitcher(a *answers.Answers) ui.SkillSwitcher {
 			if err = steps.SwitchSkills(env, act.Do, names); err != nil {
 				break
 			}
-			what = append(what, who+" "+act.Do)
+			what = append(what, fmt.Sprintf("%s %s", who, act.Do))
 		}
 		rows, all, rerr := skillRows(env)
 		if rerr != nil {
 			return nil, false, "", errors.Join(err, rerr)
 		}
-		return rows, all, "✓ " + strings.Join(what, ", ") + ". New agent sessions see the change.", err
+		return rows, all, fmt.Sprintf("✓ %s. New agent sessions see the change.", strings.Join(what, ", ")), err
 	}
 }
 

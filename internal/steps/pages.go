@@ -209,7 +209,7 @@ func (u pagesUnitStep) Apply(ctx context.Context, e *Env) error {
 // user's, and stays.
 func (pagesUnitStep) PlanUndo(_ context.Context, e *Env, p *RemovePlan) error {
 	inst := pagesInstance(e)
-	p.off("the "+inst+" service", func(ctx context.Context) error {
+	p.off(fmt.Sprintf("the %s service", inst), func(ctx context.Context) error {
 		_, _ = e.run(ctx, Cmd{Name: "systemctl", Args: []string{"disable", "--now", inst}})
 		for _, f := range []string{filepath.Join(pagesEnvDir, e.User+".env"), PagesConf} {
 			if err := rmIfThere(e.Path(f)); err != nil {

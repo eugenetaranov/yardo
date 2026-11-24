@@ -1,6 +1,7 @@
 package steps
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,7 +38,7 @@ func TestSkills(t *testing.T) {
 		if fi, err := os.Stat(e.Path(d + "/jira-tickets/scripts/run.sh")); err != nil || fi.Mode().Perm() != 0o755 {
 			t.Errorf("%s: script mode %v, %v", d, fi, err)
 		}
-		if _, err := os.Stat(e.Path(d + "/jira-tickets/" + skillMark)); err != nil {
+		if _, err := os.Stat(e.Path(fmt.Sprintf("%s/jira-tickets/%s", d, skillMark))); err != nil {
 			t.Errorf("%s: no mark", d)
 		}
 	}
@@ -241,7 +242,7 @@ func TestSkillsLinks(t *testing.T) {
 func TestSkillNames(t *testing.T) {
 	for _, n := range []string{"../x", "x/y", "X", "-a", "a-", "a--b", "", strings.Repeat("a", 65)} {
 		e := testEnv(t, &fakeExec{})
-		e.Files = fstest.MapFS{"skills/" + n + "/SKILL.md": {Data: []byte("x")}}
+		e.Files = fstest.MapFS{fmt.Sprintf("skills/%s/SKILL.md", n): {Data: []byte("x")}}
 		st := step(t, catalog.Step{Type: "go:skills", Skills: []string{n}})
 		if err := st.Apply(t.Context(), e); err == nil || !strings.Contains(err.Error(), "not a valid name") {
 			t.Errorf("%q: %v", n, err)

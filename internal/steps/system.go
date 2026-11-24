@@ -164,9 +164,9 @@ func (tailscaleUpStep) prefsOK(ctx context.Context, e *Env) bool {
 
 func (t tailscaleUpStep) Plan(e *Env) []Action {
 	if authKey(e) == "" {
-		return []Action{{"run", "tailscale set " + strings.Join(tsFlags(e), " ") + " (once joined)"}}
+		return []Action{{"run", fmt.Sprintf("tailscale set %s (once joined)", strings.Join(tsFlags(e), " "))}}
 	}
-	return []Action{{"run", "tailscale up --auth-key=file:… " + strings.Join(tsFlags(e), " ") + " (the key typed)"}}
+	return []Action{{"run", fmt.Sprintf("tailscale up --auth-key=file:… %s (the key typed)", strings.Join(tsFlags(e), " "))}}
 }
 
 func (t tailscaleUpStep) Check(ctx context.Context, e *Env) (bool, error) {
@@ -310,7 +310,7 @@ func (n netbirdUpStep) Apply(ctx context.Context, e *Env) error {
 		if url != "" {
 			where = url
 		}
-		e.note("NetBird: this machine may be waiting for approval: approve it in the NetBird dashboard (" + where + ", Peers), and it joins.")
+		e.note(fmt.Sprintf("NetBird: this machine may be waiting for approval: approve it in the NetBird dashboard (%s, Peers), and it joins.", where))
 	}
 	return nil
 }
@@ -414,7 +414,7 @@ func (f fail2banStep) Plan(e *Env) []Action {
 	if ip == "" {
 		return []Action{{"skip", "fail2ban: no public IPv4 on this machine"}}
 	}
-	out := []Action{{"apt", strings.Join(fail2banPkgs, " ") + " (public IPv4 " + ip + ")"}}
+	out := []Action{{"apt", fmt.Sprintf("%s (public IPv4 %s)", strings.Join(fail2banPkgs, " "), ip)}}
 	for _, st := range f.inner() {
 		out = append(out, st.Plan(e)...)
 	}

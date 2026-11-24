@@ -173,7 +173,7 @@ func orphansSay(n int) string {
 	if n == 0 {
 		return "✓ No orphaned MCP containers: nothing to clean up."
 	}
-	return "✓ " + orphanCount(n) + " removed."
+	return fmt.Sprintf("✓ %s removed.", orphanCount(n))
 }
 
 // cleanOrphans removes the orphaned MCP containers of k's user.

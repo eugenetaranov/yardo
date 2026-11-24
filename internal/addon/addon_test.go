@@ -3,6 +3,7 @@ package addon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,7 +156,7 @@ func TestInstallNeedsOK(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(SpecsFile("ada"))
-	if string(b) != "xmcp "+SpecHash(spec)+"\n" {
+	if string(b) != fmt.Sprintf("xmcp %s\n", SpecHash(spec)) {
 		t.Errorf("specs list: %q", b)
 	}
 	if a, _ := Approved("ada", "mcp", "xmcp"); !a.OK {

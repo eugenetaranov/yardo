@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -66,7 +67,7 @@ func addonTest(t *testing.T, picks, typed []string) (*addonRun, *bytes.Buffer) {
 
 func holdSkill(t *testing.T, r *addonRun, name, body string, extra map[string][]byte) *addon.Held {
 	t.Helper()
-	files := map[string][]byte{"SKILL.md": []byte("---\nname: " + name + "\ndescription: d\n---\n" + body + "\n")}
+	files := map[string][]byte{"SKILL.md": []byte(fmt.Sprintf("---\nname: %s\ndescription: d\n---\n%s\n", name, body))}
 	for p, b := range extra {
 		files[p] = b
 	}

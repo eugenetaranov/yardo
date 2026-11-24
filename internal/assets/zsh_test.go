@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,7 +79,7 @@ func TestCompletionCache(t *testing.T) {
 	calls := filepath.Join(dir, "calls")
 	// "just" prints a real completion; "yq" prints junk.
 	write := func(name, body string) {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\necho "+name+" >> "+calls+"\n"+body), 0o755); err != nil {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(fmt.Sprintf("#!/bin/sh\necho %s >> %s\n%s", name, calls, body)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -90,8 +91,8 @@ func TestCompletionCache(t *testing.T) {
 	}
 	run := func() {
 		t.Helper()
-		c := exec.Command(z, "-f", "-c", "source "+dropin+"; print -r -- $fpath[1]")
-		c.Env = []string{"PATH=" + bin + ":/usr/bin:/bin", "HOME=" + dir, "XDG_CACHE_HOME=" + cache}
+		c := exec.Command(z, "-f", "-c", fmt.Sprintf("source %s; print -r -- $fpath[1]", dropin))
+		c.Env = []string{fmt.Sprintf("PATH=%s:/usr/bin:/bin", bin), "HOME=" + dir, "XDG_CACHE_HOME=" + cache}
 		out, err := c.CombinedOutput()
 		if err != nil {
 			t.Fatalf("zsh: %v\n%s", err, out)
@@ -219,7 +220,7 @@ func TestZshrcGcmPulls(t *testing.T) {
 		t.Fatal("gcm isn't redefined after oh-my-zsh")
 	}
 	block := tmpl[i : i+strings.Index(tmpl[i:], "\n\n")]
-	out, err := exec.Command(zsh, "-fc", "alias gcm='git checkout $(git_main_branch)'\n"+block+"\nalias gcm").CombinedOutput()
+	out, err := exec.Command(zsh, "-fc", fmt.Sprintf("alias gcm='git checkout $(git_main_branch)'\n%s\nalias gcm", block)).CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "git checkout $(git_main_branch) && git pull") {
 		t.Errorf("%v: %s", err, out)
 	}

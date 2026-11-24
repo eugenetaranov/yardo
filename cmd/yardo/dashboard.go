@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os/exec"
 	"regexp"
@@ -85,7 +86,7 @@ func shortImage(image string) string {
 		image = image[i+1:]
 	}
 	if name, d, ok := strings.Cut(image, "@sha256:"); ok {
-		image = name + "@" + d[:min(7, len(d))]
+		image = fmt.Sprintf("%s@%s", name, d[:min(7, len(d))])
 	}
 	return image
 }

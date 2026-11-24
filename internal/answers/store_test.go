@@ -1,6 +1,7 @@
 package answers
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -192,7 +193,7 @@ func TestStoreGitKeys(t *testing.T) {
 		t.Errorf("loaded %+v %+v %+v %q", got.GitHub, got.GitLab, got.Bitbucket, got.SSHAcceptNew)
 	}
 	for _, mode := range []string{"", "agent", "key", "sent", "own", "token"} {
-		old := `{"version":1,"picks":["github"],"github":{"mode":"` + mode + `"}}`
+		old := fmt.Sprintf("{\"version\":1,\"picks\":[\"github\"],\"github\":{\"mode\":\"%s\"}}", mode)
 		if err := os.WriteFile(userPath(home("ada")), []byte(old), 0o600); err != nil {
 			t.Fatal(err)
 		}

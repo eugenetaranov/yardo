@@ -109,13 +109,15 @@ func Forget(user, kind, name string) error {
 }
 
 func writeRecord(user string, as []Approval) error {
-	slices.SortFunc(as, func(a, b Approval) int { return strings.Compare(a.Kind+"/"+a.Name, b.Kind+"/"+b.Name) })
+	slices.SortFunc(as, func(a, b Approval) int {
+		return strings.Compare(fmt.Sprintf("%s/%s", a.Kind, a.Name), fmt.Sprintf("%s/%s", b.Kind, b.Name))
+	})
 	d := filepath.Join(Base, "approved")
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		return err
 	}
 	var b bytes.Buffer
-	b.WriteString("# Add-ons from elsewhere that " + user + " approved: written by yardo, not to edit.\n\n")
+	fmt.Fprintf(&b, "# Add-ons from elsewhere that %s approved: written by yardo, not to edit.\n\n", user)
 	if err := toml.NewEncoder(&b).Encode(struct {
 		Addon []Approval `toml:"addon"`
 	}{as}); err != nil {
@@ -124,7 +126,7 @@ func writeRecord(user string, as []Approval) error {
 	var specs strings.Builder
 	for _, a := range as {
 		if a.Kind == "mcp" {
-			fmt.Fprintln(&specs, strings.TrimSpace(a.Name+" "+a.Hash+" "+a.Tools))
+			fmt.Fprintln(&specs, strings.TrimSpace(fmt.Sprintf("%s %s %s", a.Name, a.Hash, a.Tools)))
 		}
 	}
 	if err := atomic(recordFile(user), b.Bytes()); err != nil {

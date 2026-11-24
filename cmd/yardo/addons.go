@@ -90,7 +90,7 @@ func (k *asker) addons(ctx context.Context) (*addonRun, error) {
 	addon.Token = func() string { return ghToken(ctx, u) }
 	r := &addonRun{k: k, env: env, cat: k.cat, out: k.out}
 	addon.Extra = func(ctx context.Context, h *addon.Held, files map[string][]byte, earlier []addon.Finding) (fs []addon.Finding, model string) {
-		r.progress(ctx, "Claude is reading "+h.Name+" ("+addon.QuickModel+")", func(ctx context.Context) {
+		r.progress(ctx, fmt.Sprintf("Claude is reading %s (%s)", h.Name, addon.QuickModel), func(ctx context.Context) {
 			fs, model = addon.ReviewLayer(ctx, h, files, earlier)
 		})
 		return fs, model
@@ -152,22 +152,22 @@ func (r *addonRun) menuDo(ctx context.Context, kind string, act ui.MCPAct) (stri
 		if err := addon.Hold(h, files); err != nil {
 			return "", err
 		}
-		return "Done: " + h.Name + " is on the list, installed or held.", r.decide(ctx, h)
+		return fmt.Sprintf("Done: %s is on the list, installed or held.", h.Name), r.decide(ctx, h)
 	case "check":
 		r.ensureVeil(ctx)
-		return "Done: " + act.Entry + "'s row says how it went.", r.checkSkill(ctx, act.Entry)
+		return fmt.Sprintf("Done: %s's row says how it went.", act.Entry), r.checkSkill(ctx, act.Entry)
 	case "update":
 		ap, ok := addon.Approved(r.env.User, kind, act.Entry)
 		if !ok {
 			return "", fmt.Errorf("%s wasn't added from elsewhere", act.Entry)
 		}
 		r.ensureVeil(ctx)
-		return "Done: " + act.Entry + "'s row says how it went.", r.update(ctx, ap)
+		return fmt.Sprintf("Done: %s's row says how it went.", act.Entry), r.update(ctx, ap)
 	case "restore":
-		return "✓ " + act.Entry + " is as approved again.", r.restoreSkill(act.Entry)
+		return fmt.Sprintf("✓ %s is as approved again.", act.Entry), r.restoreSkill(act.Entry)
 	case "recheck":
 		r.ensureVeil(ctx)
-		return "Done: " + act.Entry + "'s row says how it went.", r.recheckTools(ctx, act.Entry)
+		return fmt.Sprintf("Done: %s's row says how it went.", act.Entry), r.recheckTools(ctx, act.Entry)
 	case "review":
 		held, err := addon.List(r.env.User)
 		if err != nil {
@@ -175,7 +175,7 @@ func (r *addonRun) menuDo(ctx context.Context, kind string, act ui.MCPAct) (stri
 		}
 		for _, h := range held {
 			if h.Kind == kind && h.Name == act.Entry {
-				return "Done: " + h.Name + "'s row says how it went.", r.decide(ctx, h)
+				return fmt.Sprintf("Done: %s's row says how it went.", h.Name), r.decide(ctx, h)
 			}
 		}
 		return "", fmt.Errorf("nothing named %s is held", act.Entry)
@@ -184,7 +184,7 @@ func (r *addonRun) menuDo(ctx context.Context, kind string, act ui.MCPAct) (stri
 			return "", err
 		}
 		_ = addon.Forget(r.env.User, "skill", act.Entry)
-		return "✓ " + act.Entry + " deleted.", nil
+		return fmt.Sprintf("✓ %s deleted.", act.Entry), nil
 	}
 	return "", fmt.Errorf("nothing to do for %q", act.Do)
 }
@@ -379,7 +379,7 @@ func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
 			if f.Fix != "" {
 				l := "Fix: " + f.Next
 				if w := f.Where(); w != "" {
-					l += " (" + w + ")"
+					l += fmt.Sprintf(" (%s)", w)
 				}
 				if _, dup := fixes[l]; !dup && !slices.ContainsFunc(opts, func(o string) bool { return fixes[o] == f.Fix }) {
 					fixes[l] = f.Fix
@@ -400,7 +400,7 @@ func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
 		case pick == install:
 			typed := ""
 			if v == "ok" {
-				if typed, err = r.k.typeIn("Type "+h.Name+" to install it", "Its report needs your OK: you've read what it found."); err != nil {
+				if typed, err = r.k.typeIn(fmt.Sprintf("Type %s to install it", h.Name), "Its report needs your OK: you've read what it found."); err != nil {
 					return err
 				}
 			}
@@ -427,7 +427,7 @@ func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
 			}
 		case pick == careful:
 			var err error
-			r.progress(ctx, "Claude is reading "+h.Name+" carefully ("+addon.CarefulModel+")", func(ctx context.Context) {
+			r.progress(ctx, fmt.Sprintf("Claude is reading %s carefully (%s)", h.Name, addon.CarefulModel), func(ctx context.Context) {
 				err = h.Recheck(ctx)
 			})
 			if err != nil {
@@ -660,7 +660,7 @@ func (r *addonRun) update(ctx context.Context, ap addon.Approval) error {
 		}
 		sp := addon.ParseSpec(string(old["spec"]))
 		sp.Set("IMAGE", img.Ref)
-		files = map[string][]byte{"spec": []byte(sp.Text("Written by yardo for " + ap.Name + ", from " + from + ", updated to " + img.Ref + "."))}
+		files = map[string][]byte{"spec": []byte(sp.Text(fmt.Sprintf("Written by yardo for %s, from %s, updated to %s.", ap.Name, from, img.Ref)))}
 		h.Pin, h.Image, h.ImageUser, h.Pulled = img.Ref, true, img.User, img.New
 	}
 	if err := addon.Hold(h, files); err != nil {
@@ -717,7 +717,7 @@ func (r *addonRun) putServer(ctx context.Context, name string, spec []byte) erro
 	dir := filepath.Join(r.env.Home, ".mcp", name)
 	sp := addon.ParseSpec(string(spec))
 	var env strings.Builder
-	env.WriteString("# " + name + "'s settings (sudo yardo mcp edit " + name + ")\n")
+	fmt.Fprintf(&env, "# %s's settings (sudo yardo mcp edit %s)\n", name, name)
 	for _, k := range strings.Fields(sp.Fields["REQUIRED"]) {
 		env.WriteString(k + "=\n")
 	}
@@ -807,7 +807,7 @@ func (r *addonRun) holdServer(ctx context.Context, src, name string) (*addon.Hel
 	}
 	h.Name = f.Name
 	sp := addon.FormSpec(f)
-	return h, map[string][]byte{"spec": []byte(sp.Text("Written by yardo for " + f.Name + ", from " + src + "."))}, nil
+	return h, map[string][]byte{"spec": []byte(sp.Text(fmt.Sprintf("Written by yardo for %s, from %s.", f.Name, src)))}, nil
 }
 
 // form asks what yardo can't read from an image or a URL: the name, what

@@ -35,9 +35,9 @@ func (m *Menu) homeView(w, h int) string {
 			where = append(where, r.label)
 		}
 	}
-	status := " " + green.Render(tui.Cur.Mark.OK+" All good") + muted.Render("  ·  nothing needs you")
+	status := fmt.Sprintf(" %s%s", green.Render(tui.Cur.Mark.OK+" All good"), muted.Render("  ·  nothing needs you"))
 	if n > 0 {
-		status = " " + yellow.Render("▲ "+plural(n, "thing needs you", "things need you")) + muted.Render("  ·  marked below: "+strings.Join(where, ", "))
+		status = fmt.Sprintf(" %s%s", yellow.Render("▲ "+plural(n, "thing needs you", "things need you")), muted.Render("  ·  marked below: "+strings.Join(where, ", ")))
 	}
 	add(status + strings.Repeat(" ", max(2, w-1-lipgloss.Width(status)-lipgloss.Width(m.sub))) + muted.Render(m.sub))
 	add("")
@@ -70,10 +70,10 @@ func (m *Menu) homeView(w, h int) string {
 		}
 	} else {
 		if s := services(m.info.Dash); len(s) > 0 {
-			add(" " + muted.Render(padTo("Services", 10)) + fit(s, fw-12))
+			add(fmt.Sprintf(" %s%s", muted.Render(padTo("Services", 10)), fit(s, fw-12)))
 		}
 		if m.hasMCP() {
-			add(" " + muted.Render(padTo("MCP", 10)) + m.mcpSummary())
+			add(fmt.Sprintf(" %s%s", muted.Render(padTo("MCP", 10)), m.mcpSummary()))
 		}
 	}
 	if len(conL) > 0 {
@@ -101,10 +101,10 @@ func box(title, right string, lines []string, w, h int, on bool) []string {
 	iw := max(4, w-4)
 	r := ""
 	if right != "" {
-		r = " " + right + " "
+		r = fmt.Sprintf(" %s ", right)
 	}
 	fill := max(1, w-5-lipgloss.Width(title)-lipgloss.Width(r))
-	head := st.Render("┌─ ") + bold.Render(title) + st.Render(" "+strings.Repeat("─", fill)+r+"┐")
+	head := st.Render("┌─ ") + bold.Render(title) + st.Render(fmt.Sprintf(" %s%s┐", strings.Repeat("─", fill), r))
 	out := []string{head}
 	for n := 0; n < h; n++ {
 		l := ""
@@ -114,16 +114,16 @@ func box(title, right string, lines []string, w, h int, on bool) []string {
 		if lipgloss.Width(l) > iw {
 			l = ansi.Truncate(l, iw, "…")
 		}
-		out = append(out, st.Render("│")+" "+l+strings.Repeat(" ", iw-lipgloss.Width(l))+" "+st.Render("│"))
+		out = append(out, fmt.Sprintf("%s %s%s %s", st.Render("│"), l, strings.Repeat(" ", iw-lipgloss.Width(l)), st.Render("│")))
 	}
-	return append(out, st.Render("└"+strings.Repeat("─", w-2)+"┘"))
+	return append(out, st.Render(fmt.Sprintf("└%s┘", strings.Repeat("─", w-2))))
 }
 
 // beside2 puts two boxes of the same height side by side.
 func beside2(a, b []string) []string {
 	out := make([]string, len(a))
 	for n := range a {
-		out[n] = a[n] + "  " + b[n]
+		out[n] = fmt.Sprintf("%s  %s", a[n], b[n])
 	}
 	return out
 }
@@ -151,7 +151,7 @@ func (m *Menu) machineLines() []string {
 			avg += v
 		}
 		avg /= float64(len(x.CPU))
-		cpu = padTo(fmt.Sprintf("%d%%", int(math.Round(avg*100))), 5) + accent.Render(spark(x.CPU, 12)) + "  " + muted.Render(cpuSpan(len(x.CPU)))
+		cpu = fmt.Sprintf("%s%s  %s", padTo(fmt.Sprintf("%d%%", int(math.Round(avg*100))), 5), accent.Render(spark(x.CPU, 12)), muted.Render(cpuSpan(len(x.CPU))))
 	}
 	load := fmt.Sprintf("%.2f %.2f %.2f", x.Load[0], x.Load[1], x.Load[2])
 	if x.Load[0] > float64(x.Cores) {
@@ -159,15 +159,15 @@ func (m *Menu) machineLines() []string {
 	}
 	out := []string{
 		label("CPU") + cpu,
-		label("Load") + padTo(load, 16) + "  " + muted.Render("on "+plural(x.Cores, "core", "cores")),
+		fmt.Sprintf("%s%s  %s", label("Load"), padTo(load, 16), muted.Render("on "+plural(x.Cores, "core", "cores"))),
 	}
 	if x.MemTotal > 0 {
 		f := float64(x.MemUsed) / float64(x.MemTotal)
-		out = append(out, label("Mem")+bar(f, 10)+" "+padTo(fmt.Sprintf("%d%%", int(math.Round(f*100))), 4)+"  "+muted.Render(fmt.Sprintf("%s of %s", gb(x.MemUsed), gb(x.MemTotal))))
+		out = append(out, fmt.Sprintf("%s%s %s  %s", label("Mem"), bar(f, 10), padTo(fmt.Sprintf("%d%%", int(math.Round(f*100))), 4), muted.Render(fmt.Sprintf("%s of %s", gb(x.MemUsed), gb(x.MemTotal)))))
 	}
 	if x.DiskTotal > 0 {
 		f := float64(x.DiskUsed) / float64(x.DiskTotal)
-		out = append(out, label("Disk")+bar(f, 10)+" "+padTo(fmt.Sprintf("%d%%", int(math.Round(f*100))), 4)+"  "+muted.Render("of "+gb(x.DiskTotal)))
+		out = append(out, fmt.Sprintf("%s%s %s  %s", label("Disk"), bar(f, 10), padTo(fmt.Sprintf("%d%%", int(math.Round(f*100))), 4), muted.Render("of "+gb(x.DiskTotal))))
 	}
 	if x.Up > 0 {
 		out = append(out, label("Up")+uptime(x.Up))
@@ -294,7 +294,7 @@ func (m *Menu) serviceLines() []string {
 			}
 			ss = append(ss, s)
 		}
-		s.ports = append(s.ports, l.Port+"/"+l.Proto)
+		s.ports = append(s.ports, fmt.Sprintf("%s/%s", l.Port, l.Proto))
 		if s.who == "" {
 			s.who = reach[l.Scope]
 			if s.who == "" {
@@ -318,10 +318,10 @@ func (m *Menu) serviceLines() []string {
 				port += fmt.Sprintf(" +%d", len(s.ports)-1)
 			}
 		}
-		out = append(out, g+" "+padTo(s.name, 12)+" "+padTo(port, 14)+" "+muted.Render(s.who))
+		out = append(out, fmt.Sprintf("%s %s %s %s", g, padTo(s.name, 12), padTo(port, 14), muted.Render(s.who)))
 	}
 	if local > 0 {
-		out = append(out, muted.Render("  + "+plural(local, "port", "ports")+" on this machine only"))
+		out = append(out, muted.Render(fmt.Sprintf("  + %s on this machine only", plural(local, "port", "ports"))))
 	}
 	if d.Docker {
 		out = append(out, muted.Render("─ containers ─────────────"))
@@ -333,7 +333,7 @@ func (m *Menu) serviceLines() []string {
 			if len(c.Ports) > 0 {
 				p = ":" + strings.Join(c.Ports, ",")
 			}
-			out = append(out, green.Render("●")+" "+padTo(c.Image, 14)+" "+padTo(c.Name, 14)+" "+p)
+			out = append(out, fmt.Sprintf("%s %s %s %s", green.Render("●"), padTo(c.Image, 14), padTo(c.Name, 14), p))
 		}
 	}
 	if len(out) == 0 {
@@ -363,7 +363,7 @@ func (m *Menu) mcpLines() []string {
 		case !s.Yardo:
 			others++
 		case s.State == "off":
-			off = append(off, muted.Render("○ "+padTo(s.Name, 16)+" off"))
+			off = append(off, muted.Render(fmt.Sprintf("○ %s off", padTo(s.Name, 16))))
 		case s.State == "ok" || s.State == "unchecked":
 			ready = append(ready, s.Name)
 		default:
@@ -371,19 +371,19 @@ func (m *Menu) mcpLines() []string {
 			if s.State == "secret" || s.State == "pending" {
 				g, st = "○", accent
 			}
-			bad = append(bad, st.Render(g)+" "+padTo(s.Name, 16)+" "+muted.Render(strings.TrimPrefix(ansi.Strip(mcpWord(s)), g+" ")))
+			bad = append(bad, fmt.Sprintf("%s %s %s", st.Render(g), padTo(s.Name, 16), muted.Render(strings.TrimPrefix(ansi.Strip(mcpWord(s)), g+" "))))
 		}
 	}
 	for n := 0; n < len(ready); n += 2 {
-		l := green.Render("●") + " " + padTo(ready[n], 18)
+		l := fmt.Sprintf("%s %s", green.Render("●"), padTo(ready[n], 18))
 		if n+1 < len(ready) {
-			l += green.Render("●") + " " + ready[n+1]
+			l += fmt.Sprintf("%s %s", green.Render("●"), ready[n+1])
 		}
 		out = append(out, l)
 	}
 	out = append(out, bad...)
 	if n := len(m.info.MCPOrphans); n > 0 {
-		out = append(out, yellow.Render("▲")+" "+plural(n, "orphaned container", "orphaned containers")+muted.Render(" · MCP servers › c"))
+		out = append(out, fmt.Sprintf("%s %s%s", yellow.Render("▲"), plural(n, "orphaned container", "orphaned containers"), muted.Render(" · MCP servers › c")))
 	}
 	out = append(out, off...)
 	if len(ready)+len(bad)+len(off) == 0 {
@@ -400,7 +400,7 @@ func (m *Menu) mcpLines() []string {
 func (m *Menu) connectLines(w int) []string {
 	var out []string
 	for _, r := range m.info.Connect {
-		l := muted.Render(padTo(r.What, 8)) + " " + keyOn.Render(r.Use)
+		l := fmt.Sprintf("%s %s", muted.Render(padTo(r.What, 8)), keyOn.Render(r.Use))
 		if r.Note != "" {
 			l += muted.Render("  ·  " + r.Note)
 		}
@@ -411,7 +411,7 @@ func (m *Menu) connectLines(w int) []string {
 		for _, k := range m.info.Keys {
 			fors = append(fors, k.For())
 		}
-		out = append(out, accent.Render(tui.Cur.Mark.Need+" "+plural(n, "key", "keys")+" to add: "+strings.Join(fors, ", ")))
+		out = append(out, accent.Render(fmt.Sprintf("%s %s to add: %s", tui.Cur.Mark.Need, plural(n, "key", "keys"), strings.Join(fors, ", "))))
 	}
 	return out
 }
@@ -473,7 +473,7 @@ func (m *Menu) gotoLines(nav []menuRow, w int) ([]string, [][2]int) {
 		mark := ""
 		if ns := need[r.id]; len(ns) > 0 {
 			g, st := needMark(ns[0].id)
-			mark, l = st.Render(g), l+" "+g
+			mark, l = st.Render(g), fmt.Sprintf("%s %s", l, g)
 		}
 		if i > 0 {
 			x += 3
@@ -481,12 +481,12 @@ func (m *Menu) gotoLines(nav []menuRow, w int) ([]string, [][2]int) {
 		xs = append(xs, [2]int{x, x + lipgloss.Width(l) + 2})
 		x += lipgloss.Width(l) + 2
 		if i == m.sel {
-			parts = append(parts, rowOn.Render(" "+l+" "))
+			parts = append(parts, rowOn.Render(fmt.Sprintf(" %s ", l)))
 			note = muted.Render(ansi.Truncate(r.note, w, "…"))
 		} else if mark != "" {
-			parts = append(parts, " "+strings.TrimSuffix(l, ansi.Strip(mark))+mark+" ")
+			parts = append(parts, fmt.Sprintf(" %s%s ", strings.TrimSuffix(l, ansi.Strip(mark)), mark))
 		} else {
-			parts = append(parts, " "+l+" ")
+			parts = append(parts, fmt.Sprintf(" %s ", l))
 		}
 	}
 	return []string{strings.Join(parts, "   "), note}, xs

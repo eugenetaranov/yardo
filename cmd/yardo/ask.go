@@ -348,8 +348,8 @@ func planned(cat *catalog.Catalog, a *answers.Answers) func(string) bool {
 
 // planHas reports whether an id is in the plan.
 func planHas(items []*catalog.Item) func(string) bool {
-	picks := " " + strings.Join(plan.IDs(items), " ") + " "
-	return func(id string) bool { return strings.Contains(picks, " "+id+" ") }
+	picks := fmt.Sprintf(" %s ", strings.Join(plan.IDs(items), " "))
+	return func(id string) bool { return strings.Contains(picks, fmt.Sprintf(" %s ", id)) }
 }
 
 // askUser asks which user to set up, offering to create a missing one.
@@ -362,7 +362,7 @@ func askUser(def string) (string, error) {
 		if !profile.ValidUser(u) {
 			return "", fmt.Errorf("user %q does not exist", u)
 		}
-		yes, err := ui.Confirm("User "+u+" does not exist. Create it?", "Like the VM's first user: passwordless sudo and the same groups.", false)
+		yes, err := ui.Confirm(fmt.Sprintf("User %s does not exist. Create it?", u), "Like the VM's first user: passwordless sudo and the same groups.", false)
 		if err != nil {
 			return "", err
 		}
@@ -446,7 +446,7 @@ func (k *asker) askTZ() error {
 		if err != nil {
 			return err
 		}
-		if len(zones) == 0 || strings.Contains("\n"+string(zones), "\n"+tz+"\n") {
+		if len(zones) == 0 || strings.Contains("\n"+string(zones), fmt.Sprintf("\n%s\n", tz)) {
 			k.a.TZ = tz
 			return nil
 		}
@@ -552,7 +552,7 @@ func (k *asker) askWire(has func(string) bool) error {
 		return nil
 	}
 	def := k.a.WireAgents == nil || *k.a.WireAgents
-	yes, err := ui.Confirm("Add the MCPJungle gateway to "+k.a.User+"'s coding agents?",
+	yes, err := ui.Confirm(fmt.Sprintf("Add the MCPJungle gateway to %s's coding agents?", k.a.User),
 		"Claude Code, Codex, Gemini CLI, OpenCode and Goose (those installed) can then use every MCP server registered in MCPJungle.", def)
 	if err != nil {
 		return err
@@ -605,7 +605,7 @@ func (k *asker) askCreds(c *choices, has func(string) bool) error {
 				if err != nil {
 					return err
 				}
-				c.secrets.Cred[it.ID+" "+key.Name] = v
+				c.secrets.Cred[fmt.Sprintf("%s %s", it.ID, key.Name)] = v
 			}
 		}
 	}
@@ -668,7 +668,7 @@ func (k *asker) answered(c *choices) []string {
 	a, has := k.a, planHas(c.items)
 	var out []string
 	if has("zsh") {
-		out = append(out, "Prompt: "+map[string]string{"starship": "Starship"}[a.Prompt]+map[bool]string{true: "Powerlevel10k"}[a.Prompt != "starship"])
+		out = append(out, fmt.Sprintf("Prompt: %s%s", map[string]string{"starship": "Starship"}[a.Prompt], map[bool]string{true: "Powerlevel10k"}[a.Prompt != "starship"]))
 	}
 	if a.TZ != "" {
 		out = append(out, "Timezone: "+a.TZ)
@@ -692,7 +692,7 @@ func (k *asker) answered(c *choices) []string {
 		out = append(out, l)
 	}
 	if has("docker-ports") {
-		out = append(out, "Docker's published ports: reached from "+map[string]string{"local": "this machine only"}[a.DockerPorts]+map[bool]string{true: "this machine and your VPNs"}[a.DockerPorts != "local"])
+		out = append(out, fmt.Sprintf("Docker's published ports: reached from %s%s", map[string]string{"local": "this machine only"}[a.DockerPorts], map[bool]string{true: "this machine and your VPNs"}[a.DockerPorts != "local"]))
 	}
 	if a.Dotfiles != "" && has("dotfiles") {
 		out = append(out, "Dotfiles: "+a.Dotfiles)
@@ -707,7 +707,7 @@ func (k *asker) answered(c *choices) []string {
 		if key == answers.NoKey {
 			key = "no key here (your laptop's agent, or HTTPS)"
 		}
-		hosts = append(hosts, map[string]string{"github": "GitHub", "gitlab": "GitLab", "bitbucket": "Bitbucket"}[id]+": "+key)
+		hosts = append(hosts, fmt.Sprintf("%s: %s", map[string]string{"github": "GitHub", "gitlab": "GitLab", "bitbucket": "Bitbucket"}[id], key))
 	}
 	if len(hosts) > 0 {
 		out = append(out, "Git hosts' keys: "+strings.Join(hosts, " · "))
@@ -726,7 +726,7 @@ func (k *asker) answered(c *choices) []string {
 			}
 		}
 		if len(given) > 0 {
-			out = append(out, "Keys given: "+strings.Join(given, ", ")+" (kept out of yardo's files)")
+			out = append(out, fmt.Sprintf("Keys given: %s (kept out of yardo's files)", strings.Join(given, ", ")))
 		}
 	}
 	return out

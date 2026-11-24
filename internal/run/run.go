@@ -158,7 +158,7 @@ func (r *Runner) Run(ctx context.Context, items []*catalog.Item, extraMise []str
 		it := x.item
 		title := label(it)
 		if failed[it.ID] {
-			r.Progress.Done("fail", title+": "+firstLine(res.Errors[it.ID]))
+			r.Progress.Done("fail", fmt.Sprintf("%s: %s", title, firstLine(res.Errors[it.ID])))
 			return
 		}
 		if why := skipReason(it, failed); why != "" {
@@ -169,7 +169,7 @@ func (r *Runner) Run(ctx context.Context, items []*catalog.Item, extraMise []str
 		}
 		if x.err != nil {
 			fail(it.ID, x.err, nil)
-			r.Progress.Done("fail", title+": "+x.err.Error())
+			r.Progress.Done("fail", fmt.Sprintf("%s: %s", title, x.err.Error()))
 			return
 		}
 		r.begin(title)

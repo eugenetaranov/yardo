@@ -22,7 +22,7 @@ import (
 // printing ver; bad makes checksums.txt disagree.
 func fakeRelease(t *testing.T, ver string, bad bool) {
 	t.Helper()
-	bin := []byte("#!/bin/sh\necho " + ver + "\n")
+	bin := []byte(fmt.Sprintf("#!/bin/sh\necho %s\n", ver))
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(zw)
@@ -39,9 +39,9 @@ func fakeRelease(t *testing.T, ver string, bad bool) {
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/" + upgradeRepo + "/releases/latest", "/repos/" + upgradeRepo + "/releases/tags/v" + ver:
+		case "/repos/" + upgradeRepo + "/releases/latest", fmt.Sprintf("/repos/%s/releases/tags/v%s", upgradeRepo, ver):
 			_ = json.NewEncoder(w).Encode(release{Tag: "v" + ver, Assets: []releaseAsset{
-				{Name: name, URL: srv.URL + "/dl/" + name}, {Name: "checksums.txt", URL: srv.URL + "/dl/checksums.txt"}}})
+				{Name: name, URL: fmt.Sprintf("%s/dl/%s", srv.URL, name)}, {Name: "checksums.txt", URL: srv.URL + "/dl/checksums.txt"}}})
 		case "/dl/" + name:
 			_, _ = w.Write(archive)
 		case "/dl/checksums.txt":
@@ -143,7 +143,7 @@ func TestUpgradeHomebrew(t *testing.T) {
 	var calls []string
 	oldRun := runAttachedFn
 	runAttachedFn = func(name string, args ...string) error {
-		calls = append(calls, filepath.Base(name)+" "+strings.Join(args, " "))
+		calls = append(calls, fmt.Sprintf("%s %s", filepath.Base(name), strings.Join(args, " ")))
 		return nil
 	}
 	t.Cleanup(func() { runAttachedFn = oldRun })

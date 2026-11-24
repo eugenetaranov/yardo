@@ -76,7 +76,7 @@ func skillLink(e *Env, d, name string) string {
 func (k skillsStep) Plan(*Env) []Action {
 	var out []Action
 	for _, n := range k.s.Skills {
-		out = append(out, Action{"file", strings.Join(SkillDirs, ", ") + ": " + n + "/SKILL.md"})
+		out = append(out, Action{"file", fmt.Sprintf("%s: %s/SKILL.md", strings.Join(SkillDirs, ", "), n)})
 	}
 	return out
 }
@@ -94,7 +94,7 @@ func shipped(e *Env, name string) (map[string][]byte, error) {
 		return err
 	})
 	if err == nil && files["SKILL.md"] == nil {
-		err = errors.New("skill " + name + " has no SKILL.md")
+		err = fmt.Errorf("skill %s has no SKILL.md", name)
 	}
 	return files, err
 }

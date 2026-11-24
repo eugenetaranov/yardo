@@ -738,14 +738,14 @@ func TestMCPServersRenamedSpec(t *testing.T) {
 		}
 		put(t, filepath.Join(e.Share, "conf", "mcp-catalog", "k8s.spec"), "KIND=docker\nskeleton() { echo 'KUBECONFIG='; }\n")
 		e.Answers.MCPServers = []string{"k8s:dev1"}
-		put(t, e.Path("~/.mcp/"+old+"/env"), "KUBECONFIG=~/.kube/config\n")
+		put(t, e.Path(fmt.Sprintf("~/.mcp/%s/env", old)), "KUBECONFIG=~/.kube/config\n")
 		apply(t, e, step(t, catalog.Step{Type: "go:mcp_servers"}))
 		if got := read(t, e.Path("~/.mcp/k8s-dev1/env")); got != "KUBECONFIG=~/.kube/config\n" {
 			t.Errorf("%s: env = %q (ran %v)", old, got, x.commands())
 		}
 		renames := 0
 		for _, c := range x.commands() {
-			if strings.Contains(c, "mcp-sync rename "+old+" k8s-dev1") {
+			if strings.Contains(c, fmt.Sprintf("mcp-sync rename %s k8s-dev1", old)) {
 				renames++
 			}
 		}

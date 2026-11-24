@@ -62,7 +62,7 @@ var (
 		home := homeOf(user)
 		c := exec.CommandContext(ctx, "runuser", append([]string{"-u", user, "--", "env", "-i",
 			"HOME=" + home, "USER=" + user, "LOGNAME=" + user, "LANG=C.UTF-8",
-			"PATH=" + home + "/.local/bin:" + home + "/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin",
+			fmt.Sprintf("PATH=%s/.local/bin:%s/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin", home, home),
 			"claude"}, args...)...)
 		c.Dir = dir
 		return c
@@ -252,7 +252,7 @@ func reviewInput(ctx context.Context, h *Held, files map[string][]byte, earlier 
 			says = append(says, "left out: "+strings.Join(left, ", "))
 		}
 		notes = append(notes, Finding{Layer: "claude", Rule: "too-big", Level: "note",
-			Text: "too big for Claude to read in full (" + strings.Join(says, "; ") + ")", Next: "read those files yourself"})
+			Text: fmt.Sprintf("too big for Claude to read in full (%s)", strings.Join(says, "; ")), Next: "read those files yourself"})
 	}
 	in.text = t.String()
 	return in, notes
@@ -267,7 +267,7 @@ func imageInput(ctx context.Context, h *Held, files map[string][]byte) (map[stri
 		Text: "the image's program wasn't read: only its settings, and its Dockerfile and README when it names its source",
 		Next: "trust it as far as you trust who publishes it"}}
 	sp := ParseSpec(string(files["spec"]))
-	run := []string{"docker", "run", "-i", "--rm", "--env-file", "~/.mcp/" + h.Name + "/env", "-v", "~/.mcp/" + h.Name + ":/mcp:ro"}
+	run := []string{"docker", "run", "-i", "--rm", "--env-file", fmt.Sprintf("~/.mcp/%s/env", h.Name), "-v", fmt.Sprintf("~/.mcp/%s:/mcp:ro", h.Name)}
 	run = append(run, strings.Fields(sp.Fields["DOCKER_ARGS"])...)
 	run = append(run, h.Pin)
 	run = append(run, strings.Fields(sp.Fields["IMAGE_ARGS"])...)
@@ -310,7 +310,7 @@ func imageInput(ctx context.Context, h *Held, files map[string][]byte) (map[stri
 		for _, f := range []string{"Dockerfile", "README.md"} {
 			b, err := get(ctx, fmt.Sprintf("%s/%s/%s/%s/%s", Raw, m[1], m[2], ref, f), "", reviewFileMax)
 			if err == nil {
-				ex["(source "+m[1]+"/"+m[2]+"@"+ref+")/"+f] = b
+				ex[fmt.Sprintf("(source %s/%s@%s)/%s", m[1], m[2], ref, f)] = b
 				got = true
 			}
 		}
@@ -319,7 +319,7 @@ func imageInput(ctx context.Context, h *Held, files map[string][]byte) (map[stri
 		}
 	}
 	notes = append(notes, Finding{Layer: "claude", Rule: "no-source", Level: "note",
-		Text: "its source " + m[1] + "/" + m[2] + " has no Dockerfile or README at " + strings.Join(refs, " or "), Next: "find where it's built before trusting it"})
+		Text: fmt.Sprintf("its source %s/%s has no Dockerfile or README at %s", m[1], m[2], strings.Join(refs, " or ")), Next: "find where it's built before trusting it"})
 	return ex, notes
 }
 
@@ -385,7 +385,7 @@ func review(ctx context.Context, usr string, in input, model string) (fs []Findi
 	}
 	fs, err = checkAnswer(raw, in)
 	if err != nil {
-		return nil, "", "the answer didn't hold up (" + err.Error() + ")"
+		return nil, "", fmt.Sprintf("the answer didn't hold up (%s)", err.Error())
 	}
 	return fs, read, ""
 }
@@ -452,7 +452,7 @@ func flagsOK(ctx context.Context, usr string) string {
 		}
 	}
 	if len(missing) > 0 {
-		return "Claude Code " + ver[0] + " is too old to be run with no tools (no " + strings.Join(missing, ", ") + "): update it"
+		return fmt.Sprintf("Claude Code %s is too old to be run with no tools (no %s): update it", ver[0], strings.Join(missing, ", "))
 	}
 	if os.MkdirAll(filepath.Dir(mark), 0o700) == nil {
 		_ = os.WriteFile(mark, []byte("ok"), 0o600)
@@ -516,7 +516,7 @@ func checkAnswer(raw []byte, in input) ([]Finding, error) {
 	if len(fs) == 0 && a.Verdict != "ok" {
 		// A verdict with no finding that held up still counts.
 		fs = append(fs, Finding{Layer: "claude", Rule: "verdict", Level: map[string]string{"block": "ok", "warn": "note"}[a.Verdict],
-			Text: "Claude judged it " + map[string]string{"block": "harmful", "warn": "worth a second read"}[a.Verdict] + ": " + clean(a.Summary, 200),
+			Text: fmt.Sprintf("Claude judged it %s: %s", map[string]string{"block": "harmful", "warn": "worth a second read"}[a.Verdict], clean(a.Summary, 200)),
 			Next: nextSteps["check_by_hand"]})
 	}
 	return fs, nil
@@ -542,7 +542,7 @@ func clean(s string, n int) string {
 
 // The cache: a review by its content, instructions and model.
 func reviewKey(files map[string][]byte, extra, model string) string {
-	s := sha256.Sum256([]byte(Hash(files) + "|" + extra + "|" + PromptVersion + "|" + SchemaVersion + "|" + model))
+	s := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%s|%s", Hash(files), extra, PromptVersion, SchemaVersion, model)))
 	return hex.EncodeToString(s[:])
 }
 

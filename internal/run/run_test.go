@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -67,7 +68,7 @@ func (f *fakeExec) Run(_ context.Context, c steps.Cmd) ([]byte, error) {
 			return []byte("{}"), nil
 		}
 		if f.badTool != "" && c.Args[len(c.Args)-1] == f.badTool {
-			return []byte("mise ✗ " + f.badTool + "@2.2.0 failed: ./autogen.sh: 18: aclocal: not found\nmise ERROR Failed to install vfox:jdx/vfox-" + f.badTool + "@latest"), errors.New("exit status 1")
+			return []byte(fmt.Sprintf("mise ✗ %s@2.2.0 failed: ./autogen.sh: 18: aclocal: not found\nmise ERROR Failed to install vfox:jdx/vfox-%s@latest", f.badTool, f.badTool)), errors.New("exit status 1")
 		}
 	}
 	return nil, nil

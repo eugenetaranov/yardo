@@ -25,7 +25,7 @@ var basePackages = []string{"ca-certificates", "curl", "wget", "gnupg", "git", "
 	"sudo", "openssh-server", "openssh-client", "apt-transport-https", "lsb-release", "software-properties-common", "python3"}
 
 // lineKey is a line's key in Kept.Lines: its file and the line.
-func lineKey(to, line string) string { return to + "\x00" + line }
+func lineKey(to, line string) string { return fmt.Sprintf("%s\x00%s", to, line) }
 
 // KeptBy is what items (the ones staying) use, and the base packages.
 func KeptBy(e *Env, items []*catalog.Item) Kept {
@@ -103,7 +103,7 @@ func (p *RemovePlan) off(what string, do func(ctx context.Context) error) {
 // keep notes what stays: by who uses it, or with why.
 func (p *RemovePlan) keep(what, who string) {
 	if who != "" {
-		what += " (" + who + " uses it)"
+		what += fmt.Sprintf(" (%s uses it)", who)
 	}
 	p.Keep = append(p.Keep, what)
 }
@@ -144,7 +144,7 @@ func PlanRemove(ctx context.Context, e *Env, it *catalog.Item, keep Kept) (*Remo
 			continue
 		}
 		if who, ok := keep.Repos[s.Name]; ok {
-			p.keep("the "+s.Name+" apt repo", who)
+			p.keep(fmt.Sprintf("the %s apt repo", s.Name), who)
 			continue
 		}
 		r := aptRepoStep{s}
@@ -168,7 +168,7 @@ func planPackages(ctx context.Context, e *Env, p *RemovePlan, it *catalog.Item, 
 		}
 		for _, pk := range (aptStep{s}).Packages(e) {
 			if who, ok := keep.Packages[pk]; ok {
-				if who != "" && !slices.Contains(p.Keep, pk+" ("+who+" uses it)") {
+				if who != "" && !slices.Contains(p.Keep, fmt.Sprintf("%s (%s uses it)", pk, who)) {
 					p.keep(pk, who)
 				}
 				continue
@@ -323,7 +323,7 @@ func planUndo(ctx context.Context, e *Env, p *RemovePlan, id string, s catalog.S
 			return nil
 		}
 		if who, ok := keep.Units[s.Unit]; ok {
-			p.keep("the "+s.Unit+" service", who)
+			p.keep(fmt.Sprintf("the %s service", s.Unit), who)
 			return nil
 		}
 		_, en := e.Exec.Run(ctx, Cmd{Name: "systemctl", Args: []string{"is-enabled", "--quiet", s.Unit}})
@@ -331,7 +331,7 @@ func planUndo(ctx context.Context, e *Env, p *RemovePlan, id string, s catalog.S
 		if en != nil && act != nil {
 			return nil
 		}
-		p.off("the "+s.Unit+" service", func(ctx context.Context) error {
+		p.off(fmt.Sprintf("the %s service", s.Unit), func(ctx context.Context) error {
 			_, err := e.run(ctx, Cmd{Name: "systemctl", Args: []string{"disable", "--now", s.Unit}})
 			return err
 		})
@@ -347,7 +347,7 @@ func planGitUnset(ctx context.Context, e *Env, p *RemovePlan, k, v string) {
 	case err != nil:
 		return
 	case cur != v:
-		p.Keep = append(p.Keep, "git "+k+" (changed by hand)")
+		p.Keep = append(p.Keep, fmt.Sprintf("git %s (changed by hand)", k))
 		return
 	}
 	p.off("git "+k, func(ctx context.Context) error {

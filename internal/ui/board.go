@@ -464,7 +464,7 @@ func (b *Board) rows() []row {
 			return []row{{text: "Type a name: wire, vpn, docker, python…"}}
 		}
 		for _, i := range b.items {
-			if !b.inRow(i) && strings.Contains(strings.ToLower(i.Label+" "+i.ID), q) {
+			if !b.inRow(i) && strings.Contains(strings.ToLower(fmt.Sprintf("%s %s", i.Label, i.ID)), q) {
 				out = append(out, row{item: i, where: b.tabTitle(i.Tab)})
 			}
 		}
@@ -622,7 +622,7 @@ func (b *Board) toggle(i *BoardItem) {
 	case b.onUpdates() && i.Pending == "" && fixable(i):
 		i.Pending = "fix"
 	case b.onUpdates() && i.Pending == "" && secret(i) && !newer(i):
-		b.flash = "Enter fills in " + short(i.Label) + "'s " + plural(len(i.Inputs), "value", "values") + "."
+		b.flash = fmt.Sprintf("Enter fills in %s's %s.", short(i.Label), plural(len(i.Inputs), "value", "values"))
 	case b.onUpdates() && i.Pending == "" && i.Pinned:
 		b.flash = short(i.Label) + " is pinned by your profile: it stays at its version."
 	case b.onUpdates() && i.Pending == "" && newer(i):
@@ -642,7 +642,7 @@ func (b *Board) toggle(i *BoardItem) {
 func (b *Board) untick(i *BoardItem) {
 	switch {
 	case i.Protected:
-		b.flash = "yardo keeps " + short(i.Label) + ": " + i.KeepSay + "."
+		b.flash = fmt.Sprintf("yardo keeps %s: %s.", short(i.Label), i.KeepSay)
 	case !i.Removable:
 		why := i.KeepSay
 		if why == "" {
@@ -853,20 +853,20 @@ func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func
 		case !p.Picked && p.Pending == "":
 			opts = append(opts, [2]string{"Add " + name, fmt.Sprint("part:", n)})
 		case p.Picked && p.Pending == "" && p.Removable && login:
-			opts = append(opts, [2]string{"Log out (" + short(i.Label) + " stays)", fmt.Sprint("part:", n)})
+			opts = append(opts, [2]string{fmt.Sprintf("Log out (%s stays)", short(i.Label)), fmt.Sprint("part:", n)})
 		case p.Picked && p.Pending == "" && p.Removable:
-			opts = append(opts, [2]string{"Remove " + name + " (" + short(i.Label) + " stays)", fmt.Sprint("part:", n)})
+			opts = append(opts, [2]string{fmt.Sprintf("Remove %s (%s stays)", name, short(i.Label)), fmt.Sprint("part:", n)})
 		}
 	}
 	if i.Removable {
 		opts = append(opts, [2]string{"Uninstall", "uninstall"})
 	} else if i.KeepSay != "" {
-		lines = append(lines, "yardo can't uninstall it: "+i.KeepSay+".")
+		lines = append(lines, fmt.Sprintf("yardo can't uninstall it: %s.", i.KeepSay))
 	}
 	if !i.Protected {
 		opts = append(opts, [2]string{"Forget it: stays installed, yardo stops checking it", "forget"})
 	}
-	return &Dialog{Title: short(i.Label) + ": " + stateWord(i.State), Lines: lines, Opts: opts,
+	return &Dialog{Title: fmt.Sprintf("%s: %s", short(i.Label), stateWord(i.State)), Lines: lines, Opts: opts,
 		On: func(v string) tea.Cmd {
 			switch v {
 			case first[1]:
@@ -910,9 +910,9 @@ func (b *Board) parts(i *BoardItem) []*BoardItem {
 func changeOpts(i *BoardItem) [][2]string {
 	var opts [][2]string
 	for _, c := range i.Changes {
-		label := "Change " + c[0] + " (asks, then applies " + i.Label + " again)"
+		label := fmt.Sprintf("Change %s (asks, then applies %s again)", c[0], i.Label)
 		if c[1] == "mcp" {
-			label = "Manage " + c[0] + " (add, edit, rename or delete one)"
+			label = fmt.Sprintf("Manage %s (add, edit, rename or delete one)", c[0])
 		}
 		opts = append(opts, [2]string{label, "change:" + c[1]})
 	}
@@ -969,20 +969,20 @@ func (b *Board) confirm(full bool) {
 	for _, i := range b.items {
 		switch i.Pending {
 		case "forget":
-			lines = append(lines, "  Forget "+short(i.Label)+": it stays installed")
+			lines = append(lines, fmt.Sprintf("  Forget %s: it stays installed", short(i.Label)))
 		case "add":
 			lines = append(lines, "+ Install "+short(i.Label))
 		case "update":
-			lines = append(lines, "↑ Update "+short(i.Label)+": "+strings.Join(i.Updates, ", "))
+			lines = append(lines, fmt.Sprintf("↑ Update %s: %s", short(i.Label), strings.Join(i.Updates, ", ")))
 		case "fix":
-			lines = append(lines, "~ Fix "+short(i.Label)+": "+stateWord(i.State))
+			lines = append(lines, fmt.Sprintf("~ Fix %s: %s", short(i.Label), stateWord(i.State)))
 		}
 	}
 	lines = append(lines, "")
 	n := b.queued()
-	title, do, keep := "Apply "+plural(n, "change", "changes")+"?", "Apply (y)", "Not yet (n)"
+	title, do, keep := fmt.Sprintf("Apply %s?", plural(n, "change", "changes")), "Apply (y)", "Not yet (n)"
 	if len(uninstalls) == n {
-		title, do, keep = "Uninstall "+plural(n, "tool", "tools")+"?", "Uninstall (y)", "Cancel (n)"
+		title, do, keep = fmt.Sprintf("Uninstall %s?", plural(n, "tool", "tools")), "Uninstall (y)", "Cancel (n)"
 	}
 	opts := [][2]string{{do, "yes"}}
 	if !full && everything > 0 {
@@ -1083,9 +1083,9 @@ func (b *Board) note(r row) (string, lipgloss.Style) {
 	}
 	switch {
 	case b.key() == UpdatesTab && i.Pending == "fix":
-		return "will fix: " + stateWord(i.State) + ": " + i.Detail, green
+		return fmt.Sprintf("will fix: %s: %s", stateWord(i.State), i.Detail), green
 	case b.key() == UpdatesTab && fixable(i):
-		return stateWord(i.State) + ": " + i.Detail, red
+		return fmt.Sprintf("%s: %s", stateWord(i.State), i.Detail), red
 	case b.key() == UpdatesTab && secret(i) && i.Pending == "":
 		say := "fill in " + strings.Join(i.Inputs, ", ")
 		if newer(i) {
@@ -1113,15 +1113,15 @@ func (b *Board) note(r row) (string, lipgloss.Style) {
 	case !i.Picked || i.State == "":
 		return strings.TrimSuffix(pre, " · "), muted
 	case i.State == "secret":
-		return pre + "fill in " + strings.Join(i.Inputs, ", "), accent
+		return fmt.Sprintf("%sfill in %s", pre, strings.Join(i.Inputs, ", ")), accent
 	case Fixable(i.State):
-		return pre + stateWord(i.State) + ": " + i.Detail, red
+		return fmt.Sprintf("%s%s: %s", pre, stateWord(i.State), i.Detail), red
 	case len(i.Updates) > 0:
-		return pre + strings.Join(i.Updates, ", ") + " available", yellow
+		return fmt.Sprintf("%s%s available", pre, strings.Join(i.Updates, ", ")), yellow
 	case i.State == "unchecked":
 		return pre + stateWord(i.State), muted
 	case i.Team != "":
-		return pre + "from the team profile " + i.Team, muted
+		return fmt.Sprintf("%sfrom the team profile %s", pre, i.Team), muted
 	}
 	return strings.TrimSuffix(pre, " · "), muted
 }
@@ -1217,7 +1217,7 @@ func (b *Board) tabBar(w, y int) string {
 	line, x := " ", 1
 	for n, t := range tabs {
 		m := tui.Cur.Mark
-		label := " " + tui.Title(t.Title) + [...]string{"", " " + m.Update, " " + m.Need, " " + m.Down}[worst[t.ID]] + " "
+		label := fmt.Sprintf(" %s%s ", tui.Title(t.Title), [...]string{"", " " + m.Update, " " + m.Need, " " + m.Down}[worst[t.ID]])
 		lw := runewidth.StringWidth(label)
 		if x+lw > w-1 {
 			break
@@ -1401,8 +1401,7 @@ func (b *Board) Body(w, h int) string {
 			}
 		}
 		q := runewidth.Truncate(*b.search, 40, "…") + cursor
-		out = append(out, " "+accentBd.Render("Search ")+field.Render(" "+q+strings.Repeat(" ", max(1, 26-runewidth.StringWidth(q))))+"  "+
-			muted.Render(plural(found, "match", "matches")+" · "+hint))
+		out = append(out, fmt.Sprintf(" %s%s  %s", accentBd.Render("Search "), field.Render(fmt.Sprintf(" %s%s", q, strings.Repeat(" ", max(1, 26-runewidth.StringWidth(q))))), muted.Render(fmt.Sprintf("%s · %s", plural(found, "match", "matches"), hint))))
 	}
 	out = append(out, rule)
 	head := len(out)
@@ -1412,7 +1411,7 @@ func (b *Board) Body(w, h int) string {
 	// The queue, on a line of its own above the keys.
 	var ql []string
 	if b.queued() > 0 && b.dialog == nil {
-		ql = append(ql, " "+accentBd.Render("Queued: ")+runewidth.Truncate(b.queueSay(), max(10, w-24), "…")+muted.Render("   a applies"))
+		ql = append(ql, fmt.Sprintf(" %s%s%s", accentBd.Render("Queued: "), runewidth.Truncate(b.queueSay(), max(10, w-24), "…"), muted.Render("   a applies")))
 	}
 	if b.dialog != nil {
 		pl = dialogLines(b.dialog, w, 0, nil)

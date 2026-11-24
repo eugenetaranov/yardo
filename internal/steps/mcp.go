@@ -140,7 +140,7 @@ func (mcpUserStep) Check(ctx context.Context, e *Env) (bool, error) {
 		return false, nil
 	}
 	acl, err := e.Exec.Run(ctx, Cmd{Name: "getfacl", Args: []string{"-cp", e.Home}})
-	return err == nil && hasLine(acl, "user:"+svc+":--x"), nil
+	return err == nil && hasLine(acl, fmt.Sprintf("user:%s:--x", svc)), nil
 }
 
 func (mcpUserStep) Apply(ctx context.Context, e *Env) error {
@@ -160,8 +160,8 @@ func (mcpUserStep) Apply(ctx context.Context, e *Env) error {
 		// The login user's own ~/.mcp from before: the service user's now
 		// (chown -R doesn't follow symlinks).
 		{"install", "-d", "-m", "0700", "-o", svc, "-g", svc, dir},
-		{"chown", "-R", svc + ":" + svc, dir},
-		{"setfacl", "-m", "u:" + svc + ":x", e.Home},
+		{"chown", "-R", fmt.Sprintf("%s:%s", svc, svc), dir},
+		{"setfacl", "-m", fmt.Sprintf("u:%s:x", svc), e.Home},
 	} {
 		if _, err := e.run(ctx, Cmd{Name: args[0], Args: args[1:]}); err != nil {
 			return err
@@ -753,9 +753,9 @@ func instanceNames(e *Env) []string {
 func (mcpServersStep) Plan(e *Env) []Action {
 	var out []Action
 	for _, s := range pickedServers(e) {
-		out = append(out, Action{"file", "~/.mcp/" + s.name + "/env (0600)"})
+		out = append(out, Action{"file", fmt.Sprintf("~/.mcp/%s/env (0600)", s.name)})
 		if s.instance() {
-			out = append(out, Action{"file", "~/.mcp/" + s.name + "/spec → " + s.spec + ".spec"})
+			out = append(out, Action{"file", fmt.Sprintf("~/.mcp/%s/spec → %s.spec", s.name, s.spec)})
 		}
 	}
 	return out
@@ -856,7 +856,7 @@ func (mcpServersStep) Missing(ctx context.Context, e *Env) []string {
 		b, _ := mcpRead(ctx, e, n+"/env")
 		for _, k := range s.Required {
 			if EnvGet(b, k) == "" {
-				out = append(out, "~/.mcp/"+n+"/env: "+k)
+				out = append(out, fmt.Sprintf("~/.mcp/%s/env: %s", n, k))
 			}
 		}
 	}
@@ -873,9 +873,9 @@ func renamedFrom(s mcpServer) []string {
 			continue
 		}
 		if label := strings.TrimPrefix(s.name, s.spec+"-"); s.instance() {
-			out = append(out, old+"-"+label, old+"-"+to+"-"+label)
+			out = append(out, fmt.Sprintf("%s-%s", old, label), fmt.Sprintf("%s-%s-%s", old, to, label))
 		} else {
-			out = append(out, old, old+"-"+to)
+			out = append(out, old, fmt.Sprintf("%s-%s", old, to))
 		}
 	}
 	return out
@@ -983,7 +983,7 @@ func EnvSet(b []byte, key, value string) []byte {
 	if len(b) == 0 {
 		lines = nil
 	}
-	set := key + "=" + value
+	set := fmt.Sprintf("%s=%s", key, value)
 	active := slices.ContainsFunc(lines, func(l string) bool { return strings.HasPrefix(l, key+"=") })
 	done := false
 	out := lines[:0]
@@ -1092,7 +1092,7 @@ func codexWired(b []byte, url string, hdr map[string]string) []byte {
 		for _, k := range keys {
 			kv = append(kv, fmt.Sprintf("%q = %q", k, hdr[k]))
 		}
-		want = append(want, "http_headers = { "+strings.Join(kv, ", ")+" }")
+		want = append(want, fmt.Sprintf("http_headers = { %s }", strings.Join(kv, ", ")))
 	}
 	lines := strings.Split(string(b), "\n")
 	for i, l := range lines {
@@ -1153,7 +1153,7 @@ func (w mcpWireStep) Apply(ctx context.Context, e *Env) error {
 		case "claude":
 			args := []string{"mcp", "add", "--transport", "http", "mcpjungle", agentURL(e), "--scope", "user"}
 			for k, v := range hdr {
-				args = append(args, "--header", k+": "+v)
+				args = append(args, "--header", fmt.Sprintf("%s: %s", k, v))
 			}
 			_, err = e.run(ctx, Cmd{Name: "claude", Args: args, AsUser: true})
 		case "codex":
@@ -1299,7 +1299,7 @@ func (dockerPortsStep) Plan(e *Env) []Action {
 	if DockerPorts(e) == "vpn" {
 		who = "this machine and " + strings.Join(VPNInterfaces, ", ")
 	}
-	return []Action{{"run", "nft: containers' published ports only from " + who + " (" + t.file() + ")"}}
+	return []Action{{"run", fmt.Sprintf("nft: containers' published ports only from %s (%s)", who, t.file())}}
 }
 
 func (dockerPortsStep) Check(ctx context.Context, e *Env) (bool, error) {

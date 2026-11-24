@@ -80,7 +80,7 @@ func parseFound(out string, specs map[string]*mcp.Spec) []foundServer {
 		case link != "" && strings.HasSuffix(link, ".spec"):
 			spec := strings.TrimSuffix(filepath.Base(link), ".spec")
 			if label, ok := strings.CutPrefix(name, spec+"-"); ok && specs[spec] != nil && mcp.ValidLabel(label) {
-				entry = spec + ":" + label
+				entry = fmt.Sprintf("%s:%s", spec, label)
 			} else if name == spec && specs[spec] != nil {
 				entry = name // renamed back from another instance
 			}
@@ -95,7 +95,7 @@ func parseFound(out string, specs map[string]*mcp.Spec) []foundServer {
 				}
 			}
 			if best != "" {
-				entry = best + ":" + strings.TrimPrefix(name, best+"-")
+				entry = fmt.Sprintf("%s:%s", best, strings.TrimPrefix(name, best+"-"))
 			}
 		}
 		if entry != "" {
@@ -337,7 +337,7 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 		i := slices.Index(k.a.MCPServers, act.Entry)
 		if i < 0 {
 			// Not yardo's: renamed, and as it was (off stays off).
-			return mcpOutcome{toast: name + " is " + to + " now."}, nil
+			return mcpOutcome{toast: fmt.Sprintf("%s is %s now.", name, to)}, nil
 		}
 		k.a.MCPServers[i] = act.To
 		return mcpOutcome{apply: true}, nil
@@ -397,7 +397,7 @@ func (k *asker) mcpRestart(ctx context.Context, act ui.MCPAct) (mcpOutcome, erro
 	case n > 1:
 		removed = fmt.Sprintf("%d containers", n)
 	}
-	return mcpOutcome{toast: "✓ " + who + " restarted, " + removed + " removed: new agent sessions start it afresh."}, nil
+	return mcpOutcome{toast: fmt.Sprintf("✓ %s restarted, %s removed: new agent sessions start it afresh.", who, removed)}, nil
 }
 
 // mcpSwitcher applies the servers turned off and on on the menu, in the
@@ -436,7 +436,7 @@ func appliedSays(acts []ui.MCPAct, says []string) string {
 		if act.Entry != "" {
 			_, who, _ = mcp.Instance(act.Entry)
 		}
-		what = append(what, who+" "+act.Do)
+		what = append(what, fmt.Sprintf("%s %s", who, act.Do))
 		later = later || strings.Contains(says[n], "once the gateway runs")
 	}
 	s := "✓ Applied: " + strings.Join(what, ", ")
@@ -449,7 +449,7 @@ func appliedSays(acts []ui.MCPAct, says []string) string {
 // switchSays is what turning who (a server, or "all servers") off or on
 // did; later: the gateway didn't answer, so it's once it runs.
 func switchSays(who, do string, later bool) string {
-	s := "✓ " + who + " " + do
+	s := fmt.Sprintf("✓ %s %s", who, do)
 	switch {
 	case later:
 		return s + ": once the gateway runs (Fix it from Home)."
@@ -460,7 +460,7 @@ func switchSays(who, do string, later bool) string {
 	case do == "off":
 		return s + ": new agent sessions won't see its tools."
 	}
-	return s + ": new agent sessions see its tools as " + who + "__<tool>."
+	return fmt.Sprintf("%s: new agent sessions see its tools as %s__<tool>.", s, who)
 }
 
 // setEnv sets keys in server name's env.
@@ -598,7 +598,7 @@ func (s mcpSource) cached() string {
 // says is a server's source in a line: from where, and what's cached.
 func (s mcpSource) says() string {
 	if c := s.cached(); c != "" {
-		return s.from + " (" + c + ")"
+		return fmt.Sprintf("%s (%s)", s.from, c)
 	}
 	return s.from
 }
@@ -618,23 +618,23 @@ func mcpSays(name, spec string, s syncState, ok bool) string {
 	case !ok:
 		return name + ": yardo can't tell how it is (sudo yardo mcp status)."
 	case s.state == "ok":
-		return "✓ " + name + ": registered; agents see its tools as " + name + "__<tool>."
+		return fmt.Sprintf("✓ %s: registered; agents see its tools as %s__<tool>.", name, name)
 	case s.state == "waiting":
-		return "○ " + name + ": not registered until " + s.detail + " is filled in (sudo yardo mcp edit " + name + ")."
+		return fmt.Sprintf("○ %s: not registered until %s is filled in (sudo yardo mcp edit %s).", name, s.detail, name)
 	case s.state == "failed":
-		return "✗ " + name + " didn't register: " + awsHint(spec, s.detail)
+		return fmt.Sprintf("✗ %s didn't register: %s", name, awsHint(spec, s.detail))
 	case s.state == "refused" && s.detail == "unapproved":
-		return "✗ " + name + " wasn't registered: its spec changed since you approved it (check it again: sudo yardo mcp add)."
+		return fmt.Sprintf("✗ %s wasn't registered: its spec changed since you approved it (check it again: sudo yardo mcp add).", name)
 	case s.state == "refused":
-		return "✗ " + name + " wasn't registered: its spec's Docker options include " + s.detail + ", which lets a container act as root on this machine."
+		return fmt.Sprintf("✗ %s wasn't registered: its spec's Docker options include %s, which lets a container act as root on this machine.", name, s.detail)
 	case s.state == "nospec":
-		return "✗ " + name + ": no longer in the catalog."
+		return fmt.Sprintf("✗ %s: no longer in the catalog.", name)
 	case s.state == "off" && s.detail == "tools-changed":
-		return "▲ " + name + ": off, its tools changed since you approved it (sudo yardo addons recheck " + name + ")."
+		return fmt.Sprintf("▲ %s: off, its tools changed since you approved it (sudo yardo addons recheck %s).", name, name)
 	case s.state == "off":
-		return "○ " + name + ": off; agents don't see its tools (sudo yardo mcp on " + name + ")."
+		return fmt.Sprintf("○ %s: off; agents don't see its tools (sudo yardo mcp on %s).", name, name)
 	}
-	return "✗ " + name + ": not registered yet (sudo yardo mcp sync)."
+	return fmt.Sprintf("✗ %s: not registered yet (sudo yardo mcp sync).", name)
 }
 
 // mcpPending says whether any server would register if synced now: its

@@ -32,7 +32,7 @@ func (l *LastRun) say() string {
 	if l.OK {
 		return "✓ it worked"
 	}
-	return "✗ " + plural(len(l.Failed), "step", "steps") + " failed: " + strings.Join(l.Failed, ", ")
+	return fmt.Sprintf("✗ %s failed: %s", plural(len(l.Failed), "step", "steps"), strings.Join(l.Failed, ", "))
 }
 
 // AddKey is a public key a run made, to add where Where says (a line per
@@ -57,7 +57,7 @@ func (m *Menu) lastRunLines(w int) []string {
 	if l == nil {
 		return nil
 	}
-	out := []string{"  " + bold.Render(l.When) + "  " + map[bool]string{true: green.Render(l.say()), false: yellow.Render(l.say())}[l.OK], ""}
+	out := []string{fmt.Sprintf("  %s  %s", bold.Render(l.When), map[bool]string{true: green.Render(l.say()), false: yellow.Render(l.say())}[l.OK]), ""}
 	for _, r := range l.Lines {
 		g, st := "✓", green
 		switch r.Status {
@@ -68,7 +68,7 @@ func (m *Menu) lastRunLines(w int) []string {
 		case "done":
 			g, st = "·", muted
 		}
-		out = append(out, "  "+st.Render(g)+" "+runewidth.Truncate(r.Text, max(10, w-6), "…"))
+		out = append(out, fmt.Sprintf("  %s %s", st.Render(g), runewidth.Truncate(r.Text, max(10, w-6), "…")))
 		for _, t := range r.Tail {
 			out = append(out, "      "+muted.Render(runewidth.Truncate(t, max(10, w-8), "…")))
 		}

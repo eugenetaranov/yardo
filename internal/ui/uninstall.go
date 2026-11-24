@@ -1,6 +1,9 @@
 package ui
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // UninstallPlan is what uninstalling one tool does, for the question
 // (the board's, yardo remove's).
@@ -40,10 +43,10 @@ func (p UninstallPlan) Lines(full bool) []string {
 		ls = append(ls, "Stays: "+strings.Join(p.Stays, ", "))
 	}
 	if len(p.Also) > 0 {
-		ls = append(ls, "Also uninstalls "+strings.Join(p.Also, ", ")+": they need it.")
+		ls = append(ls, fmt.Sprintf("Also uninstalls %s: they need it.", strings.Join(p.Also, ", ")))
 	}
 	if len(p.Forgets) > 0 {
-		ls = append(ls, "⚠ "+strings.Join(p.Forgets, ", ")+" need it and will stop working: yardo forgets them (they stay installed).")
+		ls = append(ls, fmt.Sprintf("⚠ %s need it and will stop working: yardo forgets them (they stay installed).", strings.Join(p.Forgets, ", ")))
 	}
 	for _, b := range p.Back {
 		ls = append(ls, b+", queued to install, needs it: it comes back.")

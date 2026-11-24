@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -106,7 +107,7 @@ func readKeys(state string) []ui.AddKey {
 			out = append(out, ui.AddKey{Pub: k.pub, Path: k.path})
 			i = len(out) - 1
 		}
-		if w := k.host + ": " + k.where; !slices.Contains(out[i].Where, w) {
+		if w := fmt.Sprintf("%s: %s", k.host, k.where); !slices.Contains(out[i].Where, w) {
 			out[i].Where = append(out[i].Where, w)
 		}
 	}

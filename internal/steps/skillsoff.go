@@ -26,7 +26,7 @@ const SkillsOff = "~/.local/share/yardo/skills-off"
 
 // heldDir is where a skill of skills folder d is held while it's off.
 func heldDir(d string) string {
-	return SkillsOff + "/" + strings.TrimPrefix(path.Dir(d), "~/.")
+	return fmt.Sprintf("%s/%s", SkillsOff, strings.TrimPrefix(path.Dir(d), "~/."))
 }
 
 // Skill is one skill there is: in a skills folder, held off, or both.
@@ -328,7 +328,7 @@ func writeOff(e *Env, name string, names []string) error {
 		return err
 	}
 	defer func() { _ = r.Close() }()
-	p := rel(SkillsOff + "/" + name)
+	p := rel(fmt.Sprintf("%s/%s", SkillsOff, name))
 	if name == "own" && len(names) == 0 {
 		if err := r.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err

@@ -161,7 +161,7 @@ func hasLicence[T any](xs []T, rel func(T) string) bool {
 // getRaw downloads one file of s's repo at its commit, checked against
 // its git blob hash.
 func getRaw(ctx context.Context, s LockedSkill, p, sha string) ([]byte, error) {
-	b, err := get(ctx, githubRaw+"/"+s.Repo+"/"+s.Commit+"/"+escapePath(p))
+	b, err := get(ctx, fmt.Sprintf("%s/%s/%s/%s", githubRaw, s.Repo, s.Commit, escapePath(p)))
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package steps
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,7 +116,7 @@ func TestRemoveUndoes(t *testing.T) {
 		{Type: "link", Src: "/opt/aws/bin/aws", To: "/usr/local/bin/aws"},
 	}}
 	writeAt(t, e, "~/.config/yardo/aws.sh", "set -g mouse on\n")
-	writeAt(t, e, "~/.bashrc", "export A=1\n\n"+src+"\n")
+	writeAt(t, e, "~/.bashrc", fmt.Sprintf("export A=1\n\n%s\n", src))
 	writeAt(t, e, "~/.zshrc", src+"\nexport Z=1\n")
 	writeAt(t, e, "~/.config/git/ignore", BlockBegin+"\nset -g mouse on\n"+BlockEnd+"\n*.swp\n")
 	if err := os.MkdirAll(filepath.Dir(e.Path("/usr/local/bin/aws")), 0o755); err != nil {

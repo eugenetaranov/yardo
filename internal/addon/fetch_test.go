@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,7 +24,7 @@ func tarball(t *testing.T, top string, es []entry) []byte {
 	gz := gzip.NewWriter(&b)
 	tw := tar.NewWriter(gz)
 	for _, e := range es {
-		h := &tar.Header{Name: top + "/" + e.name, Typeflag: e.kind, Mode: 0o644, Size: int64(len(e.body))}
+		h := &tar.Header{Name: fmt.Sprintf("%s/%s", top, e.name), Typeflag: e.kind, Mode: 0o644, Size: int64(len(e.body))}
 		if e.kind == tar.TypeSymlink {
 			h.Linkname, h.Size = "/etc/passwd", 0
 		}

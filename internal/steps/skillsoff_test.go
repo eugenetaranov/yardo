@@ -2,6 +2,7 @@ package steps
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,9 +17,9 @@ func skillsHome(t *testing.T, e *Env, skills map[string][]string) {
 	t.Helper()
 	for n, ds := range skills {
 		for _, d := range ds {
-			put(t, e.Path(d+"/"+n+"/SKILL.md"), "---\nname: "+n+"\n---\n"+n+"\n")
-			put(t, e.Path(d+"/"+n+"/scripts/run.sh"), "#!/bin/sh\n")
-			if err := os.Chmod(e.Path(d+"/"+n+"/scripts/run.sh"), 0o755); err != nil {
+			put(t, e.Path(fmt.Sprintf("%s/%s/SKILL.md", d, n)), fmt.Sprintf("---\nname: %s\n---\n%s\n", n, n))
+			put(t, e.Path(fmt.Sprintf("%s/%s/scripts/run.sh", d, n)), "#!/bin/sh\n")
+			if err := os.Chmod(e.Path(fmt.Sprintf("%s/%s/scripts/run.sh", d, n)), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -168,7 +169,7 @@ func TestSkillsStepWhileOff(t *testing.T) {
 	e := testEnv(t, &fakeExec{})
 	v := func(s string) fstest.MapFS {
 		return fstest.MapFS{
-			"skills/jira-tickets/SKILL.md": {Data: []byte("---\nname: jira-tickets\ndescription: d\n---\n" + s + "\n")},
+			"skills/jira-tickets/SKILL.md": {Data: []byte(fmt.Sprintf("---\nname: jira-tickets\ndescription: d\n---\n%s\n", s))},
 			"skills/tdd/SKILL.md":          {Data: []byte("---\nname: tdd\ndescription: d\n---\nt\n")},
 		}
 	}

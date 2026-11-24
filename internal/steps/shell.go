@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -127,7 +128,7 @@ const (
 
 // zshBlock is yardo's block holding lines.
 func zshBlock(lines []string) string {
-	return ZshBlockBegin + "\n" + strings.Join(lines, "\n") + "\n" + ZshBlockEnd + "\n"
+	return fmt.Sprintf("%s\n%s\n%s\n", ZshBlockBegin, strings.Join(lines, "\n"), ZshBlockEnd)
 }
 
 // dropinLines are the Dropins lines of the files that exist.
@@ -208,7 +209,7 @@ func zshrcCheck(e *Env, block string) (bool, error) {
 func zshrcApply(e *Env, block string) error {
 	p := e.Path(zshrc)
 	if t := zshrcLink(e); t != "" {
-		e.note("~/.zshrc links to " + t + ", which yardo doesn't change: to load yardo's zsh setup, put these lines first in it:\n" + block)
+		e.note(fmt.Sprintf("~/.zshrc links to %s, which yardo doesn't change: to load yardo's zsh setup, put these lines first in it:\n%s", t, block))
 		return nil
 	}
 	cur, err := os.ReadFile(p)
@@ -425,7 +426,7 @@ func (sessionStep) Plan(e *Env) []Action {
 	if e.Answers == nil || e.Answers.Session == "" {
 		return nil
 	}
-	return []Action{{"file", SessionFile + " (" + e.Answers.Session + ")"}}
+	return []Action{{"file", fmt.Sprintf("%s (%s)", SessionFile, e.Answers.Session)}}
 }
 
 func (sessionStep) Check(_ context.Context, e *Env) (bool, error) {

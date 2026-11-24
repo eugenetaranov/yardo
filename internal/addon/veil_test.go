@@ -2,6 +2,7 @@ package addon
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,7 @@ import (
 func fakeVeil(t *testing.T, body string) {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "skill-veil")
-	if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+	if err := os.WriteFile(p, []byte(fmt.Sprintf("#!/bin/sh\n%s\n", body)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	oldB, oldS, oldC := VeilBin, VeilSum, VeilCmd

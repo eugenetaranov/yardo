@@ -1,6 +1,7 @@
 package steps
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,7 @@ const testKey = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n
 
 // The includes yardo adds around a config of the user's.
 func included(user string) string {
-	return "Include config.d/yardo-git\n" + user + "Match all\nInclude config.d/yardo-defaults\n"
+	return fmt.Sprintf("Include config.d/yardo-git\n%sMatch all\nInclude config.d/yardo-defaults\n", user)
 }
 
 func TestGitKeySent(t *testing.T) {
@@ -108,7 +109,7 @@ func TestGitKeyResolve(t *testing.T) {
 			if !strings.Contains(got, "Host gitlab.com\n") {
 				t.Errorf("entries:\n%s", got)
 			}
-			if c.want == "" && strings.Contains(got, "IdentityFile") || c.want != "" && !strings.Contains(got, "IdentityFile "+c.want+"\n") {
+			if c.want == "" && strings.Contains(got, "IdentityFile") || c.want != "" && !strings.Contains(got, fmt.Sprintf("IdentityFile %s\n", c.want)) {
 				t.Errorf("entries:\n%s\nwant IdentityFile %q", got, c.want)
 			}
 		})
@@ -224,7 +225,7 @@ func TestGitKeyIdentity(t *testing.T) {
 	if len(keys) != 1 || keys[0].Path != key+".pub" || !strings.Contains(keys[0].Where, "bitbucket.org/account/settings/ssh-keys") {
 		t.Errorf("keys = %+v", keys)
 	}
-	if git := read(t, e.Path(gitConfig)); !strings.Contains(git, "IdentityFile "+key+"\n") {
+	if git := read(t, e.Path(gitConfig)); !strings.Contains(git, fmt.Sprintf("IdentityFile %s\n", key)) {
 		t.Errorf("%s:\n%s", gitConfig, git)
 	}
 
@@ -258,7 +259,7 @@ func TestGitKeyIdentity(t *testing.T) {
 	// Replacing: the old one (and its .pub) moved aside, then written.
 	put(t, e.Path(key+".pub"), "ssh-ed25519 AAAA old\n")
 	day := time.Now().Format("2006-01-02")
-	put(t, e.Path(key+".old-"+day), "taken")
+	put(t, e.Path(fmt.Sprintf("%s.old-%s", key, day)), "taken")
 	e.Secrets.GitReplace["bitbucket"] = true
 	if check(t, e, st) {
 		t.Error("Check = true with a replace asked")
@@ -267,10 +268,10 @@ func TestGitKeyIdentity(t *testing.T) {
 	if got := read(t, e.Path(key)); got != other {
 		t.Errorf("key = %q", got)
 	}
-	if got := read(t, e.Path(key+".old-"+day+"-2")); got != testKey {
+	if got := read(t, e.Path(fmt.Sprintf("%s.old-%s-2", key, day))); got != testKey {
 		t.Errorf("old key = %q", got)
 	}
-	if got := read(t, e.Path(key+".old-"+day+"-2.pub")); got != "ssh-ed25519 AAAA old\n" {
+	if got := read(t, e.Path(fmt.Sprintf("%s.old-%s-2.pub", key, day))); got != "ssh-ed25519 AAAA old\n" {
 		t.Errorf("old .pub = %q", got)
 	}
 	if !check(t, e, st) {
@@ -408,14 +409,14 @@ func sshG(t *testing.T, e *Env, host, want string) {
 	if _, err := exec.LookPath("ssh"); err != nil {
 		return
 	}
-	cfg := strings.ReplaceAll(read(t, e.Path("~/.ssh/config")), "Include config.d/", "Include "+e.Path("~/.ssh/config.d")+"/")
+	cfg := strings.ReplaceAll(read(t, e.Path("~/.ssh/config")), "Include config.d/", fmt.Sprintf("Include %s/", e.Path("~/.ssh/config.d")))
 	f := filepath.Join(t.TempDir(), "config")
 	put(t, f, cfg)
 	out, err := exec.Command("ssh", "-F", f, "-G", host).Output()
 	if err != nil {
 		t.Fatalf("ssh -G %s: %v", host, err)
 	}
-	if !strings.Contains(string(out), "\n"+want+"\n") {
+	if !strings.Contains(string(out), fmt.Sprintf("\n%s\n", want)) {
 		t.Errorf("ssh -G %s has no %q:\n%s", host, want, out)
 	}
 }

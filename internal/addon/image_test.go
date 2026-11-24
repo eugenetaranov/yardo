@@ -2,6 +2,7 @@ package addon
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,7 @@ func fakeDocker(t *testing.T, inspect string) func() string {
 	t.Helper()
 	d := t.TempDir()
 	log := filepath.Join(d, "calls")
-	body := "#!/bin/sh\necho \"$*\" >> " + log + "\ncase \"$1 $2\" in 'image inspect') printf '%s' '" + inspect + "' ;; esac\n"
+	body := fmt.Sprintf("#!/bin/sh\necho \"$*\" >> %s\ncase \"$1 $2\" in 'image inspect') printf '%%s' '%s' ;; esac\n", log, inspect)
 	if err := os.WriteFile(filepath.Join(d, "docker"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +29,7 @@ func fakeDocker(t *testing.T, inspect string) func() string {
 // is asked of docker (no create, no run).
 func TestPullImage(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("d", 64)
-	calls := fakeDocker(t, `{"RepoDigests":["ghcr.io/acme/mcp-x@`+digest+`"],"Config":{"User":""}}`)
+	calls := fakeDocker(t, fmt.Sprintf("{\"RepoDigests\":[\"ghcr.io/acme/mcp-x@%s\"],\"Config\":{\"User\":\"\"}}", digest))
 	img, err := PullImage(context.Background(), "ghcr.io/acme/mcp-x:1.2")
 	if err != nil {
 		t.Fatal(err)

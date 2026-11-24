@@ -40,14 +40,14 @@ func (h *Held) Fix(fix string) error {
 			return fmt.Errorf("the spec has code: yardo can't edit it")
 		}
 		sp.Drop(arg)
-		files["spec"] = []byte(sp.Text("Written by yardo from the spec as given, " + arg + " dropped."))
+		files["spec"] = []byte(sp.Text(fmt.Sprintf("Written by yardo from the spec as given, %s dropped.", arg)))
 	case "drop-opt":
 		sp := ParseSpec(string(files["spec"]))
 		if !sp.Data() {
 			return fmt.Errorf("the spec has code: yardo can't edit it")
 		}
 		sp.Set("DOCKER_ARGS", dropOpt(sp.Fields["DOCKER_ARGS"], arg))
-		files["spec"] = []byte(sp.Text("Written by yardo from the spec as given, " + arg + " dropped."))
+		files["spec"] = []byte(sp.Text(fmt.Sprintf("Written by yardo from the spec as given, %s dropped.", arg)))
 	default:
 		return fmt.Errorf("%q: not a fix yardo makes", fix)
 	}
@@ -81,7 +81,7 @@ func dropFront(b []byte, key string) ([]byte, bool) {
 	}
 	s := strings.ReplaceAll(string(b), "\r\n", "\n")
 	rest := s[4+len(strings.Join(front, "\n")):]
-	return []byte("---\n" + strings.Join(kept, "\n") + rest), found
+	return []byte(fmt.Sprintf("---\n%s%s", strings.Join(kept, "\n"), rest)), found
 }
 
 // dropOpt is args without option o ("--opt=value", as disallowed names

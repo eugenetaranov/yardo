@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -174,18 +175,18 @@ func (c *checklist) lines(w int) ([]string, int) {
 				}
 			}
 		}
-		name := box + " " + label
+		name := fmt.Sprintf("%s %s", box, label)
 		if r.q.Kind == "toggle" {
-			name = box + " " + padTo(label, col)
+			name = fmt.Sprintf("%s %s", box, padTo(label, col))
 		}
 		name = runewidth.Truncate(name, max(10, w-10), "…")
-		l := "     " + bold.Render(name) + " "
+		l := fmt.Sprintf("     %s ", bold.Render(name))
 		if !c.on(r) {
-			l = "     " + muted.Render(name) + " "
+			l = fmt.Sprintf("     %s ", muted.Render(name))
 		}
 		if n == c.sel {
 			cur = len(out)
-			l = "  " + rowOn.Render(" › "+name+" ")
+			l = "  " + rowOn.Render(fmt.Sprintf(" › %s ", name))
 		}
 		if note != "" {
 			l += "  " + muted.Render(runewidth.Truncate(note, max(10, w-col-16), "…"))
@@ -200,7 +201,7 @@ func (c *checklist) View() string {
 		return ""
 	}
 	w, h := max(50, c.width), max(12, c.height)
-	head := []string{"", "  " + accentBd.Render(tui.Cur.Brand) + muted.Render("  ·  ") + bold.Render(tui.Title("Choices")),
+	head := []string{"", fmt.Sprintf("  %s%s%s", accentBd.Render(tui.Cur.Brand), muted.Render("  ·  "), bold.Render(tui.Title("Choices"))),
 		"  " + muted.Render("Tick what this machine should have. The questions they need come next, then a review: Install there needs nothing more.")}
 	body, cur := c.lines(w)
 	room := max(3, h-len(head)-3)
@@ -215,7 +216,7 @@ func (c *checklist) View() string {
 	for len(body) < room {
 		body = append(body, "")
 	}
-	k := func(key, what string) string { return keyOn.Render(key) + " " + what }
+	k := func(key, what string) string { return fmt.Sprintf("%s %s", keyOn.Render(key), what) }
 	keys := strings.Join([]string{k("↑↓", "choose"), k("space", "tick"), k("enter", "done"), k("q", "cancel")}, "   ")
 	return strings.Join(append(append(head, body...), "", "  "+keys), "\n")
 }

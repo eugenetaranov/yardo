@@ -192,7 +192,7 @@ func (m *Menu) skillActions(s *SkillRow) []mcpAction {
 		out = append(out, mcpAction{"on", "Turn it on", "back where it was"})
 	}
 	if s.Update != "" {
-		out = append(out, mcpAction{"update", "Update it", "to " + shortRef(s.Update) + ": checked first, this one stays until you approve it"})
+		out = append(out, mcpAction{"update", "Update it", fmt.Sprintf("to %s: checked first, this one stays until you approve it", shortRef(s.Update))})
 	}
 	if s.Source == "drifted" {
 		out = append(out, mcpAction{"restore", "Restore it", "puts back the files you approved: they changed since"},
@@ -260,7 +260,7 @@ func (m *Menu) skillsKey(k string, up, down bool) tea.Cmd {
 			case "check", "review", "update", "restore":
 				return m.quit(MenuResult{Kind: MenuSkills, MCP: MCPAct{Do: a, Entry: name}})
 			case "delete":
-				m.dialog = &Dialog{Title: "Delete " + name + "?", YN: true, Sel: 1,
+				m.dialog = &Dialog{Title: fmt.Sprintf("Delete %s?", name), YN: true, Sel: 1,
 					Lines: []string{"It goes from both skills folders, and from where it's held off.", "This can't be undone."},
 					Opts:  [][2]string{{"Delete (y)", "yes"}, {"Keep it (n)", "no"}},
 					On: func(v string) tea.Cmd {
@@ -341,13 +341,13 @@ func (m *Menu) skillsView(w, room int) []string {
 		if s == nil {
 			return nil
 		}
-		add("  "+bold.Render(s.Name)+muted.Render(" · "+skillFrom(*s)), "  "+skillWord(*s), "  "+muted.Render(s.Where), "")
+		add(fmt.Sprintf("  %s%s", bold.Render(s.Name), muted.Render(" · "+skillFrom(*s))), "  "+skillWord(*s), "  "+muted.Render(s.Where), "")
 		for n, a := range m.skillActions(s) {
 			m.hit(top+len(b), 0, 0, m.selects(n))
 			if n == m.sel {
-				add("  " + rowOn.Render(padTo(" › "+a.label, 24)) + "  " + muted.Render(a.note))
+				add(fmt.Sprintf("  %s  %s", rowOn.Render(padTo(" › "+a.label, 24)), muted.Render(a.note)))
 			} else {
-				add("     " + padTo(a.label, 21) + "  " + muted.Render(a.note))
+				add(fmt.Sprintf("     %s  %s", padTo(a.label, 21), muted.Render(a.note)))
 			}
 		}
 		return b
@@ -380,30 +380,30 @@ func (m *Menu) skillsView(w, room int) []string {
 		word += accent.Render("  · not saved")
 	}
 	if m.sel < 0 {
-		row(-1, "  "+rowOn.Render(padTo(" › All skills", 25))+"  "+word)
+		row(-1, fmt.Sprintf("  %s  %s", rowOn.Render(padTo(" › All skills", 25)), word))
 	} else {
-		row(-1, "     "+padTo("All skills", 22)+"  "+word)
+		row(-1, fmt.Sprintf("     %s  %s", padTo("All skills", 22), word))
 	}
 	lines = append(lines, "")
 	selLine := 0
 	for n, s := range ss {
-		cols := padTo(skillFrom(s), 16) + "  " + skillWord(s)
+		cols := fmt.Sprintf("%s  %s", padTo(skillFrom(s), 16), skillWord(s))
 		name := padTo(s.Name, 22)
 		if m.info.SkillsAllOff {
-			cols, name = muted.Render(padTo(skillFrom(s), 16))+"  "+skillWord(s), muted.Render(name)
+			cols, name = fmt.Sprintf("%s  %s", muted.Render(padTo(skillFrom(s), 16)), skillWord(s)), muted.Render(name)
 		}
 		if _, marked := m.skPend[s.Name]; marked {
 			cols += accent.Render("  · not saved")
 		}
 		if n == m.sel {
 			selLine = len(lines)
-			row(n, "  "+rowOn.Render(padTo(" › "+s.Name, 25))+"  "+cols)
+			row(n, fmt.Sprintf("  %s  %s", rowOn.Render(padTo(" › "+s.Name, 25)), cols))
 		} else {
-			row(n, "     "+name+"  "+cols)
+			row(n, fmt.Sprintf("     %s  %s", name, cols))
 		}
 	}
 	if len(m.skPend) > 0 {
-		lines = append(lines, "", "  "+accentBd.Render("a applies "+plural(len(m.skPend), "change", "changes"))+"  "+muted.Render("q leaves without them"))
+		lines = append(lines, "", fmt.Sprintf("  %s  %s", accentBd.Render("a applies "+plural(len(m.skPend), "change", "changes")), muted.Render("q leaves without them")))
 	}
 	for len(rowOf) < len(lines) {
 		rowOf = append(rowOf, -2)

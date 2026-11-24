@@ -237,7 +237,7 @@ func fixVerb(i *BoardItem) string {
 	case "drifted":
 		return "Restore " + n
 	case "outdated":
-		return "Update " + n + "'s setup"
+		return fmt.Sprintf("Update %s's setup", n)
 	}
 	return "Fix " + n
 }
@@ -253,7 +253,7 @@ func fixNote(i *BoardItem) string {
 	if i.Detail == "" {
 		return stateWord(i.State)
 	}
-	return stateWord(i.State) + ": " + i.Detail
+	return fmt.Sprintf("%s: %s", stateWord(i.State), i.Detail)
 }
 
 // todo is what needs doing: the last run, when it failed; each problem
@@ -263,7 +263,7 @@ func fixNote(i *BoardItem) string {
 func (m *Menu) todo() []menuRow {
 	var out []menuRow
 	if l := m.info.LastRun; l != nil && !l.OK {
-		out = append(out, menuRow{id: "why", label: "See why the last run failed", note: l.When + " · " + l.say()})
+		out = append(out, menuRow{id: "why", label: "See why the last run failed", note: fmt.Sprintf("%s · %s", l.When, l.say())})
 	}
 	if ps := m.filter(problem); len(ps) <= 2 {
 		for _, i := range ps {
@@ -272,7 +272,7 @@ func (m *Menu) todo() []menuRow {
 	} else {
 		var why []string
 		for _, i := range ps {
-			why = append(why, short(i.Label)+" "+stateWord(i.State))
+			why = append(why, fmt.Sprintf("%s %s", short(i.Label), stateWord(i.State)))
 		}
 		out = append(out, menuRow{id: "fix", label: "Fix " + plural(len(ps), "thing", "things"), note: strings.Join(why, " · ")})
 	}
@@ -280,7 +280,7 @@ func (m *Menu) todo() []menuRow {
 	for _, i := range m.filter(secret) {
 		for _, in := range i.Inputs {
 			_, k, _ := strings.Cut(in, ": ")
-			ins = append(ins, menuRow{id: "key:" + i.ID + ":" + k, label: "Fill in " + k, note: short(i.Label) + " needs it · opens its file", item: i, input: in})
+			ins = append(ins, menuRow{id: fmt.Sprintf("key:%s:%s", i.ID, k), label: "Fill in " + k, note: short(i.Label) + " needs it · opens its file", item: i, input: in})
 		}
 	}
 	if len(ins) <= 2 {
@@ -470,7 +470,7 @@ func (m *Menu) rows() []menuRow {
 	}
 	out = append(out, tab("settings", "Settings", "network access, git, prompt, look"))
 	if l := m.info.LastRun; l != nil {
-		out = append(out, tab("lastrun", "Last run", l.When+" · "+l.say()))
+		out = append(out, tab("lastrun", "Last run", fmt.Sprintf("%s · %s", l.When, l.say())))
 	}
 	return out
 }
@@ -485,7 +485,7 @@ func (m *Menu) settingsRows() []menuRow {
 	if as := m.access(); len(as) > 0 {
 		var now []string
 		for _, s := range as {
-			now = append(now, s.Label+": "+s.label(s.Value))
+			now = append(now, fmt.Sprintf("%s: %s", s.Label, s.label(s.Value)))
 		}
 		out = append(out, menuRow{id: "access", label: "Network access", note: strings.Join(now, " · ")})
 	}
@@ -493,7 +493,7 @@ func (m *Menu) settingsRows() []menuRow {
 	if ls := m.section(LookSection); len(ls) > 0 {
 		var now []string
 		for _, s := range ls {
-			now = append(now, s.Label+": "+s.label(s.Value))
+			now = append(now, fmt.Sprintf("%s: %s", s.Label, s.label(s.Value)))
 		}
 		label := ls[0].Label
 		if len(ls) > 1 {
@@ -505,7 +505,7 @@ func (m *Menu) settingsRows() []menuRow {
 	if ss := m.section(ShellSection); len(ss) > 0 {
 		var now []string
 		for _, s := range ss {
-			now = append(now, s.Label+": "+s.label(s.Value))
+			now = append(now, fmt.Sprintf("%s: %s", s.Label, s.label(s.Value)))
 		}
 		label := ss[0].Label
 		if len(ss) > 1 {
@@ -1022,12 +1022,12 @@ func (m *Menu) Body(w, h int) string {
 		apply := muted.Render("[ Apply ]   nothing changed yet: ←→ picks a choice")
 		if n > 0 {
 			label := "Apply " + plural(n, "change", "changes")
-			apply = accentBd.Render("[ "+label+" ]") + "   " + muted.Render("a applies from anywhere · q leaves without changing anything")
+			apply = fmt.Sprintf("%s   %s", accentBd.Render(fmt.Sprintf("[ %s ]", label)), muted.Render("a applies from anywhere · q leaves without changing anything"))
 			if m.sel == len(as) {
-				apply = rowOn.Render("  "+label+"  ") + "   " + muted.Render("q leaves without changing anything")
+				apply = fmt.Sprintf("%s   %s", rowOn.Render(fmt.Sprintf("  %s  ", label)), muted.Render("q leaves without changing anything"))
 			}
 		} else if m.sel == len(as) {
-			apply = rowOn.Render(" Apply ") + "   " + muted.Render("nothing changed yet: ←→ picks a choice")
+			apply = fmt.Sprintf("%s   %s", rowOn.Render(" Apply "), muted.Render("nothing changed yet: ←→ picks a choice"))
 		}
 		m.hit(at(), 0, 0, m.selects(len(as)))
 		add("  " + apply)
@@ -1068,9 +1068,9 @@ func labelCol(rs []menuRow, w int) int {
 func (m *Menu) row(on bool, r menuRow, col, w int) []string {
 	note := muted.Render(runewidth.Truncate(r.note, max(4, w-col-9), "…"))
 	if on {
-		return []string{"  " + rowOn.Render(padTo(" › "+r.label, col+3)) + "  " + note}
+		return []string{fmt.Sprintf("  %s  %s", rowOn.Render(padTo(" › "+r.label, col+3)), note)}
 	}
-	return []string{"     " + padTo(r.label, col) + "  " + note}
+	return []string{fmt.Sprintf("     %s  %s", padTo(r.label, col), note)}
 }
 
 // wrapStyled lays rendered pieces out in lines at most w wide.

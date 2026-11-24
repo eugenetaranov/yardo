@@ -101,7 +101,7 @@ func userStatusOf(ctx context.Context, env *steps.Env, user string, items []*cat
 			st.State, st.Done, st.Detail = "missing", 0, "mise use -g "+t
 		}
 		if v := mise[steps.MiseName(t)]; v != "" {
-			st.Updates = []string{steps.MiseName(t) + " " + v}
+			st.Updates = []string{fmt.Sprintf("%s %s", steps.MiseName(t), v)}
 		}
 		us.Items = append(us.Items, st)
 	}
@@ -176,7 +176,7 @@ func markApplied(state, user string, ids []string, now time.Time) error {
 	}
 	m := loadApplied(state, user)
 	for _, id := range ids {
-		m[id] = now.UTC().Format(time.RFC3339) + " " + version
+		m[id] = fmt.Sprintf("%s %s", now.UTC().Format(time.RFC3339), version)
 	}
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -352,7 +352,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	foldParts(items)
 	for _, t := range a.MiseExtra {
 		bi := &ui.BoardItem{ID: "mise:" + t, Label: t + " (extra mise tool)", Tab: ui.ExtraTab, Picked: true, Source: "mise use -g " + t,
-			Removable: true, RemoveSay: "uninstalls it (mise unuse -g " + t + ")"}
+			Removable: true, RemoveSay: fmt.Sprintf("uninstalls it (mise unuse -g %s)", t)}
 		if st, ok := status["mise:"+steps.MiseName(t)]; ok {
 			bi.State, bi.Detail = st.State, st.Detail
 		}
@@ -483,7 +483,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			for _, ap := range as {
 				for n := range info.MCP {
 					if ap.Kind == "mcp" && info.MCP[n].Name == ap.Name {
-						info.MCP[n].About = strings.TrimSpace(info.MCP[n].About + " · checked " + ap.At.Format("2006-01-02") + ", " + shortPin(ap.Pin))
+						info.MCP[n].About = strings.TrimSpace(fmt.Sprintf("%s · checked %s, %s", info.MCP[n].About, ap.At.Format("2006-01-02"), shortPin(ap.Pin)))
 					}
 				}
 			}
@@ -493,7 +493,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			for _, h := range hs {
 				if h.Kind == "mcp" {
 					info.MCP = append(info.MCP, ui.MCPServer{Entry: h.Name, Name: h.Name, State: "held",
-						About: "From " + h.Source + ": " + verdictSays(h.Report.Verdict()) + "."})
+						About: fmt.Sprintf("From %s: %s.", h.Source, verdictSays(h.Report.Verdict()))})
 				}
 			}
 		}
@@ -742,7 +742,7 @@ func foldParts(items []*ui.BoardItem) {
 		}
 		t := items[n]
 		if stateRank[p.State] > stateRank[t.State] {
-			t.State, t.Detail = p.State, ui.Short(p.Label)+": "+p.Detail
+			t.State, t.Detail = p.State, fmt.Sprintf("%s: %s", ui.Short(p.Label), p.Detail)
 		}
 		t.Inputs = append(t.Inputs, p.Inputs...)
 		t.Changes = append(t.Changes, p.Changes...)

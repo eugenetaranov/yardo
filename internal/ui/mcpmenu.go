@@ -283,7 +283,7 @@ func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
 		out = append(out, mcpAction{"recheck", "Check it again", "its tools changed since you approved it: their names and descriptions are checked"})
 	}
 	if s.Update != "" {
-		out = append(out, mcpAction{"update", "Update it", "to " + shortRef(s.Update) + ": checked first, this one stays until you approve it"})
+		out = append(out, mcpAction{"update", "Update it", fmt.Sprintf("to %s: checked first, this one stays until you approve it", shortRef(s.Update))})
 	}
 	if s.Yardo && (s.State == "failed" || s.State == "pending") && !m.info.MCPDown {
 		out = append(out, mcpAction{"retry", "Try again", "registers it as its settings are now"})
@@ -298,7 +298,7 @@ func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
 	case s.Yardo:
 		out = append(out, mcpAction{"off", "Turn it off", "keeps its settings; agents stop seeing its tools"})
 	}
-	out = append(out, mcpAction{"edit", "Edit its settings", "opens ~/.mcp/" + s.Name + "/env, then registers it"})
+	out = append(out, mcpAction{"edit", "Edit its settings", fmt.Sprintf("opens ~/.mcp/%s/env, then registers it", s.Name)})
 	if m.canRestart(s) {
 		out = append(out, mcpAction{"restart", "Restart it", "afresh: its Docker containers removed, then registered again"})
 	}
@@ -373,7 +373,7 @@ func mcpWord(s *MCPServer) string {
 	case "new":
 		return muted.Render("· not set up yet: applies next")
 	case "retired":
-		return yellow.Render("▲ retired: add " + s.Instead + " instead")
+		return yellow.Render(fmt.Sprintf("▲ retired: add %s instead", s.Instead))
 	}
 	return muted.Render("· not checked")
 }
@@ -390,7 +390,7 @@ func fromLine(s *MCPServer) string {
 	if s.Cached == "" {
 		return "from " + s.From
 	}
-	return "from " + s.From + " · " + s.Cached
+	return fmt.Sprintf("from %s · %s", s.From, s.Cached)
 }
 
 // examples names a few servers to add, and how many more there are.
@@ -450,7 +450,7 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 		case k == "r" && m.sel < n:
 			s := m.mcpServers()[m.sel]
 			if !m.canRestart(s) {
-				m.toast = "Nothing to restart: " + s.Name + " isn't running here."
+				m.toast = fmt.Sprintf("Nothing to restart: %s isn't running here.", s.Name)
 				return nil
 			}
 			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "restart", Entry: s.Entry}})
@@ -531,8 +531,8 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 // askDelete asks before deleting s (Keep it chosen first).
 func (m *Menu) askDelete(s *MCPServer) {
 	entry := s.Entry
-	m.dialog = &Dialog{Title: "Delete " + s.Name + "?", YN: true, Sel: 1,
-		Lines: []string{"It leaves the gateway, and ~/.mcp/" + s.Name + " (its settings and keys) is deleted.", "This can't be undone."},
+	m.dialog = &Dialog{Title: fmt.Sprintf("Delete %s?", s.Name), YN: true, Sel: 1,
+		Lines: []string{fmt.Sprintf("It leaves the gateway, and ~/.mcp/%s (its settings and keys) is deleted.", s.Name), "This can't be undone."},
 		Opts:  [][2]string{{"Delete (y)", "yes"}, {"Keep it (n)", "no"}},
 		On: func(v string) tea.Cmd {
 			if v != "yes" {
@@ -593,7 +593,7 @@ func sentence(msg string) string {
 	if msg == "" {
 		return ""
 	}
-	return strings.ToUpper(msg[:1]) + msg[1:] + "."
+	return fmt.Sprintf("%s%s.", strings.ToUpper(msg[:1]), msg[1:])
 }
 
 // window keeps line sel of lines in view, at most n of them.
@@ -674,10 +674,10 @@ func (m *Menu) mcpView(w, room int) []string {
 		if n := len(m.info.MCPOrphans); n > 0 {
 			// A click on it cleans up, as c does.
 			m.hits = append(m.hits, Hit{Y0: top + len(b), Y1: top + len(b), Key: "c"})
-			add("  "+yellow.Render("▲  "+plural(n, "orphaned container", "orphaned containers"))+muted.Render(" ("+m.orphansOf()+"): the gateway lost them, they still run.")+"  "+accentBd.Render("c cleans up"), "")
+			add(fmt.Sprintf("  %s%s  %s", yellow.Render("▲  "+plural(n, "orphaned container", "orphaned containers")), muted.Render(fmt.Sprintf(" (%s): the gateway lost them, they still run.", m.orphansOf())), accentBd.Render("c cleans up")), "")
 		}
 		if len(ss) == 0 {
-			add("  No MCP servers yet. Each one gives your coding agents tools:", "  "+m.examples()+".", "")
+			add("  No MCP servers yet. Each one gives your coding agents tools:", fmt.Sprintf("  %s.", m.examples()), "")
 		}
 		var lines []string
 		var rowOf []int
@@ -707,9 +707,9 @@ func (m *Menu) mcpView(w, room int) []string {
 				word += accent.Render("  · not saved")
 			}
 			if m.sel < 0 {
-				row(-1, "  "+rowOn.Render(padTo(" › All servers", 21))+"  "+word)
+				row(-1, fmt.Sprintf("  %s  %s", rowOn.Render(padTo(" › All servers", 21)), word))
 			} else {
-				row(-1, "     "+padTo("All servers", 18)+"  "+word)
+				row(-1, fmt.Sprintf("     %s  %s", padTo("All servers", 18), word))
 			}
 			lines = append(lines, "")
 		}
@@ -719,32 +719,32 @@ func (m *Menu) mcpView(w, room int) []string {
 				heading = true
 				lines = append(lines, "", "     "+muted.Render("Also in ~/.mcp (not on yardo's list)"))
 			}
-			cols := padTo(mcpType(s), 13) + "  " + mcpWord(s)
+			cols := fmt.Sprintf("%s  %s", padTo(mcpType(s), 13), mcpWord(s))
 			name := padTo(s.Name, 18)
 			if s.Yardo && m.info.MCPAllOff {
 				// Dimmed: all are off; these come back with them.
-				cols, name = muted.Render(padTo(mcpType(s), 13))+"  "+mcpWord(s), muted.Render(name)
+				cols, name = fmt.Sprintf("%s  %s", muted.Render(padTo(mcpType(s), 13)), mcpWord(s)), muted.Render(name)
 			}
 			if _, marked := m.pend[s.Entry]; marked {
 				cols += accent.Render("  · not saved")
 			}
 			if n == m.sel {
 				selLine = len(lines)
-				row(n, "  "+rowOn.Render(padTo(" › "+s.Name, 21))+"  "+cols)
+				row(n, fmt.Sprintf("  %s  %s", rowOn.Render(padTo(" › "+s.Name, 21)), cols))
 			} else {
-				row(n, "     "+name+"  "+cols)
+				row(n, fmt.Sprintf("     %s  %s", name, cols))
 			}
 		}
 		lines = append(lines, "")
 		if m.sel == len(ss) {
 			selLine = len(lines)
-			row(len(ss), "  "+rowOn.Render(padTo(" › + Add a server", 21))+"  "+muted.Render(m.examples()))
+			row(len(ss), fmt.Sprintf("  %s  %s", rowOn.Render(padTo(" › + Add a server", 21)), muted.Render(m.examples())))
 		} else {
-			row(len(ss), "     "+padTo("+ Add a server", 18)+"  "+muted.Render(m.examples()))
+			row(len(ss), fmt.Sprintf("     %s  %s", padTo("+ Add a server", 18), muted.Render(m.examples())))
 		}
 		if len(m.pend) > 0 {
 			// What's marked takes effect with a.
-			lines = append(lines, "", "  "+accentBd.Render("a applies "+plural(len(m.pend), "change", "changes"))+"  "+muted.Render("q leaves without them"))
+			lines = append(lines, "", fmt.Sprintf("  %s  %s", accentBd.Render("a applies "+plural(len(m.pend), "change", "changes")), muted.Render("q leaves without them")))
 		}
 		for len(rowOf) < len(lines) {
 			rowOf = append(rowOf, -2)
@@ -789,14 +789,14 @@ func (m *Menu) mcpView(w, room int) []string {
 		if s == nil { // normalize goes back to the list first
 			return nil
 		}
-		what := "a " + s.Spec + " server"
+		what := fmt.Sprintf("a %s server", s.Spec)
 		if s.Spec == "" {
 			what = "with its own spec"
 		}
 		if !s.Yardo {
 			what += ", found in ~/.mcp"
 		}
-		add("  " + bold.Render(s.Name) + muted.Render(" · "+what))
+		add(fmt.Sprintf("  %s%s", bold.Render(s.Name), muted.Render(" · "+what)))
 		if s.About != "" {
 			add("  " + s.About)
 		}
@@ -814,14 +814,14 @@ func (m *Menu) mcpView(w, room int) []string {
 				add("    " + yellow.Render(l))
 			}
 		}
-		add("  "+muted.Render("Settings in ~/.mcp/"+s.Name+"/env · tools show as "+s.Name+"__<tool>"), "")
+		add("  "+muted.Render(fmt.Sprintf("Settings in ~/.mcp/%s/env · tools show as %s__<tool>", s.Name, s.Name)), "")
 		as := m.mcpActions(s)
 		for n, a := range as {
 			m.hit(top+len(b), 0, 0, m.selects(n))
 			if n == m.sel {
-				add("  " + rowOn.Render(padTo(" › "+a.label, 24)) + "  " + muted.Render(a.note))
+				add(fmt.Sprintf("  %s  %s", rowOn.Render(padTo(" › "+a.label, 24)), muted.Render(a.note)))
 			} else {
-				add("     " + padTo(a.label, 21) + "  " + muted.Render(a.note))
+				add(fmt.Sprintf("     %s  %s", padTo(a.label, 21), muted.Render(a.note)))
 			}
 		}
 		return b
@@ -833,17 +833,17 @@ func (m *Menu) mcpView(w, room int) []string {
 			// wrapped would move the rows below as the choice moves.
 			about := muted.Render(runewidth.Truncate(s.About, max(10, w-27), "…"))
 			if n == m.sel {
-				lines = append(lines, "  "+rowOn.Render(padTo(" › "+s.Name, 21))+"  "+about)
+				lines = append(lines, fmt.Sprintf("  %s  %s", rowOn.Render(padTo(" › "+s.Name, 21)), about))
 			} else {
-				lines = append(lines, "     "+padTo(s.Name, 18)+"  "+about)
+				lines = append(lines, fmt.Sprintf("     %s  %s", padTo(s.Name, 18), about))
 			}
 		}
 		// Last, one from elsewhere: checked before it's installed.
 		elsewhere := muted.Render("a Docker image, an https URL or a spec file: held and checked first")
 		if m.sel == len(specs) {
-			lines = append(lines, "  "+rowOn.Render(padTo(" › From elsewhere", 21))+"  "+elsewhere)
+			lines = append(lines, fmt.Sprintf("  %s  %s", rowOn.Render(padTo(" › From elsewhere", 21)), elsewhere))
 		} else {
-			lines = append(lines, "     "+padTo("From elsewhere", 18)+"  "+elsewhere)
+			lines = append(lines, fmt.Sprintf("     %s  %s", padTo("From elsewhere", 18), elsewhere))
 		}
 		start := windowStart(len(lines), m.sel, room-3)
 		for c, l := range window(lines, m.sel, room-3) {
@@ -853,10 +853,10 @@ func (m *Menu) mcpView(w, room int) []string {
 		add("", "  "+muted.Render("Adding one again makes another: a second Jira, another AWS account."))
 		return b
 	case "mcp:name":
-		add("  "+bold.Render("Name it"), "  "+accentBd.Render("› ")+string(m.name)+accent.Render("_"))
+		add("  "+bold.Render("Name it"), fmt.Sprintf("  %s%s%s", accentBd.Render("› "), string(m.name), accent.Render("_")))
 		if entry, err := m.nameEntry(); err == nil {
 			_, n, _ := mcp.Instance(entry)
-			add("    " + muted.Render("→ "+n+" · its tools show as "+n+"__<tool>, its settings go in ~/.mcp/"+n))
+			add("    " + muted.Render(fmt.Sprintf("→ %s · its tools show as %s__<tool>, its settings go in ~/.mcp/%s", n, n, n)))
 		} else {
 			add("")
 		}
@@ -864,9 +864,9 @@ func (m *Menu) mcpView(w, room int) []string {
 		if m.nameErr != "" {
 			add("  " + yellow.Render(m.nameErr))
 		} else if !m.renaming && len(m.using(m.nameFor)) > 0 {
-			add("  " + muted.Render("There's a "+m.nameFor+" already: give this one a name such as work or prod."))
+			add("  " + muted.Render(fmt.Sprintf("There's a %s already: give this one a name such as work or prod.", m.nameFor)))
 		} else if !m.renaming {
-			add("  " + muted.Render("Enter keeps "+m.nameFor+"; another name, such as work, makes it "+m.nameFor+"-work."))
+			add("  " + muted.Render(fmt.Sprintf("Enter keeps %s; another name, such as work, makes it %s-work.", m.nameFor, m.nameFor)))
 		}
 		return b
 	}

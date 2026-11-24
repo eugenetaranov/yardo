@@ -211,8 +211,8 @@ func claudeDeny(cur []byte) ([]byte, bool, error) {
 func codexSafeConfig(cur []byte) []byte {
 	b := cur
 	for _, kv := range codexSafe {
-		line := kv[0] + " = " + kv[1]
-		re := regexp.MustCompile(`(?m)^` + kv[0] + `\s*=.*$`)
+		line := fmt.Sprintf("%s = %s", kv[0], kv[1])
+		re := regexp.MustCompile(fmt.Sprintf("(?m)^%s\\s*=.*$", kv[0]))
 		if re.Match(b) {
 			b = re.ReplaceAll(b, []byte(line))
 			continue

@@ -60,9 +60,11 @@ var domainRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]
 func ValidDomain(d string) bool { return len(d) <= 253 && domainRe.MatchString(d) }
 
 // mcpSite is the user's Caddy site file.
-func mcpSite(e *Env) string { return filepath.Join(caddySites, "mcp-"+e.User+".caddy") }
+func mcpSite(e *Env) string { return filepath.Join(caddySites, fmt.Sprintf("mcp-%s.caddy", e.User)) }
 
-func mcpLog(e *Env) string { return filepath.Join(caddyLogDir, "yardo-mcp-"+e.User+".log") }
+func mcpLog(e *Env) string {
+	return filepath.Join(caddyLogDir, fmt.Sprintf("yardo-mcp-%s.log", e.User))
+}
 
 func siteText(e *Env) []byte {
 	// ~/pages, under /pages/ with a login, once go:pages_public set it up.

@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,7 +32,7 @@ exit 0
 			t.Fatal(err)
 		}
 		cmd := exec.Command("sh", "conf/yardo-keep-way-in")
-		cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
+		cmd.Env = append(os.Environ(), fmt.Sprintf("PATH=%s:%s", dir, os.Getenv("PATH")))
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("%s: %v\n%s", name, err, out)
 		}

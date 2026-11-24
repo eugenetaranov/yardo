@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -217,7 +218,7 @@ func TestTargets(t *testing.T) {
 	root := t.TempDir()
 	st := &answers.Store{State: root + "/state", IsSystem: func(string) bool { return false },
 		Account: func(n string) (answers.Account, error) {
-			return answers.Account{Home: root + "/" + n, UID: os.Getuid(), GID: os.Getgid()}, os.MkdirAll(root+"/"+n, 0o755)
+			return answers.Account{Home: fmt.Sprintf("%s/%s", root, n), UID: os.Getuid(), GID: os.Getgid()}, os.MkdirAll(fmt.Sprintf("%s/%s", root, n), 0o755)
 		}}
 	for _, u := range []string{"bob", "ada"} {
 		if err := st.Save(&answers.Answers{User: u, Picks: []string{"zsh"}}); err != nil {
@@ -503,7 +504,7 @@ func TestConnectRows(t *testing.T) {
 	rows := connectRows(a, addrs, []string{tok}, true)
 	var got []string
 	for _, r := range rows {
-		got = append(got, r.What+"|"+r.Use+"|"+r.Note)
+		got = append(got, fmt.Sprintf("%s|%s|%s", r.What, r.Use, r.Note))
 	}
 	all := strings.Join(got, "\n")
 	for _, want := range []string{"SSH|ssh ", "ada@100.64.1.7 over Tailscale", "Docker|docker context use ", "host=ssh://ada@100.64.1.7 · -p ports from the VPNs",
@@ -572,8 +573,8 @@ func TestPrintConnectNames(t *testing.T) {
 	var out bytes.Buffer
 	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081}, addrs, ts, "", nil, false)
 	got := ui.Unmark(out.String())
-	for _, want := range []string{"Use 100.64.1.7 at home and away", "Its name, payzoff.tail1234.ts.net, works too", "Host " + short + "\n    HostName 100.64.1.7\n    User ada\n    HostKeyAlias " + short,
-		"ServerAliveInterval 15", `"host=ssh://ada@100.64.1.7"`, `"host=ssh://` + short + `"`, "http://100.64.1.7:8081/mcp", "expires on 2027-04-28"} {
+	for _, want := range []string{"Use 100.64.1.7 at home and away", "Its name, payzoff.tail1234.ts.net, works too", fmt.Sprintf("Host %s\n    HostName 100.64.1.7\n    User ada\n    HostKeyAlias %s", short, short),
+		"ServerAliveInterval 15", `"host=ssh://ada@100.64.1.7"`, fmt.Sprintf("\"host=ssh://%s\"", short), "http://100.64.1.7:8081/mcp", "expires on 2027-04-28"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("tailscale: lacks %q:\n%s", want, got)
 		}
@@ -757,13 +758,13 @@ func TestRanSays(t *testing.T) {
 	if got := ranSays(cat, nil, nil, nil); got != "✓ Done" {
 		t.Errorf("applied: %q", got)
 	}
-	if got := ranSays(cat, nil, nil, &runFailed{ids: []string{"docker"}}); got != "✗ "+ui.Short(cat.Item("docker").Label)+" failed · Last run shows what happened" {
+	if got := ranSays(cat, nil, nil, &runFailed{ids: []string{"docker"}}); got != fmt.Sprintf("✗ %s failed · Last run shows what happened", ui.Short(cat.Item("docker").Label)) {
 		t.Errorf("failed: %q", got)
 	}
 	if got := ranSays(cat, nil, nil, errCancelled); got != "Cancelled: nothing changed." {
 		t.Errorf("cancelled: %q", got)
 	}
-	if got := ranSays(cat, []string{"terraform"}, []string{"terraform", "mise:uv"}, nil); got != "✓ Updated "+ui.Short(cat.Item("terraform").Label)+", uv" {
+	if got := ranSays(cat, []string{"terraform"}, []string{"terraform", "mise:uv"}, nil); got != fmt.Sprintf("✓ Updated %s, uv", ui.Short(cat.Item("terraform").Label)) {
 		t.Errorf("updated: %q", got)
 	}
 	if got := ranSays(cat, nil, []string{"terraform"}, &runFailed{ids: []string{"updates"}}); got != "✗ updates failed · Last run shows what happened" {

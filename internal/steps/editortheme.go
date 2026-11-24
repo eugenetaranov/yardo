@@ -2,6 +2,7 @@ package steps
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
@@ -77,8 +78,7 @@ func SetEditorTheme(e *Env, key string) error {
 	if err := mkdirFor(e, p, catalog.Step{To: EditorThemeFile}); err != nil {
 		return err
 	}
-	body := "# yardo's Settings › Look › Editor theme writes this; Vim and Neovim\n" +
-		"# read it as they start.\ntheme " + t.Key + "\nnvim " + t.Nvim + "\nvim " + t.Vim + "\n"
+	body := fmt.Sprintf("# yardo's Settings › Look › Editor theme writes this; Vim and Neovim\n# read it as they start.\ntheme %s\nnvim %s\nvim %s\n", t.Key, t.Nvim, t.Vim)
 	if err := writeFile(p, []byte(body), 0o644); err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func (editorThemeStep) Plan(e *Env) []Action {
 	if e.Answers == nil || e.Answers.EditorTheme == "" {
 		return nil
 	}
-	return []Action{{"file", EditorThemeFile + " (" + e.Answers.EditorTheme + ")"}}
+	return []Action{{"file", fmt.Sprintf("%s (%s)", EditorThemeFile, e.Answers.EditorTheme)}}
 }
 
 func (editorThemeStep) Check(_ context.Context, e *Env) (bool, error) {

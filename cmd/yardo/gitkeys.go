@@ -70,7 +70,7 @@ func (k *asker) askGitKey(c *choices, id string) error {
 		sel = keyUse
 	}
 	for {
-		ch, err := k.chooseOne(gitHostNames[id]+"'s SSH key, for git to "+host, []string{keyMake, keyUse, keyPaste, keyNone}, sel)
+		ch, err := k.chooseOne(fmt.Sprintf("%s's SSH key, for git to %s", gitHostNames[id], host), []string{keyMake, keyUse, keyPaste, keyNone}, sel)
 		if err != nil {
 			return err
 		}
@@ -88,7 +88,7 @@ func (k *asker) askGitKey(c *choices, id string) error {
 			if !slices.Contains(keys, cur) {
 				cur = keys[0]
 			}
-			if g.Key, err = k.chooseOne("Which key, for "+host+"?", keys, cur); err != nil {
+			if g.Key, err = k.chooseOne(fmt.Sprintf("Which key, for %s?", host), keys, cur); err != nil {
 				return err
 			}
 			return nil
@@ -112,7 +112,7 @@ func (k *asker) askGitKey(c *choices, id string) error {
 // pasteKey asks for a private key until one is pasted (nil: none).
 func (k *asker) pasteKey(host string) ([]byte, error) {
 	for {
-		v, err := k.secret("Paste the private key for "+host+" (empty: back)", "-----BEGIN OPENSSH PRIVATE KEY----- …")
+		v, err := k.secret(fmt.Sprintf("Paste the private key for %s (empty: back)", host), "-----BEGIN OPENSSH PRIVATE KEY----- …")
 		if err != nil || strings.TrimSpace(v) == "" {
 			return nil, err
 		}
@@ -135,13 +135,13 @@ func normalizeKey(v string) ([]byte, error) {
 	if !ok || !strings.HasSuffix(kind, "PRIVATE KEY") {
 		return nil, errors.New("not a private key")
 	}
-	body, tail, ok := strings.Cut(rest, "-----END "+kind+"-----")
+	body, tail, ok := strings.Cut(rest, fmt.Sprintf("-----END %s-----", kind))
 	if !ok || strings.TrimSpace(tail) != "" || strings.Contains(body, ":") {
 		return nil, errors.New("not a private key")
 	}
 	body = strings.Join(strings.Fields(body), "")
 	var out bytes.Buffer
-	out.WriteString("-----BEGIN " + kind + "-----\n")
+	fmt.Fprintf(&out, "-----BEGIN %s-----\n", kind)
 	for len(body) > 70 {
 		out.WriteString(body[:70] + "\n")
 		body = body[70:]
@@ -149,7 +149,7 @@ func normalizeKey(v string) ([]byte, error) {
 	if body != "" {
 		out.WriteString(body + "\n")
 	}
-	out.WriteString("-----END " + kind + "-----\n")
+	fmt.Fprintf(&out, "-----END %s-----\n", kind)
 	return out.Bytes(), nil
 }
 
@@ -168,7 +168,7 @@ func (k *asker) useIdentity(c *choices, id string, key []byte) error {
 		}
 		return nil
 	}
-	ch, err := k.chooseOne(p+" is there already: "+keyInfo(k.expand(p)), []string{keyUseIt, keyReplace}, keyUseIt)
+	ch, err := k.chooseOne(fmt.Sprintf("%s is there already: %s", p, keyInfo(k.expand(p))), []string{keyUseIt, keyReplace}, keyUseIt)
 	if err != nil {
 		return err
 	}

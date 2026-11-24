@@ -32,7 +32,7 @@ func (c credStep) typed(e *Env, key string) string {
 	if e.Secrets == nil {
 		return ""
 	}
-	return e.Secrets.Cred[c.id+" "+key]
+	return e.Secrets.Cred[fmt.Sprintf("%s %s", c.id, key)]
 }
 
 // want is the file's content: the env file with what was typed this run.
@@ -73,7 +73,7 @@ func (c credStep) Missing(ctx context.Context, e *Env) []string {
 			continue
 		}
 		if EnvGet(b, k.Name) == "" {
-			out = append(out, c.s.To+": "+k.Name)
+			out = append(out, fmt.Sprintf("%s: %s", c.s.To, k.Name))
 		}
 	}
 	return out

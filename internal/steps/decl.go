@@ -29,7 +29,7 @@ func (a aptStep) Plan(e *Env) []Action {
 	pkgs := a.Packages(e)
 	for i, p := range pkgs {
 		if v := e.lockedApt(p); v != "" {
-			pkgs[i] = p + "=" + v
+			pkgs[i] = fmt.Sprintf("%s=%s", p, v)
 		}
 	}
 	return []Action{{"apt", strings.Join(pkgs, " ")}}
@@ -105,7 +105,7 @@ func AptInstall(ctx context.Context, e *Env, pkgs []string) error {
 		case v == "":
 			args = append(args, p)
 		case aptHasVersion(ctx, e, p, v):
-			args = append(args, p+"="+v)
+			args = append(args, fmt.Sprintf("%s=%s", p, v))
 		default:
 			e.note(fmt.Sprintf("apt: %s %s (locked) is no longer in the archive; installed the current version", p, v))
 			args = append(args, p)
@@ -117,7 +117,7 @@ func AptInstall(ctx context.Context, e *Env, pkgs []string) error {
 
 // aptHasVersion reports whether the package lists have pkg at version v.
 func aptHasVersion(ctx context.Context, e *Env, pkg, v string) bool {
-	out, err := e.Exec.Run(ctx, Cmd{Name: "apt-cache", Args: []string{"show", "--no-all-versions", pkg + "=" + v}})
+	out, err := e.Exec.Run(ctx, Cmd{Name: "apt-cache", Args: []string{"show", "--no-all-versions", fmt.Sprintf("%s=%s", pkg, v)}})
 	return err == nil && strings.Contains(string(out), "Version: "+v)
 }
 
@@ -173,7 +173,7 @@ func LockedTools(e *Env, tools []string) []string {
 			if j := strings.LastIndexByte(t, '@'); j > 0 && j > strings.LastIndexByte(t, ']') {
 				t = t[:j]
 			}
-			out[i] = t + "@" + v
+			out[i] = fmt.Sprintf("%s@%s", t, v)
 		}
 	}
 	return out
@@ -343,7 +343,7 @@ func distro(e *Env) string {
 }
 
 func (r aptRepoStep) Plan(e *Env) []Action {
-	return []Action{{"repo", r.listPath() + " (key " + r.keyURL(e) + ")"}}
+	return []Action{{"repo", fmt.Sprintf("%s (key %s)", r.listPath(), r.keyURL(e))}}
 }
 
 func (r aptRepoStep) Check(_ context.Context, e *Env) (bool, error) {
@@ -502,7 +502,7 @@ func writeFile(p string, b []byte, mode fs.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(p), "."+filepath.Base(p)+".")
+	tmp, err := os.CreateTemp(filepath.Dir(p), fmt.Sprintf(".%s.", filepath.Base(p)))
 	if err != nil {
 		return err
 	}
@@ -519,7 +519,9 @@ func writeFile(p string, b []byte, mode fs.FileMode) error {
 
 type lineStep struct{ s catalog.Step }
 
-func (l lineStep) Plan(*Env) []Action { return []Action{{"line", l.s.To + ": " + l.s.Line}} }
+func (l lineStep) Plan(*Env) []Action {
+	return []Action{{"line", fmt.Sprintf("%s: %s", l.s.To, l.s.Line)}}
+}
 
 // want is the file with the line in it, or nil when the file is missing
 // and IfExists says to leave it.
@@ -600,7 +602,7 @@ func WithLine(b []byte, line, match string) []byte {
 	if i := slices.Index(lines, LastMark); i >= 0 {
 		return []byte(strings.Join(slices.Insert(lines, i, line, ""), "\n"))
 	}
-	return append(append([]byte{}, b...), "\n"+line+"\n"...)
+	return append(append([]byte{}, b...), fmt.Sprintf("\n%s\n", line)...)
 }
 
 // withLineFirst returns b with line as its first line, unless b already
@@ -618,7 +620,9 @@ func withLineFirst(b []byte, line string) []byte {
 
 type linkStep struct{ s catalog.Step }
 
-func (l linkStep) Plan(*Env) []Action { return []Action{{"link", l.s.To + " → " + l.s.Src}} }
+func (l linkStep) Plan(*Env) []Action {
+	return []Action{{"link", fmt.Sprintf("%s → %s", l.s.To, l.s.Src)}}
+}
 
 func (l linkStep) Check(_ context.Context, e *Env) (bool, error) {
 	got, err := os.Readlink(e.Path(l.s.To))
@@ -642,7 +646,9 @@ func (l linkStep) Apply(_ context.Context, e *Env) error {
 
 type gitCloneStep struct{ s catalog.Step }
 
-func (g gitCloneStep) Plan(*Env) []Action { return []Action{{"clone", g.s.Repo + " → " + g.s.To}} }
+func (g gitCloneStep) Plan(*Env) []Action {
+	return []Action{{"clone", fmt.Sprintf("%s → %s", g.s.Repo, g.s.To)}}
+}
 
 func (g gitCloneStep) Check(_ context.Context, e *Env) (bool, error) {
 	_, err := os.Stat(e.Path(g.s.To))
@@ -671,7 +677,7 @@ func (u systemctlStep) action() string {
 }
 
 func (u systemctlStep) Plan(*Env) []Action {
-	return []Action{{"unit", strings.TrimSpace(u.action() + " " + u.s.Unit)}}
+	return []Action{{"unit", strings.TrimSpace(fmt.Sprintf("%s %s", u.action(), u.s.Unit))}}
 }
 
 // Follows: a restart or daemon-reload runs only after a change.
@@ -762,7 +768,7 @@ func (g gitConfigStep) values(e *Env) [][2]string {
 func (g gitConfigStep) Plan(e *Env) []Action {
 	var out []Action
 	for _, kv := range g.values(e) {
-		out = append(out, Action{"git", kv[0] + "=" + kv[1]})
+		out = append(out, Action{"git", fmt.Sprintf("%s=%s", kv[0], kv[1])})
 	}
 	return out
 }
@@ -801,7 +807,7 @@ func (g gitConfigStep) Apply(ctx context.Context, e *Env) error {
 type userShellStep struct{ s catalog.Step }
 
 func (u userShellStep) Plan(e *Env) []Action {
-	return []Action{{"shell", e.User + " → " + u.s.Shell}}
+	return []Action{{"shell", fmt.Sprintf("%s → %s", e.User, u.s.Shell)}}
 }
 
 func (u userShellStep) Check(ctx context.Context, e *Env) (bool, error) {
@@ -910,7 +916,7 @@ func WithBlock(cur []byte, begin, end, block string) []byte {
 type blockStep struct{ s catalog.Step }
 
 func (b blockStep) Plan(*Env) []Action {
-	return []Action{{"block", b.s.To + " (yardo's block from " + b.s.Src + ")"}}
+	return []Action{{"block", fmt.Sprintf("%s (yardo's block from %s)", b.s.To, b.s.Src)}}
 }
 
 func (b blockStep) want(e *Env) (cur, want []byte, err error) {
@@ -922,7 +928,7 @@ func (b blockStep) want(e *Env) (cur, want []byte, err error) {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, err
 	}
-	block := BlockBegin + "\n" + strings.TrimRight(string(body), "\n") + "\n" + BlockEnd + "\n"
+	block := fmt.Sprintf("%s\n%s\n%s\n", BlockBegin, strings.TrimRight(string(body), "\n"), BlockEnd)
 	return cur, WithBlock(cur, BlockBegin, BlockEnd, block), nil
 }
 
@@ -960,7 +966,7 @@ func Outdated(ctx context.Context, e *Env) (mise, apt map[string]string) {
 		if json.Unmarshal(out, &m) == nil {
 			for name, v := range m {
 				if v.Latest != "" && v.Latest != v.Current {
-					mise[name] = v.Current + " → " + v.Latest
+					mise[name] = fmt.Sprintf("%s → %s", v.Current, v.Latest)
 				}
 			}
 		}
@@ -974,7 +980,7 @@ func Outdated(ctx context.Context, e *Env) (mise, apt map[string]string) {
 			continue
 		}
 		name, _, _ := strings.Cut(f[0], "/")
-		apt[name] = strings.TrimSuffix(f[len(f)-1], "]") + " → " + f[1]
+		apt[name] = fmt.Sprintf("%s → %s", strings.TrimSuffix(f[len(f)-1], "]"), f[1])
 	}
 	return mise, apt
 }
@@ -985,10 +991,10 @@ func ItemUpdates(e *Env, s []catalog.Step, mise, apt map[string]string) []string
 	var out []string
 	m, a := ItemOutdated(e, s, mise, apt)
 	for _, t := range m {
-		out = append(out, t+" "+mise[t])
+		out = append(out, fmt.Sprintf("%s %s", t, mise[t]))
 	}
 	for _, p := range a {
-		out = append(out, p+" "+apt[p])
+		out = append(out, fmt.Sprintf("%s %s", p, apt[p]))
 	}
 	return out
 }

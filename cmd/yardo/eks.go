@@ -22,7 +22,7 @@ import (
 type eksCluster struct{ name, region, profile string }
 
 func (c eksCluster) label() string {
-	return c.name + "  ·  " + c.region + "  ·  profile " + c.profile
+	return fmt.Sprintf("%s  ·  %s  ·  profile %s", c.name, c.region, c.profile)
 }
 
 // eksARN is an EKS context's region and cluster
@@ -56,12 +56,12 @@ func eksKubeDir(home string) string {
 // eksKubeFile is cluster c's kubeconfig in dir: its name, else (taken)
 // with its region, then its profile too.
 func eksKubeFile(dir string, c eksCluster) string {
-	for _, n := range []string{c.name, c.name + "-" + c.region, c.name + "-" + c.region + "-" + c.profile} {
+	for _, n := range []string{c.name, fmt.Sprintf("%s-%s", c.name, c.region), fmt.Sprintf("%s-%s-%s", c.name, c.region, c.profile)} {
 		if _, err := os.Lstat(filepath.Join(dir, n)); err != nil {
 			return filepath.Join(dir, n)
 		}
 	}
-	return filepath.Join(dir, c.name+"-"+c.region+"-"+c.profile)
+	return filepath.Join(dir, fmt.Sprintf("%s-%s-%s", c.name, c.region, c.profile))
 }
 
 // parseClusters are the names in aws eks list-clusters' JSON.

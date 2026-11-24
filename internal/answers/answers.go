@@ -244,8 +244,7 @@ func (a *Answers) migrateGitKey() (notes []string) {
 	for n, l := range a.Layers {
 		a.Layers[n] = swap(l)
 	}
-	return []string{"The git SSH key is now part of the GitHub, GitLab and Bitbucket items (each asks how to reach it): picked " +
-		strings.Join(slices.DeleteFunc(slices.Clone(picks), func(p string) bool { return p == "gitkey" }), ", ") + " with the key you send."}
+	return []string{fmt.Sprintf("The git SSH key is now part of the GitHub, GitLab and Bitbucket items (each asks how to reach it): picked %s with the key you send.", strings.Join(slices.DeleteFunc(slices.Clone(picks), func(p string) bool { return p == "gitkey" }), ", "))}
 }
 
 // NPM is the private npm registry's settings (its token is never saved).
@@ -369,7 +368,7 @@ func MigrateMCP(entry string) string {
 	if label = strings.TrimPrefix(label, to+"-"); !ok || label == to {
 		return to
 	}
-	return to + ":" + label
+	return fmt.Sprintf("%s:%s", to, label)
 }
 
 // MigrateMCPServers applies MigrateMCP, keeping order and dropping

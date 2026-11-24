@@ -35,7 +35,7 @@ func (c Cmd) String() string {
 	s := c.Name
 	for _, a := range c.Args {
 		if a == "" || strings.ContainsAny(a, " \t'\"$\\") {
-			a = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+			a = fmt.Sprintf("'%s'", strings.ReplaceAll(a, "'", `'\''`))
 		}
 		s += " " + a
 	}
@@ -43,7 +43,7 @@ func (c Cmd) String() string {
 		s = "(as user) " + s
 	}
 	if c.As != "" {
-		s = "(as " + c.As + ") " + s
+		s = fmt.Sprintf("(as %s) %s", c.As, s)
 	}
 	return s
 }
@@ -178,7 +178,7 @@ type Action struct {
 	Target string
 }
 
-func (a Action) String() string { return a.Kind + " " + a.Target }
+func (a Action) String() string { return fmt.Sprintf("%s %s", a.Kind, a.Target) }
 
 // Step is a runnable catalog step.
 type Step interface {

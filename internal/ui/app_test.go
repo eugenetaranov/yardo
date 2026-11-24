@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -192,7 +193,7 @@ func TestAppDialog(t *testing.T) {
 func TestAppPaging(t *testing.T) {
 	a := testApp()
 	for n := range 40 {
-		a.Board.items = append(a.Board.items, &BoardItem{ID: "x" + string(rune('a'+n%26)) + string(rune('a'+n/26)), Label: "Tool " + string(rune('A'+n%26)) + string(rune('A'+n/26)), Tab: "iac", Picked: true, State: "ok"})
+		a.Board.items = append(a.Board.items, &BoardItem{ID: fmt.Sprintf("x%s%s", string(rune('a'+n%26)), string(rune('a'+n/26))), Label: fmt.Sprintf("Tool %s%s", string(rune('A'+n%26)), string(rune('A'+n/26))), Tab: "iac", Picked: true, State: "ok"})
 	}
 	onHome(a, "tools")
 	ak(a, "enter") // Installed

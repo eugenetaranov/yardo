@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"sort"
@@ -127,7 +128,7 @@ packages = ["tmux", "tmux-plugin-manager"]
 
 func TestValidation(t *testing.T) {
 	item := func(extra, step string) fstest.MapFS {
-		return fstest.MapFS{"bad.toml": {Data: []byte("[[item]]\nid = \"bad\"\ntab = \"dev\"\nlabel = \"Bad\"\n" + extra + "\n[[item.step]]\n" + step + "\n")}}
+		return fstest.MapFS{"bad.toml": {Data: []byte(fmt.Sprintf("[[item]]\nid = \"bad\"\ntab = \"dev\"\nlabel = \"Bad\"\n%s\n[[item.step]]\n%s\n", extra, step))}}
 	}
 	cases := map[string]struct {
 		fs   fstest.MapFS
@@ -175,7 +176,7 @@ func TestPinsMatchBash(t *testing.T) {
 	}
 	c := load(t, nil)
 	for id, name := range map[string]string{"ecc": "ECC_VERSION", "mcpjungle-install": "MCPJUNGLE_VERSION"} {
-		v := regexp.MustCompile(`(?m)^` + name + `=(\S+)`).FindStringSubmatch(string(b))[1]
+		v := regexp.MustCompile(fmt.Sprintf("(?m)^%s=(\\S+)", name)).FindStringSubmatch(string(b))[1]
 		n := 0
 		for _, s := range c.Item(id).Steps {
 			n += strings.Count(s.Cmd+s.Check, v)
@@ -268,9 +269,9 @@ func TestDownloadsPinned(t *testing.T) {
 		return fstest.MapFS{"x.toml": {Data: []byte("[[item]]\nid = \"x\"\ntab = \"dev\"\nlabel = \"X\"\n[[item.step]]\n" + step)}}
 	}
 	for step, want := range map[string]string{
-		"type = \"run\"\ncmd = \"curl -fsSL https://x/i.sh | sh\"\ncreates = \"/usr/bin/x\"\n":                                   "pin it",
-		"type = \"run\"\ncmd = \"curl -o /tmp/x https://x/x\"\ncreates = \"/x\"\nsha256 = \"" + strings.Repeat("a", 64) + "\"\n": "doesn't check {{sha256}}",
-		"type = \"apt_repo\"\nname = \"x\"\nkey_url = \"https://x/key\"\nsource = \"Types: deb\"\n":                              "key_fingerprint",
+		"type = \"run\"\ncmd = \"curl -fsSL https://x/i.sh | sh\"\ncreates = \"/usr/bin/x\"\n":                                            "pin it",
+		fmt.Sprintf("type = \"run\"\ncmd = \"curl -o /tmp/x https://x/x\"\ncreates = \"/x\"\nsha256 = \"%s\"\n", strings.Repeat("a", 64)): "doesn't check {{sha256}}",
+		"type = \"apt_repo\"\nname = \"x\"\nkey_url = \"https://x/key\"\nsource = \"Types: deb\"\n":                                       "key_fingerprint",
 	} {
 		if got := loadErr(t, item(step)); !strings.Contains(got, want) {
 			t.Errorf("%q: err = %q, want %q", step, got, want)
@@ -278,7 +279,7 @@ func TestDownloadsPinned(t *testing.T) {
 	}
 	for _, step := range []string{
 		"type = \"run\"\ncmd = \"curl -fsSL https://x/i.sh | sh\"\ncreates = \"/x\"\nunverified = \"the vendor's own installer\"\n",
-		"type = \"run\"\ncmd = \"curl -o /tmp/x https://x/x && echo '{{sha256}}  /tmp/x' | sha256sum -c\"\ncreates = \"/x\"\nsha256 = \"" + strings.Repeat("a", 64) + "\"\n",
+		fmt.Sprintf("type = \"run\"\ncmd = \"curl -o /tmp/x https://x/x && echo '{{sha256}}  /tmp/x' | sha256sum -c\"\ncreates = \"/x\"\nsha256 = \"%s\"\n", strings.Repeat("a", 64)),
 	} {
 		load(t, item(step))
 	}

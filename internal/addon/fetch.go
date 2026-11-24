@@ -61,7 +61,7 @@ func ParseSource(s string) (Source, error) {
 }
 
 func (s Source) String() string {
-	out := s.Owner + "/" + s.Repo
+	out := fmt.Sprintf("%s/%s", s.Owner, s.Repo)
 	if s.Path != "" {
 		out += "/" + s.Path
 	}
