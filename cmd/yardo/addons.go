@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -155,6 +156,18 @@ func (r *addonRun) menuDo(ctx context.Context, kind string, act ui.MCPAct) (stri
 	case "check":
 		r.ensureVeil(ctx)
 		return "Done: " + act.Entry + "'s row says how it went.", r.checkSkill(ctx, act.Entry)
+	case "update":
+		ap, ok := addon.Approved(r.env.User, kind, act.Entry)
+		if !ok {
+			return "", fmt.Errorf("%s wasn't added from elsewhere", act.Entry)
+		}
+		r.ensureVeil(ctx)
+		return "Done: " + act.Entry + "'s row says how it went.", r.update(ctx, ap)
+	case "restore":
+		return "✓ " + act.Entry + " is as approved again.", r.restoreSkill(act.Entry)
+	case "recheck":
+		r.ensureVeil(ctx)
+		return "Done: " + act.Entry + "'s row says how it went.", r.recheckTools(ctx, act.Entry)
 	case "review":
 		held, err := addon.List(r.env.User)
 		if err != nil {
@@ -305,7 +318,7 @@ func (r *addonRun) taken(h *addon.Held) []string {
 		ss, _, _ := steps.ListSkills(r.env)
 		var out []string
 		for _, s := range ss {
-			if s.Name != h.Name || !h.Existing {
+			if s.Name != h.Name || !h.Existing && !h.Update {
 				out = append(out, s.Name)
 			}
 		}
@@ -325,6 +338,9 @@ func (r *addonRun) taken(h *addon.Held) []string {
 		if e.IsDir() {
 			out = append(out, e.Name())
 		}
+	}
+	if h.Existing || h.Update {
+		out = slices.DeleteFunc(out, func(n string) bool { return n == h.Name })
 	}
 	slices.Sort(out)
 	return slices.Compact(out)
@@ -419,9 +435,14 @@ func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
 			}
 		case pick == decline:
 			err := h.Decline(ctx)
-			if h.Existing {
+			switch {
+			case h.Kind == "mcp" && h.Existing:
+				fmt.Fprintf(r.out, "Declined: %s stays off; its tools aren't the ones you approved.\n\n", h.Name)
+			case h.Existing:
 				fmt.Fprintf(r.out, "Declined: %s stays off (sudo yardo skills delete %s removes it).\n\n", h.Name, h.Name)
-			} else {
+			case h.Update:
+				fmt.Fprintf(r.out, "Declined: the update is gone; %s stays as you approved it.\n\n", h.Name)
+			default:
 				fmt.Fprintf(r.out, "Declined: %s is gone from this machine.\n\n", h.Name)
 			}
 			return err
@@ -456,9 +477,12 @@ func printReport(out io.Writer, h *addon.Held) {
 	if len(pin) == 40 {
 		pin = pin[:12]
 	}
-	if h.Existing {
+	switch {
+	case h.Existing && h.Kind == "mcp":
+		fmt.Fprintf(out, "\n%s · server from %s: its tools now\n", h.Name, h.Source)
+	case h.Existing:
 		fmt.Fprintf(out, "\n%s · skill %s, %s\n", h.Name, h.Source, pin)
-	} else {
+	default:
 		fmt.Fprintf(out, "\n%s · %s from %s @ %s\n", h.Name, h.Kind, h.Source, pin)
 	}
 	mark := map[string]string{"block": "✗", "ok": "▲", "note": "·", "clean": "✓"}
@@ -471,6 +495,20 @@ func printReport(out io.Writer, h *addon.Held) {
 		fmt.Fprintf(out, "  %s %s%s [%s %s]\n", mark[f.Level], where, f.Text, f.Layer, f.Rule)
 		if f.Next != "" {
 			fmt.Fprintf(out, "      → %s\n", f.Next)
+		}
+	}
+	if len(h.Report.Changes) > 0 {
+		fmt.Fprintln(out, "  Changed since the version you approved:")
+		for _, c := range h.Report.Changes {
+			fmt.Fprintf(out, "    %s %s\n", c.What, c.Path)
+			ls := strings.Split(strings.TrimRight(c.Diff, "\n"), "\n")
+			for n, l := range ls {
+				if n == 60 {
+					fmt.Fprintf(out, "      … %d more lines\n", len(ls)-n)
+					break
+				}
+				fmt.Fprintln(out, "      "+l)
+			}
 		}
 	}
 	switch {
@@ -525,18 +563,152 @@ func (r *addonRun) install(ctx context.Context, h *addon.Held, typed string) err
 			}
 			return nil
 		}
+	case h.Kind == "mcp" && h.Existing:
+		put = func(map[string][]byte) error { return nil } // its spec stays; its tools are approved below
 	case h.Kind == "mcp":
 		r.ensureSync(ctx)
 		put = func(files map[string][]byte) error { return r.putServer(ctx, h.Name, files["spec"]) }
 	}
+	files, _ := h.Files()
 	if err := h.Install(ctx, r.env.User, typed, put); err != nil {
 		return err
 	}
-	fmt.Fprintf(r.out, "✓ %s installed and recorded (sudo yardo addons lists it).\n\n", h.Name)
+	switch {
+	case h.Kind == "mcp" && h.Existing:
+		if err := addon.SetTools(r.env.User, h.Name, addon.SpecHash(files["tools.json"])); err != nil {
+			return err
+		}
+		if err := r.k.mcpSyncAs(ctx, "on", h.Name); err != nil {
+			return err
+		}
+		fmt.Fprintf(r.out, "✓ %s's tools approved: it's on again.\n\n", h.Name)
+		r.sync(ctx, h.Name)
+		return nil
+	case h.Update:
+		fmt.Fprintf(r.out, "✓ %s updated to %s and recorded.\n\n", h.Name, shortPin(h.Pin))
+	default:
+		fmt.Fprintf(r.out, "✓ %s installed and recorded (sudo yardo addons lists it).\n\n", h.Name)
+	}
 	if h.Kind == "mcp" {
 		r.sync(ctx, h.Name)
+		// A remote server's tools, as it registered with them, are the
+		// ones approved: mcp-sync turns it off when they change.
+		if sp := addon.ParseSpec(string(files["spec"])); sp.Fields["KIND"] == "http" {
+			if list, err := r.k.mcpTools(ctx, h.Name); err == nil && len(list) > 2 {
+				_ = addon.SetTools(r.env.User, h.Name, addon.SpecHash(list))
+				// Kept with the spec: checking them again shows what changed.
+				_ = addon.KeepCopy(r.env.User, "mcp", h.Name, toolFiles(files["spec"], list))
+			}
+		}
 	}
 	return nil
+}
+
+// mcpTools is server name's tool list as mcp-sync hashes it.
+func (k *asker) mcpTools(ctx context.Context, name string) ([]byte, error) {
+	a := *k.a
+	if a.MCPPort == 0 && k.port != nil {
+		a.MCPPort = k.port()
+	}
+	return mcpSyncCmd(ctx, k.share, &a, "tools", name).Output()
+}
+
+// update fetches ap's newer version into the holding area (the approved
+// one stays installed) and decides on it.
+func (r *addonRun) update(ctx context.Context, ap addon.Approval) error {
+	from := addon.Updatable(ap)
+	if from == "" {
+		return fmt.Errorf("%s: nothing to update from (%s)", ap.Name, ap.Source)
+	}
+	h := &addon.Held{User: r.env.User, Kind: ap.Kind, Name: ap.Name, Source: ap.Source, Update: true}
+	var files map[string][]byte
+	switch ap.Kind {
+	case "skill":
+		src, _ := addon.ParseSource(from)
+		fmt.Fprintf(r.out, "Fetching %s…\n", src)
+		f, err := addon.FetchSkills(ctx, src)
+		if err != nil {
+			return err
+		}
+		if f.Commit == ap.Pin {
+			fmt.Fprintf(r.out, "%s is up to date (%s).\n", ap.Name, shortPin(ap.Pin))
+			return nil
+		}
+		name := ap.Name
+		if _, ok := f.Skills[name]; !ok && len(f.Skills) == 1 {
+			for n := range f.Skills {
+				name = n
+			}
+		}
+		if files = f.Skills[name]; files == nil {
+			return fmt.Errorf("%s: %s has no skill %s any more", ap.Name, src, ap.Name)
+		}
+		h.Pin, h.Odd = f.Commit, f.Odd[name]
+	case "mcp":
+		fmt.Fprintf(r.out, "Pulling %s (only pulled and read: no container is made)…\n", from)
+		img, err := addon.PullImage(ctx, from)
+		if err != nil {
+			return err
+		}
+		if img.Ref == ap.Pin {
+			fmt.Fprintf(r.out, "%s is up to date (%s).\n", ap.Name, shortPin(ap.Pin))
+			return nil
+		}
+		old, err := addon.ApprovedFiles(r.env.User, "mcp", ap.Name)
+		if err != nil {
+			return fmt.Errorf("%s: no approved copy of its spec kept: delete it and add it again", ap.Name)
+		}
+		sp := addon.ParseSpec(string(old["spec"]))
+		sp.Set("IMAGE", img.Ref)
+		files = map[string][]byte{"spec": []byte(sp.Text("Written by yardo for " + ap.Name + ", from " + from + ", updated to " + img.Ref + "."))}
+		h.Pin, h.Image, h.ImageUser, h.Pulled = img.Ref, true, img.User, img.New
+	}
+	if err := addon.Hold(h, files); err != nil {
+		return err
+	}
+	return r.decide(ctx, h)
+}
+
+// restoreSkill puts skill name's approved files back.
+func (r *addonRun) restoreSkill(name string) error {
+	files, err := addon.ApprovedFiles(r.env.User, "skill", name)
+	if err != nil {
+		return fmt.Errorf("%s: no approved copy kept (it was approved before yardo kept them): Check it again instead", name)
+	}
+	if err := steps.InstallSkill(r.env, name, files); err != nil {
+		return err
+	}
+	fmt.Fprintf(r.out, "✓ %s is as approved again.\n", name)
+	return nil
+}
+
+// recheckTools checks server name's tools as they are now (they changed
+// since it was approved: it's off), and decides on them.
+func (r *addonRun) recheckTools(ctx context.Context, name string) error {
+	ap, ok := addon.Approved(r.env.User, "mcp", name)
+	if !ok {
+		return fmt.Errorf("%s wasn't added from elsewhere: nothing to check again", name)
+	}
+	list, err := r.k.mcpTools(ctx, name)
+	if err != nil {
+		return fmt.Errorf("%s's tools: %w", name, err)
+	}
+	old, err := addon.ApprovedFiles(r.env.User, "mcp", name)
+	if err != nil {
+		return fmt.Errorf("%s: no approved copy of its spec kept: delete it and add it again", name)
+	}
+	h := &addon.Held{User: r.env.User, Kind: "mcp", Name: name, Source: ap.Source, Pin: ap.Pin, Existing: true, Update: true}
+	if err := addon.Hold(h, toolFiles(old["spec"], list)); err != nil {
+		return err
+	}
+	return r.decide(ctx, h)
+}
+
+// toolFiles are a remote server's files as checked: its spec, and its
+// tool list as hashed and as read (indented).
+func toolFiles(spec, list []byte) map[string][]byte {
+	pretty, _ := json.MarshalIndent(json.RawMessage(list), "", "  ")
+	return map[string][]byte{"spec": spec, "tools.json": list, "tools.txt": append(pretty, '\n')}
 }
 
 // putServer makes ~/.mcp/<name> with spec, as the gateway's user, an
@@ -687,19 +859,76 @@ func (o *options) addonsCmd(ctx context.Context, cat *catalog.Catalog, st *answe
 	if err != nil {
 		return err
 	}
+	const usage = "usage: sudo yardo addons [review NAME | outdated | update [NAME…] [--yes] | recheck SERVER [--yes]]"
 	if len(args) > 0 {
-		if args[0] != "review" || len(args) != 2 {
-			return errors.New("usage: sudo yardo addons [review NAME]")
-		}
-		for _, h := range held {
-			if h.Name == args[1] {
-				if err := r.decide(ctx, h); err != nil {
-					return err
-				}
-				return st.Save(a)
+		switch args[0] {
+		case "review":
+			if len(args) != 2 {
+				return errors.New(usage)
 			}
+			for _, h := range held {
+				if h.Name == args[1] {
+					if err := r.decide(ctx, h); err != nil {
+						return err
+					}
+					return st.Save(a)
+				}
+			}
+			return fmt.Errorf("nothing named %s is held", args[1])
+		case "outdated":
+			outdated, errs := addon.FindOutdated(ctx, r.env.User, true)
+			for _, u := range outdated {
+				fmt.Fprintf(out, "%-24s %-5s %s → %s\n", u.Name, u.Kind, shortPin(u.Pin), shortPin(u.Latest))
+			}
+			for n, err := range errs {
+				fmt.Fprintf(out, "%-24s can't tell: %v\n", n, err)
+			}
+			if len(outdated)+len(errs) == 0 {
+				fmt.Fprintln(out, "Every add-on from elsewhere is up to date.")
+			}
+			return nil
+		case "update":
+			fs := flag.NewFlagSet("yardo addons update", flag.ContinueOnError)
+			yes := fs.Bool("yes", false, "install each update whose report needs no OK; leave the rest held")
+			names, err := parseMixed(fs, args[1:])
+			if err != nil {
+				return err
+			}
+			r.yes = *yes
+			outdated, errs := addon.FindOutdated(ctx, r.env.User, true)
+			for n, err := range errs {
+				fmt.Fprintf(out, "▲ %s: can't tell: %v\n", n, err)
+			}
+			r.ensureVeil(ctx)
+			var all []error
+			did := 0
+			for _, u := range outdated {
+				if len(names) > 0 && !slices.Contains(names, u.Name) {
+					continue
+				}
+				ap, _ := addon.Approved(r.env.User, u.Kind, u.Name)
+				all = append(all, r.update(ctx, ap))
+				did++
+			}
+			if did == 0 {
+				fmt.Fprintln(out, "Nothing to update.")
+			}
+			return errors.Join(append(all, st.Save(a))...)
+		case "recheck":
+			fs := flag.NewFlagSet("yardo addons recheck", flag.ContinueOnError)
+			yes := fs.Bool("yes", false, "turn it on again when its report needs no OK; else leave it held")
+			names, err := parseMixed(fs, args[1:])
+			if err != nil {
+				return err
+			}
+			if len(names) != 1 {
+				return errors.New(usage)
+			}
+			r.yes = *yes
+			r.ensureVeil(ctx)
+			return r.recheckTools(ctx, names[0])
 		}
-		return fmt.Errorf("nothing named %s is held", args[1])
+		return errors.New(usage)
 	}
 	approved, err := addon.Approvals(r.env.User)
 	if err != nil {
@@ -766,6 +995,10 @@ func (r *addonRun) checkSkill(ctx context.Context, name string) error {
 		fmt.Fprintf(r.out, "%s is off while it's checked.\n", name)
 	}
 	h := &addon.Held{User: r.env.User, Kind: "skill", Name: name, Source: "found in " + dir, Pin: "as found, sha256 " + addon.Hash(files)[:12], Existing: true}
+	if ap, ok := addon.Approved(r.env.User, "skill", name); ok {
+		// Checked before, changed since: these files, from where it was.
+		h.Source, h.Pin, h.Update = ap.Source, ap.Pin, true
+	}
 	if err := addon.Hold(h, files); err != nil {
 		return err
 	}

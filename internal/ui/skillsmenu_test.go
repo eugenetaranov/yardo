@@ -145,3 +145,43 @@ func TestMenuSkillsElsewhere(t *testing.T) {
 		t.Errorf("review: %+v", r)
 	}
 }
+
+// A checked skill changed since offers Restore and Check it again; one
+// with an update offers Update it; the home's Skills row says so.
+func TestMenuSkillsDriftUpdate(t *testing.T) {
+	m := testMenu(true)
+	m.info.Skills = []SkillRow{
+		{Name: "a-drift", Source: "drifted", Checked: "2026-11-24"},
+		{Name: "b-new", Source: "checked", Checked: "2026-11-24", Update: strings.Repeat("c", 40)},
+	}
+	m = NewMenu(m.info, "", m.items, nil, true)
+	i := slices.IndexFunc(m.rows(), func(r menuRow) bool { return r.id == "skills" })
+	if i < 0 || m.rows()[i].note != "▲ changed since checked: a-drift" {
+		t.Errorf("home's row: %+v", m.rows())
+	}
+	onRow(m, "skills")
+	mk(m, "enter")
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "▲ changed") || !strings.Contains(v, "update available") {
+		t.Errorf("list:\n%s", v)
+	}
+	mk(m, "enter")
+	v = ansi.Strip(m.View())
+	if !strings.Contains(v, "Restore it") || !strings.Contains(v, "Check it again") {
+		t.Fatalf("drifted:\n%s", v)
+	}
+	mk(m, "down", "enter") // Turn it off, then Restore it
+	if r := m.result; r.Kind != MenuSkills || r.MCP != (MCPAct{Do: "restore", Entry: "a-drift"}) {
+		t.Errorf("restore: %+v", r)
+	}
+	m.result = MenuResult{}
+	m.screen, m.sel = "skills", 1
+	mk(m, "enter")
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Update it") || !strings.Contains(v, "to cccccccccccc") {
+		t.Fatalf("update:\n%s", v)
+	}
+	mk(m, "down", "enter")
+	if r := m.result; r.MCP != (MCPAct{Do: "update", Entry: "b-new"}) {
+		t.Errorf("update: %+v", r)
+	}
+}

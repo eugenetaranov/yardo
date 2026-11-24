@@ -279,6 +279,12 @@ func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
 		return []mcpAction{{"review", "Review it", "its report: install, fix and check again, or decline"}, {"back", "Back", ""}}
 	}
 	var out []mcpAction
+	if s.State == "off" && s.Off == "tools-changed" {
+		out = append(out, mcpAction{"recheck", "Check it again", "its tools changed since you approved it: their names and descriptions are checked"})
+	}
+	if s.Update != "" {
+		out = append(out, mcpAction{"update", "Update it", "to " + shortRef(s.Update) + ": checked first, this one stays until you approve it"})
+	}
 	if s.Yardo && (s.State == "failed" || s.State == "pending") && !m.info.MCPDown {
 		out = append(out, mcpAction{"retry", "Try again", "registers it as its settings are now"})
 	}
@@ -355,6 +361,9 @@ func mcpWord(s *MCPServer) string {
 	case "off":
 		if s.Off == "all" {
 			return muted.Render("○ off with all")
+		}
+		if s.Off == "tools-changed" {
+			return yellow.Render("▲ off: its tools changed since you approved it")
 		}
 		return muted.Render("○ off")
 	case "unlisted":

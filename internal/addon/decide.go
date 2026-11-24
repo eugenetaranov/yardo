@@ -33,6 +33,11 @@ func (h *Held) Check(ctx context.Context, taken []string) error {
 		fs = append(fs, more...)
 	}
 	h.Report = Report{Hash: Hash(files), At: time.Now().UTC().Truncate(time.Second), Findings: fs, AI: ai}
+	if h.Update {
+		if old, err := ApprovedFiles(h.User, h.Kind, h.Name); err == nil {
+			h.Report.Changes = Changes(old, files)
+		}
+	}
 	h.Report.Sort()
 	return h.Save()
 }
@@ -76,6 +81,9 @@ func (h *Held) Install(ctx context.Context, by, typed string, put func(files map
 	}
 	if err := Approve(h.User, Approval{Kind: h.Kind, Name: h.Name, Source: h.Source, Pin: h.Pin, Hash: hash,
 		Findings: h.Report.Lines(), OK: h.Report.Verdict() == "ok", By: by}); err != nil {
+		return err
+	}
+	if err := KeepCopy(h.User, h.Kind, h.Name, files); err != nil {
 		return err
 	}
 	return h.Remove()

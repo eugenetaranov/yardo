@@ -85,17 +85,9 @@ type Fetched struct {
 // commit and keeps the skills under src.Path: regular files only, read in
 // Go, nothing run. An entry with an absolute path or a ".." is refused.
 func FetchSkills(ctx context.Context, src Source) (*Fetched, error) {
-	ref := src.Ref
-	if ref == "" {
-		ref = "HEAD"
-	}
-	sha, err := get(ctx, fmt.Sprintf("%s/repos/%s/%s/commits/%s", GitHubAPI, src.Owner, src.Repo, ref), "application/vnd.github.sha", 1<<10)
+	commit, err := resolve(ctx, src)
 	if err != nil {
-		return nil, fmt.Errorf("%s: resolving %s: %w", src, ref, err)
-	}
-	commit := strings.TrimSpace(string(sha))
-	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(commit) {
-		return nil, fmt.Errorf("%s: %s isn't a commit GitHub can name", src, ref)
+		return nil, err
 	}
 	body, err := open(ctx, fmt.Sprintf("%s/%s/%s/tar.gz/%s", Codeload, src.Owner, src.Repo, commit), "")
 	if err != nil {
@@ -127,6 +119,23 @@ func FetchSkills(ctx context.Context, src Source) (*Fetched, error) {
 		return nil, fmt.Errorf("%s: no SKILL.md at %.12s", src, commit)
 	}
 	return f, nil
+}
+
+// resolve is the commit src's ref (else the default branch) is at.
+func resolve(ctx context.Context, src Source) (string, error) {
+	ref := src.Ref
+	if ref == "" {
+		ref = "HEAD"
+	}
+	sha, err := get(ctx, fmt.Sprintf("%s/repos/%s/%s/commits/%s", GitHubAPI, src.Owner, src.Repo, ref), "application/vnd.github.sha", 1<<10)
+	if err != nil {
+		return "", fmt.Errorf("%s: resolving %s: %w", src, ref, err)
+	}
+	commit := strings.TrimSpace(string(sha))
+	if !commitRe.MatchString(commit) {
+		return "", fmt.Errorf("%s: %s isn't a commit GitHub can name", src, ref)
+	}
+	return commit, nil
 }
 
 func cmpOr(a, b string) string {

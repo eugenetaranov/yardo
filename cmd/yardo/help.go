@@ -34,9 +34,15 @@ Commands:
   skills add SOURCE… [--yes]   add skills from GitHub (owner/repo[/path][@ref]): each
                                is held, checked and shown before you install it
   skills check|delete SKILL    check a skill yardo didn't install; delete one
+  skills restore SKILL         put a checked skill's approved files back
   mcp add IMAGE|URL|SPEC [--name N] [--yes]
                                add an MCP server from elsewhere, checked the same way
   addons [review NAME]         what's held for a decision and what was approved
+  addons outdated              add-ons from elsewhere with a newer version
+  addons update [NAME…] [--yes]
+                               check each update like an install, then ask
+  addons recheck SERVER [--yes]
+                               check a remote server's tools that changed
   export [--name N] [--lock] [FILE]
                                write the saved choices as a profile
   connect                      how to reach this machine from a laptop

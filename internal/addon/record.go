@@ -32,6 +32,8 @@ type Approval struct {
 	By       string    `toml:"approved_by"`
 	At       time.Time `toml:"approved_at"`
 	Yardo    string    `toml:"yardo"`
+	// Tools is a remote server's tool list's hash, once it registered.
+	Tools string `toml:"tools,omitempty"`
 }
 
 // recordFile is user's record (root's, 0644, in root's /var/lib/yardo).
@@ -41,8 +43,8 @@ func recordFile(user string) string { return filepath.Join(Base, "approved", use
 // gateway's own settings, which its user reads).
 var SpecsDir = "/etc/mcpjungle"
 
-// SpecsFile lists user's approved MCP specs, "name hash" a line, for
-// mcp-sync.
+// SpecsFile lists user's approved MCP specs, "name hash [tools]" a line,
+// for mcp-sync.
 func SpecsFile(user string) string { return filepath.Join(SpecsDir, user+".approved") }
 
 // Approvals are user's approved add-ons.
@@ -86,11 +88,17 @@ func Approve(user string, a Approval) error {
 	return writeRecord(user, append(as, a))
 }
 
-// Forget removes kind name's approval (uninstalled, deleted).
+// Forget removes kind name's approval and approved copy (uninstalled,
+// deleted).
 func Forget(user, kind, name string) error {
 	as, err := Approvals(user)
 	if err != nil {
 		return err
+	}
+	if validUser(user) && name != "" && !strings.ContainsAny(name, "/\x00") && name != "." && name != ".." {
+		if err := os.RemoveAll(copyDir(user, kind, name)); err != nil {
+			return err
+		}
 	}
 	n := len(as)
 	as = slices.DeleteFunc(as, func(x Approval) bool { return x.Kind == kind && x.Name == name })
@@ -116,7 +124,7 @@ func writeRecord(user string, as []Approval) error {
 	var specs strings.Builder
 	for _, a := range as {
 		if a.Kind == "mcp" {
-			fmt.Fprintf(&specs, "%s %s\n", a.Name, a.Hash)
+			fmt.Fprintln(&specs, strings.TrimSpace(a.Name+" "+a.Hash+" "+a.Tools))
 		}
 	}
 	if err := atomic(recordFile(user), b.Bytes()); err != nil {

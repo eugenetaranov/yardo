@@ -281,7 +281,7 @@ func specRules(s Subject) []Finding {
 		}
 		if s.Image && (s.ImageUser == "" || s.ImageUser == "root" || s.ImageUser == "0" || strings.HasPrefix(s.ImageUser, "0:")) {
 			out = append(out, Finding{Layer: "basic", Rule: "root-image", Level: "note", File: "spec", Line: line("IMAGE"),
-				Text: "the image runs as root inside its container", Next: "yardo runs it as nobody; it may need fixing if it won't start"})
+				Text: "the image runs as root inside its container", Next: "yardo runs it as nobody: if its files are root's alone, it won't start"})
 		}
 	case "http":
 		if _, err := CheckURL(sp.Fields["URL"]); err != nil && sp.Fields["URL_VAR"] == "" {
@@ -297,11 +297,14 @@ func specRules(s Subject) []Finding {
 			block("docker", line(k), k+"="+v+": access to the machine, or your cloud keys, that only yardo's own servers get", "drop it (yardo edits its copy)", "drop-key:"+k)
 		}
 	}
+	if v, ok := sp.Fields["LIMITS"]; ok && v != "" {
+		block("docker", line("LIMITS"), "LIMITS="+v+": a server from elsewhere runs with every limit", "drop it (yardo edits its copy)", "drop-key:LIMITS")
+	}
 	for _, o := range disallowed(sp.Fields["DOCKER_ARGS"]) {
 		block("docker", line("DOCKER_ARGS"), "Docker option "+o+": not one a server from elsewhere may have", "drop it (yardo edits its copy)", "drop-opt:"+o)
 	}
 	if !sp.Data() {
-		for _, k := range []string{"DOCKER_ARGS", "HOST_ACCESS", "MOUNT_AWS", "MOUNT_KUBE"} {
+		for _, k := range []string{"DOCKER_ARGS", "HOST_ACCESS", "MOUNT_AWS", "MOUNT_KUBE", "LIMITS", "NETWORK"} {
 			if regexp.MustCompile(`\b`+k+`\b`).Match(s.Files["spec"]) && sp.Fields[k] == "" {
 				block("docker", 0, k+" is set by code: yardo can't tell what it is", "decline it, or ask its author for a spec of settings only", "")
 			}

@@ -5,6 +5,9 @@ DESCRIPTION="OpenSearch: search indices, read mappings and cluster health (read-
 KIND=docker
 IMAGE=ghcr.io/astral-sh/uv:0.13.9-python3.13-trixie-slim
 REQUIRED="OPENSEARCH_URL"
+# uvx fetches its dependencies (scipy among them) at start: more than the
+# 256 MB scratch /tmp holds, so its root stays writable.
+LIMITS="writable"
 # Read-only unless the env file says OPENSEARCH_SETTINGS_ALLOW_WRITE=true
 # (the server's own default is to write; an env file made before this
 # line has no such setting, so it's set here, on the command).

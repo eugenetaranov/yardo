@@ -443,6 +443,26 @@ func (m *Menu) rows() []menuRow {
 		if m.info.SkillsAllOff {
 			note = "all off · space on All skills turns them back on"
 		}
+		// What needs the user: changed since checked, held, an update.
+		var drift, held, upd []string
+		for _, s := range m.info.Skills {
+			switch {
+			case s.Source == "drifted":
+				drift = append(drift, s.Name)
+			case s.Off == "held":
+				held = append(held, s.Name)
+			case s.Update != "":
+				upd = append(upd, s.Name)
+			}
+		}
+		switch {
+		case len(drift) > 0:
+			note = "▲ changed since checked: " + strings.Join(drift, ", ")
+		case len(held) > 0:
+			note = "▲ waiting for you: " + strings.Join(held, ", ")
+		case len(upd) > 0:
+			note = "update available: " + strings.Join(upd, ", ")
+		}
 		out = append(out, tab("skills", "Skills", note))
 	}
 	if m.hasConnect() {

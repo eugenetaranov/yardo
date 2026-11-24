@@ -62,6 +62,9 @@ func skillsDo(stdout io.Writer, env *steps.Env, args []string) error {
 			l := skillSays(s, all)
 			if ap, ok := addon.Approved(env.User, "skill", s.Name); ok && s.Source == "yardo" {
 				l = skillChecked(l, ap)
+				if !skillAsApproved(env, s, ap) {
+					l += "\n  ▲ changed since it was checked: sudo yardo skills restore " + s.Name + " puts the approved files back, sudo yardo skills check " + s.Name + " approves these"
+				}
 			}
 			fmt.Fprintln(stdout, l)
 		}
@@ -135,9 +138,13 @@ func skillRows(env *steps.Env) ([]ui.SkillRow, bool, error) {
 			r.Off = "own"
 		}
 		r.Where = skillWhere(s)
-		if a, ok := approved[s.Name]; ok && s.Source == "yardo" {
+		if a, ok := approved[s.Name]; ok {
 			r.Source, r.Checked = "checked", a.At.Format("2006-01-02")
 			r.Where += " · from " + a.Source + " @ " + shortPin(a.Pin)
+			if !skillAsApproved(env, s, a) {
+				r.Source = "drifted"
+				r.Where = "Changed since it was checked: Restore puts the approved files back, Check it again approves these"
+			}
 		}
 		if h := held[s.Name]; h != nil {
 			r.Source, r.Off = "held", "held"
@@ -203,4 +210,22 @@ func (o *options) skillSwitcher(a *answers.Answers) ui.SkillSwitcher {
 		}
 		return rows, all, "✓ " + strings.Join(what, ", ") + ". New agent sessions see the change.", err
 	}
+}
+
+// skillAsApproved says whether skill s's files are the ones approved as a.
+func skillAsApproved(env *steps.Env, s steps.Skill, a addon.Approval) bool {
+	dirs := slices.Clone(s.Places)
+	for _, h := range s.Held {
+		dirs = append(dirs, steps.HeldDir(h))
+	}
+	if len(dirs) == 0 {
+		return false
+	}
+	for _, d := range dirs {
+		files, err := steps.SkillOnDisk(env, d, s.Name)
+		if err != nil || addon.Hash(files) != a.Hash {
+			return false
+		}
+	}
+	return true
 }

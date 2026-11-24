@@ -191,6 +191,13 @@ func (m *Menu) skillActions(s *SkillRow) []mcpAction {
 	case "on":
 		out = append(out, mcpAction{"on", "Turn it on", "back where it was"})
 	}
+	if s.Update != "" {
+		out = append(out, mcpAction{"update", "Update it", "to " + shortRef(s.Update) + ": checked first, this one stays until you approve it"})
+	}
+	if s.Source == "drifted" {
+		out = append(out, mcpAction{"restore", "Restore it", "puts back the files you approved: they changed since"},
+			mcpAction{"check", "Check it again", "off while yardo checks these files; approved, they're the checked ones"})
+	}
 	if s.Source == "theirs" {
 		out = append(out, mcpAction{"check", "Check it", "off while yardo checks a copy and shows you what it found"})
 	}
@@ -250,7 +257,7 @@ func (m *Menu) skillsKey(k string, up, down bool) tea.Cmd {
 			switch a := as[m.sel].id; a {
 			case "off", "on":
 				m.stageSkill(MCPAct{Do: a, Entry: name})
-			case "check", "review":
+			case "check", "review", "update", "restore":
 				return m.quit(MenuResult{Kind: MenuSkills, MCP: MCPAct{Do: a, Entry: name}})
 			case "delete":
 				m.dialog = &Dialog{Title: "Delete " + name + "?", YN: true, Sel: 1,
@@ -289,7 +296,12 @@ func skillFrom(s SkillRow) string {
 	case "yardo":
 		return "yardo's"
 	case "checked":
+		if s.Update != "" {
+			return "update available"
+		}
 		return "checked " + s.Checked
+	case "drifted":
+		return "▲ changed"
 	case "changed":
 		return "edited since"
 	case "held":
@@ -411,4 +423,15 @@ func (m *Menu) skillsView(w, room int) []string {
 	add("", "     "+muted.Render(about))
 	add("", "  "+muted.Render(strings.Join([]string{"Off moves a skill out of every agent's reach, kept to turn on again.", "New agent sessions see the change."}, " ")))
 	return b
+}
+
+// shortRef is a commit or an image digest, shortened to read.
+func shortRef(r string) string {
+	if len(r) == 40 && !strings.Contains(r, "@") {
+		return r[:12]
+	}
+	if i := strings.Index(r, "@sha256:"); i >= 0 && len(r) > i+20 {
+		return r[:i+20]
+	}
+	return r
 }

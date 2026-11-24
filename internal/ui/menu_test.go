@@ -1351,3 +1351,34 @@ func TestMenuHomeLayout(t *testing.T) {
 		}
 	}
 }
+
+// A server from elsewhere with a new image offers Update it; one off
+// because its tools changed says so and offers Check it again.
+func TestMenuMCPUpdateRecheck(t *testing.T) {
+	m := mcpMenu()
+	m.info.MCP = append(m.info.MCP,
+		MCPServer{Entry: "clock", Name: "clock", Yardo: true, State: "ok", Update: "mcp/time@sha256:" + strings.Repeat("9", 64)},
+		MCPServer{Entry: "remote", Name: "remote", Yardo: true, State: "off", Off: "tools-changed"})
+	m = NewMenu(m.info, "", m.items, nil, true)
+	for _, c := range []struct{ name, row, do string }{{"clock", "Update it", "update"}, {"remote", "Check it again", "recheck"}} {
+		m.Open("mcp", "", true)
+		for range 15 {
+			mk(m, "up")
+		}
+		for n := 0; n < 30 && !strings.Contains(ansi.Strip(m.View()), "› "+c.name+" "); n++ {
+			mk(m, "down")
+		}
+		if c.name == "remote" && !strings.Contains(ansi.Strip(m.View()), "▲ off: its tools changed since you approved it") {
+			t.Errorf("list:\n%s", ansi.Strip(m.View()))
+		}
+		mk(m, "enter")
+		if v := ansi.Strip(m.View()); !strings.Contains(v, "› "+c.row) {
+			t.Fatalf("%s:\n%s", c.name, v)
+		}
+		mk(m, "enter")
+		if r := m.result; r.Kind != MenuMCP || r.MCP != (MCPAct{Do: c.do, Entry: c.name}) {
+			t.Errorf("%s: %+v", c.name, r)
+		}
+		m.result = MenuResult{}
+	}
+}

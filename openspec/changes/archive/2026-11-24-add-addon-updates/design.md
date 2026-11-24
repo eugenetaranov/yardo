@@ -92,3 +92,24 @@
 - Limits for catalog servers ship after the VM trial, in the same release.
   `sudo yardo mcp restart` after upgrading picks them up. The release
   notes say so.
+
+## As built
+
+- Copies live at `/var/lib/yardo/approved/<user>/<kind>/<name>/` (root,
+  0700/0600), next to the approval record.
+- An image's latest digest comes from `docker buildx imagetools inspect`
+  (registry only, nothing pulled), not a hand-made HEAD request.
+- A remote server's tools come from MCPJungle's REST API
+  (`/api/v0/tools?server=`), normalised with jq, not from `mj list tools`.
+- mcp-sync's `off` file holds the reason on its first line (`own`,
+  `tools-changed`); an empty one reads as `own`.
+- The scratch `/tmp` is `exec`: npx and uvx run what they fetch from
+  there. VM trial of the catalog under every limit: azure, bitbucket,
+  confluence, figma, github, grafana, jira, k8s, playwright, postgres and
+  sequential-thinking register; aws starts and stops only for want of
+  real credentials;
+  docker needs `root-user` (the socket), opensearch `writable` (uvx's
+  dependencies outgrow 256 MB); mysql and slack fail with placeholder
+  settings with or without limits. An image from elsewhere whose program
+  only root may read (mcp/time) won't start as nobody: the basic check
+  says so.

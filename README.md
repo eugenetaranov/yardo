@@ -706,6 +706,32 @@ installed by hand.
    esc stops a review; Check again carefully reads it again with the
    larger model. A review is kept by content, so the same add-on isn't
    read twice. `scripts/review-eval` runs it on test skills.
+   **Updates** are offered, never applied: when a skill's branch or tag
+   moves, or a server image's tag points to a new digest (looked for at
+   most once an hour, nothing pulled), its row reads update available.
+   Update it, or `sudo yardo addons update [<name>…] [--yes]`
+   (`sudo yardo addons outdated` lists them), fetches the new version into
+   the holding area and checks it like an install; the report lists the
+   files added, changed and removed, with a diff, and Claude is given the
+   diff and every new or changed script in full. The approved version
+   stays installed until you approve the update; declined, it stays as it
+   was. A commit or digest you pinned is never outdated. yardo keeps a
+   copy of each approved version in `/var/lib/yardo/approved`: a checked
+   skill edited since (by you, or an agent) reads changed since checked,
+   with Restore it (the approved files back; `sudo yardo skills restore
+   <skill>`) or Check it again (these files, approved). A remote server's tools (names, descriptions,
+   inputs) are recorded once it registers; if they change, mcp-sync turns
+   it off until you check them again (`sudo yardo addons recheck
+   <server>`).
+   **Every Docker MCP server runs with limits**: no capabilities, no new
+   privileges, a read-only root with a 256 MB scratch `/tmp` (HOME is
+   there), 256 processes, 1 GB of memory, and nobody as its user (unless
+   it mounts `~/.aws` or `~/.kube`, which run as you). A catalog spec
+   names any it goes without in `LIMITS` (`writable`, `root-user`, `caps`,
+   `new-privileges`, `pids`, `memory`), with a comment saying why; a
+   server from elsewhere can't go without any, and has no network unless
+   its approved spec says `NETWORK=1`. `sudo yardo mcp restart` starts
+   running servers afresh with them.
    Not checked: an image's own files, and anything a skill or server
    fetches when it runs; the checks stop simple attacks, not a careful
    one.

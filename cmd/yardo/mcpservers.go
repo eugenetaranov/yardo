@@ -247,7 +247,7 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 		if err != nil {
 			return mcpOutcome{}, err
 		}
-		r.out = os.Stdout // the report, above the prompts
+		r.out = os.Stdout                         // the report, above the prompts
 		r.sync = func(context.Context, string) {} // the menu registers it
 		before := len(k.a.MCPServers)
 		toast, err := r.menuDo(ctx, "mcp", act)
@@ -629,6 +629,8 @@ func mcpSays(name, spec string, s syncState, ok bool) string {
 		return "✗ " + name + " wasn't registered: its spec's Docker options include " + s.detail + ", which lets a container act as root on this machine."
 	case s.state == "nospec":
 		return "✗ " + name + ": no longer in the catalog."
+	case s.state == "off" && s.detail == "tools-changed":
+		return "▲ " + name + ": off, its tools changed since you approved it (sudo yardo addons recheck " + name + ")."
 	case s.state == "off":
 		return "○ " + name + ": off; agents don't see its tools (sudo yardo mcp on " + name + ")."
 	}

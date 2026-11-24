@@ -58,9 +58,12 @@ type ConnectRow struct{ What, Use, Note string }
 type SkillRow struct {
 	Name string
 	// Source is yardo (as yardo wrote it), checked (from elsewhere,
-	// approved on Checked, a date), changed (edited since), theirs (not
-	// checked) or held (waiting for the user's decision).
+	// approved on Checked, a date), drifted (checked, changed since),
+	// changed (yardo's, edited since), theirs (not checked) or held
+	// (waiting for the user's decision).
 	Source, Checked string
+	// Update is the version a checked one can update to ("" none).
+	Update string
 	// Off is "" for a skill that's on, "own" for one turned off by
 	// itself, "all" for one off only because all are, "held" for one held.
 	Off string
@@ -74,6 +77,8 @@ type MCPServer struct {
 	Name  string // ~/.mcp/<name>, the gateway's name, its tools' prefix
 	Spec  string // its catalog spec; "" for one with its own
 	About string // the spec's description
+	// Update is the image a server from elsewhere can update to ("" none).
+	Update string
 	// State is ok, secret (Keys are empty), failed (not registered),
 	// nospec (gone from the catalog), off (turned off: Off says how),
 	// unlisted or byhand (found in ~/.mcp: not yardo's, registered or

@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -172,6 +173,40 @@ func reviewInput(ctx context.Context, h *Held, files map[string][]byte, earlier 
 	}
 	total := 0
 	var cut, left []string
+	// An update: what changed since the approved version, first; then the
+	// new SKILL.md and each new or changed script in full, then the rest.
+	if h.Update {
+		if old, err := ApprovedFiles(h.User, h.Kind, h.Name); err == nil {
+			changed := map[string]bool{}
+			t.WriteString("\nThis is an update of a version the user approved. Changes since then:\n")
+			for _, c := range Changes(old, files) {
+				fmt.Fprintf(&t, "- %s %s\n", c.What, c.Path)
+				changed[c.Path] = c.What != "removed"
+			}
+			d := ""
+			for _, c := range Changes(old, files) {
+				d += c.Diff
+			}
+			if len(d) > reviewFileMax {
+				d, cut = d[:reviewFileMax], append(cut, "(the diff)")
+				for !utf8.Valid([]byte(d)) {
+					d = d[:len(d)-1]
+				}
+			}
+			total += len(d)
+			fmt.Fprintf(&t, "\n<<<DIFF n=%s>>>\n%s<<<END n=%s>>>\n", in.nonce, d, in.nonce)
+			first := func(p string) int {
+				switch {
+				case path.Base(p) == "SKILL.md" || p == "spec":
+					return 0
+				case changed[p] && isScript(p, all[p]):
+					return 1
+				}
+				return 2
+			}
+			slices.SortStableFunc(paths, func(a, b string) int { return first(a) - first(b) })
+		}
+	}
 	for _, p := range paths {
 		c := all[p]
 		if !utf8.Valid(c) || bytes.IndexByte(c, 0) >= 0 {

@@ -58,6 +58,8 @@ type Report struct {
 	Findings []Finding `json:"findings"`
 	// AI is the model Claude read it with ("" when it didn't).
 	AI string `json:"ai,omitempty"`
+	// Changes are an update's, from the approved copy.
+	Changes []Change `json:"changes,omitempty"`
 }
 
 // Verdict is the worst of the findings: block, ok (needs the user's OK),
@@ -111,8 +113,11 @@ type Held struct {
 	// declined, it's removed (one the user had stays).
 	Pulled bool `json:"pulled,omitempty"`
 	// Existing: a skill that was in a skills folder already, held off
-	// while it's checked.
-	Existing bool      `json:"existing,omitempty"`
+	// while it's checked (or a server, checked again as it is).
+	Existing bool `json:"existing,omitempty"`
+	// Update: a newer version of one approved (its approved copy is what
+	// it's compared with).
+	Update   bool      `json:"update,omitempty"`
 	Added    time.Time `json:"added"`
 	Report   Report    `json:"report"`
 }

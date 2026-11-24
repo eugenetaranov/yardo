@@ -504,6 +504,22 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	}
 	if env, err := newEnv(a.User, o.share(), io.Discard, false); err == nil && !first {
 		info.Skills, info.SkillsAllOff, _ = skillRows(env)
+		// Updates of add-ons from elsewhere (looked for once an hour).
+		uctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		outdated, _ := addon.FindOutdated(uctx, a.User, false)
+		cancel()
+		for _, u := range outdated {
+			for n := range info.Skills {
+				if u.Kind == "skill" && info.Skills[n].Name == u.Name && info.Skills[n].Source != "held" {
+					info.Skills[n].Update = u.Latest
+				}
+			}
+			for n := range info.MCP {
+				if u.Kind == "mcp" && info.MCP[n].Name == u.Name && info.MCP[n].State != "held" {
+					info.MCP[n].Update = u.Latest
+				}
+			}
+		}
 	}
 	info.LastRun = loadLastRun(o.state, a.User, o.log, now)
 	info.Keys = keysToAdd(o.state, a, func(id string) bool { return status[id].State == "ok" })

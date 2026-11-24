@@ -244,14 +244,17 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			switch {
 			case len(args) > 0 && args[0] == "add":
 				return o.skillsAdd(ctx, cat, st, stdout, args[1:])
-			case len(args) == 2 && (args[0] == "check" || args[0] == "delete"):
+			case len(args) == 2 && (args[0] == "check" || args[0] == "delete" || args[0] == "restore"):
 				r, _, err := o.addonRun(ctx, cat, st, stdout, false)
 				if err != nil {
 					return err
 				}
-				if args[0] == "check" {
+				switch args[0] {
+				case "check":
 					r.ensureVeil(ctx)
 					return r.checkSkill(ctx, args[1])
+				case "restore":
+					return r.restoreSkill(args[1])
 				}
 				if err := steps.DeleteSkill(r.env, args[1]); err != nil {
 					return err

@@ -22,6 +22,7 @@
 #   mcp-sync source [name ...]  where each server runs from, a line each:
 #                          <name> TAB <image or URL> [TAB <version> TAB <id> TAB <built>]
 #                          (the last three for an image pulled here)
+#   mcp-sync tools <name>  a server's tools as approved (names, descriptions, inputs), JSON
 #   mcp-sync client <name> make a token for another MCP client (a laptop's agent), allowed
 #                          every server, in ~/.mcp/clients/<name>.token (not printed);
 #                          only when the gateway listens beyond this machine
@@ -402,8 +403,45 @@ APPROVED="${MCP_APPROVED:-/etc/mcpjungle/${me#mcp-}.approved}"
 approved() {
   _want=$(awk -v n="$1" '$1 == n { print $2 }' "$APPROVED" 2>/dev/null)
   [ -z "$_want" ] && return 0
-  if command -v sha256sum >/dev/null; then _got=$(sha256sum < "$2"); else _got=$(shasum -a 256 < "$2"); fi
-  [ "${_got%% *}" = "$_want" ]
+  _got=$(sha256 < "$2")
+  [ "$_got" = "$_want" ]
+}
+
+# sha256 — stdin's sha256, in hex.
+sha256() {
+  if command -v sha256sum >/dev/null; then _s=$(sha256sum); else _s=$(shasum -a 256); fi
+  echo "${_s%% *}"
+}
+
+# elsewhere NAME — NAME is a server added from elsewhere (it's on the
+# approved list): it runs with every limit, and no network unless its spec
+# says NETWORK=1.
+elsewhere() { awk -v n="$1" '$1 == n { f = 1 } END { exit !f }' "$APPROVED" 2>/dev/null; }
+
+# approved_tools NAME — the tool list's hash approved for NAME, if any.
+approved_tools() { awk -v n="$1" '$1 == n { print $3 }' "$APPROVED" 2>/dev/null; }
+
+# tools_json NAME — NAME's tools on the gateway, as approved: their names
+# (without NAME__), descriptions and inputs, sorted, on one line.
+tools_json() {
+  _tok=
+  [ -f "$MCP_DIR/.mcpjungle.conf" ] && _tok=$(sed -n 's/^access_token: *//p' "$MCP_DIR/.mcpjungle.conf" | tr -d '"' | head -n 1)
+  # The token goes as a header on stdin: never on a command line.
+  { [ -z "$_tok" ] || printf 'Authorization: Bearer %s\n' "$_tok"; } |
+    curl -fsS -H @- "$REGISTRY/api/v0/tools?server=$1" |
+    jq -cS --arg p "$1__" '[.[] | {name: (.name | ltrimstr($p)), description, input_schema}] | sort_by(.name)'
+}
+
+# tools_check NAME — a remote server from elsewhere whose tools aren't the
+# ones approved is turned off (why: tools-changed) until they're checked.
+tools_check() {
+  _want=$(approved_tools "$1")
+  [ -n "$_want" ] && [ "$KIND" = http ] && ! is_off "$1" || return 0
+  _now=$(tools_json "$1" | sha256) || return 1
+  [ "$_now" = "$_want" ] && return 0
+  echo tools-changed > "$MCP_DIR/$1/off"
+  echo "$1: off: its tools changed since you approved it (check them again: sudo yardo addons recheck $1)"
+  return 1
 }
 
 # kube_path KUBECONFIG HOME — KUBECONFIG (paths split by ':') with each
@@ -420,12 +458,28 @@ kube_path() {
 
 # render NAME — print the MCPJungle JSON config for NAME (spec vars in scope).
 render() {
-  dir="$MCP_DIR/$1"
+  dir="$MCP_DIR/$1" rname=$1
   case "$KIND" in
     docker)
       # DOCKER_ARGS go before the image, IMAGE_ARGS (the server's command
       # or flags) after it.
       set -- run -i --rm --env-file "$dir/env" -v "$dir:/mcp:ro"
+      # Limits, before anything of the spec's: no capabilities, no new
+      # privileges, a read-only root with a scratch /tmp, memory and
+      # processes capped, nobody as the user. /tmp allows running what's
+      # in it: npx and uvx run the packages they fetch from there. A catalog spec's LIMITS
+      # names those it goes without; one from elsewhere has them all, and
+      # no network unless it says NETWORK=1.
+      lim=" ${LIMITS:-} "
+      if elsewhere "$rname"; then
+        lim="  "
+        [ "${NETWORK:-0}" = 1 ] || set -- "$@" --network none
+      fi
+      case "$lim" in *" caps "*) ;; *) set -- "$@" --cap-drop ALL ;; esac
+      case "$lim" in *" new-privileges "*) ;; *) set -- "$@" --security-opt no-new-privileges ;; esac
+      case "$lim" in *" writable "*) ;; *) set -- "$@" --read-only --tmpfs /tmp:rw,exec,nosuid,size=256m ;; esac
+      case "$lim" in *" pids "*) ;; *) set -- "$@" --pids-limit 256 ;; esac
+      case "$lim" in *" memory "*) ;; *) set -- "$@" --memory 1g ;; esac
       # MOUNT_AWS: the owner's ~/.aws (profiles, SSO logins), read-only,
       # as them (its files are theirs, 0600). The home is the one ~/.mcp
       # is in, never a path from the env file: that's the user's to edit,
@@ -445,6 +499,10 @@ render() {
       fi
       if [ -n "$as_home" ]; then
         set -- "$@" -e HOME=/aws --user "$(ls -nd "$home" | awk '{print $3 ":" $4}')"
+      else
+        # npx and uvx keep their caches under HOME: the scratch /tmp.
+        set -- "$@" -e HOME=/tmp
+        case "$lim" in *" root-user "*) ;; *) set -- "$@" --user 65534:65534 ;; esac
       fi
       # shellcheck disable=SC2086 # both are intentionally word-split
       set -- "$@" ${DOCKER_ARGS:-} "$IMAGE" ${IMAGE_ARGS:-}
@@ -507,6 +565,12 @@ if [ -n "$SOURCE" ]; then
   exit 0
 fi
 
+if [ "${1:-}" = tools ]; then
+  valid_name "${2:-}" || { echo "usage: mcp-sync tools <server>" >&2; exit 2; }
+  tools_json "$2"
+  exit
+fi
+
 failed=0
 want=$(enabled)
 if live=$(mj --registry "$REGISTRY" list servers 2>/dev/null); then
@@ -541,7 +605,7 @@ for NAME in $want; do
   fi
   # Each spec's variables, none left from the one before (MOUNT_AWS
   # would give a server after an AWS one your ~/.aws).
-  KIND= IMAGE= DOCKER_ARGS= HOST_ACCESS= IMAGE_ARGS= MOUNT_AWS= MOUNT_KUBE= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION=
+  KIND= IMAGE= DOCKER_ARGS= HOST_ACCESS= IMAGE_ARGS= MOUNT_AWS= MOUNT_KUBE= REQUIRED= URL= URL_VAR= URL_SUFFIX= AUTH= AUTH_USER_VAR= AUTH_TOKEN_VAR= DESCRIPTION= LIMITS= NETWORK=
   unset -f skeleton image_args 2>/dev/null || true
   # shellcheck disable=SC1090
   . "$spec"
@@ -554,7 +618,13 @@ for NAME in $want; do
 
   dir="$MCP_DIR/$NAME"
   if [ -n "$STATUS" ] && is_off "$NAME"; then
-    if [ -f "$dir/off" ]; then state "$NAME" off own; else state "$NAME" off all; fi
+    # off holds why, when it isn't the user's choice (tools-changed).
+    if [ -f "$dir/off" ]; then
+      why=$(head -n 1 "$dir/off" | tr -cd 'a-z-')
+      state "$NAME" off "${why:-own}"
+    else
+      state "$NAME" off all
+    fi
     continue
   fi
   why=
@@ -613,6 +683,7 @@ for NAME in $want; do
      && echo "$live" | grep -qx "$NAME"; then
     rm -f "$dir/.config.json.new" "$dir/.error"
     echo "$NAME: up to date"
+    tools_check "$NAME" || failed=1
     continue
   fi
   if [ "$KIND" = docker ] && ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
@@ -625,6 +696,7 @@ for NAME in $want; do
     mv "$dir/.config.json.new" "$dir/.registered.json"
     rm -f "$dir/.error" "$dir/.disabled" # registering enables it
     if is_off "$NAME"; then echo "$NAME: registered, off"; else echo "$NAME: registered"; fi
+    tools_check "$NAME" || failed=1
   else
     rm -f "$dir/.config.json.new" "$dir/.registered.json" "$dir/.disabled"
     # Why, for status (and yardo) to say; kept until it registers.
