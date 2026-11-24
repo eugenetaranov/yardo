@@ -27,11 +27,13 @@ type Subject struct {
 	Taken []string
 }
 
-// Limits of a skill, and of each file in it.
+// Limits of a skill, and of each file in it: past them it needs your
+// OK, as a file that big can't be read through (a vendored compiler, a
+// bundle).
 const (
-	maxFile  = 1 << 20
-	maxTotal = 5 << 20
-	maxCount = 300
+	maxFile  = 2 << 20
+	maxTotal = 32 << 20
+	maxCount = 1000
 )
 
 // Basic runs yardo's rules on s: blocks (can't be installed as it is)
@@ -40,6 +42,9 @@ func Basic(s Subject) []Finding {
 	var out []Finding
 	block := func(rule, file string, line int, text, next, fix string) {
 		out = append(out, Finding{Layer: "basic", Rule: rule, Level: "block", File: file, Line: line, Text: text, Next: next, Fix: fix})
+	}
+	needsOK := func(rule, file string, line int, text, next, fix string) {
+		out = append(out, Finding{Layer: "basic", Rule: rule, Level: "ok", File: file, Line: line, Text: text, Next: next, Fix: fix})
 	}
 	note := func(rule, file string, line int, text, next string) {
 		out = append(out, Finding{Layer: "basic", Rule: rule, Level: "note", File: file, Line: line, Text: text, Next: next})
@@ -71,9 +76,10 @@ func Basic(s Subject) []Finding {
 			block("path", p, 0, "a path that leaves its folder", "decline it", "")
 			continue
 		}
+		if len(b) > maxFile {
+			needsOK("size", p, 0, fmt.Sprintf("%.1f MB: too big to read through (%d MB a file)", float64(len(b))/(1<<20), maxFile>>20), "type its name to keep it as it is, or remove this file", "remove:"+p)
+		}
 		switch {
-		case len(b) > maxFile:
-			block("size", p, 0, fmt.Sprintf("%d KB: more than a skill's file needs (1 MB at most)", len(b)>>10), "remove this file", "remove:"+p)
 		case program(b) != "":
 			block("program", p, 0, fmt.Sprintf("a program (%s): code that can't be read before it runs", program(b)), "remove this file", "remove:"+p)
 		case archive(p, b) != "":
@@ -83,8 +89,9 @@ func Basic(s Subject) []Finding {
 		}
 	}
 	if total > maxTotal || len(s.Files) > maxCount {
-		block("size", "", 0, fmt.Sprintf("%d files, %d KB: more than a skill needs (300 files, 5 MB)", len(s.Files), total>>10), "decline it", "")
+		needsOK("size", "", 0, fmt.Sprintf("%d files, %d MB: more than can be read through (%d files, %d MB)", len(s.Files), total>>20, maxCount, maxTotal>>20), "type its name to keep it as it is, or decline it", "")
 	}
+	out = oneEach(out)
 	if s.Kind == "skill" {
 		out = append(out, frontmatter(s.Files["SKILL.md"])...)
 		if s.Files["SKILL.md"] == nil {
@@ -95,6 +102,75 @@ func Basic(s Subject) []Finding {
 		out = append(out, specRules(s)...)
 	}
 	return out
+}
+
+// oneEach keeps one note per web address, where it's first, saying how
+// many more places have it: a bundle names the same one a hundred times.
+// A file with more than manyURLs gets one note for them all, by site.
+func oneEach(fs []Finding) []Finding {
+	var out []Finding
+	seen := map[string]int{}
+	more := map[string]int{}
+	per := map[string][]string{} // a file's addresses, first-seen order
+	for _, f := range fs {
+		if f.Rule != "url" {
+			out = append(out, f)
+			continue
+		}
+		if n, ok := seen[f.Text]; ok {
+			more[f.Text]++
+			out[n].Next = fmt.Sprintf("check where it sends you, and what it fetches (%d more %s)", more[f.Text], map[bool]string{true: "place", false: "places"}[more[f.Text] == 1])
+			continue
+		}
+		seen[f.Text] = len(out)
+		per[f.File] = append(per[f.File], strings.TrimPrefix(f.Text, "a web address: "))
+		out = append(out, f)
+	}
+	var kept []Finding
+	said := map[string]bool{}
+	for _, f := range out {
+		us := per[f.File]
+		if f.Rule != "url" || len(us) <= manyURLs {
+			kept = append(kept, f)
+			continue
+		}
+		if said[f.File] {
+			continue
+		}
+		said[f.File] = true
+		f.Text = fmt.Sprintf("%d web addresses: %s", len(us), sites(us))
+		f.Next = "check where they send you, and what they fetch"
+		kept = append(kept, f)
+	}
+	return kept
+}
+
+// manyURLs is how many web addresses a file has said one by one.
+const manyURLs = 3
+
+// sites are the hosts of us, the most named first, at most five.
+func sites(us []string) string {
+	n := map[string]int{}
+	var hs []string
+	for _, u := range us {
+		h := strings.SplitN(strings.SplitN(u, "://", 2)[1], "/", 2)[0]
+		if n[h] == 0 {
+			hs = append(hs, h)
+		}
+		n[h]++
+	}
+	slices.SortStableFunc(hs, func(a, b string) int { return n[b] - n[a] })
+	var out []string
+	for _, h := range hs[:min(5, len(hs))] {
+		if n[h] > 1 {
+			h = fmt.Sprintf("%s ×%d", h, n[h])
+		}
+		out = append(out, h)
+	}
+	if len(hs) > 5 {
+		out = append(out, fmt.Sprintf("%d more %s", len(hs)-5, map[bool]string{true: "site", false: "sites"}[len(hs) == 6]))
+	}
+	return strings.Join(out, ", ")
 }
 
 // program is the kind of program b is, by its first bytes, or "".
@@ -159,7 +235,18 @@ func textRules(s Subject, p string, b []byte) []Finding {
 	var out []Finding
 	hidden := false
 	for n, line := range strings.Split(string(b), "\n") {
-		for _, r := range line {
+		for i, r := range line {
+			if n == 0 && i == 0 && r == 0xFEFF {
+				continue // a byte order mark
+			}
+			if hiddenRune(r) && code(p) && !steering(r) {
+				// In code, a zero-width character or a direction mark in
+				// a string is data (an entity table's &lrm;): said, not
+				// blocked. What reorders or hides text still blocks.
+				out = append(out, Finding{Layer: "basic", Rule: "unicode", Level: "note", File: p, Line: n + 1,
+					Text: fmt.Sprintf("invisible character U+%04X in code", r), Next: "check it's in a string, as data"})
+				break
+			}
 			if hiddenRune(r) {
 				out = append(out, Finding{Layer: "basic", Rule: "unicode", Level: "block", File: p, Line: n + 1,
 					Text: fmt.Sprintf("hidden character U+%04X: text an agent reads and you don't see", r), Next: "remove this file, or decline", Fix: "remove:" + p})
@@ -171,7 +258,7 @@ func textRules(s Subject, p string, b []byte) []Finding {
 			continue
 		}
 		for _, w := range warnings {
-			if m := w.re.FindString(line); m != "" {
+			if m := w.re.FindString(line); m != "" && (w.rule != "url" || !xmlName.MatchString(m)) {
 				out = append(out, Finding{Layer: "basic", Rule: w.rule, Level: "note", File: p, Line: n + 1, Text: w.say(m), Next: w.next})
 			}
 		}
@@ -189,6 +276,24 @@ func textRules(s Subject, p string, b []byte) []Finding {
 			Text: "setup.py: pip runs it to install", Next: "read it before installing the package"})
 	}
 	return out
+}
+
+// xmlName is an XML namespace's name: a web address nothing fetches.
+var xmlName = regexp.MustCompile(`^https?://www\.w3\.org/(2000/svg|1999/xhtml|1999/xlink|1998/Math/MathML|XML/1998/namespace|2000/xmlns/?)$`)
+
+// code: p is a program's source, not text an agent reads as words.
+func code(p string) bool {
+	switch strings.ToLower(p[strings.LastIndex(p, ".")+1:]) {
+	case "js", "cjs", "mjs", "ts", "tsx", "jsx", "css", "go", "rs", "java", "py":
+		return true
+	}
+	return false
+}
+
+// steering: r reorders text (direction overrides and isolates) or hides
+// it in tags, so what's seen isn't what's there, in code too.
+func steering(r rune) bool {
+	return r >= 0x202A && r <= 0x202E || r >= 0x2066 && r <= 0x2069 || r >= 0xE0000 && r <= 0xE007F
 }
 
 // hiddenRune: r is a character that changes or hides text without being

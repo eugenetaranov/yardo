@@ -45,14 +45,6 @@ func TestBasicBlocks(t *testing.T) {
 		{"a program", "program", "bin/helper", "remove:bin/helper", skill(map[string]string{"bin/helper": "\x7fELF\x02\x01"})},
 		{"an archive", "archive", "lib.whl", "remove:lib.whl", skill(map[string]string{"lib.whl": "PK\x03\x04rest"})},
 		{"hidden text", "unicode", "SKILL.md:6", "remove:SKILL.md", skill(map[string]string{"SKILL.md": okSkill + "Be nice\u202e.\n"})},
-		{"a big file", "size", "big.md", "remove:big.md", skill(map[string]string{"big.md": strings.Repeat("x", maxFile+1)})},
-		{"too many", "size", "", "", func() Subject {
-			s := skill(nil)
-			for n := range maxCount {
-				s.Files[strings.Repeat("d/", 1)+string(rune('a'+n%26))+strings.Repeat("x", n/26)] = []byte("x")
-			}
-			return s
-		}()},
 		{"a bad name", "name", "", "", func() Subject { s := skill(nil); s.Name = "Tidy_Up"; return s }()},
 		{"a taken name", "name", "", "", func() Subject { s := skill(nil); s.Taken = []string{"tidy"}; return s }()},
 		{"hooks", "frontmatter", "SKILL.md:4", "drop-key:hooks", skill(map[string]string{"SKILL.md": "---\nname: tidy\ndescription: d\nhooks:\n  PreToolUse: curl x\n---\nx\n"})},
@@ -72,6 +64,82 @@ func TestBasicBlocks(t *testing.T) {
 				t.Errorf("%s: %+v\nall: %+v", c.rule, f, fs)
 			}
 		})
+	}
+}
+
+// Past the limits it isn't blocked: it needs your OK, as it can't be
+// read through; under them, nothing.
+func TestBasicSize(t *testing.T) {
+	for _, c := range []struct {
+		name, where, fix string
+		s                Subject
+	}{
+		{"a big file", "big.md", "remove:big.md", skill(map[string]string{"big.md": strings.Repeat("x", maxFile+1)})},
+		{"too many", "", "", func() Subject {
+			s := skill(nil)
+			for n := range maxCount {
+				s.Files[strings.Repeat("d/", 1)+string(rune('a'+n%26))+strings.Repeat("x", n/26)] = []byte("x")
+			}
+			return s
+		}()},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fs := Basic(c.s)
+			f := find(fs, "size")
+			if f.Level != "ok" || f.Where() != c.where || f.Fix != c.fix || f.Next == "" {
+				t.Errorf("size: %+v\nall: %+v", f, fs)
+			}
+		})
+	}
+	if f := find(Basic(skill(map[string]string{"lib.js": strings.Repeat("x", maxFile)})), "size"); f.Rule != "" {
+		t.Errorf("at the limit: %+v", f)
+	}
+}
+
+// In code, an invisible mark in a string is said, not blocked; what
+// reorders text still blocks there; a byte order mark is nothing.
+func TestBasicUnicodeCode(t *testing.T) {
+	if f := find(Basic(skill(map[string]string{"vendor/deps.cjs": "const e = {\n  lrm: \"\u200e\",\n}\n"})), "unicode"); f.Level != "note" || f.Where() != "vendor/deps.cjs:2" {
+		t.Errorf("a mark in code: %+v", f)
+	}
+	if f := find(Basic(skill(map[string]string{"x.js": "let a = 1 // \u202e\n"})), "unicode"); f.Level != "block" {
+		t.Errorf("an override in code: %+v", f)
+	}
+	if f := find(Basic(skill(map[string]string{"x.js": "\ufefflet a = 1\n"})), "unicode"); f.Rule != "" {
+		t.Errorf("a byte order mark: %+v", f)
+	}
+	if f := find(Basic(skill(map[string]string{"notes.md": "a\u200bb\n"})), "unicode"); f.Level != "block" {
+		t.Errorf("a mark in text: %+v", f)
+	}
+}
+
+// A web address is said once, where it's first, with how many more have
+// it; XML namespaces aren't web addresses anyone fetches; a file with
+// many says them in one note.
+func TestBasicURLsOnce(t *testing.T) {
+	fs := Basic(skill(map[string]string{
+		"a.js": "fetch('https://x.example/api')\nfetch('https://x.example/api')\n",
+		"b.js": "fetch('https://x.example/api')\nconst ns = 'http://www.w3.org/2000/svg'\n",
+	}))
+	var urls []Finding
+	for _, f := range fs {
+		if f.Rule == "url" {
+			urls = append(urls, f)
+		}
+	}
+	if len(urls) != 1 || urls[0].Where() != "a.js:1" || !strings.Contains(urls[0].Next, "2 more places") {
+		t.Errorf("urls: %+v", urls)
+	}
+	// More than three in a file: one note for them all, by site.
+	fs = Basic(skill(map[string]string{"vendor/x.js": "https://a.example/1\nhttps://a.example/2\nhttps://b.example/\nhttps://a.example/3\n"}))
+	urls = urls[:0]
+	for _, f := range fs {
+		if f.Rule == "url" {
+			urls = append(urls, f)
+		}
+	}
+	if len(urls) != 1 || urls[0].Where() != "vendor/x.js:1" || urls[0].Text != "4 web addresses: a.example ×3, b.example" {
+		t.Errorf("many: %+v", urls)
 	}
 }
 
