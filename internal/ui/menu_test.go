@@ -541,11 +541,48 @@ func TestMenuMCPScroll(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 20})
 	onRow(m, "mcp")
 	mk(m, "enter", "n")
-	for range len(m.info.MCPSpecs) {
+	for range len(m.info.MCPSpecs) - 1 {
 		mk(m, "down")
 	}
 	if v := m.View(); !strings.Contains(v, "› spec29") || strings.Contains(v, "aws-api") {
 		t.Errorf("scrolled:\n%s", v)
+	}
+	// Last, From elsewhere.
+	mk(m, "down", "down")
+	if v := m.View(); !strings.Contains(v, "› From elsewhere") {
+		t.Errorf("From elsewhere:\n%s", v)
+	}
+	mk(m, "enter")
+	if r := m.result; r.Kind != MenuMCP || r.MCP.Do != "elsewhere" {
+		t.Errorf("enter: %+v", r)
+	}
+}
+
+// A server held for a decision reads held, and offers only Review it.
+func TestMenuMCPHeld(t *testing.T) {
+	m := mcpMenu()
+	m.info.MCP = append(m.info.MCP, MCPServer{Entry: "xmcp", Name: "xmcp", State: "held"})
+	m = NewMenu(m.info, "", m.items, nil, true)
+	onRow(m, "mcp")
+	mk(m, "enter")
+	// Below yardo's, above the found ones (and their heading).
+	at := slices.IndexFunc(m.info.MCP, func(s MCPServer) bool { return s.State == "held" })
+	if at != len(m.info.MCP)-2 {
+		t.Errorf("held is row %d of %d", at, len(m.info.MCP))
+	}
+	for range at {
+		mk(m, "down")
+	}
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "▲ held: waiting for you") || strings.Index(v, "xmcp") > strings.Index(v, "Also in ~/.mcp") {
+		t.Fatalf("list:\n%s", v)
+	}
+	mk(m, "enter")
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "› Review it") || strings.Contains(v, "Edit its settings") {
+		t.Fatalf("server:\n%s", v)
+	}
+	mk(m, "enter")
+	if r := m.result; r.Kind != MenuMCP || r.MCP != (MCPAct{Do: "review", Entry: "xmcp"}) {
+		t.Errorf("review: %+v", r)
 	}
 }
 

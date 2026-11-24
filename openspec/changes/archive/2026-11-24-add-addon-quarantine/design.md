@@ -74,10 +74,21 @@
   record is readable by the gateway user). The form for an image or URL
   produces a data spec: `KIND`, `IMAGE=<repo>@sha256:…`, `URL`,
   `DESCRIPTION`, `REQUIRED`, `NETWORK=0|1`.
-- **Approval record**: TOML, root 0644 (the gateway user reads it),
-  written atomically. Entries are keyed by kind and name. A skill installs
-  through the skills step's `write`, with a marker whose `source` is
-  `checked`. That's how the Skills screen tells "checked" from "yardo's".
+- **Approval record**: TOML at `/var/lib/yardo/approved/<user>.toml`,
+  written atomically, entries keyed by kind and name. `/var/lib/yardo` is
+  root's alone (0700), so the server specs' hashes go to a second list the
+  gateway user can read: `/etc/mcpjungle/<user>.approved` (0644, a
+  `name hash` line each), which `mcp-sync` checks. A skill installs
+  through the skills step's `write` with yardo's usual marker; the Skills
+  screen tells "checked" from "yardo's" by the approval record, not the
+  marker.
+- **mcp-sync current**: an install from elsewhere first brings the
+  installed `mcp-sync` up to date (the gateway item's `go:mcp_files`
+  step), since an older one doesn't check the list. `mcp-sync NAME…`
+  saves its names as the list, so a sync after an install passes them all.
+- **Decline and images**: a pulled image is removed on decline only when
+  yardo pulled it and it wasn't there before; a spec's image is never
+  removed.
 - **Typed OK**: the add-on's name, as in GitHub's dangerous actions.
 
 ## Risks / Trade-offs

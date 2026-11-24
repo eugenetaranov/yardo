@@ -386,3 +386,35 @@ type = "go:mcp_wire"
 
 [[item.step]]
 type = "go:mcp_sync"
+
+# skill-veil: the offline scanner the add-on checks run on a skill or MCP
+# spec from elsewhere (as nobody, no network, no home). Added when the
+# first one is added; nothing runs it otherwise.
+[[item]]
+id = "skillveil"
+tab = "-"
+label = "skill-veil (scans skills and MCP specs from elsewhere, offline)"
+source = "release binary (seifreed/skill-veil, MIT), pinned and checked"
+remove = "rm -f /usr/local/bin/skill-veil"
+remove_say = "removes the scanner; adding a skill or server from elsewhere installs it again"
+
+[[item.step]]
+type = "apt"
+packages = ["curl", "tar"]
+
+[[item.step]]
+type = "run"
+cmd = """
+case {{arch}} in
+  amd64) r=x86_64 s=6a6167ea71ba63e565448c1fc21d1a698315de4cfa0c90604970da393c5a4f26 ;;
+  arm64) r=arm64 s=f64aec53b281c0ed46cd8b68abe05d8ff09ac3508622c30a74054b65c51f0342 ;;
+  *) echo "skill-veil has no release for {{arch}}" >&2; exit 1 ;;
+esac
+t=$(mktemp) d=$(mktemp -d)
+curl -fsSL -o "$t" "https://github.com/seifreed/skill-veil/releases/download/v0.3.0/skill-veil-linux-$r.tar.gz" &&
+  echo "$s  $t" | sha256sum -c --quiet &&
+  tar -xzf "$t" -C "$d" &&
+  install -m 0755 "$d/skill-veil-linux-$r/skill-veil" /usr/local/bin/skill-veil
+rc=$?; rm -rf "$t" "$d"; exit $rc
+"""
+check = "/usr/local/bin/skill-veil --version 2>/dev/null | grep -qw 0.3.0"

@@ -35,7 +35,7 @@ func skillsMenu() (*Menu, *[][]MCPAct) {
 func TestMenuSkills(t *testing.T) {
 	m, _ := skillsMenu()
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"Home › Skills", "All skills", "2 of 3", "archify", "not yardo's", "grill-me", "yardo's", "humanizer", "yardo's, edited", "○ off", "For Claude Code"} {
+	for _, want := range []string{"Home › Skills", "All skills", "2 of 3", "archify", "not checked", "grill-me", "yardo's", "humanizer", "edited since", "○ off", "For Claude Code"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("no %q:\n%s", want, v)
 		}
@@ -100,5 +100,48 @@ func TestMenuSkillScreen(t *testing.T) {
 	mk(m, "enter")
 	if m.screen != "skills" || m.info.Skills[2].Off != "" || !strings.Contains(m.View(), "not saved") || len(*ran) != 0 {
 		t.Errorf("Turn it on: on %s\n%s", m.screen, m.View())
+	}
+}
+
+// n adds from GitHub; a skill not checked offers Check it and Delete it;
+// a held one only Review it, and space can't switch it.
+func TestMenuSkillsElsewhere(t *testing.T) {
+	m, _ := skillsMenu()
+	mk(m, "n")
+	if r := m.result; r.Kind != MenuSkills || r.MCP.Do != "add" {
+		t.Errorf("n: %+v", r)
+	}
+	m, _ = skillsMenu()
+	mk(m, "enter") // archify, not checked
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "Check it") || !strings.Contains(v, "Delete it") {
+		t.Fatalf("not checked:\n%s", v)
+	}
+	mk(m, "down", "enter")
+	if r := m.result; r.Kind != MenuSkills || r.MCP != (MCPAct{Do: "check", Entry: "archify"}) {
+		t.Errorf("Check it: %+v", r)
+	}
+	m, _ = skillsMenu()
+	mk(m, "enter", "down", "down", "enter")
+	if m.dialog == nil || !strings.Contains(m.View(), "Delete archify?") {
+		t.Fatalf("Delete it:\n%s", m.View())
+	}
+	mk(m, "y")
+	if r := m.result; r.Kind != MenuSkills || r.MCP != (MCPAct{Do: "delete", Entry: "archify"}) {
+		t.Errorf("delete: %+v", r)
+	}
+	m, _ = skillsMenu()
+	m.info.Skills = append(m.info.Skills, SkillRow{Name: "zz-new", Source: "held", Off: "held"})
+	mk(m, "down", "down", "down", " ")
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "▲ held: waiting for you") || !strings.Contains(v, "enter reviews it") || len(m.skPend) != 0 {
+		t.Errorf("held, space:\n%s", v)
+	}
+	mk(m, "enter")
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Review it") || strings.Contains(v, "Turn it") {
+		t.Errorf("held:\n%s", v)
+	}
+	mk(m, "enter")
+	if r := m.result; r.MCP != (MCPAct{Do: "review", Entry: "zz-new"}) {
+		t.Errorf("review: %+v", r)
 	}
 }

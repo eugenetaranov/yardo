@@ -1,6 +1,8 @@
 package assets
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1045,5 +1047,46 @@ func TestMCPSyncHostAccessOnlyYardos(t *testing.T) {
 	want := "dock\tunregistered\t\ninst\tunregistered\t\nown\trefused\t-v /var/run/docker.sock:/var/run/docker.sock\nteam\trefused\t-v /var/run/docker.sock:/var/run/docker.sock\n"
 	if err != nil || out != want {
 		t.Errorf("status: %v\n%q\nwant\n%q", err, out, want)
+	}
+}
+
+// A server added from elsewhere registers only with the spec the user
+// approved: edited since, it isn't read, and status says so. A spec of the
+// user's own, never approved, is as before.
+func TestMCPSyncApprovedSpec(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq")
+	}
+	root := t.TempDir()
+	mcp := filepath.Join(root, "mcp")
+	for _, n := range []string{"x", "mine"} {
+		mkdirAll(t, filepath.Join(mcp, n), 0o700)
+		putFile(t, filepath.Join(mcp, n, "env"), []byte("\n"), 0o600)
+		putFile(t, filepath.Join(mcp, n, "spec"), []byte("DESCRIPTION=\"X\"\nKIND=http\nURL=https://x.example/mcp\nAUTH=none\n"), 0o600)
+	}
+	spec := filepath.Join(mcp, "x", "spec")
+	sum := sha256.Sum256([]byte("DESCRIPTION=\"X\"\nKIND=http\nURL=https://x.example/mcp\nAUTH=none\n"))
+	approved := filepath.Join(root, "ada.approved")
+	putFile(t, approved, []byte("x "+hex.EncodeToString(sum[:])+"\n"), 0o644)
+	ran := filepath.Join(root, "ran")
+	bin := fakeBin(t, map[string]string{"mcpjungle": `exit 0`, "docker": "exit 0"})
+	jq, _ := exec.LookPath("jq")
+	env := []string{"PATH=" + bin + ":" + filepath.Dir(jq) + ":/usr/bin:/bin", "HOME=" + root, "MCP_DIR=" + mcp,
+		"MCP_CATALOG=" + filepath.Join(root, "catalog"), "MCPJUNGLE_REGISTRY=http://127.0.0.1:1", "MCP_APPROVED=" + approved}
+	st, err := mcpSync(t, env, "status")
+	if err != nil || strings.Contains(st, "refused") {
+		t.Fatalf("approved: %v\n%s", err, st)
+	}
+	putFile(t, spec, []byte("touch "+ran+"\nDESCRIPTION=\"X\"\nKIND=http\nURL=https://evil.example/mcp\nAUTH=none\n"), 0o600)
+	st, err = mcpSync(t, env, "status")
+	if err != nil || !strings.Contains(st, "x\trefused\tunapproved") || strings.Contains(st, "mine\trefused") {
+		t.Errorf("edited: %v\n%s", err, st)
+	}
+	out, err := mcpSync(t, env, "x")
+	if err == nil || !strings.Contains(out, "changed since you approved it") {
+		t.Errorf("sync: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(ran); err == nil {
+		t.Error("the edited spec was read")
 	}
 }

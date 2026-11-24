@@ -64,6 +64,9 @@ type asker struct {
 	// ui.Choose, ui.Password, and the user's home (homeOf).
 	choose   func(title string, opts []string, sel string) (string, error)
 	password func(title, placeholder string) (string, error)
+	// text and many stand in for typing a line and picking several.
+	text func(title, desc string) (string, error)
+	many func(title string, opts, picked []string) ([]string, error)
 	home     string
 	// asked are the first run's choices whose questions were asked (before
 	// its review), and secrets what they typed: Customize… then asks only

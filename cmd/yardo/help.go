@@ -31,6 +31,12 @@ Commands:
   skills [on|off [SKILL…]]     the agent skills and whether each is on; turn some off
                                or on (none named: all of them); off moves a skill
                                out of every agent's reach, on puts it back
+  skills add SOURCE… [--yes]   add skills from GitHub (owner/repo[/path][@ref]): each
+                               is held, checked and shown before you install it
+  skills check|delete SKILL    check a skill yardo didn't install; delete one
+  mcp add IMAGE|URL|SPEC [--name N] [--yes]
+                               add an MCP server from elsewhere, checked the same way
+  addons [review NAME]         what's held for a decision and what was approved
   export [--name N] [--lock] [FILE]
                                write the saved choices as a profile
   connect                      how to reach this machine from a laptop

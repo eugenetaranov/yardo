@@ -666,6 +666,31 @@ installed by hand.
    appears is moved off too, and all back on returns each skill to what
    you chose for it. If another copy of the same name was put in a skills
    folder meanwhile, turning it on leaves both and says which is in the way.
+   **Skills and MCP servers from elsewhere** are held and checked before
+   they're installed. `n` on the Skills tab, or `sudo yardo skills add
+   owner/repo[/path][@ref]`, fetches a GitHub repository at a fixed
+   commit; MCP servers › Add › From elsewhere, or `sudo yardo mcp add
+   <image | https URL | spec file>`, pulls an image by its digest (never
+   creating a container) or takes a URL or a spec. Each is held in
+   `/var/lib/yardo/quarantine`, which only root reads, and checked:
+   yardo's own rules (programs, archives, links, hidden Unicode, hooks
+   and tool grants in a skill's frontmatter, Docker options beyond a short
+   list, MOUNT_AWS, piping a download to a shell, your secrets' paths) and
+   [skill-veil](https://github.com/seifreed/skill-veil), a pinned
+   scanner run as nobody with no network. The report lists each finding
+   by file and line, with a next step; you install, fix (drop a file or a
+   Docker option) and check again, decline (its files and a pulled image
+   go), or leave it held (`sudo yardo addons` lists what's held and what
+   was approved; `sudo yardo addons review <name>` decides). A blocked one
+   can't be installed as it is; one that needs your OK wants its name
+   typed. With `--yes`, only reports with nothing needing an OK install.
+   Installed, it's recorded with its source, pin and findings; mcp-sync
+   registers a server from elsewhere only while its spec is the one you
+   approved, and a skill reads as checked on the Skills tab. Check it, on
+   a skill another tool put there, turns it off while a copy is checked.
+   Not checked: an image's own files, and anything a skill or server
+   fetches when it runs; the checks stop simple attacks, not a careful
+   one.
 4. **VPN logins** (in Tailscale's and NetBird's rows): the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later).

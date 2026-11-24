@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/eugenetaranov/yardo/internal/addon"
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/catalog"
 	"github.com/eugenetaranov/yardo/internal/mcp"
@@ -476,6 +477,25 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 				continue
 			}
 			info.MCPSpecs = append(info.MCPSpecs, ui.MCPSpec{Name: n, About: specs[n].Description})
+		}
+		// Servers from elsewhere: approved ones say so, with their pin.
+		if as, err := addon.Approvals(a.User); err == nil {
+			for _, ap := range as {
+				for n := range info.MCP {
+					if ap.Kind == "mcp" && info.MCP[n].Name == ap.Name {
+						info.MCP[n].About = strings.TrimSpace(info.MCP[n].About + " · checked " + ap.At.Format("2006-01-02") + ", " + shortPin(ap.Pin))
+					}
+				}
+			}
+		}
+		// Servers from elsewhere held for the user's decision.
+		if hs, err := addon.List(a.User); err == nil {
+			for _, h := range hs {
+				if h.Kind == "mcp" {
+					info.MCP = append(info.MCP, ui.MCPServer{Entry: h.Name, Name: h.Name, State: "held",
+						About: "From " + h.Source + ": " + verdictSays(h.Report.Verdict()) + "."})
+				}
+			}
 		}
 		st := status["mcpjungle-install"].State
 		info.MCPDown = down || st == "down" || st == "missing"

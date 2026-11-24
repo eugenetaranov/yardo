@@ -33,6 +33,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/eugenetaranov/yardo/internal/addon"
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/assets"
 	"github.com/eugenetaranov/yardo/internal/catalog"
@@ -230,11 +231,40 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			if fs.NArg() > 1 {
 				ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 				defer stop()
+				if fs.Arg(1) == "add" {
+					return o.mcpAdd(ctx, cat, st, stdout, fs.Args()[2:])
+				}
 				return o.mcpCmd(ctx, stdout, st, fs.Args()[1:])
 			}
 			o.startMCP = true // the menu, on its MCP servers
 		case "skills":
-			return o.skillsCmd(stdout, st, fs.Args()[1:])
+			args := fs.Args()[1:]
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+			defer stop()
+			switch {
+			case len(args) > 0 && args[0] == "add":
+				return o.skillsAdd(ctx, cat, st, stdout, args[1:])
+			case len(args) == 2 && (args[0] == "check" || args[0] == "delete"):
+				r, _, err := o.addonRun(ctx, cat, st, stdout, false)
+				if err != nil {
+					return err
+				}
+				if args[0] == "check" {
+					r.ensureVeil(ctx)
+					return r.checkSkill(ctx, args[1])
+				}
+				if err := steps.DeleteSkill(r.env, args[1]); err != nil {
+					return err
+				}
+				_ = addon.Forget(r.env.User, "skill", args[1])
+				fmt.Fprintf(stdout, "✓ %s deleted.\n", args[1])
+				return nil
+			}
+			return o.skillsCmd(stdout, st, args)
+		case "addons":
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+			defer stop()
+			return o.addonsCmd(ctx, cat, st, stdout, fs.Args()[1:])
 		case "status":
 			sfs := flag.NewFlagSet("yardo status", flag.ContinueOnError)
 			sfs.SetOutput(stderr)
@@ -245,7 +275,7 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			}
 			o.status, o.verify = true, true
 		default:
-			return fmt.Errorf("unknown command %q (commands: status, remove, mcp, skills, export, connect, gitkey, version, forget; see yardo --help)", fs.Arg(0))
+			return fmt.Errorf("unknown command %q (commands: status, remove, mcp, skills, addons, export, connect, gitkey, version, forget; see yardo --help)", fs.Arg(0))
 		}
 	}
 	if !o.dryRun && !o.verify {
@@ -636,6 +666,16 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 						}
 						board = &ui.BoardResult{Kind: ui.BoardApply, Settings: res.Settings}
 						break loop
+					case ui.MenuSkills:
+						r, err := (&asker{cat: cat, a: a, share: o.share(), out: stdout}).addons(ctx)
+						if err == nil {
+							toast, err = r.menuDo(ctx, "skill", res.MCP)
+						}
+						if err != nil {
+							toast = "✗ " + err.Error()
+						}
+						d, open = nil, "skills"
+						continue
 					case ui.MenuMCP:
 						k := &asker{cat: cat, a: a, share: o.share(), out: io.Discard, installed: func(t string) bool { return userHas(a.User, t) },
 							port: func() int { p, _ := st.Port(user); return p }}

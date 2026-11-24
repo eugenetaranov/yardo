@@ -57,11 +57,12 @@ type ConnectRow struct{ What, Use, Note string }
 // SkillRow is one agent skill on the menu's Skills screen.
 type SkillRow struct {
 	Name string
-	// Source is yardo (as yardo wrote it), changed (yardo's, edited
-	// since) or theirs.
-	Source string
+	// Source is yardo (as yardo wrote it), checked (from elsewhere,
+	// approved on Checked, a date), changed (edited since), theirs (not
+	// checked) or held (waiting for the user's decision).
+	Source, Checked string
 	// Off is "" for a skill that's on, "own" for one turned off by
-	// itself, "all" for one off only because all are.
+	// itself, "all" for one off only because all are, "held" for one held.
 	Off string
 	// Where says which skills folders it's in, or is held off from.
 	Where string

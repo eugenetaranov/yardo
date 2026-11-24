@@ -396,6 +396,16 @@ bad_source() {
   return 1
 }
 
+# approved NAME SPEC — SPEC is what the user approved for NAME, or NAME
+# was never approved (a spec of the user's own, as before add-ons).
+APPROVED="${MCP_APPROVED:-/etc/mcpjungle/${me#mcp-}.approved}"
+approved() {
+  _want=$(awk -v n="$1" '$1 == n { print $2 }' "$APPROVED" 2>/dev/null)
+  [ -z "$_want" ] && return 0
+  if command -v sha256sum >/dev/null; then _got=$(sha256sum < "$2"); else _got=$(shasum -a 256 < "$2"); fi
+  [ "${_got%% *}" = "$_want" ]
+}
+
 # kube_path KUBECONFIG HOME — KUBECONFIG (paths split by ':') with each
 # path under ~/.kube (~/, $HOME/ or HOME/) the one it has in the container.
 kube_path() {
@@ -515,6 +525,18 @@ for NAME in $want; do
   if [ -z "$spec" ]; then
     if [ -n "$STATUS" ]; then state "$NAME" nospec; continue; fi
     echo "$NAME: no spec (not in $CATALOG and no $MCP_DIR/$NAME/spec) — skipped"
+    continue
+  fi
+  # A server added from elsewhere runs only the spec the user approved:
+  # changed since, it isn't read at all.
+  if [ "$spec" = "$MCP_DIR/$NAME/spec" ] && ! approved "$NAME" "$spec"; then
+    if [ -n "$STATUS" ]; then state "$NAME" refused unapproved; continue; fi
+    if [ -f "$MCP_DIR/$NAME/.registered.json" ]; then
+      mj --registry "$REGISTRY" deregister "$NAME" >/dev/null 2>&1 || true
+      rm -f "$MCP_DIR/$NAME/.registered.json" "$MCP_DIR/$NAME/.disabled"
+    fi
+    echo "$NAME: refused: its spec changed since you approved it — not registered (check it again: sudo yardo mcp add)"
+    failed=1
     continue
   fi
   # Each spec's variables, none left from the one before (MOUNT_AWS

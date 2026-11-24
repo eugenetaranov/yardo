@@ -164,6 +164,8 @@ func (m *Menu) skillAct(sel int) (MCPAct, string) {
 	}
 	s := m.info.Skills[sel]
 	switch {
+	case s.Off == "held":
+		return MCPAct{}, "Held for your decision: enter reviews it."
 	case m.info.SkillsAllOff:
 		return MCPAct{}, "All skills are off: turn them on first (the All skills row)."
 	case s.Off != "":
@@ -172,10 +174,14 @@ func (m *Menu) skillAct(sel int) (MCPAct, string) {
 	return MCPAct{Do: "off", Entry: s.Name}, ""
 }
 
-// skillActions are a skill's screen's rows: turn it off or on, back.
+// skillActions are a skill's screen's rows: turn it off or on; check a
+// skill yardo didn't install; review one held; delete one not yardo's.
 func (m *Menu) skillActions(s *SkillRow) []mcpAction {
 	if s == nil {
 		return nil
+	}
+	if s.Off == "held" {
+		return []mcpAction{{"review", "Review it", "its report: install, fix and check again, or decline"}, {"back", "Back", ""}}
 	}
 	act, _ := m.skillAct(slices.IndexFunc(m.info.Skills, func(r SkillRow) bool { return r.Name == s.Name }))
 	var out []mcpAction
@@ -184,6 +190,12 @@ func (m *Menu) skillActions(s *SkillRow) []mcpAction {
 		out = append(out, mcpAction{"off", "Turn it off", "out of every agent's reach, kept to turn on again"})
 	case "on":
 		out = append(out, mcpAction{"on", "Turn it on", "back where it was"})
+	}
+	if s.Source == "theirs" {
+		out = append(out, mcpAction{"check", "Check it", "off while yardo checks a copy and shows you what it found"})
+	}
+	if s.Source != "yardo" {
+		out = append(out, mcpAction{"delete", "Delete it", "from both skills folders, and where it's held"})
 	}
 	return append(out, mcpAction{"back", "Back", ""})
 }
@@ -218,6 +230,8 @@ func (m *Menu) skillsKey(k string, up, down bool) tea.Cmd {
 			if act.Do != "" {
 				m.stageSkill(act)
 			}
+		case k == "n":
+			return m.quit(MenuResult{Kind: MenuSkills, MCP: MCPAct{Do: "add"}})
 		case k == "enter":
 			m.skSel = m.sel
 			m.screen, m.sel = "skills:skill", 0
@@ -232,8 +246,23 @@ func (m *Menu) skillsKey(k string, up, down bool) tea.Cmd {
 		case down:
 			m.sel = min(len(as)-1, m.sel+1)
 		case k == "enter" && m.sel < len(as):
-			if a := as[m.sel].id; a != "back" {
-				m.stageSkill(MCPAct{Do: a, Entry: m.skill().Name})
+			name := m.skill().Name
+			switch a := as[m.sel].id; a {
+			case "off", "on":
+				m.stageSkill(MCPAct{Do: a, Entry: name})
+			case "check", "review":
+				return m.quit(MenuResult{Kind: MenuSkills, MCP: MCPAct{Do: a, Entry: name}})
+			case "delete":
+				m.dialog = &Dialog{Title: "Delete " + name + "?", YN: true, Sel: 1,
+					Lines: []string{"It goes from both skills folders, and from where it's held off.", "This can't be undone."},
+					Opts:  [][2]string{{"Delete (y)", "yes"}, {"Keep it (n)", "no"}},
+					On: func(v string) tea.Cmd {
+						if v != "yes" {
+							return nil
+						}
+						return m.quit(MenuResult{Kind: MenuSkills, MCP: MCPAct{Do: "delete", Entry: name}})
+					}}
+				return nil
 			}
 			m.screen, m.sel = "skills", m.skSel
 		}
@@ -241,9 +270,11 @@ func (m *Menu) skillsKey(k string, up, down bool) tea.Cmd {
 	return nil
 }
 
-// skillWord is how a skill is: on, or off (by itself, or with all).
+// skillWord is how a skill is: on, off (by itself, or with all), or held.
 func skillWord(s SkillRow) string {
 	switch s.Off {
+	case "held":
+		return yellow.Render("▲ held: waiting for you")
 	case "own":
 		return accent.Render("○ off")
 	case "all":
@@ -257,10 +288,14 @@ func skillFrom(s SkillRow) string {
 	switch s.Source {
 	case "yardo":
 		return "yardo's"
+	case "checked":
+		return "checked " + s.Checked
 	case "changed":
-		return "yardo's, edited"
+		return "edited since"
+	case "held":
+		return "from elsewhere"
 	}
-	return "not yardo's"
+	return "not checked"
 }
 
 // skillsKeys are a Skills screen's keys.
@@ -272,7 +307,7 @@ func (m *Menu) skillsKeys() []Key {
 	if n := len(m.skPend); n > 0 {
 		apply = fmt.Sprintf("apply %d", n)
 	}
-	return []Key{{Key: "↑↓", What: "choose"}, {Key: "space", What: "on/off"}, {Key: "a", What: apply, On: len(m.skPend) > 0}, {Key: "enter", What: "open"}}
+	return []Key{{Key: "↑↓", What: "choose"}, {Key: "space", What: "on/off"}, {Key: "a", What: apply, On: len(m.skPend) > 0}, {Key: "enter", What: "open"}, {Key: "n", What: "add from GitHub"}}
 }
 
 // skillsPath is where a Skills screen is, from the home.
@@ -307,7 +342,7 @@ func (m *Menu) skillsView(w, room int) []string {
 	}
 	ss := m.info.Skills
 	if len(ss) == 0 {
-		add("  No skills yet. Tools › AI adds yardo's; an agent's own installer adds its.", "")
+		add("  No skills yet. Tools › AI adds yardo's; n adds one from GitHub, checked first.", "")
 		return b
 	}
 	var lines []string

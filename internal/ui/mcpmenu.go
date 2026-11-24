@@ -32,15 +32,23 @@ func (m *Menu) hasMCP() bool {
 }
 
 // sortMCP puts the servers in the list's order, once (when the menu is
-// made, or the list opened): yardo's, then the found ones, each by name.
+// made, or the list opened): yardo's, the held, then the found ones, each
+// by name.
 func (m *Menu) sortMCP() {
 	m.info.MCP = slices.Clone(m.info.MCP)
-	slices.SortStableFunc(m.info.MCP, func(a, b MCPServer) int {
-		if a.Yardo != b.Yardo {
-			if a.Yardo {
-				return -1
-			}
+	// yardo's, then the ones held for a decision, then the found ones.
+	group := func(s MCPServer) int {
+		switch {
+		case s.Yardo:
+			return 0
+		case s.State == "held":
 			return 1
+		}
+		return 2
+	}
+	slices.SortStableFunc(m.info.MCP, func(a, b MCPServer) int {
+		if d := group(a) - group(b); d != 0 {
+			return d
 		}
 		return strings.Compare(a.Name, b.Name)
 	})
@@ -267,6 +275,9 @@ func (m *Menu) using(spec string) []string {
 type mcpAction struct{ id, label, note string }
 
 func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
+	if s.State == "held" {
+		return []mcpAction{{"review", "Review it", "its report: install, fix and check again, or decline"}, {"back", "Back", ""}}
+	}
 	var out []mcpAction
 	if s.Yardo && (s.State == "failed" || s.State == "pending") && !m.info.MCPDown {
 		out = append(out, mcpAction{"retry", "Try again", "registers it as its settings are now"})
@@ -330,7 +341,12 @@ func mcpWord(s *MCPServer) string {
 		return accent.Render("○ needs " + strings.Join(s.Keys, ", "))
 	case "failed":
 		return yellow.Render("▲ didn't register: check its settings")
+	case "held":
+		return yellow.Render("▲ held: waiting for you")
 	case "refused":
+		if s.Detail == "unapproved" {
+			return yellow.Render("▲ refused: its spec changed since you approved it")
+		}
 		return yellow.Render("▲ refused: its spec asks for " + s.Detail)
 	case "pending":
 		return accent.Render("○ not registered yet")
@@ -486,7 +502,10 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 		case up:
 			m.sel = max(0, m.sel-1)
 		case down:
-			m.sel = max(0, min(len(specs)-1, m.sel+1))
+			m.sel = min(len(specs), m.sel+1)
+		case k == "enter" && m.sel == len(specs):
+			m.addSel = m.sel
+			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "elsewhere"}})
 		case k == "enter" && len(specs) > 0:
 			m.addSel = m.sel
 			spec := specs[m.sel].Name
@@ -687,7 +706,7 @@ func (m *Menu) mcpView(w, room int) []string {
 		}
 		heading := false
 		for n, s := range ss {
-			if !s.Yardo && !heading {
+			if !s.Yardo && s.State != "held" && !heading {
 				heading = true
 				lines = append(lines, "", "     "+muted.Render("Also in ~/.mcp (not on yardo's list)"))
 			}
@@ -809,6 +828,13 @@ func (m *Menu) mcpView(w, room int) []string {
 			} else {
 				lines = append(lines, "     "+padTo(s.Name, 18)+"  "+about)
 			}
+		}
+		// Last, one from elsewhere: checked before it's installed.
+		elsewhere := muted.Render("a Docker image, an https URL or a spec file: held and checked first")
+		if m.sel == len(specs) {
+			lines = append(lines, "  "+rowOn.Render(padTo(" › From elsewhere", 21))+"  "+elsewhere)
+		} else {
+			lines = append(lines, "     "+padTo("From elsewhere", 18)+"  "+elsewhere)
 		}
 		start := windowStart(len(lines), m.sel, room-3)
 		for c, l := range window(lines, m.sel, room-3) {

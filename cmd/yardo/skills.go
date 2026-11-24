@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/eugenetaranov/yardo/internal/addon"
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/steps"
 	"github.com/eugenetaranov/yardo/internal/ui"
@@ -58,7 +59,11 @@ func skillsDo(stdout io.Writer, env *steps.Env, args []string) error {
 	}
 	for _, s := range skills {
 		if len(names) == 0 || slices.Contains(names, s.Name) {
-			fmt.Fprintln(stdout, skillSays(s, all))
+			l := skillSays(s, all)
+			if ap, ok := addon.Approved(env.User, "skill", s.Name); ok && s.Source == "yardo" {
+				l = skillChecked(l, ap)
+			}
+			fmt.Fprintln(stdout, l)
 		}
 	}
 	if len(args) > 0 && done == nil {
@@ -82,6 +87,12 @@ func skillSays(s steps.Skill, all bool) string {
 	return word + " · " + skillFrom(s.Source)
 }
 
+// skillChecked is skillSays for a skill from elsewhere, approved as ap.
+func skillChecked(line string, ap addon.Approval) string {
+	from, _ := strings.CutSuffix(line, " · yardo's")
+	return from + " · checked " + ap.At.Format("2006-01-02") + ", from " + ap.Source + " @ " + shortPin(ap.Pin)
+}
+
 // skillFrom says where a skill is from.
 func skillFrom(source string) string {
 	switch source {
@@ -93,9 +104,27 @@ func skillFrom(source string) string {
 	return "not yardo's"
 }
 
-// skillRows are env's user's skills, as the Skills screen shows them.
+// skillRows are env's user's skills, as the Skills screen shows them:
+// those from elsewhere marked checked (by the approvals) and, last, those
+// held for the user's decision.
 func skillRows(env *steps.Env) ([]ui.SkillRow, bool, error) {
 	skills, all, err := steps.ListSkills(env)
+	approved := map[string]addon.Approval{}
+	if as, aerr := addon.Approvals(env.User); aerr == nil {
+		for _, a := range as {
+			if a.Kind == "skill" {
+				approved[a.Name] = a
+			}
+		}
+	}
+	held := map[string]*addon.Held{}
+	if hs, herr := addon.List(env.User); herr == nil {
+		for _, h := range hs {
+			if h.Kind == "skill" {
+				held[h.Name] = h
+			}
+		}
+	}
 	out := []ui.SkillRow{}
 	for _, s := range skills {
 		r := ui.SkillRow{Name: s.Name, Source: s.Source}
@@ -106,8 +135,22 @@ func skillRows(env *steps.Env) ([]ui.SkillRow, bool, error) {
 			r.Off = "own"
 		}
 		r.Where = skillWhere(s)
+		if a, ok := approved[s.Name]; ok && s.Source == "yardo" {
+			r.Source, r.Checked = "checked", a.At.Format("2006-01-02")
+			r.Where += " · from " + a.Source + " @ " + shortPin(a.Pin)
+		}
+		if h := held[s.Name]; h != nil {
+			r.Source, r.Off = "held", "held"
+			r.Where = "Off while it's checked: " + verdictSays(h.Report.Verdict())
+			delete(held, s.Name)
+		}
 		out = append(out, r)
 	}
+	for _, h := range held {
+		out = append(out, ui.SkillRow{Name: h.Name, Source: "held", Off: "held",
+			Where: "From " + h.Source + " @ " + shortPin(h.Pin) + ": " + verdictSays(h.Report.Verdict())})
+	}
+	slices.SortStableFunc(out, func(a, b ui.SkillRow) int { return strings.Compare(a.Name, b.Name) })
 	return out, all, err
 }
 

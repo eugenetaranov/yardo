@@ -242,6 +242,23 @@ type mcpOutcome struct {
 // mcpDo does act to an MCP server, changing the answers' servers; on an
 // error they're as they were.
 func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.Spec) (mcpOutcome, error) {
+	if act.Do == "elsewhere" || act.Do == "review" {
+		r, err := k.addons(ctx)
+		if err != nil {
+			return mcpOutcome{}, err
+		}
+		r.out = os.Stdout // the report, above the prompts
+		r.sync = func(context.Context, string) {} // the menu registers it
+		before := len(k.a.MCPServers)
+		toast, err := r.menuDo(ctx, "mcp", act)
+		if err != nil {
+			return mcpOutcome{}, err
+		}
+		if len(k.a.MCPServers) > before {
+			return mcpOutcome{sync: k.a.MCPServers[len(k.a.MCPServers)-1]}, nil
+		}
+		return mcpOutcome{toast: toast}, nil
+	}
 	if act.Do == "off" || act.Do == "on" {
 		return k.mcpSwitch(ctx, act)
 	}
@@ -329,6 +346,7 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 			return mcpOutcome{}, fmt.Errorf("couldn't delete %s: %w", name, err)
 		}
 		k.a.MCPServers = slices.DeleteFunc(k.a.MCPServers, func(e string) bool { return e == act.Entry })
+		mcpForget(k.a.User, act.Entry)
 		return mcpOutcome{toast: name + " deleted."}, nil
 	}
 	return mcpOutcome{}, fmt.Errorf("nothing to do for %q", act.Do)
@@ -605,6 +623,8 @@ func mcpSays(name, spec string, s syncState, ok bool) string {
 		return "○ " + name + ": not registered until " + s.detail + " is filled in (sudo yardo mcp edit " + name + ")."
 	case s.state == "failed":
 		return "✗ " + name + " didn't register: " + awsHint(spec, s.detail)
+	case s.state == "refused" && s.detail == "unapproved":
+		return "✗ " + name + " wasn't registered: its spec changed since you approved it (check it again: sudo yardo mcp add)."
 	case s.state == "refused":
 		return "✗ " + name + " wasn't registered: its spec's Docker options include " + s.detail + ", which lets a container act as root on this machine."
 	case s.state == "nospec":

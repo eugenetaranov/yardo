@@ -371,3 +371,90 @@ func userDirs(e *Env, r *os.Root, p string) error {
 	}
 	return nil
 }
+
+// InstallSkill writes a skill from elsewhere, checked and approved, into
+// both skills folders (or where it's held, while it's off), marked like
+// yardo's own. A link in the way of one folder skips it, as the skills
+// step does; in the way of both, it's an error.
+func InstallSkill(e *Env, name string, files map[string][]byte) error {
+	if err := checkNames([]string{name}); err != nil {
+		return err
+	}
+	wrote := 0
+	var links []string
+	for _, d := range SkillDirs {
+		d = skillTarget(e, d, name)
+		if l := skillLink(e, d, name); l != "" {
+			links = append(links, l)
+			continue
+		}
+		if err := (skillsStep{}).write(e, d, name, files); err != nil {
+			return err
+		}
+		wrote++
+	}
+	if wrote == 0 {
+		return fmt.Errorf("skill %s: %s in the way: not installed", name, strings.Join(links, " and "))
+	}
+	return nil
+}
+
+// DeleteSkill removes skill name: its folders in both skills folders and
+// where it's held. A link there is removed as a link, never followed.
+func DeleteSkill(e *Env, name string) error {
+	if name == "" || strings.ContainsAny(name, "/\x00") || name == "." || name == ".." {
+		return fmt.Errorf("skill %q: not a name", name)
+	}
+	r, err := home(e)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = r.Close() }()
+	gone := false
+	for _, d := range SkillDirs {
+		for _, dir := range []string{d, heldDir(d)} {
+			if present(r, dir, name) {
+				if err := r.RemoveAll(rel(path.Join(dir, name))); err != nil {
+					return err
+				}
+				gone = true
+			}
+		}
+	}
+	if !gone {
+		return fmt.Errorf("no skill %s", name)
+	}
+	own := slices.DeleteFunc(ownOff(e), func(o string) bool { return o == name })
+	return writeOff(e, "own", own)
+}
+
+// HeldDir is where a skill of skills folder d is held while it's off.
+func HeldDir(d string) string { return heldDir(d) }
+
+// SkillOnDisk are skill name's files in folder dir (~/…), but yardo's
+// mark, read through the home: a link inside is an error, not followed.
+func SkillOnDisk(e *Env, dir, name string) (map[string][]byte, error) {
+	r, err := home(e)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = r.Close() }()
+	top := rel(path.Join(dir, name))
+	out := map[string][]byte{}
+	err = fs.WalkDir(r.FS(), top, func(p string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case d.IsDir():
+			return nil
+		case !d.Type().IsRegular():
+			return fmt.Errorf("%s/%s: a link or special file", dir, strings.TrimPrefix(p, rel(dir)+"/"))
+		}
+		b, err := r.ReadFile(p)
+		if rel := strings.TrimPrefix(p, top+"/"); rel != skillMark {
+			out[rel] = b
+		}
+		return err
+	})
+	return out, err
+}

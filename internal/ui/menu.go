@@ -52,6 +52,9 @@ const (
 	MenuUpdatesTab
 	// MenuConnection opens the Connection screen.
 	MenuConnection
+	// MenuSkills does Result.MCP to a skill (Entry: its name): add (from
+	// elsewhere), check, review (one held) or delete it.
+	MenuSkills
 )
 
 // MCPAct is what to do to an MCP server: Do (add, edit, on, rename,
@@ -667,7 +670,7 @@ func (m *Menu) normalize() {
 	case "mcp:server":
 		m.sel = clamp(m.sel, 0, len(m.mcpActions(m.mcpServer()))-1)
 	case "mcp:add":
-		m.sel = clamp(m.sel, 0, len(m.info.MCPSpecs)-1)
+		m.sel = clamp(m.sel, 0, len(m.info.MCPSpecs)) // then From elsewhere
 	case "skills":
 		top := -1 // All skills, above the skills
 		if len(m.info.Skills) == 0 {
