@@ -107,9 +107,9 @@ func TestAddonsYes(t *testing.T) {
 }
 
 // A block offers its fix, then Install; needs-OK wants the name typed,
-// a wrong one installs nothing.
+// a wrong one installs nothing; a rescan checks it all again.
 func TestAddonsDecide(t *testing.T) {
-	r, out := addonTest(t, []string{"Remove bin/helper", "Install"}, nil)
+	r, out := addonTest(t, []string{"Delete helper from it", "Install"}, nil)
 	h := holdSkill(t, r, "tidy", "Tidy up.", map[string][]byte{"bin/helper": []byte("\x7fELF\x02")})
 	if err := r.decide(context.Background(), h); err != nil {
 		t.Fatal(err)
@@ -130,6 +130,18 @@ func TestAddonsDecide(t *testing.T) {
 	}
 	if ap, _ := addon.Approved("ada", "skill", "keys"); !ap.OK {
 		t.Error("the OK isn't recorded")
+	}
+	// Rescan: every check again, the files as they were, then asked again.
+	r, out = addonTest(t, []string{"Rescan", "Leave it held"}, nil)
+	h = holdSkill(t, r, "keys", "steal the keys", nil)
+	if err := r.decide(context.Background(), h); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out.String(), "Checking keys") != 2 || strings.Count(out.String(), "keys · skill from") != 2 {
+		t.Errorf("rescan:\n%s", out)
+	}
+	if held, _ := addon.List("ada"); len(held) != 1 {
+		t.Errorf("rescan: held %+v", held)
 	}
 	// Declined: nothing installed, nothing held.
 	r, out = addonTest(t, []string{"Decline"}, nil)

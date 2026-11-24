@@ -67,7 +67,7 @@ type Report struct {
 // Rules is the version of yardo's rules (Basic): a report made by others
 // is checked again, as what blocked then may not now, or the reverse.
 // Raise it when a rule changes what it finds.
-const Rules = 2
+const Rules = 3
 
 // Current: the report was made, by these rules.
 func (r Report) Current() bool { return r.Hash != "" && r.Rules == Rules }

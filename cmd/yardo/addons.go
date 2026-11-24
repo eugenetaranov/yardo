@@ -11,6 +11,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -394,6 +395,10 @@ func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
 			f := h.Report.Findings[n]
 			fmt.Fprintf(r.out, "\n%s %s %s: %s\n", map[string]string{"block": "✗", "ok": "▲"}[v], h.Name, verdictSays(v), strings.TrimSuffix(cmp.Or(f.Where(), h.Name)+": "+f.Text, ": "))
 		}
+		// Every layer again on the files as they are: a rule, skill-veil or
+		// Claude Code may have changed since.
+		const rescan = "Rescan: run every check again on it as it is (nothing installed yet)"
+		opts = append(opts, rescan)
 		const careful = "Check again carefully (Claude, the larger model: slower, uses more of your plan)"
 		if !hasRule(h.Report, "claude", "not-checked") || h.Report.AI != "" {
 			opts = append(opts, careful)
@@ -429,6 +434,11 @@ func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
 				return err
 			}
 			fmt.Fprintln(r.out, "Fixed; checking again…")
+			if err := h.Check(ctx, r.taken(h)); err != nil {
+				return err
+			}
+		case pick == rescan:
+			fmt.Fprintf(r.out, "Checking %s again…\n", h.Name)
 			if err := h.Check(ctx, r.taken(h)); err != nil {
 				return err
 			}
@@ -671,16 +681,19 @@ func printNotes(out io.Writer, notes []addon.Finding) {
 	}
 }
 
-// fixSays is what a fix yardo makes does, as an option.
+// fixSays is what a fix yardo makes does, as an option: it changes the
+// held copy only, and the report is made again before anything's
+// installed.
 func fixSays(fix string) string {
 	what, arg, _ := strings.Cut(fix, ":")
+	const after = "and show the report again (nothing installed yet)"
 	switch what {
 	case "remove":
-		return fmt.Sprintf("Remove %s, then check it again", arg)
+		return fmt.Sprintf("Delete %s from it %s", path.Base(arg), after)
 	case "drop-key":
-		return fmt.Sprintf("Drop %s, then check it again", arg)
+		return fmt.Sprintf("Take %s out of it %s", arg, after)
 	case "drop-opt":
-		return fmt.Sprintf("Drop the option %s, then check it again", arg)
+		return fmt.Sprintf("Take the option %s out %s", arg, after)
 	}
 	return "Fix: " + fix
 }
