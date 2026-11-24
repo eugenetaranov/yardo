@@ -39,8 +39,9 @@ const (
 	MenuApply
 	// MenuUpdates checks for newer versions again, in the background.
 	MenuUpdates
-	// MenuMCP does Result.MCP to an MCP server: add, edit, on, rename or
-	// delete it.
+	// MenuMCP does Result.MCP to an MCP server: add, edit, on, restart,
+	// rename or delete it (restart with no Entry: all of them); cleanup
+	// removes the orphaned containers.
 	MenuMCP
 	// MenuChange asks Result.ID's Result.Change question again (the git
 	// name, the prompt, the dotfiles repo), then re-applies it.
@@ -289,6 +290,9 @@ func (m *Menu) todo() []menuRow {
 			case x.State == "failed" || x.State == "retired" || x.State == "nospec":
 				out = append(out, menuRow{id: "mcp:" + x.Name, label: "Check " + x.Name, note: strings.TrimPrefix(ansi.Strip(mcpWord(x)), "▲ ")})
 			}
+		}
+		if n := len(m.info.MCPOrphans); n > 0 {
+			out = append(out, menuRow{id: "mcporphans", label: "Clean up " + plural(n, "orphaned container", "orphaned containers"), note: m.orphansOf()})
 		}
 	}
 	if us := m.filter(newer); len(us) > 0 {

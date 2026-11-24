@@ -282,6 +282,9 @@ func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
 		out = append(out, mcpAction{"off", "Turn it off", "keeps its settings; agents stop seeing its tools"})
 	}
 	out = append(out, mcpAction{"edit", "Edit its settings", "opens ~/.mcp/" + s.Name + "/env, then registers it"})
+	if m.canRestart(s) {
+		out = append(out, mcpAction{"restart", "Restart it", "afresh: its Docker containers removed, then registered again"})
+	}
 	if !m.info.MCPDown {
 		if s.State != "nospec" && s.State != "retired" {
 			out = append(out, mcpAction{"rename", "Rename it", "its settings move with it"})
@@ -289,6 +292,30 @@ func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
 		out = append(out, mcpAction{"delete", "Delete it", "from the gateway, with its settings"})
 	}
 	return append(out, mcpAction{"back", "Back", ""})
+}
+
+// canRestart says whether s can be started afresh: yardo's, registered
+// (or tried), and the gateway running.
+func (m *Menu) canRestart(s *MCPServer) bool {
+	return s.Yardo && !m.info.MCPDown && !m.info.MCPAllOff && !slices.Contains([]string{"off", "secret", "new", "nospec", "retired"}, s.State)
+}
+
+// orphansOf says whose the orphaned containers are: jira ×2, aws.
+func (m *Menu) orphansOf() string {
+	count := map[string]int{}
+	var names []string
+	for _, n := range m.info.MCPOrphans {
+		if count[n] == 0 {
+			names = append(names, n)
+		}
+		count[n]++
+	}
+	for i, n := range names {
+		if count[n] > 1 {
+			names[i] = fmt.Sprintf("%s ×%d", n, count[n])
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 // mcpWord is how a server's state reads, styled.
@@ -370,6 +397,8 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 			m.back()
 		case k == "a":
 			return m.save()
+		case k == "c" && len(m.info.MCPOrphans) > 0:
+			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "cleanup"}})
 		case up:
 			m.sel = max(top, m.sel-1)
 		case down:
@@ -385,6 +414,19 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 			if act.Do != "" {
 				m.stage(act)
 			}
+		case k == "r" && m.sel < 0:
+			if m.info.MCPDown || m.info.MCPAllOff {
+				m.toast = "Nothing to restart: the gateway is stopped, or all servers are off."
+				return nil
+			}
+			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "restart"}})
+		case k == "r" && m.sel < n:
+			s := m.mcpServers()[m.sel]
+			if !m.canRestart(s) {
+				m.toast = "Nothing to restart: " + s.Name + " isn't running here."
+				return nil
+			}
+			return m.quit(MenuResult{Kind: MenuMCP, MCP: MCPAct{Do: "restart", Entry: s.Entry}})
 		case m.sel < 0:
 		case k == "e" && m.sel < n:
 			s := m.mcpServers()[m.sel]
@@ -578,8 +620,13 @@ func (m *Menu) mcpKeys() []Key {
 	if n := len(m.pend); n > 0 {
 		apply = fmt.Sprintf("apply %d", n)
 	}
-	return []Key{{Key: "↑↓", What: "choose"}, {Key: "space", What: "on/off"}, {Key: "a", What: apply, On: len(m.pend) > 0},
-		{Key: "enter", What: "open"}, {Key: "e", What: "edit its settings"}, {Key: "d", What: "delete"}, {Key: "n", What: "add"}}
+	keys := []Key{{Key: "↑↓", What: "choose"}, {Key: "space", What: "on/off"}, {Key: "a", What: apply, On: len(m.pend) > 0},
+		{Key: "enter", What: "open"}, {Key: "e", What: "edit its settings"}, {Key: "r", What: "restart"}, {Key: "d", What: "delete"}, {Key: "n", What: "add"}}
+	if len(m.info.MCPOrphans) > 0 {
+		// First, so a narrow footer keeps it.
+		keys = slices.Insert(keys, 1, Key{Key: "c", What: "clean up", On: true})
+	}
+	return keys
 }
 
 // mcpView is the MCP screens' lines; room is how many lines the screen
@@ -593,6 +640,11 @@ func (m *Menu) mcpView(w, room int) []string {
 		ss := m.mcpServers()
 		if m.info.MCPDown {
 			add("  "+yellow.Render("▲  The gateway is stopped: fix it from Home first."), "")
+		}
+		if n := len(m.info.MCPOrphans); n > 0 {
+			// A click on it cleans up, as c does.
+			m.hits = append(m.hits, Hit{Y0: top + len(b), Y1: top + len(b), Key: "c"})
+			add("  "+yellow.Render("▲  "+plural(n, "orphaned container", "orphaned containers"))+muted.Render(" ("+m.orphansOf()+"): the gateway lost them, they still run.")+"  "+accentBd.Render("c cleans up"), "")
 		}
 		if len(ss) == 0 {
 			add("  No MCP servers yet. Each one gives your coding agents tools:", "  "+m.examples()+".", "")

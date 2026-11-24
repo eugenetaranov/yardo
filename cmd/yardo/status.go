@@ -478,6 +478,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		st := status["mcpjungle-install"].State
 		info.MCPDown = down || st == "down" || st == "missing"
 		info.MCPAllOff = sync["*"].state == "off"
+		info.MCPOrphans = orphanNames(mcpOrphans(ctx, a.User))
 	}
 	info.LastRun = loadLastRun(o.state, a.User, o.log, now)
 	info.Keys = keysToAdd(o.state, a, func(id string) bool { return status[id].State == "ok" })

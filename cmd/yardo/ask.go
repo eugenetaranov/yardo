@@ -48,10 +48,12 @@ type asker struct {
 	port func() int
 	// listenSet: the board set the gateway's access (don't ask it again).
 	listenSet bool
-	// edit and mcpSync are seams: opening a server's env now (false: it
-	// has none yet), and mcp-sync (rename, remove) run as its owner.
+	// edit, mcpSync and cleanup are seams: opening a server's env now
+	// (false: it has none yet), mcp-sync (rename, remove) run as its
+	// owner, and removing the orphaned MCP containers (how many).
 	edit    func(name string) (bool, error)
 	mcpSync func(args ...string) error
+	cleanup func() (int, error)
 	// awsPick, kubePick and mcpEnv are seams too: askAWS's and askKube's
 	// picks (ok false: its settings open instead), and setting keys in a
 	// server's env.

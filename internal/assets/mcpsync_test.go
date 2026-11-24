@@ -657,6 +657,65 @@ func TestMCPSyncOffSurvivesRegister(t *testing.T) {
 	}
 }
 
+// restart deregisters the servers, removes their containers (only theirs;
+// none named: every server's) and registers them again, off ones still
+// off; the saved list stays as it was.
+func TestMCPSyncRestart(t *testing.T) {
+	mcp, log, env := onOffEnv(t)
+	rm := filepath.Join(filepath.Dir(mcp), "rm.log")
+	docker := fakeBin(t, map[string]string{"docker": `case "$1" in
+  ps) printf 'id-a\nid-b\nid-x\nid-n\n' ;;
+  inspect) printf 'id-a ` + mcp + `/a\nid-b ` + mcp + `/b\nid-x /elsewhere/a\nid-n\n' ;;
+  rm) echo "$3" >> ` + rm + ` ;;
+esac; exit 0`})
+	env[0] = "PATH=" + docker + ":" + strings.TrimPrefix(env[0], "PATH=")
+	servers := "a\nb\n"
+	putFile(t, filepath.Join(mcp, "servers"), []byte(servers), 0o600)
+	if _, err := mcpSync(t, env, "off", "b"); err != nil {
+		t.Fatal(err)
+	}
+	logged(t, log)
+
+	out, err := mcpSync(t, env, "restart", "a")
+	if err != nil || !strings.Contains(out, "a: removed container id-a") || !strings.Contains(out, "a: registered") {
+		t.Fatalf("restart a (%v):\n%s", err, out)
+	}
+	if got := logged(t, log); got != "deregister a \nregister a\n" {
+		t.Errorf("restart a: gateway told %q", got)
+	}
+	if got := logged(t, rm); got != "id-a\n" {
+		t.Errorf("restart a removed %q", got)
+	}
+
+	out, err = mcpSync(t, env, "restart")
+	if err != nil || !strings.Contains(out, "b: registered, off") {
+		t.Fatalf("restart (%v):\n%s", err, out)
+	}
+	if got := logged(t, log); got != "deregister a \nderegister b \nregister a\nregister b\ndisable server b\n" {
+		t.Errorf("restart: gateway told %q", got)
+	}
+	if got := logged(t, rm); got != "id-a\nid-b\n" {
+		t.Errorf("restart removed %q", got)
+	}
+	if got := readFile(t, filepath.Join(mcp, "servers")); got != servers {
+		t.Errorf("servers = %q, was %q", got, servers)
+	}
+
+	if out, err := mcpSync(t, env, "remove", "a"); err != nil {
+		t.Fatalf("remove a: %v\n%s", err, out)
+	}
+	if got := logged(t, rm); got != "id-a\n" {
+		t.Errorf("remove a removed %q", got)
+	}
+	if _, err := mcpSync(t, env, "restart", "../x"); err == nil {
+		t.Error("restart ../x: want an error")
+	}
+	putFile(t, filepath.Join(filepath.Dir(mcp), "down"), nil, 0o600)
+	if out, err := mcpSync(t, env, "restart", "b"); err == nil || logged(t, rm) != "" {
+		t.Errorf("restart, the gateway down: want an error, nothing removed:\n%s", out)
+	}
+}
+
 // status says off first, own or all; a renamed server stays off and isn't
 // thought disabled on the gateway any more.
 func TestMCPSyncOffStatusRename(t *testing.T) {

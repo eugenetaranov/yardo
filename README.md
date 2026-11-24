@@ -580,7 +580,19 @@ installed by hand.
    changed since. From the shell: `sudo yardo mcp` (the screen),
    `sudo yardo mcp edit <name>`, `sudo yardo mcp sync`,
    `sudo yardo mcp status`, `sudo yardo mcp off|on [<name>…]` (no name:
-   all of them). A profile lists another instance as
+   all of them), `sudo yardo mcp restart [<name>…]`. **Restart** (`r` on
+   the list, or Restart it on a server's screen; on All servers, every
+   one) starts a server afresh: it's taken off the gateway, its Docker
+   containers are removed, and it registers again as it was (one off
+   stays off). The gateway runs each with `--rm`, but a session it drops
+   leaves its container running; restarting all removes those too, and
+   deleting or renaming a server removes its own. yardo spots those
+   **orphaned containers** without restarting anything: a server's
+   container that no `docker run` of the gateway's accounts for (none
+   started when it was made), older than two minutes. Home marks MCP
+   servers and says how many; on MCP servers, `c` (or a click on that
+   line) removes just them, and `sudo yardo mcp status` says so too
+   (`sudo yardo mcp cleanup` from the shell). A profile lists another instance as
    `"grafana:prod"` in `[mcp] servers`.
    **Logins you already have** fill in what's empty, so a token isn't
    typed twice: GitHub (github.com) gets gh's token after `gh auth login`,

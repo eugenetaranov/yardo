@@ -251,7 +251,7 @@ func needMark(id string) (string, lipgloss.Style) {
 		return mk.Need, accent
 	case strings.HasPrefix(id, "mcpkey:"):
 		return mk.Need, accent
-	case strings.HasPrefix(id, "mcp:"):
+	case strings.HasPrefix(id, "mcp:") || id == "mcporphans":
 		return "▲", yellow
 	}
 	return mk.Down, red
@@ -382,6 +382,9 @@ func (m *Menu) mcpLines() []string {
 		out = append(out, l)
 	}
 	out = append(out, bad...)
+	if n := len(m.info.MCPOrphans); n > 0 {
+		out = append(out, yellow.Render("▲")+" "+plural(n, "orphaned container", "orphaned containers")+muted.Render(" · MCP servers › c"))
+	}
 	out = append(out, off...)
 	if len(ready)+len(bad)+len(off) == 0 {
 		out = append(out, muted.Render("None yet: add GitHub, Jira, Grafana and more."))

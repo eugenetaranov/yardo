@@ -166,6 +166,14 @@ func TestMCPDo(t *testing.T) {
 	if out := do(ui.MCPAct{Do: "retry", Entry: "jira"}); out.sync != "jira" {
 		t.Errorf("retry: %+v", out)
 	}
+	ran = nil
+	if out := do(ui.MCPAct{Do: "restart", Entry: "jira:team"}); out.apply || !strings.Contains(out.toast, "jira-team restarted") ||
+		!reflect.DeepEqual(ran, [][]string{{"restart", "jira-team"}}) {
+		t.Errorf("restart: %+v, ran %v", out, ran)
+	}
+	if out := do(ui.MCPAct{Do: "restart"}); !strings.Contains(out.toast, "all servers restarted") || !reflect.DeepEqual(ran[1], []string{"restart"}) {
+		t.Errorf("restart all: %+v, ran %v", out, ran)
+	}
 	envThere = false
 	if out := do(ui.MCPAct{Do: "adopt", Entry: "grafana:test"}); !out.apply {
 		t.Errorf("adopt: %+v", out)
@@ -178,7 +186,7 @@ func TestMCPDo(t *testing.T) {
 	}
 	syncErr = errors.New("there's a jira-x already")
 	before := strings.Join(k.a.MCPServers, " ")
-	for _, act := range []ui.MCPAct{{Do: "rename", Entry: "jira:team", To: "jira:x"}, {Do: "delete", Entry: "docker"}} {
+	for _, act := range []ui.MCPAct{{Do: "rename", Entry: "jira:team", To: "jira:x"}, {Do: "delete", Entry: "docker"}, {Do: "restart", Entry: "docker"}} {
 		if _, err := k.mcpDo(ctx, act, specs); err == nil || !strings.Contains(err.Error(), "jira-x already") {
 			t.Errorf("%+v: err = %v", act, err)
 		}

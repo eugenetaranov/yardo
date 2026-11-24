@@ -27,11 +27,14 @@ type HomeInfo struct {
 	Host, User, Checked string
 	// MCP are the gateway's servers (yardo's, then the ones found in
 	// ~/.mcp), MCPSpecs the catalog's, to add; MCPDown: the gateway isn't
-	// running; MCPAllOff: all servers are turned off.
-	MCP       []MCPServer
-	MCPSpecs  []MCPSpec
-	MCPDown   bool
-	MCPAllOff bool
+	// running; MCPAllOff: all servers are turned off. MCPOrphans are the
+	// servers' containers the gateway lost (a server's name for each), to
+	// clean up.
+	MCP        []MCPServer
+	MCPSpecs   []MCPSpec
+	MCPDown    bool
+	MCPAllOff  bool
+	MCPOrphans []string
 	// Dash is the home's dashboard.
 	Dash Dashboard
 	// Connect is the home's Connection panel; Keys the public keys runs

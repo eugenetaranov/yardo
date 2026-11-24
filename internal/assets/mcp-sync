@@ -10,6 +10,10 @@
 #                          registered, with their settings, but the gateway hides their
 #                          tools from every client (~/.mcp/<name>/off, ~/.mcp/off)
 #   mcp-sync on [name ...] turn them on again (none named: all, each back to its own choice)
+#   mcp-sync restart [name ...]  start these servers afresh (none named: every one):
+#                          deregistered, their Docker containers removed (none named:
+#                          every container of ~/.mcp, those the gateway lost included),
+#                          then synced: registered again, off ones still off
 #   mcp-sync status        each server's state, a line each: <name> TAB <state> TAB <detail>
 #                          (ok, waiting <keys>, changed, unregistered, failed <why>,
 #                          nospec, noenv, off <own|all>; "-  down" first when the gateway
@@ -157,13 +161,33 @@ if [ "${1:-}" = client-rm ]; then
   exit 0
 fi
 
+# cleanup [name ...] — remove these servers' Docker containers (those
+# mounting ~/.mcp/<name> at /mcp; none named: every server's). The gateway
+# runs them with --rm, but a session it drops leaves its container running.
+cleanup() {
+  command -v docker >/dev/null 2>&1 || return 0
+  ids=$(docker ps -q --no-trunc 2>/dev/null) || return 0
+  [ -n "$ids" ] || return 0
+  # shellcheck disable=SC2086 # one id a word
+  docker inspect --format '{{.Id}}{{range .Mounts}}{{if eq .Destination "/mcp"}} {{.Source}}{{end}}{{end}}' $ids 2>/dev/null |
+    while read -r id src; do
+      n=${src#"$MCP_DIR"/}
+      case "$n" in "$src"|''|*/*) continue ;; esac
+      if [ $# -gt 0 ]; then
+        case " $* " in *" $n "*) ;; *) continue ;; esac
+      fi
+      docker rm -f "$id" >/dev/null 2>&1 && printf '%s: removed container %.12s\n' "$n" "$id"
+    done || :
+}
+
 # forget NAME — take NAME off the gateway (when it was registered) and off
-# ~/.mcp/servers.
+# ~/.mcp/servers, its containers removed.
 forget() {
   if [ -f "$MCP_DIR/$1/.registered.json" ]; then
     mj --registry "$REGISTRY" deregister "$1" >/dev/null 2>&1 || true
     rm -f "$MCP_DIR/$1/.registered.json" "$MCP_DIR/$1/.disabled"
   fi
+  cleanup "$1"
   [ -f "$MCP_DIR/servers" ] && { grep -vx -- "$1" "$MCP_DIR/servers" > "$MCP_DIR/servers.new" || true; mv -f "$MCP_DIR/servers.new" "$MCP_DIR/servers"; }
   return 0
 }
@@ -228,6 +252,29 @@ if [ "${1:-}" = remove ]; then
   rm -rf -- "${MCP_DIR:?}/$2"
   echo "$2: removed, with its settings."
   exit 0
+fi
+
+# restart: deregistered and their containers gone, the sync below
+# registers them again (the saved list as it was: no names left for it).
+if [ "${1:-}" = restart ]; then
+  shift
+  for n in "$@"; do
+    valid_name "$n" || { echo "mcp-sync: not a server name: $n" >&2; exit 2; }
+  done
+  mj --registry "$REGISTRY" list servers >/dev/null 2>&1 || {
+    echo "cannot reach the MCPJungle gateway at $REGISTRY" >&2; exit 1; }
+  if [ $# -eq 0 ]; then
+    for reg in "$MCP_DIR"/*/.registered.json; do
+      [ -f "$reg" ] && set -- "$@" "$(basename "$(dirname "$reg")")"
+    done
+    all=1
+  fi
+  for n in "$@"; do
+    mj --registry "$REGISTRY" deregister "$n" >/dev/null 2>&1 || true
+    rm -f "$MCP_DIR/$n/.registered.json" "$MCP_DIR/$n/.disabled"
+  done
+  if [ -n "${all:-}" ]; then cleanup; else cleanup "$@"; fi
+  set --
 fi
 
 STATUS=

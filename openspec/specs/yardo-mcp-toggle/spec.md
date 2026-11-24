@@ -111,3 +111,34 @@ When the gateway isn't answering, a switch SHALL still be recorded, and it SHALL
 #### Scenario: Gateway stopped
 - **WHEN** the gateway is stopped and the user turns `aws` off
 - **THEN** the screen says `aws` will be off once the gateway runs, and after the gateway is fixed, `aws`'s tools aren't listed
+
+### Requirement: Restarting servers
+`sudo yardo mcp restart [server …]`, `r` on the MCP servers list and a server's Restart it SHALL start the servers afresh: each is deregistered, the Docker containers mounting its `~/.mcp/<name>` are removed, and it is registered again, off ones staying off. With no server (or on the All servers row) it SHALL do so for every registered server and remove every container of `~/.mcp`, those the gateway no longer tracks included. The saved list of servers SHALL be unchanged. A server off, not yet set up or waiting for credentials SHALL have nothing to restart. Deleting or renaming a server SHALL remove its containers.
+
+#### Scenario: One server
+- **WHEN** the user runs `sudo yardo mcp restart jira`
+- **THEN** `jira`'s containers are removed, other servers' are not, and `jira` is registered again
+
+#### Scenario: All, with orphans
+- **WHEN** containers of `~/.mcp/aws` are left running from dropped sessions and the user restarts all servers
+- **THEN** they are removed and every server is registered again
+
+#### Scenario: Off stays off
+- **WHEN** `aws` is off and all servers are restarted
+- **THEN** `aws` is registered and disabled on the gateway
+
+#### Scenario: Gateway down
+- **WHEN** the gateway isn't answering and the user restarts a server
+- **THEN** it fails and nothing is deregistered or removed
+
+### Requirement: Orphaned containers
+yardo SHALL count a running container mounting `~/.mcp/<name>` at `/mcp` as orphaned when no running `docker run` of that server started up to 5 minutes before (or 5 seconds after) it was made, each `docker run` accounting for one container, and it is older than two minutes. When docker or ps can't be read, none SHALL be counted. Home SHALL mark the MCP servers tab and its panel SHALL say how many there are; the MCP servers screen SHALL say whose, and `c` or a click on that line SHALL remove them, and only them. `sudo yardo mcp status` SHALL say how many there are, and `sudo yardo mcp cleanup` SHALL remove them.
+
+#### Scenario: Gateway restarted
+- **WHEN** the gateway restarted and `jira`'s container from before still runs
+- **THEN** Home says 1 orphaned container, and `c` on MCP servers removes it, leaving the containers of live sessions
+
+#### Scenario: A session just starting
+- **WHEN** a container is a minute old
+- **THEN** it isn't counted
+

@@ -469,7 +469,7 @@ func TestMenuMCPServer(t *testing.T) {
 		t.Errorf("edit: %+v", r)
 	}
 	m = open(2)
-	mk(m, "down", "down", "enter") // Rename
+	mk(m, "down", "down", "down", "enter") // Rename
 	if !strings.Contains(m.View(), "› jira-work") {
 		t.Fatalf("rename:\n%s", m.View())
 	}
@@ -481,7 +481,7 @@ func TestMenuMCPServer(t *testing.T) {
 		t.Errorf("rename: %+v", r)
 	}
 	m = open(2)
-	mk(m, "down", "down", "down", "enter") // Delete
+	mk(m, "down", "down", "down", "down", "enter") // Delete
 	if v := m.View(); !strings.Contains(v, "Delete jira-work?") || !strings.Contains(v, "can't be undone") {
 		t.Fatalf("delete:\n%s", v)
 	}
@@ -562,6 +562,49 @@ func TestMenuMCPFailed(t *testing.T) {
 	mk(m, "enter")
 	if r := m.result; r.MCP != (MCPAct{Do: "retry", Entry: "opensearch"}) {
 		t.Errorf("retry: %+v", r)
+	}
+}
+
+// r restarts the server under the cursor, or all of them on All
+// servers; a server off, or not set up, has nothing to restart; its
+// screen offers Restart it after Edit.
+func TestMenuMCPRestart(t *testing.T) {
+	m := mcpMenu()
+	onRow(m, "mcp")
+	mk(m, "enter", "r")
+	if r := m.result; r.Kind != MenuMCP || r.MCP != (MCPAct{Do: "restart", Entry: "github"}) {
+		t.Errorf("r: %+v", r)
+	}
+	m = mcpMenu()
+	onRow(m, "mcp")
+	mk(m, "enter", "up", "r")
+	if r := m.result; r.Kind != MenuMCP || r.MCP != (MCPAct{Do: "restart"}) {
+		t.Errorf("r on All servers: %+v", r)
+	}
+	for _, off := range []bool{false, true} {
+		m = mcpMenu()
+		if off {
+			m.info.MCP[0].State, m.info.MCP[0].Off = "off", "own" // github
+			onRow(m, "mcp")
+			mk(m, "enter", "r")
+		} else {
+			onRow(m, "mcp")
+			mk(m, "enter", "down", "r") // jira, waiting for its token
+		}
+		if m.result.Kind == MenuMCP || !strings.Contains(m.toast, "Nothing to restart") {
+			t.Errorf("r (off %v): %+v, %q", off, m.result, m.toast)
+		}
+	}
+	m = mcpMenu()
+	onRow(m, "mcp")
+	mk(m, "enter", "enter")
+	v := m.View()
+	if e, r := strings.Index(v, "Edit its settings"), strings.Index(v, "Restart it"); e < 0 || r < e {
+		t.Fatalf("server screen:\n%s", v)
+	}
+	mk(m, "down", "down", "enter")
+	if r := m.result; r.Kind != MenuMCP || r.MCP != (MCPAct{Do: "restart", Entry: "github"}) {
+		t.Errorf("Restart it: %+v", r)
 	}
 }
 
@@ -1004,6 +1047,43 @@ func TestMenuMCPHomeOff(t *testing.T) {
 	}
 	if s := ansi.Strip(m.mcpSummary()); s != "all off" {
 		t.Errorf("summary %q", s)
+	}
+}
+
+// Orphaned containers need you: the home says so on its MCP servers
+// panel and tab; the list says whose, and c (or a click on that line)
+// cleans up. With none, c does nothing.
+func TestMenuMCPOrphans(t *testing.T) {
+	m := mcpMenu()
+	m.info.MCPOrphans = []string{"jira", "aws", "jira"}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "▲ 3 orphaned containers · MCP servers › c") || !strings.Contains(v, "MCP servers") {
+		t.Errorf("home:\n%s", v)
+	}
+	if _, ok := m.needs()["mcp"]; !ok {
+		t.Error("the MCP servers tab isn't marked")
+	}
+	onRow(m, "mcp")
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Clean up 3 orphaned containers") {
+		t.Errorf("the tab's note:\n%s", v)
+	}
+	mk(m, "enter")
+	v = ansi.Strip(m.View())
+	if !strings.Contains(v, "▲  3 orphaned containers (jira ×2, aws)") || !strings.Contains(v, "c cleans up") || !strings.Contains(v, "c clean up") {
+		t.Fatalf("list:\n%s", v)
+	}
+	if !slices.ContainsFunc(m.Hits(), func(h Hit) bool { return h.Key == "c" }) {
+		t.Error("the line isn't clickable")
+	}
+	mk(m, "c")
+	if r := m.result; r.Kind != MenuMCP || r.MCP != (MCPAct{Do: "cleanup"}) {
+		t.Errorf("c: %+v", r)
+	}
+	m = mcpMenu()
+	onRow(m, "mcp")
+	mk(m, "enter", "c")
+	if m.result.Kind == MenuMCP || strings.Contains(ansi.Strip(m.View()), "orphaned") {
+		t.Errorf("no orphans, c: %+v\n%s", m.result, m.View())
 	}
 }
 

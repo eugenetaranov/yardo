@@ -243,6 +243,16 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 	if act.Do == "off" || act.Do == "on" {
 		return k.mcpSwitch(ctx, act)
 	}
+	if act.Do == "restart" {
+		return k.mcpRestart(ctx, act)
+	}
+	if act.Do == "cleanup" {
+		n, err := k.cleanOrphans(ctx)
+		if err != nil {
+			return mcpOutcome{}, fmt.Errorf("couldn't clean up: %w", err)
+		}
+		return mcpOutcome{toast: orphansSay(n)}, nil
+	}
 	spec, name, err := mcp.Instance(act.Entry)
 	if err != nil {
 		return mcpOutcome{}, err
@@ -340,6 +350,34 @@ func (k *asker) mcpSwitch(ctx context.Context, act ui.MCPAct) (mcpOutcome, error
 		return mcpOutcome{}, fmt.Errorf("couldn't turn %s %s: %w", who, act.Do, err)
 	}
 	return mcpOutcome{toast: switchSays(who, act.Do, strings.Contains(out.String(), "once the gateway runs"))}, nil
+}
+
+// mcpRestart starts a server (act.Entry; "": all of them) afresh, now:
+// mcp-sync deregisters it, removes its Docker containers (all: every
+// server's, those the gateway lost included) and registers it again.
+func (k *asker) mcpRestart(ctx context.Context, act ui.MCPAct) (mcpOutcome, error) {
+	args, who := []string{"restart"}, "all servers"
+	if act.Entry != "" {
+		_, name, err := mcp.Instance(act.Entry)
+		if err != nil {
+			return mcpOutcome{}, err
+		}
+		args, who = append(args, name), name
+	}
+	var out bytes.Buffer
+	k2 := *k
+	k2.out = &out
+	if err := k2.mcpSyncAs(ctx, args...); err != nil {
+		return mcpOutcome{}, fmt.Errorf("couldn't restart %s: %w", who, err)
+	}
+	removed := "no container"
+	switch n := strings.Count(out.String(), ": removed container "); {
+	case n == 1:
+		removed = "1 container"
+	case n > 1:
+		removed = fmt.Sprintf("%d containers", n)
+	}
+	return mcpOutcome{toast: "✓ " + who + " restarted, " + removed + " removed: new agent sessions start it afresh."}, nil
 }
 
 // mcpSwitcher applies the servers turned off and on on the menu, in the
@@ -587,7 +625,7 @@ func mcpPending(st map[string]syncState) []string {
 	return out
 }
 
-// switchArgs reads `yardo mcp on|off [server ...]` (args from on|off):
+// switchArgs reads `yardo mcp on|off|restart [server ...]` (args from on|off|restart):
 // mcp-sync's args, and the servers to say the state of after (none
 // named: all of them).
 func switchArgs(args, servers []string) (sync, names []string, err error) {
@@ -602,7 +640,7 @@ func switchArgs(args, servers []string) (sync, names []string, err error) {
 	return args, args[1:], nil
 }
 
-// mcpCmd runs `yardo mcp edit <name>`, `sync`, `status` and `on|off` (the bare
+// mcpCmd runs `yardo mcp edit <name>`, `sync`, `status`, `on|off|restart` and `cleanup` (the bare
 // `yardo mcp` opens the menu on its MCP servers).
 func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Store, args []string) error {
 	u, err := o.userFor(st)
@@ -663,7 +701,16 @@ func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Stor
 			fmt.Fprintln(stdout, "○ All servers are off (sudo yardo mcp on).")
 		}
 		show(mcpNames(a.MCPServers))
-	case "on", "off":
+		if n := len(mcpOrphans(ctx, a.User)); n > 0 {
+			fmt.Fprintf(stdout, "▲ %s the gateway lost: sudo yardo mcp cleanup removes them.\n", orphanCount(n))
+		}
+	case "cleanup":
+		n, err := cleanOrphans(ctx, a.User)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(stdout, orphansSay(n))
+	case "on", "off", "restart":
 		sync, names, err := switchArgs(args, mcpNames(a.MCPServers))
 		if err != nil {
 			return err
@@ -674,7 +721,7 @@ func (o *options) mcpCmd(ctx context.Context, stdout io.Writer, st *answers.Stor
 		}
 		show(names)
 	default:
-		return fmt.Errorf("unknown: yardo mcp %s (yardo mcp, mcp edit <server>, mcp sync, mcp status, mcp on|off [server ...])", args[0])
+		return fmt.Errorf("unknown: yardo mcp %s (yardo mcp, mcp edit <server>, mcp sync, mcp status, mcp on|off|restart [server ...], mcp cleanup)", args[0])
 	}
 	return nil
 }
