@@ -349,7 +349,8 @@ func (r *addonRun) taken(h *addon.Held) []string {
 // decide checks h, shows its report and does what the user picks (with
 // --yes: installs it when nothing needs an OK, else leaves it held).
 func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
-	if h.Report.Hash == "" {
+	if !h.Report.Current() {
+		// Never checked, or by older rules.
 		fmt.Fprintf(r.out, "Checking %s…\n", h.Name)
 		if err := h.Check(ctx, r.taken(h)); err != nil {
 			return err

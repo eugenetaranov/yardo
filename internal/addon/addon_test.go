@@ -109,6 +109,12 @@ func TestFixCheckInstall(t *testing.T) {
 		t.Errorf("a changed file: %v", err)
 	}
 	_ = h.Check(ctx, nil)
+	// Checked by older rules: checked again first, the files the same.
+	h.Report.Rules--
+	if err := h.Install(ctx, "ada", "", put); !errors.Is(err, ErrChanged) || h.Report.Current() {
+		t.Errorf("older rules: %v", err)
+	}
+	_ = h.Check(ctx, nil)
 	var got map[string][]byte
 	if err := h.Install(ctx, "ada", "", func(f map[string][]byte) error { got = f; return nil }); err != nil {
 		t.Fatal(err)

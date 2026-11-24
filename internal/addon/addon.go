@@ -60,7 +60,17 @@ type Report struct {
 	AI string `json:"ai,omitempty"`
 	// Changes are an update's, from the approved copy.
 	Changes []Change `json:"changes,omitempty"`
+	// Rules is the version of yardo's rules it was made by.
+	Rules int `json:"rules,omitempty"`
 }
+
+// Rules is the version of yardo's rules (Basic): a report made by others
+// is checked again, as what blocked then may not now, or the reverse.
+// Raise it when a rule changes what it finds.
+const Rules = 2
+
+// Current: the report was made, by these rules.
+func (r Report) Current() bool { return r.Hash != "" && r.Rules == Rules }
 
 // Verdict is the worst of the findings: block, ok (needs the user's OK),
 // note, or clean.

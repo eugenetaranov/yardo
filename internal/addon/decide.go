@@ -32,7 +32,7 @@ func (h *Held) Check(ctx context.Context, taken []string) error {
 		more, ai = Extra(ctx, h, files, slices.Clone(fs))
 		fs = append(fs, more...)
 	}
-	h.Report = Report{Hash: Hash(files), At: time.Now().UTC().Truncate(time.Second), Findings: fs, AI: ai}
+	h.Report = Report{Hash: Hash(files), At: time.Now().UTC().Truncate(time.Second), Findings: fs, AI: ai, Rules: Rules}
 	if h.Update {
 		if old, err := ApprovedFiles(h.User, h.Kind, h.Name); err == nil {
 			h.Report.Changes = Changes(old, files)
@@ -57,7 +57,7 @@ func (h *Held) Install(ctx context.Context, by, typed string, put func(files map
 	if err != nil {
 		return err
 	}
-	if h.Report.Hash == "" || Hash(files) != h.Report.Hash {
+	if !h.Report.Current() || Hash(files) != h.Report.Hash {
 		return ErrChanged
 	}
 	switch h.Report.Verdict() {
