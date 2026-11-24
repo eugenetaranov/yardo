@@ -11,6 +11,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/eugenetaranov/yardo/internal/mcp"
+	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
 // The MCP servers screens: the list (yardo's servers, then the ones found
@@ -346,24 +347,24 @@ func mcpWord(s *MCPServer) string {
 		}
 		return accent.Render("○ needs " + strings.Join(s.Keys, ", "))
 	case "failed":
-		return yellow.Render("▲ didn't register: check its settings")
+		return yellow.Render(tui.Cur.Mark.Warn + " didn't register: check its settings")
 	case "held":
-		return yellow.Render("▲ held: waiting for you")
+		return yellow.Render(tui.Cur.Mark.Warn + " held: waiting for you")
 	case "refused":
 		if s.Detail == "unapproved" {
-			return yellow.Render("▲ refused: its spec changed since you approved it")
+			return yellow.Render(tui.Cur.Mark.Warn + " refused: its spec changed since you approved it")
 		}
-		return yellow.Render("▲ refused: its spec asks for " + s.Detail)
+		return yellow.Render(tui.Cur.Mark.Warn + " refused: its spec asks for " + s.Detail)
 	case "pending":
 		return accent.Render("○ not registered yet")
 	case "nospec":
-		return yellow.Render("▲ no longer in the catalog")
+		return yellow.Render(tui.Cur.Mark.Warn + " no longer in the catalog")
 	case "off":
 		if s.Off == "all" {
 			return muted.Render("○ off with all")
 		}
 		if s.Off == "tools-changed" {
-			return yellow.Render("▲ off: its tools changed since you approved it")
+			return yellow.Render(tui.Cur.Mark.Warn + " off: its tools changed since you approved it")
 		}
 		return muted.Render("○ off")
 	case "unlisted":
@@ -373,7 +374,7 @@ func mcpWord(s *MCPServer) string {
 	case "new":
 		return muted.Render("· not set up yet: applies next")
 	case "retired":
-		return yellow.Render(fmt.Sprintf("▲ retired: add %s instead", s.Instead))
+		return yellow.Render(fmt.Sprintf("%s retired: add %s instead", tui.Cur.Mark.Warn, s.Instead))
 	}
 	return muted.Render("· not checked")
 }
@@ -596,13 +597,27 @@ func sentence(msg string) string {
 	return fmt.Sprintf("%s%s.", strings.ToUpper(msg[:1]), msg[1:])
 }
 
-// window keeps line sel of lines in view, at most n of them.
-func window(lines []string, sel, n int) []string {
-	start := windowStart(len(lines), sel, n)
-	if start == 0 && (len(lines) <= n || n <= 0) {
-		return lines
+// window keeps line sel of lines in view, at most n of them: a line at
+// an edge with more cut off past it says how many (↑ above, ↓ below).
+// at is the line of lines each one shown is (-1: one that says more).
+func window(lines []string, sel, n int) (shown []string, at []int) {
+	start, end := windowStart(len(lines), sel, n), len(lines)
+	if n > 0 {
+		end = min(end, start+n)
 	}
-	return lines[start : start+n]
+	for i := start; i < end; i++ {
+		shown, at = append(shown, lines[i]), append(at, i)
+	}
+	if n < 3 {
+		return shown, at
+	}
+	if start > 0 && sel != start {
+		shown[0], at[0] = muted.Render(fmt.Sprintf("     ↑ %d more", start+1)), -1
+	}
+	if end < len(lines) && sel != end-1 {
+		shown[len(shown)-1], at[len(at)-1] = muted.Render(fmt.Sprintf("     ↓ %d more", len(lines)-end+1)), -1
+	}
+	return shown, at
 }
 
 // windowStart is the first of l lines window shows, keeping sel in view.
@@ -669,12 +684,12 @@ func (m *Menu) mcpView(w, room int) []string {
 	case "mcp":
 		ss := m.mcpServers()
 		if m.info.MCPDown {
-			add("  "+yellow.Render("▲  The gateway is stopped: fix it from Home first."), "")
+			add("  "+yellow.Render(tui.Cur.Mark.Warn+"  The gateway is stopped: fix it from Home first."), "")
 		}
 		if n := len(m.info.MCPOrphans); n > 0 {
 			// A click on it cleans up, as c does.
 			m.hits = append(m.hits, Hit{Y0: top + len(b), Y1: top + len(b), Key: "c"})
-			add(fmt.Sprintf("  %s%s  %s", yellow.Render("▲  "+plural(n, "orphaned container", "orphaned containers")), muted.Render(fmt.Sprintf(" (%s): the gateway lost them, they still run.", m.orphansOf())), accentBd.Render("c cleans up")), "")
+			add(fmt.Sprintf("  %s%s  %s", yellow.Render(tui.Cur.Mark.Warn+"  "+plural(n, "orphaned container", "orphaned containers")), muted.Render(fmt.Sprintf(" (%s): the gateway lost them, they still run.", m.orphansOf())), accentBd.Render("c cleans up")), "")
 		}
 		if len(ss) == 0 {
 			add("  No MCP servers yet. Each one gives your coding agents tools:", fmt.Sprintf("  %s.", m.examples()), "")
@@ -773,10 +788,10 @@ func (m *Menu) mcpView(w, room int) []string {
 			}
 		}
 		n := room - len(b) - 3 - mcpAbout
-		start := windowStart(len(lines), selLine, n)
-		for c, l := range window(lines, selLine, n) {
-			if r := rowOf[start+c]; r > -2 {
-				m.hit(top+len(b), 0, 0, m.selects(r))
+		shown, at := window(lines, selLine, n)
+		for c, l := range shown {
+			if at[c] >= 0 && rowOf[at[c]] > -2 {
+				m.hit(top+len(b), 0, 0, m.selects(rowOf[at[c]]))
 			}
 			add(l)
 		}
@@ -789,9 +804,16 @@ func (m *Menu) mcpView(w, room int) []string {
 		if s == nil { // normalize goes back to the list first
 			return nil
 		}
-		what := fmt.Sprintf("a %s server", s.Spec)
-		if s.Spec == "" {
+		// Its spec, unless its name says it: opensearch, not "a opensearch
+		// server" again.
+		what := "from the catalog"
+		switch {
+		case s.Spec == "":
 			what = "with its own spec"
+		case s.Spec != s.Name && strings.ContainsRune("aeio", rune(s.Spec[0])):
+			what = fmt.Sprintf("an %s server", s.Spec)
+		case s.Spec != s.Name:
+			what = fmt.Sprintf("a %s server", s.Spec)
 		}
 		if !s.Yardo {
 			what += ", found in ~/.mcp"
@@ -845,9 +867,11 @@ func (m *Menu) mcpView(w, room int) []string {
 		} else {
 			lines = append(lines, fmt.Sprintf("     %s  %s", padTo("From elsewhere", 18), elsewhere))
 		}
-		start := windowStart(len(lines), m.sel, room-3)
-		for c, l := range window(lines, m.sel, room-3) {
-			m.hit(top+len(b), 0, 0, m.selects(start+c))
+		shown, at := window(lines, m.sel, room-3)
+		for c, l := range shown {
+			if at[c] >= 0 {
+				m.hit(top+len(b), 0, 0, m.selects(at[c]))
+			}
 			add(l)
 		}
 		add("", "  "+muted.Render("Adding one again makes another: a second Jira, another AWS account."))

@@ -35,7 +35,7 @@ func skillsMenu() (*Menu, *[][]MCPAct) {
 func TestMenuSkills(t *testing.T) {
 	m, _ := skillsMenu()
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"Home › Skills", "All skills", "2 of 3", "archify", "not checked", "grill-me", "yardo's", "humanizer", "edited since", "○ off", "For Claude Code"} {
+	for _, want := range []string{"[Skills]", "All skills", "2 of 3", "archify", "not checked", "grill-me", "yardo's", "humanizer", "edited since", "○ off", "For Claude Code"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("no %q:\n%s", want, v)
 		}
@@ -94,7 +94,7 @@ func TestMenuSkillsSwitch(t *testing.T) {
 func TestMenuSkillScreen(t *testing.T) {
 	m, ran := skillsMenu()
 	mk(m, "down", "down", "enter") // humanizer, off
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "Home › Skills › humanizer") || !strings.Contains(v, "› Turn it on") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Skills › humanizer") || !strings.Contains(v, "› Turn it on") {
 		t.Fatalf("skill:\n%s", v)
 	}
 	mk(m, "enter")
@@ -156,7 +156,7 @@ func TestMenuSkillsDriftUpdate(t *testing.T) {
 	}
 	m = NewMenu(m.info, "", m.items, nil, true)
 	i := slices.IndexFunc(m.rows(), func(r menuRow) bool { return r.id == "skills" })
-	if i < 0 || m.rows()[i].note != "▲ changed since checked: a-drift" {
+	if i < 0 || m.rows()[i].note != "Check a-drift again · update available: b-new" {
 		t.Errorf("home's row: %+v", m.rows())
 	}
 	onRow(m, "skills")

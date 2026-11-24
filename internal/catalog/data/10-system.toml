@@ -312,7 +312,7 @@ on_change = true
 # them past a host firewall). Unticked: everywhere again.
 [[item]]
 id = "docker-ports"
-keep_say = "it's a setting: change it under Settings → Network access"
+keep_say = "it's a setting: change it under Network › Network access"
 tab = "sysconf"
 scope = "system"
 label = "Limit containers' published ports to this machine or your VPNs (asks)"

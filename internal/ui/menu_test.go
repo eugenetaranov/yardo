@@ -11,6 +11,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
 func testMenu(healthy bool) *Menu {
@@ -28,8 +30,9 @@ func testMenu(healthy bool) *Menu {
 		// The look: Settings' Accent colour, not network access.
 		{Key: "accent", Label: "Accent colour", Section: LookSection, Value: "blue", Choices: [][2]string{{"blue", "Blue"}, {"green", "Green"}}, Swatches: map[string]string{"blue": "#0000ff"}},
 	}
-	info := HomeInfo{Host: "vm", User: "ada", Connect: []ConnectRow{{What: "SSH", Use: "ssh vm", Note: "ada@10.0.0.5"}}}
+	info := HomeInfo{Host: "vm", User: "ada"}
 	m := NewMenu(info, "Ubuntu 24.04  ·  10.0.0.5", items, settings, false)
+	m.setups = []Setup{{ID: "ssh", What: "SSH", How: "ssh vm  ·  ada@10.0.0.5"}}
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
 	return m
 }
@@ -59,35 +62,41 @@ func mk(m *Menu, keys ...string) {
 	}
 }
 
-// The home: panels that show, then the tabs; the ones with something
-// that needs you carry its mark, and the status line names them.
+// The home: the tabs, Home's a block, then Needs you, each thing a row
+// with its mark and the tab it's on, the cursor on its first; the tabs
+// with something that needs you carry its mark, and the status line
+// points at the panel. Nothing needing you, no panel.
 func TestMenuHome(t *testing.T) {
 	m := testMenu(false)
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"2 things need you", "marked below: Updates", "Machine", "Go to",
-		"Updates 2 ✗", "Tools 3", "Settings", "type search", "Home"} {
+	for _, want := range []string{"2 things need you", "below: enter goes there", "─ Needs you ", "Machine", "[Home]",
+		"Tools 3 ✗", "Settings", "type search", "Home"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("home lacks %q:\n%s", want, v)
 		}
 	}
-	for _, gone := range []string{"Needs you", "Network access", "Check for updates"} {
+	for _, gone := range []string{"Updates", "Network access", "Check for updates", "›Tools"} {
 		if strings.Contains(v, gone) {
 			t.Errorf("home has %q:\n%s", gone, v)
 		}
 	}
-	// The cursor starts on the first tab that needs you; its note says what.
-	if id := m.rows()[m.sel].id; id != "updates" {
-		t.Errorf("starts on %s", id)
+	// In Needs you, on its first; the first line says what it is.
+	if m.need != 0 || m.needList()[0].id != "fix:docker" {
+		t.Errorf("starts on %d", m.need)
 	}
-	if l := lineWith(v, "Start Docker Engine + Compose"); !strings.Contains(l, "Fill in OPENAI_API_KEY") {
-		t.Errorf("Updates' note: %q", l)
+	if l := lineWith(v, "│ ›✗ Start Docker Engine + Compose"); !strings.Contains(l, "Tools") || !strings.Contains(l, "Fill in OPENAI_API_KEY") {
+		t.Errorf("Needs you, two to a line: %q", l)
 	}
 	onRow(m, "tools")
-	if l := lineWith(ansi.Strip(m.View()), "tools working"); !strings.Contains(l, "1 of 3 tools working") {
+	v = ansi.Strip(m.View())
+	if l := lineWith(v, "tools working"); !strings.Contains(l, "Start Docker Engine + Compose · Fill in OPENAI_API_KEY · 1 of 3 tools working") {
 		t.Errorf("Tools' note: %q", l)
 	}
+	if !strings.Contains(v, "›Tools 3 ✗") || !strings.Contains(v, "below: ↓ chooses one") {
+		t.Errorf("on the tabs:\n%s", v)
+	}
 	h := ansi.Strip(testMenu(true).View())
-	if strings.Contains(h, "✗") || !strings.Contains(h, "All good") {
+	if strings.Contains(h, "✗") || !strings.Contains(h, "All good") || strings.Contains(h, "Needs you") {
 		t.Errorf("healthy home:\n%s", h)
 	}
 	if l := lineWith(h, "tools working"); !strings.Contains(l, "3 of 3 tools working") {
@@ -95,25 +104,85 @@ func TestMenuHome(t *testing.T) {
 	}
 }
 
-// Updates, marked by a fix, opens Tools on its Updates tab, the fixes
-// queued; a drifted tool's note says restoring undoes the edits.
-func TestMenuFix(t *testing.T) {
+// Needs you's rows go where each is done: a fix and a value to Tools'
+// Updates tab on the tool's row, nothing queued; the updates there,
+// queued; the keys to Network's; a skill to its screen; the last run's
+// failure to Last run. ↓ from the tabs goes in, ↑ from the first line
+// back, tab along it and past the last back to the tabs.
+func TestMenuNeedsYou(t *testing.T) {
 	m := testMenu(false)
-	mk(m, "enter")
-	if m.result.Kind != MenuUpdatesTab {
-		t.Errorf("result %+v", m.result)
+	m.items[2].Updates = []string{"go 1.24 → 1.25"}
+	m.info.Keys = []AddKey{{Where: []string{"github.com: Settings › SSH keys"}}}
+	m.info.Skills = []SkillRow{{Name: "pdf", Source: "drifted"}, {Name: "web", Off: "held"}, {Name: "ok", Source: "checked"}}
+	m.info.LastRun = &LastRun{When: "today", Failed: []string{"docker"}}
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	var ids []string
+	for _, r := range m.needList() {
+		ids = append(ids, r.id)
 	}
-	m = testMenu(true)
-	m.items[2].State, m.items[2].Detail = "drifted", "~/.zshrc"
-	m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
-	onRow(m, "updates")
-	if v := m.View(); !strings.Contains(v, "Restore Go") {
-		t.Errorf("drifted:\n%s", v)
+	if got := strings.Join(ids, " "); got != "why fix:docker key:keys:OPENAI_API_KEY updates keys skill:pdf skill:web" {
+		t.Errorf("needs: %s", got)
 	}
-	onRow(m, "tools")
-	mk(m, "enter")
-	if m.result.Kind != MenuTools {
-		t.Errorf("Tools: %+v", m.result)
+	// Skills count: a tab mark, and the status line's number.
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "Skills ▲") || !strings.Contains(v, "7 things need you") || !strings.Contains(v, "Network ○") {
+		t.Errorf("marks:\n%s", v)
+	}
+	// One to a line, narrow: each with the tab it's on.
+	for _, want := range [][2]string{{"Check pdf again", "Skills"}, {"Review web", "Skills"}, {"Add 1 key to github.com", "Network"}, {"See why the last run failed", "Last run"}, {"Install 1 update", "Tools"}} {
+		if l := lineWith(v, want[0]+" "); !strings.HasPrefix(l, "│") || !strings.HasSuffix(strings.TrimRight(l, " │"), want[1]) {
+			t.Errorf("%s: %q", want[0], l)
+		}
+	}
+	go1 := func(id string) *Menu {
+		m.screen, m.ended, m.result = "home", false, MenuResult{}
+		onNeed(m, id)
+		mk(m, "enter")
+		return m
+	}
+	if r := go1("fix:docker").result; r.Kind != MenuFixes || r.ID != "docker" {
+		t.Errorf("a fix: %+v", r)
+	}
+	if r := go1("key:keys:OPENAI_API_KEY").result; r.Kind != MenuFixes || r.ID != "keys" {
+		t.Errorf("a value: %+v", r)
+	}
+	if r := go1("updates").result; r.Kind != MenuUpdatesTab {
+		t.Errorf("updates: %+v", r)
+	}
+	if r := go1("keys").result; r.Kind != MenuConnection || r.ID != NetTab+":key" {
+		t.Errorf("keys: %+v", r)
+	}
+	if go1("skill:web"); m.screen != "skills:skill" || m.skill().Name != "web" {
+		t.Errorf("a skill: %s", m.screen)
+	}
+	if go1("why"); m.screen != "lastrun" {
+		t.Errorf("why: %s", m.screen)
+	}
+	// Along it: ↑ out to the tabs, ↓ back in, tab past the last to the tabs.
+	m.Open("home", "", false)
+	onNeed(m, "why")
+	mk(m, "up")
+	if m.need != -1 || m.navCur() < 0 {
+		t.Errorf("up: %d", m.need)
+	}
+	mk(m, "down")
+	if m.need != 0 {
+		t.Errorf("down: %d", m.need)
+	}
+	onNeed(m, "skill:web")
+	mk(m, "tab")
+	if m.need != -1 {
+		t.Errorf("tab past the last: %d", m.need)
+	}
+	// A click on a row chooses it.
+	m.View()
+	for _, h := range m.Hits() {
+		if h.Do != nil && h.Y0 == 5 {
+			h.Do()
+		}
+	}
+	if m.need != 1 {
+		t.Errorf("click: %d", m.need)
 	}
 }
 
@@ -131,22 +200,24 @@ func TestMenuTyping(t *testing.T) {
 	}
 }
 
-// Settings lists network access, the look, the answers to change and the
-// update check; esc goes home onto it.
+// Settings lists the look and the answers to change (network access is
+// Network's); esc goes home onto it.
 func TestMenuSettings(t *testing.T) {
 	m := testMenu(false)
 	m.items = append(m.items, &BoardItem{ID: "gitid", Label: "Git: name, email and defaults", Tab: "git", Picked: true, State: "ok", Changes: [][2]string{{"git name and email", "git"}}})
 	onRow(m, "settings")
 	mk(m, "enter")
 	v := m.View()
-	for _, want := range []string{"Home › Settings", "Network access", "MCP gateway: this machine only", "Accent colour", "Blue",
+	for _, want := range []string{"[Settings]", "Accent colour", "Blue",
 		"Git name and email", "asks, then applies it again"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("settings lacks %q:\n%s", want, v)
 		}
 	}
-	if strings.Contains(v, "Check for updates") {
-		t.Errorf("Settings has Check for updates (it's the home's u):\n%s", v)
+	for _, gone := range []string{"Check for updates", "Network access", "MCP gateway"} {
+		if strings.Contains(v, gone) {
+			t.Errorf("Settings has %q:\n%s", gone, v)
+		}
 	}
 	onSetting(m, "change:git")
 	mk(m, "enter")
@@ -169,7 +240,7 @@ func TestMenuLook(t *testing.T) {
 	mk(m, "enter")
 	onSetting(m, "look")
 	mk(m, "enter")
-	if v := m.View(); !strings.Contains(v, "Home › Settings › Look") || !strings.Contains(v, "██") || strings.Contains(v, "MCP gateway") {
+	if v := m.View(); !strings.Contains(v, "Settings › Look") || !strings.Contains(v, "██") || strings.Contains(v, "MCP gateway") {
 		t.Fatalf("look:\n%s", v)
 	}
 	mk(m, "right", "enter", "enter")
@@ -186,12 +257,12 @@ func TestMenuSession(t *testing.T) {
 		Choices: [][2]string{{"tmux", "tmux"}, {"zellij", "zellij"}, {"ask", "ask at the next login"}, {"off", "off"}}})
 	onRow(m, "settings")
 	mk(m, "enter")
-	if v := m.View(); !strings.Contains(v, "Session on login: zellij") {
+	if v := m.View(); !strings.Contains(v, "Session on login") || !strings.Contains(v, "zellij") || strings.Contains(v, "Session on login: zellij") {
 		t.Fatalf("settings:\n%s", v)
 	}
 	onSetting(m, "shell")
 	mk(m, "enter")
-	if v := m.View(); !strings.Contains(v, "Home › Settings › Session on login") || strings.Contains(v, "MCP gateway") || strings.Contains(v, "Accent colour") {
+	if v := m.View(); !strings.Contains(v, "Settings › Session on login") || strings.Contains(v, "MCP gateway") || strings.Contains(v, "Accent colour") {
 		t.Fatalf("session:\n%s", v)
 	}
 	mk(m, "right", "right", "enter", "enter")
@@ -209,19 +280,17 @@ func onSetting(m *Menu, id string) {
 	}
 }
 
-// Network access: ←→ picks, each choice said in a sentence; Apply hands
-// back only what changed; esc leaves nothing changed, back on Settings.
+// Network access (Network's, the screen the menu's): ←→ picks, each
+// choice said in a sentence; Apply hands back only what changed; esc
+// leaves nothing changed, back on Network.
 func TestMenuAccess(t *testing.T) {
 	open := func() *Menu {
 		m := testMenu(false)
-		onRow(m, "settings")
-		mk(m, "enter")
-		onSetting(m, "access")
-		mk(m, "enter")
+		m.open("access")
 		return m
 	}
 	m := open()
-	if v := m.View(); !strings.Contains(v, "Home › Settings › Network access") || !strings.Contains(v, "(•) this machine only") || strings.Contains(v, "Accent colour") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Network access") || !strings.Contains(v, "[Network]") || !strings.Contains(v, "(•) this machine only") || strings.Contains(v, "Accent colour") {
 		t.Fatalf("access:\n%s", v)
 	}
 	mk(m, "down", "down", "down", "down")
@@ -239,44 +308,62 @@ func TestMenuAccess(t *testing.T) {
 	}
 	m = open()
 	mk(m, "right", "esc")
-	if m.screen != "settings" || m.settingsRows()[m.sel].id != "access" || m.result.Kind != MenuQuit || m.ended {
-		t.Errorf("esc: screen %s", m.screen)
+	if m.screen != "home" || m.result.Kind != MenuConnection || m.result.ID != NetTab || !m.ended {
+		t.Errorf("esc: screen %s, %+v", m.screen, m.result)
 	}
 }
 
-// The home's Connection panel shows what to type, and where a secret is
-// kept; it isn't a stop: the Connection tab opens the screen (the app's).
+// The home's Connection panel is Local settings' everyday setups (SSH,
+// Docker, the gateway, pages), what to type and, lined up after it, the
+// key fact, from the same rows: the rest (All of it, Claude Code, the clipboard) aren't on
+// it. It isn't a stop: Local settings opens the screen (the app's).
 func TestHomeConnect(t *testing.T) {
 	m := testMenu(false)
-	m.info.Connect = []ConnectRow{
-		{What: "SSH", Use: "ssh vm", Note: "ada@vm.ts.net"},
-		{What: "MCP", Use: "http://vm.ts.net:8081/mcp", Note: "mcpjungle, with a token: sudo cat ~/.mcp/clients/client.token"},
+	m.setups = []Setup{
+		{ID: "script", What: "All of it", How: "sh yardo-vm.sh  ·  one script"},
+		{ID: "ssh", What: "SSH", How: "ssh vm  ·  ada@vm.ts.net · Host vm in ~/.ssh/config"},
+		{ID: "mcp-claude", What: "Claude Code", How: "claude mcp add vm http://vm.ts.net:8081/mcp"},
+		{ID: "mcp-other", What: "Other clients", How: "http://vm.ts.net:8081/mcp  ·  token: sudo cat ~/.mcp/clients/client.token"},
+		{ID: "clipboard", What: "iTerm2 clipboard", How: "iTerm2  ·  copies", Once: true},
 	}
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"─ Connection ", "ssh vm", "http://vm.ts.net:8081/mcp", "sudo cat ~/.mcp/clients/client.token"} {
+	for _, want := range []string{"─ Connection ", "Local settings has the rest", "SSH      ssh vm                     ada@vm.ts.net", "MCP      http://vm.ts.net:8081/mcp  token: sudo cat ~/.mcp/clients/client.token"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("home lacks %q:\n%s", want, v)
 		}
 	}
-	if strings.Contains(v, "Enter: every step") {
-		t.Errorf("the panel says Enter opens it:\n%s", v)
+	for _, gone := range []string{"All of it", "claude mcp add", "iTerm2", "Laptop", "laptop"} {
+		if strings.Contains(v, gone) {
+			t.Errorf("home has %q:\n%s", gone, v)
+		}
 	}
-	onRow(m, "conn")
+	// The panel says what the screen says: change a setup, the panel follows.
+	m.setups[1].How = "ssh vm  ·  ada@10.0.0.9"
+	if l := lineWith(ansi.Strip(m.View()), "SSH "); !strings.Contains(l, "ada@10.0.0.9") {
+		t.Errorf("not from the setups: %q", l)
+	}
+	onRow(m, LocalTab)
 	mk(m, "enter")
-	if !m.ended || m.result.Kind != MenuConnection || m.result.ID != "conn" {
+	if !m.ended || m.result.Kind != MenuConnection || m.result.ID != LocalTab {
 		t.Errorf("enter: %+v", m.result)
 	}
-	// A key to add marks the tab.
+	// A key to add marks Network, and is in Needs you; it isn't on the panel.
 	m = testMenu(true)
-	m.info.Keys = []AddKey{{}}
-	if l := lineWith(ansi.Strip(m.View()), "Connection ○"); l == "" {
-		t.Errorf("no mark on Connection:\n%s", ansi.Strip(m.View()))
+	m.info.Keys = []AddKey{{Where: []string{"github.com: Settings › SSH keys"}}}
+	v = ansi.Strip(m.View())
+	if l := lineWith(v, "Network ○"); l == "" || lineWith(v, "Add 1 key to github.com") == "" || lineWith(v, "key to add") != "" {
+		t.Errorf("a key to add:\n%s", v)
 	}
 	// Narrow: the panel still, and the footer's keys to q.
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "─ Connection ") || !strings.Contains(v, "ssh vm") || !strings.Contains(v, "q quit") {
 		t.Errorf("narrow:\n%s", v)
+	}
+	// No setups, no panel, no Local settings tab.
+	m.setups = nil
+	if v := ansi.Strip(m.View()); strings.Contains(v, "─ Connection ") || strings.Contains(v, "Local settings") {
+		t.Errorf("no setups:\n%s", v)
 	}
 }
 
@@ -317,11 +404,17 @@ func key(m *Menu, k string) {
 
 // onRow moves the home's cursor to row id.
 func onRow(m *Menu, id string) {
+	m.need = -1
 	for n, r := range m.rows() {
 		if r.id == id {
 			m.sel = n
 		}
 	}
+}
+
+// onNeed puts the home's cursor on the row of Needs you with id.
+func onNeed(m *Menu, id string) {
+	m.need = slices.IndexFunc(m.needList(), func(r menuRow) bool { return r.id == id })
 }
 
 // The home's MCP servers row (with the gateway only) opens the list:
@@ -344,7 +437,7 @@ func TestMenuMCPList(t *testing.T) {
 	onRow(m, "mcp")
 	mk(m, "enter")
 	v := m.View()
-	for _, want := range []string{"Home › MCP servers", "needs JIRA_API_TOKEN", "didn't register", "Also in ~/.mcp", "grafana-test", "· not on yardo's list",
+	for _, want := range []string{"[MCP servers", "needs JIRA_API_TOKEN", "didn't register", "Also in ~/.mcp", "grafana-test", "· not on yardo's list",
 		"+ Add a server", "<name>__<tool>"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("list lacks %q:\n%s", want, v)
@@ -686,13 +779,13 @@ func TestMenuMCPEditKey(t *testing.T) {
 	}
 }
 
-// The fixes are Updates': its mark is a problem's when there's one, a
+// The fixes are Tools': its mark is a problem's when there's one, a
 // value's when there's only that. Not installed is no problem: yardo
 // never set it up.
 func TestMenuFixAll(t *testing.T) {
 	m := testMenu(false)
 	m.items[2].State = "drifted" // Go too
-	if ns := m.needs()["updates"]; len(ns) != 3 || ns[0].id != "fix:docker" || ns[1].id != "fix:go" {
+	if ns := m.needs()["tools"]; len(ns) != 3 || ns[0].id != "fix:docker" || ns[1].id != "fix:go" {
 		t.Fatalf("two problems and a value: %+v", ns)
 	}
 	m = testMenu(false)
@@ -702,7 +795,7 @@ func TestMenuFixAll(t *testing.T) {
 	}
 	m = testMenu(true)
 	m.items[1].State = "secret"
-	if l := lineWith(ansi.Strip(m.View()), "Updates 1"); !strings.Contains(l, "Updates 1 ○") {
+	if l := lineWith(ansi.Strip(m.View()), "Tools 3"); !strings.Contains(l, "Tools 3 ○") {
 		t.Errorf("a value's mark: %q", l)
 	}
 }
@@ -711,6 +804,10 @@ func TestMenuFixAll(t *testing.T) {
 // says so.
 func TestMenuEscQ(t *testing.T) {
 	m := testMenu(false)
+	mk(m, "esc") // out of Needs you
+	if m.need != -1 || m.ended {
+		t.Errorf("esc in Needs you: %d", m.need)
+	}
 	mk(m, "esc")
 	if m.result.Kind != MenuQuit || m.screen != "home" || !strings.Contains(m.View(), "q quits") {
 		t.Errorf("esc on home: %+v\n%s", m.result, m.View())
@@ -722,7 +819,7 @@ func TestMenuEscQ(t *testing.T) {
 		if m.screen != "home" || m.rows()[m.sel].id != "settings" {
 			t.Errorf("%s on settings: on %s, row %d", k, m.screen, m.sel)
 		}
-		for _, id := range []string{"access", "look"} {
+		for _, id := range []string{"look"} {
 			m := testMenu(false)
 			onRow(m, "settings")
 			mk(m, "enter")
@@ -740,11 +837,11 @@ func TestMenuEscQ(t *testing.T) {
 	}
 }
 
-// Updates: with nothing newer, enter checks again (u too, from any
-// tab), in the background, the menu staying; the note says when.
+// With nothing newer, u checks again, in the background, the menu
+// staying; Tools' note says when it last did.
 func TestMenuCheckAgain(t *testing.T) {
 	m := NewMenu(HomeInfo{Host: "vm", Checked: "14:05"}, "", testMenu(true).items, nil, true)
-	onRow(m, "updates")
+	onRow(m, "tools")
 	if v := m.View(); !strings.Contains(v, "nothing newer · checked 14:05") {
 		t.Errorf("home:\n%s", v)
 	}
@@ -754,7 +851,7 @@ func TestMenuCheckAgain(t *testing.T) {
 		t.Errorf("u: %+v", m.result)
 	}
 	m = NewMenu(HomeInfo{Host: "vm"}, "", testMenu(true).items, nil, false)
-	onRow(m, "updates")
+	onRow(m, "tools")
 	if v := m.View(); !strings.Contains(v, "not checked yet") {
 		t.Fatalf("never checked:\n%s", v)
 	}
@@ -763,9 +860,9 @@ func TestMenuCheckAgain(t *testing.T) {
 		started++
 		return func() UpdatesMsg { return UpdatesMsg{ByID: map[string][]string{}, At: "15:00"} }
 	})
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	if started != 1 || cmd == nil || m.ended || !strings.Contains(m.View(), "Checking for updates") {
-		t.Fatalf("enter: started %d, ended %v\n%s", started, m.ended, m.View())
+		t.Fatalf("u: started %d, ended %v\n%s", started, m.ended, m.View())
 	}
 	mk(m, "u")
 	if started != 1 || !strings.Contains(m.View(), "Checking already") {
@@ -820,20 +917,20 @@ func TestMenuMCPSorted(t *testing.T) {
 	}
 }
 
-// Updates, marked with how many: enter leaves the menu for Tools'
-// Updates tab (see TestAppUpdates).
+// Updates: a row of Needs you, Tools marked; enter leaves the menu for
+// Tools' Updates tab (see TestAppUpdates).
 func TestMenuInstallUpdates(t *testing.T) {
 	m := testMenu(true)
 	m.items[2].Updates = []string{"go 1.25.1 → 1.25.2"}
 	m.checked = true
-	if l := lineWith(ansi.Strip(m.View()), "Updates 1 ↑"); l == "" {
-		t.Fatalf("home:\n%s", ansi.Strip(m.View()))
+	if v := ansi.Strip(m.View()); lineWith(v, "Tools 3 ↑") == "" || lineWith(v, "↑ Install 1 update") == "" {
+		t.Fatalf("home:\n%s", v)
 	}
-	if id := NewMenu(m.info, "", m.items, nil, true).rows()[0].id; id != "updates" {
-		t.Errorf("first tab %s", id)
+	if n := NewMenu(m.info, "", m.items, nil, true); n.need != 0 || n.needList()[0].id != "updates" {
+		t.Errorf("starts on %d", n.need)
 	}
-	onRow(m, "updates")
-	if v := m.View(); !strings.Contains(v, "Install 1 update · go 1.25.1 → 1.25.2") {
+	onNeed(m, "updates")
+	if v := m.View(); !strings.Contains(v, "Install 1 update: go 1.25.1 → 1.25.2") {
 		t.Errorf("note:\n%s", v)
 	}
 	mk(m, "enter")
@@ -851,7 +948,7 @@ func TestMenuNothingNewer(t *testing.T) {
 	}
 }
 
-// A check running in the background: Updates says so, u won't start
+// A check running in the background: Tools says so, u won't start
 // another; when it's done, its updates show.
 func TestMenuChecking(t *testing.T) {
 	m := testMenu(true)
@@ -860,7 +957,7 @@ func TestMenuChecking(t *testing.T) {
 		<-done
 		return UpdatesMsg{ByID: map[string][]string{"go": {"go 1.25.1 → 1.25.2"}}, At: "09:05"}
 	})
-	onRow(m, "updates")
+	onRow(m, "tools")
 	if m.Init() == nil || !strings.Contains(m.View(), "checking for updates…") {
 		t.Fatalf("checking:\n%s", m.View())
 	}
@@ -870,36 +967,79 @@ func TestMenuChecking(t *testing.T) {
 	}
 	close(done)
 	m.Update(m.wait())
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "Updates 1 ↑") || !strings.Contains(v, "go 1.25.1 → 1.25.2 · checked 09:05") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Tools 3 ↑") || !strings.Contains(v, "Install 1 update") || !strings.Contains(v, "checked 09:05") {
 		t.Errorf("done:\n%s", v)
 	}
 }
 
-// The home's panels: the services, what they listen on and who can
-// reach it, then the containers; what doesn't fit is counted.
+// The home's panels: the services (the failed first), what they listen
+// on and who can reach it, then the containers, the MCP servers' counted.
 func TestMenuDashboard(t *testing.T) {
 	m := testMenu(true)
 	m.info.Dash = Dashboard{Docker: true,
-		Containers: []Container{{Image: "postgres:16", Name: "myapp-db-1", Ports: []string{"5432"}}},
-		Services:   []Service{{Name: "ssh", Up: true}, {Name: "fail2ban"}},
-		Listening:  []Listener{{"22", "tcp", "ssh", "all"}, {"41641", "udp", "tailscale", "all"}, {"8080", "tcp", "docker", "vpn"}, {"631", "tcp", "cupsd", "local"}}}
-	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
-	v := ansi.Strip(m.View())
-	for _, want := range []string{"Services & containers", "● ssh          22/tcp         anyone", "fail2ban     failed", "tailscale    41641/udp      anyone",
-		"docker       8080/tcp       VPN", "+ 1 port on this machine only", "● postgres:16    myapp-db-1     :5432"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("panel lacks %q:\n%s", want, v)
-		}
+		Containers: []Container{{Image: "postgres:16", Name: "myapp-db-1", Ports: []string{"5432"}, Reach: "all", Count: 1},
+			{Image: "mcp-proxy-for-aws-and-more:1.2.3", Ports: []string{"9000"}, Reach: "vpn", Count: 2},
+			{Image: "mcp-proxy-for-aws", MCP: "aws", Count: 4}, {Image: "github-mcp-server", MCP: "github", Count: 1}},
+		Services: []Service{{Name: "ssh", Up: true}, {Name: "docker", Up: true}, {Name: "fail2ban"}},
+		Listening: []Listener{{"22", "tcp", "ssh", "all"}, {"2222", "tcp", "ssh", "local"}, {"41641", "udp", "tailscale", "all"},
+			{"11434", "tcp", "ollama", "all"}, {"631", "tcp", "cupsd", "local"}, {"9100", "tcp", "", "100.64.1.7"}}}
+	got := ansi.Strip(strings.Join(m.serviceLines(52), "\n"))
+	want := `  service    port              reachable from
+` + tui.Cur.Mark.Down + ` fail2ban   failed to start
+● ssh        22/tcp, 2222/tcp  any network
+● docker     running
+● tailscale  41641/udp         any network
+● ollama     11434/tcp         any network
+● cupsd      631/tcp           local
+● other      9100/tcp          100.64.1.7 only
+─ containers ───────────────────────────────────────
+● postgres:16         myapp-db-1  :5432  any network
+● mcp-pro…e:1.2.3 ×2              :9000  VPN only
+MCP servers: aws ×4, github`
+	if got != want {
+		t.Errorf("panel:\n%s\nwant:\n%s", got, want)
 	}
-	// Narrow: the panels stack, the services fold to a line.
-	m.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "Services  ssh (22/tcp)") || strings.Contains(v, "Services & containers") {
+	// The reach is said in yellow when it's open and needn't be.
+	if l := m.serviceLines(52)[5]; !strings.Contains(l, yellow.Render("any network")) {
+		t.Errorf("ollama, open: %q", l)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Services & containers") || !strings.Contains(v, "● ssh        22/tcp, 2222/tcp") {
+		t.Errorf("wide:\n%s", v)
+	}
+	// Narrow and short: the services fold to a line, the failed first,
+	// the containers counted last; narrow and tall, the panels stack.
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 20})
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Services  fail2ban failed") || !strings.Contains(v, "· 8 containers") || strings.Contains(v, "Services & containers") {
 		t.Errorf("narrow:\n%s", v)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Services & containers") || !strings.Contains(v, "● ssh") {
+		t.Errorf("narrow, tall:\n%s", v)
 	}
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	m.info.Dash = Dashboard{Docker: true}
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "none running") || strings.Contains(v, "22/tcp") {
 		t.Errorf("nothing running:\n%s", v)
+	}
+}
+
+// The MCP servers panel: the ready two to a line, the second where the
+// others' words are; one not checked yet said so, as on the list.
+func TestMenuMCPLines(t *testing.T) {
+	m := mcpMenu()
+	m.info.MCP = append(m.info.MCP, MCPServer{Entry: "seq", Name: "seq", Spec: "seq", State: "unchecked", Yardo: true})
+	got := ansi.Strip(strings.Join(m.mcpLines()[2:], "\n"))
+	want := `● github           ● jira-work
+○ jira             needs JIRA_API_TOKEN
+▲ opensearch       didn't register: check its settings
+· seq              not checked
++ 1 more in ~/.mcp`
+	if got != want {
+		t.Errorf("panel:\n%s\nwant:\n%s", got, want)
+	}
+	if s := ansi.Strip(m.mcpSummary()); s != "2 of 5 ready · 1 not checked" {
+		t.Errorf("summary: %s", s)
 	}
 }
 
@@ -911,7 +1051,7 @@ func TestMenuMachine(t *testing.T) {
 	machine.m = Machine{Read: true, CPU: []float64{0.1, 0.2, 0.06}, Load: [3]float64{5.5, 0.38, 0.31}, Cores: 4,
 		MemUsed: 3 << 30, MemTotal: 8 << 30, DiskUsed: 33 << 30, DiskTotal: 80 << 30, Up: 76 * time.Hour}
 	v := ansi.Strip(testMenu(true).View())
-	for _, want := range []string{"CPU   12%", "now", "Load  5.50 0.38 0.31", "on 4 cores", "38%", "3.0 GB of 8.0 GB", "41%", "of 80 GB", "Up    3d 4h"} {
+	for _, want := range []string{"CPU 12%", "now", "Load 5.50 0.38 0.31", "on 4 cores", "38%", "3.0 GB of 8.0 GB", "41%", "of 80 GB", "Uptime 3d 4h"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("machine lacks %q:\n%s", want, v)
 		}
@@ -971,10 +1111,7 @@ func TestMenuPartsCountedOnce(t *testing.T) {
 // unchanged screen says so.
 func TestMenuAccessApply(t *testing.T) {
 	m := testMenu(false)
-	onRow(m, "settings")
-	mk(m, "enter")
-	onSetting(m, "access")
-	mk(m, "enter")
+	m.open("access")
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "nothing changed yet") || strings.Contains(v, "Apply 1 change") {
 		t.Errorf("unchanged:\n%s", v)
 	}
@@ -992,23 +1129,33 @@ func TestMenuAccessApply(t *testing.T) {
 	}
 }
 
-// tab and → go along the tabs, tab round from the last to the first;
-// shift+tab goes back.
+// With nothing needing you, tab and → go along the tabs, tab round from
+// the last to the first; shift+tab goes back. With something, tab goes
+// into Needs you, and on past its last back to the tabs.
 func TestMenuTab(t *testing.T) {
-	m := testMenu(false)
-	m.sel = 0
+	m := testMenu(true)
 	var got []string
 	for range 5 {
 		mk(m, "tab")
 		got = append(got, m.rows()[m.sel].id)
 	}
-	if strings.Join(got, " ") != "tools conn settings updates tools" {
+	if strings.Join(got, " ") != "net local settings tools net" {
 		t.Errorf("tab: %v", got)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	if id := m.rows()[m.sel].id; id != "settings" {
 		t.Errorf("shift+tab round: on %s", id)
+	}
+	m = testMenu(false)
+	onRow(m, "tools")
+	var at []int
+	for range 3 {
+		mk(m, "tab")
+		at = append(at, m.need)
+	}
+	if fmt.Sprint(at) != "[0 1 -1]" || m.rows()[m.sel].id != "tools" {
+		t.Errorf("tab with Needs you: %v", at)
 	}
 }
 
@@ -1288,12 +1435,12 @@ func TestMenuLastRun(t *testing.T) {
 		Lines: []RunLine{{Status: "ok", Text: "Go"}, {Status: "fail", Text: "apt: one transaction failed", Tail: []string{"E: Unable to locate package nope"}}},
 		Notes: []string{"Docker: log out and in"}}
 	m = NewMenu(m.info, "", m.items, nil, true)
-	if m.rows()[m.sel].id != "lastrun" || !strings.Contains(m.View(), "See why the last run failed") {
-		t.Fatalf("not on Last run:\n%s", m.View())
+	if m.needList()[m.need].id != "why" || !strings.Contains(ansi.Strip(m.View()), "Last run ✗") {
+		t.Fatalf("not on its row in Needs you:\n%s", m.View())
 	}
 	mk(m, "enter")
 	v := m.View()
-	for _, want := range []string{"Home › Last run", "yesterday at 09:12", "✗ apt: one transaction failed", "E: Unable to locate package nope", "Docker: log out and in", "/var/log/yardo.log"} {
+	for _, want := range []string{"[Last run", "yesterday at 09:12", "✗ apt: one transaction failed", "E: Unable to locate package nope", "Docker: log out and in", "/var/log/yardo.log"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("Last run lacks %q:\n%s", want, v)
 		}
@@ -1304,12 +1451,13 @@ func TestMenuLastRun(t *testing.T) {
 	}
 }
 
-// On the home, ←→ (h l) and ↑↓ (k j) go along the tabs, stopping at the
-// ends.
+// On the home, ←→ (h l) go along the tabs, stopping at the ends; k
+// stays, j goes down into Needs you.
 func TestMenuHomeKeys(t *testing.T) {
-	m := testMenu(false) // on Updates
+	m := testMenu(false)
+	onRow(m, "tools")
 	mk(m, "right")
-	if id := m.rows()[m.sel].id; id != "tools" {
+	if id := m.rows()[m.sel].id; id != NetTab {
 		t.Errorf("→: on %s", id)
 	}
 	mk(m, "l", "l", "l")
@@ -1317,17 +1465,17 @@ func TestMenuHomeKeys(t *testing.T) {
 		t.Errorf("l past the end: on %s", id)
 	}
 	mk(m, "h", "k")
-	if id := m.rows()[m.sel].id; id != "tools" {
+	if id := m.rows()[m.sel].id; id != LocalTab || m.need != -1 {
 		t.Errorf("h k: on %s", id)
 	}
 	mk(m, "j")
-	if id := m.rows()[m.sel].id; id != "conn" || m.ended {
-		t.Errorf("j: on %s (ended %v)", id, m.ended)
+	if m.need != 0 || m.ended {
+		t.Errorf("j: on %d (ended %v)", m.need, m.ended)
 	}
 }
 
-// The home at 120 and 80 columns: Machine two lines under the status,
-// the tabs last, the one under the cursor a block of the accent colour.
+// The home at 120 and 80 columns: the tabs at the top, the one under the
+// cursor a block of the accent colour, Machine two lines under the status.
 func TestMenuHomeLayout(t *testing.T) {
 	for _, w := range []int{120, 80} {
 		m := testMenu(false)
@@ -1343,11 +1491,20 @@ func TestMenuHomeLayout(t *testing.T) {
 		if mach < 0 || !strings.HasPrefix(strings.TrimSpace(ls[mach+3]), "└") {
 			t.Errorf("%d: Machine isn't two lines:\n%s", w, v)
 		}
-		if strings.Index(v, "─ Go to ") < strings.Index(v, "─ Machine ") {
-			t.Errorf("%d: the tabs aren't last:\n%s", w, v)
+		if !strings.Contains(ls[1], "Tools 3 ✗") || !strings.Contains(ls[1], "Network") || strings.Contains(v, "─ Go to ") {
+			t.Errorf("%d: the tabs aren't at the top:\n%s", w, v)
 		}
-		if !strings.Contains(m.View(), rowOn.Render(" Updates 2 ✗ ")) {
-			t.Errorf("%d: Updates isn't a block:\n%s", w, m.View())
+		if !strings.Contains(m.View(), tabOn.Render("[Home]")) || !strings.Contains(ls[7], "›✗ Start Docker") {
+			t.Errorf("%d: Home isn't a block, or the cursor isn't on Needs you's first:\n%s", w, m.View())
+		}
+		// The panels are as tall as they need: with room, nothing is cut.
+		if strings.Contains(v, "more") {
+			t.Errorf("%d: a panel is cut with room to spare:\n%s", w, v)
+		}
+		for _, l := range ls {
+			if ansi.StringWidth(l) > w {
+				t.Errorf("%d: a line %d wide: %q", w, ansi.StringWidth(l), l)
+			}
 		}
 	}
 }

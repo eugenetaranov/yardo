@@ -41,18 +41,12 @@ type HomeInfo struct {
 	SkillsAllOff bool
 	// Dash is the home's dashboard.
 	Dash Dashboard
-	// Connect is the home's Connection panel; Keys the public keys runs
-	// made, to add on their hosts (Connection's Keys to add).
-	Connect []ConnectRow
-	Keys    []AddKey
+	// Keys are the public keys runs made, to add on their hosts
+	// (Network's Keys to add).
+	Keys []AddKey
 	// LastRun is how the last run went (nil: none yet).
 	LastRun *LastRun
 }
-
-// ConnectRow is one way a laptop reaches this machine: What (SSH, Docker,
-// the MCP gateway), the Use to type, and a Note: where it goes, or where
-// a secret it needs is kept (never the secret).
-type ConnectRow struct{ What, Use, Note string }
 
 // SkillRow is one agent skill on the menu's Skills screen.
 type SkillRow struct {
@@ -125,8 +119,9 @@ func SetLook(key, hex string) {
 	red = lipgloss.NewStyle().Foreground(l.Bad)
 	yellow = lipgloss.NewStyle().Foreground(l.Warn)
 	keyOn = lipgloss.NewStyle().Foreground(l.Info).Bold(true)
-	tabOn = lipgloss.NewStyle().Bold(true).Foreground(l.Ink).Background(tui.Accent)
-	rowOn = lipgloss.NewStyle().Foreground(l.Ink).Background(tui.Accent).Bold(true)
+	// Text on the accent: the look's ink, white on a dark accent.
+	tabOn = lipgloss.NewStyle().Bold(true).Foreground(tui.Ink()).Background(tui.Accent)
+	rowOn = lipgloss.NewStyle().Foreground(tui.Ink()).Background(tui.Accent).Bold(true)
 }
 
 // Fixable reports whether fixing (applying it again) is what a state
@@ -333,6 +328,15 @@ func (b *Board) Open(tabID string) {
 	tabs := b.visibleTabs()
 	if n := slices.IndexFunc(tabs, func(t Tab) bool { return t.ID == tabID }); n >= 0 {
 		b.tabID, b.tab = tabID, n
+	}
+}
+
+// Focus shows the Updates tab on id's row (its first row, with id ""
+// or not there).
+func (b *Board) Focus(id string) {
+	b.Open(UpdatesTab)
+	if n := slices.IndexFunc(b.rows(), func(r row) bool { return r.item != nil && r.item.ID == id }); n >= 0 && b.key() == UpdatesTab {
+		b.cursor[UpdatesTab] = n
 	}
 }
 
@@ -840,7 +844,7 @@ func (b *Board) act(r *row) tea.Cmd {
 // uninstalling it and forgetting it. Any other value does nothing.
 func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func() tea.Cmd) *Dialog {
 	if vpnItems[i.ID] {
-		lines = append(lines, "More on Connection (Home › Connection): start and stop it, set it up, add a profile, remove it.")
+		lines = append(lines, "More on Network (Home › Network): start and stop it, set it up, add a profile, remove it.")
 	}
 	opts := append([][2]string{first}, changeOpts(i)...)
 	parts := b.parts(i)
@@ -891,7 +895,7 @@ func (b *Board) itemPanel(i *BoardItem, lines []string, first [2]string, do func
 		}}
 }
 
-// vpnItems are the VPNs Connection starts, stops, sets up and removes.
+// vpnItems are the VPNs Network starts, stops, sets up and removes.
 var vpnItems = map[string]bool{"tailscale-install": true, "netbird-install": true, "wireguard-client": true, "openvpn-client": true}
 
 // parts are the items that are part of i (its login).
@@ -1214,28 +1218,28 @@ func (b *Board) tabBar(w, y int) string {
 	}
 	tabs := b.visibleTabs()
 	cur := b.current(tabs)
-	line, x := " ", 1
+	if b.search != nil {
+		cur = -1 // a search is on no tab
+	}
+	m := tui.Cur.Mark
+	items := make([]tabItem, len(tabs))
 	for n, t := range tabs {
-		m := tui.Cur.Mark
-		label := fmt.Sprintf(" %s%s ", tui.Title(t.Title), [...]string{"", " " + m.Update, " " + m.Need, " " + m.Down}[worst[t.ID]])
-		lw := runewidth.StringWidth(label)
-		if x+lw > w-1 {
-			break
+		items[n] = tabItem{label: tui.Title(t.Title)}
+		switch worst[t.ID] {
+		case 1:
+			items[n].mark, items[n].st = m.Update, yellow
+		case 2:
+			items[n].mark, items[n].st = m.Need, accent
+		case 3:
+			items[n].mark, items[n].st = m.Down, red
 		}
-		if n > 0 {
-			line += " "
-			x++
-		}
-		if n == cur && b.search == nil {
-			line += tabOn.Render(label)
-		} else {
-			line += muted.Render(label)
-		}
-		id := t.ID
-		b.hits = append(b.hits, Hit{Y0: y, Y1: y, X0: x, X1: x + lw, Do: func() {
+	}
+	line, spots := tabStrip(items, cur, w)
+	for _, s := range spots {
+		id := tabs[s.n].ID
+		b.hits = append(b.hits, Hit{Y0: y, Y1: y, X0: s.x0, X1: s.x1, Do: func() {
 			b.search, b.typing, b.tabID = nil, false, id
 		}})
-		x += lw
 	}
 	if h := b.health(); lipgloss.Width(line)+2+lipgloss.Width(h) < w {
 		line += strings.Repeat(" ", w-1-lipgloss.Width(line)-lipgloss.Width(h)) + h
@@ -1268,24 +1272,24 @@ func (b *Board) queueSay() string {
 	return strings.Join(q, " · ")
 }
 
-// Path is where the board is: Home › Tools › its tab (or the search).
+// Path is where the board is: Home › Tools, and Updates on its Updates
+// tab (its tabs say the rest).
 func (b *Board) Path() string {
-	p := "Tools › "
+	p := "Tools"
 	if b.fromMenu {
 		p = "Home › " + p
 	}
-	if b.search != nil {
-		return p + "Search"
+	if b.search == nil && b.key() == UpdatesTab {
+		p += " › Updates"
 	}
-	tabs := b.visibleTabs()
-	return p + tabs[b.current(tabs)].Title
+	return p
 }
 
 // Back is what q does.
 func (b *Board) Back() string {
 	switch {
 	case b.dialog != nil:
-		return "cancel"
+		return "" // the dialog's keys say what esc and q do
 	case b.search != nil && b.typing:
 		return ""
 	case b.search != nil:
@@ -1323,9 +1327,9 @@ func (b *Board) Keys() []Key {
 		}
 		keys = append(keys, Key{Key: "u", What: "check again"})
 		if n := b.queued(); n > 0 {
-			keys = append(keys, Key{Key: "a", What: fmt.Sprintf("APPLY %d", n), On: true})
+			keys = append(keys, Key{Key: "a", What: fmt.Sprintf("apply %d", n), On: true})
 		}
-		return append(keys, Key{Key: "←→", What: "tabs"}, Key{Key: "/", What: "search"})
+		return append(keys, Key{Key: "←→", What: "tabs", Keep: true}, Key{Key: "/", What: "search", Keep: true})
 	}
 	first := Key{Key: "enter", What: "details"}
 	switch {
@@ -1343,12 +1347,12 @@ func (b *Board) Keys() []Key {
 	}
 	keys = append(keys, first)
 	if r != nil && r.item != nil && r.item.Picked && r.item.Pending == "" {
-		keys = append(keys, Key{Key: "space", What: "uninstall"}, Key{Key: "d", What: "uninstall"})
+		keys = append(keys, Key{Key: "space", What: "uninstall"})
 	}
 	if n := b.queued(); n > 0 {
-		keys = append(keys, Key{Key: "a", What: fmt.Sprintf("APPLY %d", n), On: true})
+		keys = append(keys, Key{Key: "a", What: fmt.Sprintf("apply %d", n), On: true})
 	}
-	return append(keys, Key{Key: "←→", What: "tabs"}, Key{Key: "/", What: "search"})
+	return append(keys, Key{Key: "←→", What: "tabs", Keep: true}, Key{Key: "/", What: "search", Keep: true})
 }
 
 // Help are every key the board takes, for the keys screen.
@@ -1360,8 +1364,7 @@ func (b *Board) Help() []Key {
 		{Key: "a", What: "apply the queue, asked first"},
 		{Key: "d", What: "uninstall the row, asked first"},
 		{Key: "/", What: "search (or just type, from the home)"},
-		{Key: "←→ h l", What: "the previous or next tab"},
-		{Key: "tab", What: "the next tab"},
+		{Key: "←→ h l tab", What: "the previous or next tab (tab: the next; shift+tab: the previous)"},
 		{Key: "ctrl+a", What: "in a search with no match: add it as an extra mise tool"},
 	}
 }
@@ -1376,7 +1379,7 @@ func (b *Board) Hits() []Hit { return b.hits }
 func (b *Board) Typing() bool { return b.search != nil && b.typing && b.dialog == nil }
 
 // View is the board drawn alone, as the app draws it.
-func (b *Board) View() string { return standalone(b, b.info, b.width, b.height) }
+func (b *Board) View() string { return standalone(b, b.info, nil, "", b.width, b.height) }
 
 // Body is the board under the header, w by h: the tabs, the search, the
 // list, a dialog, the queue.

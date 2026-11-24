@@ -165,7 +165,7 @@ func hostItem(a *answers.Answers, host string) string {
 	return ""
 }
 
-// keysToAdd are the keys on Connection: each a run made, but those whose
+// keysToAdd are the keys on Network: each a run made, but those whose
 // git hosts all read working (dropped from the file then).
 func keysToAdd(state string, a *answers.Answers, working func(id string) bool) []ui.AddKey {
 	var out []ui.AddKey

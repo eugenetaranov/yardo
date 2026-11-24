@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,8 +16,10 @@ import (
 const secretTok = "f00dfeedf00dfeed"
 
 // testConn is the screen with Tailscale up (the session's way in), a
-// WireGuard profile stopped, NetBird not set up, the local network; the
-// laptop's rows; a token; a key to add. acts records what it did.
+// WireGuard profile stopped, NetBird not set up, the local network; a
+// Network access setting; Local settings' rows (All of it, SSH, Claude
+// Code, the clipboard once); a token; a key to add. acts records what
+// it did.
 func testConn(acts *[]string) *Connection {
 	nets := []Network{
 		{ID: "tailscale", Name: "Tailscale", State: "up", Addr: "100.64.1.7", DNS: "vm.tail1234.ts.net", Via: true},
@@ -27,9 +30,11 @@ func testConn(acts *[]string) *Connection {
 	c := NewConnection(ConnData{
 		Networks: nets,
 		Setups: []Setup{
+			{ID: "script", What: "All of it", How: "sh yardo-vm.sh  ·  one script", Lines: []string{"sh yardo-vm.sh"}},
 			{ID: "ssh", What: "SSH", How: "ssh vm", Lines: []string{"Host vm", "  HostName 100.64.1.7"}, Say: []string{"Add it to ~/.ssh/config."}},
 			{ID: "mcp-claude", What: "Claude Code", How: "claude mcp add vm", Token: "~/.mcp/clients/laptop.token",
 				Lines: []string{`claude mcp add --transport http vm http://100.64.1.7:8081/mcp --header "Authorization: Bearer <token>"`}},
+			{ID: "clipboard", What: "iTerm2 clipboard", How: "iTerm2  ·  copies here reach your computer", Once: true, Lines: []string{"defaults write"}},
 		},
 		Tokens:   []Token{{Name: "laptop", File: "~/.mcp/clients/laptop.token"}},
 		Gateway:  true,
@@ -51,6 +56,7 @@ func testConn(acts *[]string) *Connection {
 		ReadToken:   func(string) (string, error) { return secretTok + "\n", nil },
 		Copy:        func(s string) error { *acts = append(*acts, "copy "+s); return nil },
 	})
+	c.access = []*BoardSetting{{Key: "mcp", Label: "MCP gateway", Value: "vpn", Choices: [][2]string{{"127.0.0.1", "this machine only"}, {"vpn", "this machine and your VPNs"}}}}
 	c.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	return c
 }
@@ -87,6 +93,12 @@ func drain(c *Connection, cmd tea.Cmd) {
 }
 
 func onConnRow(c *Connection, kind string, n int) {
+	switch kind {
+	case "setup", "once", "token", "newtoken":
+		c.Show(LocalTab)
+	default:
+		c.Show(NetTab)
+	}
 	for i, r := range c.rows() {
 		if r.kind == kind && r.n == n {
 			c.sel = i
@@ -94,30 +106,77 @@ func onConnRow(c *Connection, kind string, n int) {
 	}
 }
 
-// The screen lists every network with its state, address and name, and
-// the session's own; the laptop's rows open to their lines; tokens by
-// name and file; never a token. At 80 columns too.
+// Network lists every network with its state, address and name, and the
+// session's own; Network access's settings; the keys to add. Local
+// settings: All of it first, the rest, then Once per computer, then the
+// tokens by name and file; its rows open to their lines; never a token.
+// Neither says Laptop. At 80 columns too.
 func TestConnectionView(t *testing.T) {
 	var acts []string
 	c := testConn(&acts)
 	for _, w := range []int{120, 80} {
 		c.Update(tea.WindowSizeMsg{Width: w, Height: 40})
+		c.Show(NetTab)
 		c.sel = 0
 		v := ansi.Strip(c.View())
-		for _, want := range []string{"Home › Connection", "Networks", "Tailscale", "● connected", "100.64.1.7", "← this session",
+		for _, want := range []string{"Home › Network", "Networks", "Tailscale", "● connected", "100.64.1.7", "← this session",
 			"NetBird", "not set up", "Enter sets it up", "office", "○ stopped", "WireGuard", "starts at boot", "Local network",
-			"+ Add a WireGuard or OpenVPN profile", "From your laptop", "Claude Code", "Gateway tokens", "laptop", "Keys to add", "space stop"} {
+			"+ Add a WireGuard or OpenVPN profile", "Network access", "MCP gateway", "this machine and your VPNs", "Keys to add", "github.com", "space stop"} {
 			if !strings.Contains(v, want) {
-				t.Errorf("%d columns: lacks %q:\n%s", w, want, v)
+				t.Errorf("%d columns: Network lacks %q:\n%s", w, want, v)
 			}
 		}
-		for _, l := range strings.Split(v, "\n") {
-			if ansi.StringWidth(l) > w {
-				t.Errorf("%d columns: a line is %d wide: %q", w, ansi.StringWidth(l), l)
+		for _, gone := range []string{"Claude Code", "Gateway tokens", "Laptop", "laptop"} {
+			if strings.Contains(v, gone) {
+				t.Errorf("%d columns: Network has %q:\n%s", w, gone, v)
+			}
+		}
+		c.Show(LocalTab)
+		c.sel = 0
+		l := ansi.Strip(c.View())
+		for _, want := range []string{"Home › Local settings", "To use this machine", "All of it", "sh yardo-vm.sh", "SSH", "Claude Code",
+			"Once per computer", "iTerm2 clipboard", "Gateway tokens", "~/.mcp/clients/laptop.token", "c copy"} {
+			if !strings.Contains(l, want) {
+				t.Errorf("%d columns: Local settings lacks %q:\n%s", w, want, l)
+			}
+		}
+		for _, gone := range []string{"Networks", "Keys to add", "Laptop", "From your"} {
+			if strings.Contains(l, gone) {
+				t.Errorf("%d columns: Local settings has %q:\n%s", w, gone, l)
+			}
+		}
+		// In order: All of it, SSH, Claude Code, Once per computer, the clipboard, the tokens.
+		at := -1
+		for _, s := range []string{"All of it", "SSH ", "Claude Code", "Once per computer", "iTerm2 clipboard", "Gateway tokens"} {
+			if n := strings.Index(l, s); n < at {
+				t.Errorf("%d columns: %s out of order:\n%s", w, s, l)
+			} else {
+				at = n
+			}
+		}
+		for _, v := range []string{v, l} {
+			for _, l := range strings.Split(v, "\n") {
+				if ansi.StringWidth(l) > w {
+					t.Errorf("%d columns: a line is %d wide: %q", w, ansi.StringWidth(l), l)
+				}
 			}
 		}
 	}
-	onConnRow(c, "setup", 1)
+	// Enter on a Network access row opens its screen (the app's).
+	onConnRow(c, "access", 0)
+	ck(c, "enter")
+	if c.toAccess != 0 {
+		t.Errorf("access: %d", c.toAccess)
+	}
+	c.toAccess = -1
+	// Each tab keeps its row.
+	onConnRow(c, "key", 0)
+	c.Show(LocalTab)
+	c.Show(NetTab)
+	if c.row().kind != "key" {
+		t.Errorf("Network's row: %+v", c.row())
+	}
+	onConnRow(c, "setup", 2)
 	v := ansi.Strip(c.View())
 	if !strings.Contains(v, "Bearer <token>") || strings.Contains(v, secretTok) {
 		t.Errorf("claude row:\n%s", v)
@@ -320,24 +379,50 @@ func TestOSC52(t *testing.T) {
 	}
 }
 
-// The Connection tab opens it; q comes back home, onto the tab.
+// Network and Local settings open their tabs; q comes back home, onto
+// the tab; the strip and 1–9 go between them, each keeping its row.
+// Enter on Network access opens the menu's screen, its q back on
+// Network.
 func TestAppConnection(t *testing.T) {
 	a := testApp()
 	a.Conn.d.Networks = []Network{{ID: "local", Name: "Local network", State: "up", Addr: "10.0.0.5"}}
-	for _, row := range []string{"conn"} {
-		onRow(a.Menu, row)
+	a.Conn.d.Setups = []Setup{{ID: "ssh", What: "SSH", How: "ssh vm  ·  ada@10.0.0.5"}}
+	a.Menu.setups = a.Conn.d.Setups
+	for _, row := range []string{NetTab, LocalTab} {
+		onHome(a, row)
 		ak(a, "enter")
-		if !a.onConn || !strings.Contains(a.View(), "Home › Connection") || !strings.Contains(a.View(), "Local network") {
-			t.Fatalf("%s: not on Connection:\n%s", row, a.View())
+		v := ansi.Strip(a.View())
+		if !a.onConn || a.Conn.tab != row || !strings.Contains(v, map[string]string{NetTab: "[Network]", LocalTab: "[Local settings]"}[row]) ||
+			!strings.Contains(v, map[string]string{NetTab: "Local network", LocalTab: "ada@10.0.0.5"}[row]) {
+			t.Fatalf("%s: not on its tab:\n%s", row, v)
 		}
 		ak(a, "q")
 		if a.onConn || a.Menu.screen != "home" || a.Menu.rows()[a.Menu.sel].id != row {
 			t.Errorf("%s: q: on %s, row %s", row, a.Menu.screen, a.Menu.rows()[a.Menu.sel].id)
 		}
 	}
-	// Leaving to type: the app ends with it.
-	onRow(a.Menu, "conn")
+	// Between them by number, each its own.
+	_, ids := a.Menu.navTabs()
+	ak(a, fmt.Sprint(slices.Index(ids, NetTab)+1))
+	ak(a, fmt.Sprint(slices.Index(ids, LocalTab)+1))
+	if !a.onConn || a.Conn.tab != LocalTab || !strings.Contains(a.View(), "[Local settings]") {
+		t.Errorf("1–9:\n%s", a.View())
+	}
+	ak(a, fmt.Sprint(slices.Index(ids, NetTab)+1))
+	a.Conn.focus("access")
 	ak(a, "enter")
+	if a.onConn || a.Menu.screen != "access" || !strings.Contains(ansi.Strip(a.View()), "[Network]") {
+		t.Fatalf("access:\n%s", a.View())
+	}
+	ak(a, "q")
+	if !a.onConn || a.Conn.tab != NetTab || a.Conn.row().kind != "access" {
+		t.Errorf("q on access: conn %v, %s", a.onConn, a.Conn.tab)
+	}
+	ak(a, "q")
+	// Leaving to type: the app ends with it.
+	onHome(a, NetTab)
+	ak(a, "enter")
+	a.Conn.focus("net")
 	if cmd := ak(a, "n"); !isQuit(cmd) || a.result.Conn == nil || a.result.Conn.Do != "profile" {
 		t.Errorf("n: %+v", a.result)
 	}

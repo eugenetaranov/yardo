@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,12 +14,14 @@ import (
 	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
-// Connection is the screen of how this machine is connected: its
-// networks, started, stopped, set up and removed from here; what to set
-// up on a laptop to reach it; the MCP gateway's tokens; and the keys runs
-// made, to add elsewhere. What needs no typing runs in the background,
-// the screen kept; a login's key and a new profile leave it (ConnResult)
-// and come back. It's one of the app's views (see App).
+// Connection is two tabs along the top. Network is how this machine is
+// connected: its networks, started, stopped, set up and removed from
+// here; who can reach what (Network access, the menu's screen); and the
+// keys runs made, to add elsewhere. Local settings is what to set up on
+// your own computer to use it, and the MCP gateway's tokens. What needs
+// no typing runs in the background, the screen kept; a login's key and a
+// new profile leave it (ConnResult) and come back. It's one of the app's
+// views (see App).
 
 // Network is one of the machine's networks, as the screen lists it.
 type Network struct {
@@ -61,15 +64,24 @@ func (n Network) unit() string {
 	return ""
 }
 
-// Setup is a thing to set up on the laptop: the lines to run or paste
+// Setup is a thing to set up on your computer: the lines to run or paste
 // (c copies them), what's said about them (where they go, how you sign
 // in), and the file of the token that <token> in them stands for (read
-// when copied, never drawn).
+// when copied, never drawn). How is what to type, then after "  ·  "
+// the key fact first: the home's Connection panel says it too. Once: set
+// up once per computer, whichever machine it reaches.
 type Setup struct {
 	ID, What, How string
 	Lines         []string
 	Say           []string
 	Token         string
+	Once          bool
+}
+
+// use is s as the home's panel says it: what to type, and the rest.
+func (s Setup) use() (string, string) {
+	use, note, _ := strings.Cut(s.How, "  ·  ")
+	return use, note
 }
 
 // Token is an MCP gateway client's token: its name and its file (never
@@ -111,8 +123,9 @@ type ConnHooks struct {
 // (ID's key, then its login) or "profile" (a profile to add).
 type ConnResult struct{ Do, ID string }
 
-// connRow is one of the screen's rows: kind net, add (a profile), setup,
-// token, newtoken or key; n its index in its list.
+// connRow is one of the screen's rows: on Network, kind net, add (a
+// profile), access (a setting) or key; on Local settings, setup, once,
+// token or newtoken; n its index in its list.
 type connRow struct {
 	kind string
 	n    int
@@ -149,12 +162,26 @@ func (connLink) forConn() {}
 // linkPoll is how often the screen looks whether a login by link is done.
 var linkPoll = 2 * time.Second
 
+// The tabs Connection is: Network and Local settings, by id.
+const (
+	NetTab   = "net"
+	LocalTab = "local"
+)
+
 // Connection is the screen; see NewConnection.
 type Connection struct {
 	d    ConnData
 	keys []AddKey
 	h    ConnHooks
-	sel  int
+	// tab is the one shown (NetTab, LocalTab); sel its row, at the other's
+	// kept.
+	tab string
+	sel int
+	at  map[string]int
+	// access are Network access's settings, shown on Network; toAccess is
+	// the one enter opened (the menu's screen, the app's), -1 for none.
+	access   []*BoardSetting
+	toAccess int
 	// busy is what's running, by key ("stopping…"); failed why it failed.
 	busy, failed map[string]string
 	dialog       *Dialog
@@ -178,7 +205,37 @@ type Connection struct {
 
 // NewConnection builds the screen on d, with the keys to add.
 func NewConnection(d ConnData, keys []AddKey) *Connection {
-	return &Connection{d: d, keys: keys, busy: map[string]string{}, failed: map[string]string{}, width: 100, height: 30}
+	return &Connection{d: d, keys: keys, tab: NetTab, at: map[string]int{}, toAccess: -1, busy: map[string]string{}, failed: map[string]string{}, width: 100, height: 30}
+}
+
+// Show shows tab (NetTab, LocalTab), on the row it was left on.
+func (c *Connection) Show(tab string) {
+	if tab != LocalTab {
+		tab = NetTab
+	}
+	if tab == c.tab {
+		return
+	}
+	c.at[c.tab] = c.sel
+	c.tab, c.sel, c.naming = tab, c.at[tab], false
+}
+
+// focus puts the cursor on the first row of kind.
+func (c *Connection) focus(kind string) {
+	for n, r := range c.rows() {
+		if r.kind == kind {
+			c.sel = n
+			return
+		}
+	}
+}
+
+// Path is where the screen is: its tab.
+func (c *Connection) Path() string {
+	if c.tab == LocalTab {
+		return "Home › Local settings"
+	}
+	return "Home › Network"
 }
 
 // Hooks sets what the screen does to the machine.
@@ -193,18 +250,29 @@ func (c *Connection) Result() ConnResult { return c.result }
 
 func (c *Connection) rows() []connRow {
 	var out []connRow
+	if c.tab == LocalTab {
+		// The everyday ones first, then those once per computer.
+		for _, once := range []bool{false, true} {
+			for n, s := range c.d.Setups {
+				if s.Once == once {
+					out = append(out, connRow{map[bool]string{false: "setup", true: "once"}[once], n})
+				}
+			}
+		}
+		if c.d.Gateway {
+			for n := range c.d.Tokens {
+				out = append(out, connRow{"token", n})
+			}
+			out = append(out, connRow{"newtoken", 0})
+		}
+		return out
+	}
 	for n := range c.d.Networks {
 		out = append(out, connRow{"net", n})
 	}
 	out = append(out, connRow{"add", 0})
-	for n := range c.d.Setups {
-		out = append(out, connRow{"setup", n})
-	}
-	if c.d.Gateway {
-		for n := range c.d.Tokens {
-			out = append(out, connRow{"token", n})
-		}
-		out = append(out, connRow{"newtoken", 0})
+	for n := range c.access {
+		out = append(out, connRow{"access", n})
 	}
 	for n := range c.keys {
 		out = append(out, connRow{"key", n})
@@ -399,6 +467,12 @@ func (c *Connection) key(v tea.KeyMsg) tea.Cmd {
 		return c.nameKey(v)
 	}
 	c.toast = ""
+	if len(c.rows()) == 0 {
+		if k == "q" || k == "esc" {
+			c.left = true
+		}
+		return nil
+	}
 	r := c.row()
 	switch k {
 	case "q", "esc":
@@ -417,7 +491,11 @@ func (c *Connection) key(v tea.KeyMsg) tea.Cmd {
 	switch r.kind {
 	case "net", "add":
 		return c.netKey(k, r)
-	case "setup":
+	case "access":
+		if k == "enter" {
+			c.toAccess = r.n
+		}
+	case "setup", "once":
 		s := c.d.Setups[r.n]
 		switch {
 		case k == "c" || k == "enter":
@@ -590,7 +668,7 @@ func (c *Connection) nameKey(v tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// copyLines copies lines to the laptop's clipboard, through the terminal;
+// copyLines copies lines to your computer's clipboard, through the terminal;
 // <token> in them is the token in file, read now.
 func (c *Connection) copyLines(lines []string, file string) {
 	s := strings.Join(lines, "\n")
@@ -613,7 +691,7 @@ func (c *Connection) copyLines(lines []string, file string) {
 	if len(lines) > 1 {
 		what = plural(len(lines), "line", "lines")
 	}
-	c.toast = fmt.Sprintf("Copied %s to your laptop's clipboard, if your terminal lets it (see below).", what)
+	c.toast = fmt.Sprintf("Copied %s to your computer's clipboard, if your terminal lets it (see below).", what)
 }
 
 // nextSection moves to the next section's first row (or the last's).
@@ -627,6 +705,9 @@ func (c *Connection) nextSection(fwd bool) {
 			return "token"
 		}
 		return k
+	}
+	if len(rs) == 0 {
+		return
 	}
 	cur := sec(rs[c.sel].kind)
 	if fwd {
@@ -659,9 +740,8 @@ func (c *Connection) nextSection(fwd bool) {
 }
 
 // View is the screen drawn alone, as the app draws it.
-func (c *Connection) View() string { return standalone(c, HomeInfo{}, c.width, c.height) }
+func (c *Connection) View() string { return standalone(c, HomeInfo{}, nil, "", c.width, c.height) }
 
-func (c *Connection) Path() string  { return "Home › Connection" }
 func (c *Connection) Toast() string { return c.toast }
 func (c *Connection) Hits() []Hit   { return c.hits }
 func (c *Connection) Typing() bool  { return c.naming && c.dialog == nil }
@@ -669,7 +749,7 @@ func (c *Connection) Typing() bool  { return c.naming && c.dialog == nil }
 func (c *Connection) Back() string {
 	switch {
 	case c.dialog != nil:
-		return "cancel"
+		return "" // the dialog's keys say what esc and q do
 	case c.naming:
 		return ""
 	}
@@ -683,6 +763,9 @@ func (c *Connection) Keys() []Key {
 	}
 	if c.naming {
 		return []Key{{Key: "enter", What: "make it"}, {Key: "esc", What: "cancel"}}
+	}
+	if len(c.rows()) == 0 {
+		return nil
 	}
 	r := c.row()
 	switch r.kind {
@@ -709,7 +792,9 @@ func (c *Connection) Keys() []Key {
 		return append(ks, Key{Key: "n", What: "add a profile"}, Key{Key: "tab", What: "next section"})
 	case "add":
 		return []Key{{Key: "enter", What: "add a profile"}, {Key: "tab", What: "next section"}}
-	case "setup":
+	case "access":
+		return []Key{{Key: "enter", What: "change"}, {Key: "tab", What: "next section"}}
+	case "setup", "once":
 		ks := []Key{{Key: "c", What: "copy"}}
 		if strings.HasPrefix(c.d.Setups[r.n].ID, "mcp") && c.d.Gateway {
 			ks = append(ks, Key{Key: "n", What: "new token"})
@@ -725,14 +810,22 @@ func (c *Connection) Keys() []Key {
 
 // Help is every key the screen takes.
 func (c *Connection) Help() []Key {
+	if c.tab == LocalTab {
+		return []Key{
+			{Key: "c", What: "copy the row's lines to your computer's clipboard (enter too)"},
+			{Key: "n", What: "on the gateway's rows: make a client's token"},
+			{Key: "d", What: "revoke a token"},
+			{Key: "tab", What: "the next section: To use this machine, Once per computer, Gateway tokens"},
+		}
+	}
 	return []Key{
 		{Key: "space", What: "stop a network, or start it (never logs out or deletes)"},
 		{Key: "b", What: "a profile: start it at boot, or not"},
-		{Key: "enter", What: "set up a VPN that isn't; on the rest, as c"},
-		{Key: "n", What: "add a WireGuard or OpenVPN profile; on the gateway's rows, a client's token"},
-		{Key: "d", What: "remove a network (asked first), revoke a token, dismiss a key"},
-		{Key: "c", What: "copy the row's lines (or the login link) to your laptop's clipboard"},
-		{Key: "tab", What: "the next section: Networks, From your laptop, Gateway tokens, Keys to add"},
+		{Key: "enter", What: "set up a VPN that isn't; change a Network access setting; on the rest, as c"},
+		{Key: "n", What: "add a WireGuard or OpenVPN profile"},
+		{Key: "d", What: "remove a network (asked first), dismiss a key"},
+		{Key: "c", What: "copy the login link, or a key, to your computer's clipboard"},
+		{Key: "tab", What: "the next section: Networks, Network access, Keys to add"},
 	}
 }
 
@@ -742,7 +835,7 @@ func (c *Connection) netState(n Network) string {
 		return accent.Render(b)
 	}
 	if _, ok := c.failed[n.ID]; ok {
-		return yellow.Render("▲ failed")
+		return yellow.Render(tui.Cur.Mark.Warn + " failed")
 	}
 	switch n.State {
 	case "up":
@@ -755,7 +848,7 @@ func (c *Connection) netState(n Network) string {
 		}
 		return accent.Render(tui.Cur.Mark.Need + " not set up")
 	case "failed":
-		return yellow.Render("▲ failed")
+		return yellow.Render(tui.Cur.Mark.Warn + " failed")
 	}
 	return muted.Render("○ " + n.State)
 }
@@ -796,11 +889,51 @@ func (c *Connection) Body(w, h int) string {
 		}
 		return "     " + padTo(s, col)
 	}
+	add(-1, "")
+	if c.tab == LocalTab {
+		c.localLines(w, add, head, mark)
+	} else {
+		c.netLines(w, add, head, mark)
+	}
+	if c.copied && c.d.CopyHint != "" {
+		add(-1, "")
+		for _, l := range wrap("Nothing copied? "+c.d.CopyHint, w-6) {
+			add(-1, "  "+muted.Render(l))
+		}
+	}
+
+	room := h
+	var dl []string
+	if c.dialog != nil {
+		dl = dialogLines(c.dialog, w, 0, nil)
+		room = max(1, h-len(dl))
+	}
+	shown, ln := window(lines, selLine, room)
+	for i := range shown {
+		if ln[i] < 0 {
+			continue
+		}
+		if r := rowOf[ln[i]]; r >= 0 {
+			r := r
+			c.hits = append(c.hits, Hit{Y0: i, Y1: i, Do: func() { c.sel = r }})
+		}
+	}
+	if c.dialog != nil {
+		var dh []Hit
+		dl = dialogLines(c.dialog, w, len(shown), &dh)
+		c.hits = dh
+		shown = append(shown, dl...)
+	}
+	return strings.Join(shown, "\n")
+}
+
+// netLines are Network's: the networks, Network access, the keys to add;
+// add, head and mark are Body's.
+func (c *Connection) netLines(w int, add func(int, ...string), head func(string, string), mark func(int, string, int) string) {
 	col := 16
 	for _, n := range c.d.Networks {
 		col = max(col, min(24, runewidth.StringWidth(n.Name)))
 	}
-	add(-1, "")
 	at := 0
 	head("Networks", "  ·  space starts or stops one  ·  d removes it  ·  n adds a profile")
 	for _, n := range c.d.Networks {
@@ -849,27 +982,79 @@ func (c *Connection) Body(w, h int) string {
 	add(at, mark(at, "+ Add a WireGuard or OpenVPN profile", col+24))
 	at++
 
-	head("From your laptop", "  ·  c copies the row's lines; they use this machine's VPN address first")
+	if len(c.access) > 0 {
+		head("Network access", "  ·  who can reach what this machine serves  ·  enter changes it")
+		acol := col
+		for _, s := range c.access {
+			acol = max(acol, min(w/2, runewidth.StringWidth(s.Label)))
+		}
+		for _, s := range c.access {
+			add(at, fmt.Sprintf("%s  %s", mark(at, runewidth.Truncate(s.Label, acol, "…"), acol), muted.Render(s.label(s.Value))))
+			at++
+		}
+	}
+
+	if len(c.keys) > 0 {
+		head("Keys to add", "  ·  this machine's keys, for where each says; d dismisses one once it's added")
+		for _, k := range c.keys {
+			for i, wh := range k.Where {
+				if i == 0 {
+					add(at, mark(at, wh, max(col, w-12)))
+				} else {
+					add(at, "     "+wh)
+				}
+			}
+			if at == c.sel {
+				for _, p := range pasteLines(k.Pub, w-10) {
+					add(at, "        "+keyOn.Render(p))
+				}
+				if k.Path != "" {
+					add(at, "        "+muted.Render("Show it again: cat "+k.Path))
+				}
+			}
+			at++
+		}
+	}
+}
+
+// localLines are Local settings': what to set up on your computer (All
+// of it first), what's once per computer, the gateway's tokens; add,
+// head and mark are Body's.
+func (c *Connection) localLines(w int, add func(int, ...string), head func(string, string), mark func(int, string, int) string) {
 	wcol := 12
 	for _, s := range c.d.Setups {
 		wcol = max(wcol, runewidth.StringWidth(s.What))
 	}
-	for n, s := range c.d.Setups {
-		add(at, fmt.Sprintf("%s  %s", mark(at, s.What, wcol), muted.Render(s.How)))
-		if at == c.sel {
-			for _, l := range s.Lines {
-				for _, p := range pasteLines(l, w-10) {
-					add(at, "        "+keyOn.Render(p))
+	at := 0
+	setups := func(once bool) {
+		for _, s := range c.d.Setups {
+			if s.Once != once {
+				continue
+			}
+			add(at, fmt.Sprintf("%s  %s", mark(at, s.What, wcol), muted.Render(s.How)))
+			if at == c.sel {
+				for _, l := range s.Lines {
+					for _, p := range pasteLines(l, w-10) {
+						add(at, "        "+keyOn.Render(p))
+					}
+				}
+				for _, l := range s.Say {
+					for _, wl := range wrap(l, w-10) {
+						add(at, "        "+muted.Render(wl))
+					}
 				}
 			}
-			for _, l := range s.Say {
-				for _, wl := range wrap(l, w-10) {
-					add(at, "        "+muted.Render(wl))
-				}
-			}
+			at++
 		}
-		_ = n
-		at++
+	}
+	head("To use this machine", "  ·  on your computer; c copies the row's lines, which use this machine's VPN address first")
+	setups(false)
+	if slices.ContainsFunc(c.d.Setups, func(s Setup) bool { return s.Once }) {
+		head("Once per computer", "  ·  whichever machines it reaches")
+		setups(true)
+	}
+	if len(c.d.Setups) == 0 {
+		add(-1, "     "+muted.Render("Nothing to set up."))
 	}
 
 	if c.d.Gateway {
@@ -896,60 +1081,9 @@ func (c *Connection) Body(w, h int) string {
 		}
 		add(at, mark(at, newRow, wcol+24))
 		if c.naming {
-			add(at, "        "+muted.Render("Letters, digits, - _ . : the client's name (ci, laptop). Enter makes it; esc doesn't."))
-		}
-		at++
-	}
-
-	if len(c.keys) > 0 {
-		head("Keys to add", "  ·  where each says; d dismisses one once it's added")
-		for _, k := range c.keys {
-			for i, wh := range k.Where {
-				if i == 0 {
-					add(at, mark(at, wh, max(wcol, w-12)))
-				} else {
-					add(at, "     "+wh)
-				}
-			}
-			if at == c.sel {
-				for _, p := range pasteLines(k.Pub, w-10) {
-					add(at, "        "+keyOn.Render(p))
-				}
-				if k.Path != "" {
-					add(at, "        "+muted.Render("Show it again: cat "+k.Path))
-				}
-			}
-			at++
+			add(at, "        "+muted.Render("Letters, digits, - _ . : the client's name (ci, work-mac). Enter makes it; esc doesn't."))
 		}
 	}
-	if c.copied && c.d.CopyHint != "" {
-		add(-1, "")
-		for _, l := range wrap("Nothing copied? "+c.d.CopyHint, w-6) {
-			add(-1, "  "+muted.Render(l))
-		}
-	}
-
-	room := h
-	var dl []string
-	if c.dialog != nil {
-		dl = dialogLines(c.dialog, w, 0, nil)
-		room = max(1, h-len(dl))
-	}
-	start := windowStart(len(lines), selLine, room)
-	shown := window(lines, selLine, room)
-	for i := range shown {
-		if r := rowOf[start+i]; r >= 0 {
-			r := r
-			c.hits = append(c.hits, Hit{Y0: i, Y1: i, Do: func() { c.sel = r }})
-		}
-	}
-	if c.dialog != nil {
-		var dh []Hit
-		dl = dialogLines(c.dialog, w, len(shown), &dh)
-		c.hits = dh
-		shown = append(shown, dl...)
-	}
-	return strings.Join(shown, "\n")
 }
 
 // OSC52 is the escape sequence that puts s on the terminal's clipboard

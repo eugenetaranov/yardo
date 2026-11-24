@@ -127,7 +127,7 @@ func TestLaptopSetups(t *testing.T) {
 	if l := setupLines(ss, "mcp-claude"); len(l) != 2 || !strings.HasPrefix(l[0], "ssh -N -L 8081:127.0.0.1:8081 ada@100.64.1.7") || strings.Contains(l[1], "Bearer") {
 		t.Errorf("tunnel: %q", l)
 	}
-	if ss = laptopSetups(a, addrs, nil, false, false, short); len(ss) != 4 || ss[2].ID != "clipboard" || ss[3].ID != "script" || !strings.Contains(ss[3].Lines[0], fmt.Sprintf("sudo yardo connect --script > yardo-%s.sh", short)) {
+	if ss = laptopSetups(a, addrs, nil, false, false, short); len(ss) != 4 || ss[0].ID != "script" || ss[3].ID != "clipboard" || !ss[3].Once || !strings.Contains(ss[0].Lines[0], fmt.Sprintf("sudo yardo connect --script > yardo-%s.sh", short)) {
 		t.Errorf("no gateway: %+v", ss)
 	}
 }
@@ -201,13 +201,14 @@ func TestPagesSetup(t *testing.T) {
 		t.Errorf("public: %+v", s)
 	}
 	if ss := laptopSetups(a, nil, nil, false, true, "box"); !slices.ContainsFunc(ss, func(s ui.Setup) bool { return s.ID == "pages" }) {
-		t.Error("no Pages on the Connection screen with pages picked")
+		t.Error("no Pages on Local settings with pages picked")
 	}
 	if ss := laptopSetups(a, nil, nil, false, false, "box"); slices.ContainsFunc(ss, func(s ui.Setup) bool { return s.ID == "pages" }) {
-		t.Error("Pages on the Connection screen without pages")
+		t.Error("Pages on Local settings without pages")
 	}
-	if rows := pagesRows(a, nil, true); len(rows) != 1 || rows[0].Use != "https://mcp.example.com/pages/" {
-		t.Errorf("home row: %+v", rows)
+	// The home's row: the link, then the login.
+	if s := pagesSetup(a, "100.1.2.3"); !strings.HasPrefix(s.How, "https://mcp.example.com/pages/  ·  user pages, password") {
+		t.Errorf("home row: %q", s.How)
 	}
 	if got := parseServices("yardo-pages@ada.service loaded active running yardo pages\n"); len(got) != 1 || got[0].Name != "pages" || !got[0].Up {
 		t.Errorf("services: %+v", got)

@@ -140,7 +140,7 @@ func TestBoardQueueAndApply(t *testing.T) {
 	}
 	press2(b, "space")
 	press2(b, "left", "down", "down", "space") // DevOps: Ansible
-	if v := b.View(); b.queued() != 2 || !strings.Contains(v, "APPLY 2") ||
+	if v := b.View(); b.queued() != 2 || !strings.Contains(v, "a apply 2") ||
 		!strings.Contains(v, "Queued: install Ansible · install WireGuard server") {
 		t.Errorf("queue:\n%s", v)
 	}
@@ -428,8 +428,8 @@ func TestBoardUninstall(t *testing.T) {
 	// The login: logged out from its tool's details.
 	b, items = mk()
 	press2(b, "right", "enter")
-	if v := ansi.Strip(b.View()); !strings.Contains(v, "Log out (NetBird stays)") || !strings.Contains(v, "More on Connection (Home › Connection)") {
-		t.Fatalf("no log out, or no Connection:\n%s", v)
+	if v := ansi.Strip(b.View()); !strings.Contains(v, "Log out (NetBird stays)") || !strings.Contains(v, "More on Network (Home › Network)") {
+		t.Fatalf("no log out, or no Network:\n%s", v)
 	}
 	for b.dialog.Opts[b.dialog.Sel][0] != "Log out (NetBird stays)" {
 		press2(b, "down")
@@ -515,15 +515,35 @@ func TestBoardLongNoteStays(t *testing.T) {
 	}
 }
 
-// d is in the footer on an installed tool, not on one that isn't.
+// Uninstall is in the footer once (space; d is on the keys screen) on an
+// installed tool, not on one that isn't.
 func TestBoardFooterD(t *testing.T) {
 	b := testBoard(false)
 	b.Open("group:DevOps")
-	if v := b.View(); !strings.Contains(v, "d uninstall") {
+	if v := b.View(); strings.Count(v, "uninstall") != 1 || !strings.Contains(v, "space uninstall") {
 		t.Errorf("installed:\n%s", v)
 	}
 	press2(b, "down", "down")
-	if v := b.View(); strings.Contains(v, "d uninstall") {
+	if v := b.View(); strings.Contains(v, "uninstall") {
 		t.Errorf("not installed (Ansible):\n%s", v)
+	}
+}
+
+// A narrow footer keeps the tabs and search keys, and the apply key,
+// dropping the rest first.
+func TestBoardFooterNarrow(t *testing.T) {
+	b := testBoard(false)
+	b.Open("group:DevOps")
+	press2(b, "down", "down", "space")
+	b.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	ls := strings.Split(ansi.Strip(b.View()), "\n")
+	foot := ls[len(ls)-1]
+	for _, want := range []string{"a apply 1", "←→ tabs", "/ search", "q quit"} {
+		if !strings.Contains(foot, want) {
+			t.Errorf("footer lacks %q: %q", want, foot)
+		}
+	}
+	if ansi.StringWidth(foot) > 60 {
+		t.Errorf("footer is %d wide: %q", ansi.StringWidth(foot), foot)
 	}
 }

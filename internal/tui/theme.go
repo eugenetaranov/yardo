@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -31,23 +32,24 @@ type Look struct {
 	Mark  Marks
 }
 
-// Marks are a row's health marks.
-type Marks struct{ OK, Down, Partial, Need, Update, Unchecked string }
+// Marks are a row's health marks; Warn is one to look at that isn't
+// broken (held, refused, changed since checked).
+type Marks struct{ OK, Down, Partial, Need, Update, Unchecked, Warn string }
 
 // Looks are the themes, Classic first (the default).
 var Looks = []Look{
 	{Key: "classic", Name: "Classic", About: "calm; your accent colour",
 		Muted: "#8A8A8A", OK: "2", Warn: "3", Bad: "1", Info: "12", Ink: "#1A1A1A",
-		Brand: "yardo", Sep: "›", Mark: Marks{"✓", "✗", "~", "○", "↑", "·"}},
+		Brand: "yardo", Sep: "›", Mark: Marks{"✓", "✗", "~", "○", "↑", "·", "▲"}},
 	{Key: "bridge", Name: "Bridge", About: "a starship console: navy, cyan, amber",
 		Accent: "#4FE3F0", Muted: "#5F7E95", OK: "#5BE3A6", Warn: "#FFB547", Bad: "#FF4D6A", Info: "#8FA8FF", Ink: "#070D1A",
-		Brand: "◢◤ YARDO ◥◣", Caps: true, Sep: "▸", Mark: Marks{"●", "✕", "◧", "◇", "↑", "·"}},
+		Brand: "◢◤ YARDO ◥◣", Caps: true, Sep: "▸", Mark: Marks{"●", "✕", "◧", "◇", "↑", "·", "▲"}},
 	{Key: "covert", Name: "Covert", About: "a night-ops dossier: phosphor green, signal orange",
 		Accent: "#FF9F1C", Muted: "#5A8A63", OK: "#6DFF8C", Warn: "#FFD84D", Bad: "#FF3B3B", Info: "#7FD4FF", Ink: "#050B07",
-		Brand: "⌖ YARDO //", Caps: true, Sep: "//", Mark: Marks{"■", "!", "▣", "?", "↑", "□"}},
+		Brand: "⌖ YARDO //", Caps: true, Sep: "//", Mark: Marks{"■", "!", "▣", "?", "↑", "□", "△"}},
 	{Key: "tactical", Name: "Tactical", About: "a shooter HUD: graphite, white, orange",
 		Accent: "#FF8A00", Muted: "#7D858F", OK: "#8BD450", Warn: "#FFD000", Bad: "#FF3B30", Info: "#4FA3FF", Ink: "#101215",
-		Brand: "▌YARDO▐", Caps: true, Sep: "▸", Mark: Marks{"●", "✕", "◧", "◇", "↑", "·"}},
+		Brand: "▌YARDO▐", Caps: true, Sep: "▸", Mark: Marks{"●", "✕", "◧", "◇", "↑", "·", "▲"}},
 }
 
 // Cur is the look in use.
@@ -71,10 +73,28 @@ func Use(key string, accent lipgloss.Color) {
 	if Accent == "" {
 		Accent = accent
 	}
-	subtle, invert, warn = lipgloss.Color("#6C6C6C"), Cur.Ink, lipgloss.Color("#E5484D")
+	subtle, invert, warn = lipgloss.Color("#6C6C6C"), InkOn(Accent, Cur.Ink), lipgloss.Color("#E5484D")
 	if Cur.Key != "classic" {
 		subtle, warn = Cur.Muted, Cur.Bad
 	}
+}
+
+// Ink is text on the accent colour: the look's, or white on an accent
+// too dark for it.
+func Ink() lipgloss.Color { return invert }
+
+// InkOn is text to write on bg: dark, or white when bg is dark. A colour
+// that isn't #rrggbb (an ANSI number) gets dark.
+func InkOn(bg, dark lipgloss.Color) lipgloss.Color {
+	var r, g, b int
+	if n, _ := fmt.Sscanf(strings.ToLower(string(bg)), "#%02x%02x%02x", &r, &g, &b); n != 3 {
+		return dark
+	}
+	// Perceived brightness, 0 to 255.
+	if (299*r+587*g+114*b)/1000 < 128 {
+		return lipgloss.Color("#FFFFFF")
+	}
+	return dark
 }
 
 // Title is a screen title as the look writes it: "Settings › Look", in

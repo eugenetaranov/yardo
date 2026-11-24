@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,17 +15,19 @@ import (
 )
 
 // The app is yardo's one program: the menu (the home and its screens),
-// the board (Tools) and Connection are its views, in one alt screen. Moving between
+// the board (Tools) and Connection (Network, Local settings) are its
+// views, in one alt screen. Moving between
 // them keeps each one's state (the board's queue, tab, cursors and
 // filter); only what needs the terminal (a question, a run) ends it.
 // Every view has the same chrome: a header (who, where, the path), a
 // toast line, and a footer of the keys it takes; ? lists them all.
 
 // Key is one of a screen's keys, as its footer lists it; On draws it in
-// the accent colour (the apply key, with something queued).
+// the accent colour (the apply key, with something queued). A narrow
+// footer keeps the On and Keep ones (moving about, searching) first.
 type Key struct {
 	Key, What string
-	On        bool
+	On, Keep  bool
 }
 
 // MoveMsg moves a list's cursor N rows down (up when N < 0): a screenful
@@ -73,8 +76,8 @@ type view interface {
 
 // Dialog is a question over a screen, in a frame: its lines, then its
 // options as rows. Enter picks the option under the cursor; with YN, y
-// and n pick "yes" and "no"; q and esc leave it, nothing chosen (or pick
-// Q, when it's set).
+// and n pick "yes" and "no"; esc leaves it, nothing chosen, and so does
+// q, unless Q is set: then q picks it (q again quits).
 type Dialog struct {
 	Title string
 	Lines []string
@@ -101,7 +104,9 @@ func dialogKey(d **Dialog, k string) tea.Cmd {
 	switch {
 	case p.YN && (k == "y" || k == "n"):
 		return pick(map[string]string{"y": "yes", "n": "no"}[k])
-	case k == "esc" || k == "q":
+	case k == "esc":
+		return pick("")
+	case k == "q":
 		return pick(p.Q)
 	case k == "up" || k == "k":
 		p.Sel = max(0, p.Sel-1)
@@ -119,35 +124,46 @@ func dialogKey(d **Dialog, k string) tea.Cmd {
 // dialogLines draw d w wide, from line y of the body: its options' hits
 // are added to hits.
 func dialogLines(d *Dialog, w, y int, hits *[]Hit) []string {
-	var out []string
-	out = append(out, " "+accentBd.Render(fmt.Sprintf("┌ %s %s", d.Title, strings.Repeat("─", max(0, w-6-runewidth.StringWidth(d.Title))))))
+	// iw: inside the frame, a space each side; the frame is w-1 wide, as
+	// a box is.
+	iw := max(10, w-6)
+	edge := func(s string) string {
+		if lipgloss.Width(s) > iw {
+			s = ansi.Truncate(s, iw, "…")
+		}
+		return fmt.Sprintf(" %s %s%s %s", accentBd.Render("│"), s, strings.Repeat(" ", iw-lipgloss.Width(s)), accentBd.Render("│"))
+	}
+	title := runewidth.Truncate(d.Title, iw-1, "…")
+	out := []string{" " + accentBd.Render(fmt.Sprintf("┌ %s %s┐", title, strings.Repeat("─", max(0, iw-runewidth.StringWidth(title)))))}
 	for _, l := range d.Lines {
 		// An indented line stays indented, wrapped.
 		body := strings.TrimLeft(l, " ")
 		pad := strings.Repeat(" ", len(l)-len(body))
 		if body == "" {
-			out = append(out, " "+accentBd.Render("│"))
+			out = append(out, edge(""))
 			continue
 		}
-		for _, wl := range wrap(body, w-8-len(pad)) {
-			out = append(out, fmt.Sprintf(" %s  %s%s", accentBd.Render("│"), pad, wl))
+		for _, wl := range wrap(body, iw-1-len(pad)) {
+			out = append(out, edge(fmt.Sprintf(" %s%s", pad, wl)))
 		}
 	}
 	for n, o := range d.Opts {
-		line := "    " + o[0]
+		// The label at the same place, chosen or not.
+		line := "   " + o[0]
 		if n == d.Sel {
-			line = "  " + rowOn.Render(padTo(" › "+o[0], w-14))
+			line = rowOn.Render(padTo(" › "+o[0], iw))
 		}
 		if hits != nil {
 			n := n
 			*hits = append(*hits, Hit{Y0: y + len(out), Y1: y + len(out), Do: func() { d.Sel = n }})
 		}
-		out = append(out, fmt.Sprintf(" %s%s", accentBd.Render("│"), line))
+		out = append(out, edge(line))
 	}
-	return append(out, " "+accentBd.Render("└"+strings.Repeat("─", max(0, w-4))))
+	return append(out, " "+accentBd.Render(fmt.Sprintf("└%s┘", strings.Repeat("─", iw+2))))
 }
 
-// dialogKeys are a dialog's footer keys.
+// dialogKeys are a dialog's footer keys: what its keys do (no ? or q
+// tail: q is esc's, or picks Q).
 func dialogKeys(d *Dialog) []Key {
 	if len(d.Opts) == 0 {
 		return []Key{{Key: "enter", What: "close"}}
@@ -155,6 +171,13 @@ func dialogKeys(d *Dialog) []Key {
 	keys := []Key{{Key: "↑↓", What: "choose"}, {Key: "enter", What: "do it"}}
 	if d.YN {
 		keys = append(keys, Key{Key: "y", What: "yes"}, Key{Key: "n", What: "no"})
+	}
+	keys = append(keys, Key{Key: "esc", What: "cancel", Keep: true})
+	for _, o := range d.Opts {
+		if d.Q != "" && o[1] == d.Q {
+			what, _, _ := strings.Cut(o[0], " (")
+			keys = append(keys, Key{Key: "q", What: strings.ToLower(what[:1]) + what[1:], Keep: true})
+		}
 	}
 	return keys
 }
@@ -166,6 +189,8 @@ var sharedKeys = []Key{
 	{Key: "Home g", What: "the first row"},
 	{Key: "End G", What: "the last row"},
 	{Key: "tab", What: "the next panel or tab"},
+	{Key: "1–9", What: "the tabs along the top, by number"},
+	{Key: "u", What: "Tools' Updates tab (nothing there: check for updates)"},
 	{Key: "enter", What: "open, or act on the row"},
 	{Key: "?", What: "these keys"},
 	{Key: "q", What: "back; on the home, quit"},
@@ -210,8 +235,12 @@ type App struct {
 	dialog *Dialog
 	width  int
 	height int
-	// foot are the footer's hits; click the last click, at.
+	// foot are the footer's hits; nav where the tabs along the top are
+	// (by id), on line 1; top the body's first line; click the last
+	// click, at.
 	foot    []Hit
+	nav     map[string]tabSpot
+	top     int
 	click   *Hit
 	clickAt time.Time
 	now     func() time.Time
@@ -236,6 +265,8 @@ func (a *App) load(d AppData) {
 	a.Menu = NewMenu(d.Info, d.Sub, d.Items, d.Settings, d.Checked)
 	a.Board = NewBoard(d.Info, d.First, d.Tabs, d.Items)
 	a.Conn = NewConnection(d.Conn, d.Info.Keys)
+	a.Conn.access = a.Menu.access()
+	a.Menu.setups = d.Conn.Setups
 	a.Board.SetFromMenu(!d.First)
 	m := a.Menu
 	a.Board.SetChecking(func() bool { return m.wait != nil })
@@ -265,8 +296,8 @@ func (a *App) Reload(d AppData) {
 	}
 	nb, nm := a.Board, a.Menu
 	nb.tabID, nb.tab, nb.cursor, nb.search, nb.typing = b.tabID, b.tab, b.cursor, b.search, false
-	nm.screen, nm.sel, nm.mcpSel, nm.addSel, nm.fromBoard, nm.skSel = m.screen, m.sel, m.mcpSel, m.addSel, m.fromBoard, m.skSel
-	a.Conn.sel = c.sel
+	nm.screen, nm.sel, nm.need, nm.mcpSel, nm.addSel, nm.fromBoard, nm.skSel = m.screen, m.sel, m.need, m.mcpSel, m.addSel, m.fromBoard, m.skSel
+	a.Conn.tab, a.Conn.sel, a.Conn.at = c.tab, c.sel, c.at
 	if nm.screen == "mcp:name" {
 		nm.screen = "mcp"
 	}
@@ -276,11 +307,14 @@ func (a *App) Reload(d AppData) {
 	nm.normalize()
 }
 
-// Open shows view ("board", "connection", or a menu screen: home, mcp,
-// settings…).
+// Open shows view ("board", "network", "local", or a menu screen: home,
+// mcp, settings…).
 func (a *App) Open(screen string) {
 	a.keys, a.dialog = false, nil
-	a.onBoard, a.onConn = screen == "board", screen == "connection"
+	a.onBoard, a.onConn = screen == "board", screen == "network" || screen == "local"
+	if a.onConn {
+		a.Conn.Show(map[string]string{"network": NetTab, "local": LocalTab}[screen])
+	}
 	if a.onBoard || a.onConn {
 		return
 	}
@@ -375,6 +409,20 @@ func (a *App) key(v tea.KeyMsg) tea.Cmd {
 			return a.send(MoveMsg{N: -toEnd})
 		case "end", "G":
 			return a.send(MoveMsg{N: toEnd})
+		case "u":
+			// The board's Updates tab, from anywhere but it (where u checks
+			// again) and a search; with nothing there, a check.
+			if !a.first && (!a.onBoard || !a.Board.onUpdates() && a.Board.search == nil) {
+				return a.toUpdates()
+			}
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			// The tabs along the top, by number.
+			if _, ids := a.Menu.navTabs(); !a.first && int(k[0]-'1') < len(ids) {
+				return a.goTab(ids[k[0]-'1'])
+			}
+			if !a.first {
+				return nil
+			}
 		case "q":
 			// The home with a queue on the board: asked once.
 			if !a.onBoard && a.Menu.screen == "home" && a.Board.queued() > 0 {
@@ -411,6 +459,69 @@ func (a *App) dialogUp() bool {
 	return a.Menu.dialog != nil
 }
 
+// navSel is the tab along the top the view is on: the board is Tools,
+// Connection the tab it shows; on the home, the cursor's.
+func (a *App) navSel(ids []string) int {
+	id := ""
+	switch {
+	case a.onBoard:
+		id = "tools"
+	case a.onConn:
+		id = a.Conn.tab
+	default:
+		return slices.Index(ids, cmpOr(a.Menu.tabOf(), "home"))
+	}
+	return slices.Index(ids, id)
+}
+
+// toUpdates opens the board's Updates tab (u, from anywhere): with
+// nothing on it, it starts a check instead, as u on it does.
+func (a *App) toUpdates() tea.Cmd {
+	m, b := a.Menu, a.Board
+	if !b.updating() {
+		cmd := m.checkUpdates()
+		if a.onConn || a.onBoard {
+			a.toast, m.toast = m.toast, ""
+		}
+		return a.after(cmd)
+	}
+	if !a.onConn && !a.onBoard && len(m.pend)+len(m.skPend) > 0 {
+		m.toast = "Apply first (a), or turn back what you changed."
+		return nil
+	}
+	b.search, b.typing = nil, false
+	b.Open(UpdatesTab)
+	a.onBoard, a.onConn = true, false
+	return nil
+}
+
+// goTab opens the tab along the top with id, from any view: as enter on
+// it on the home does. The board stays as it is for Tools, Connection
+// for its other tab; MCP servers or Skills with changes not applied
+// stay, saying so.
+func (a *App) goTab(id string) tea.Cmd {
+	m := a.Menu
+	switch {
+	case a.onBoard && id == "tools", a.onConn && id == a.Conn.tab, !a.onBoard && !a.onConn && m.screen == id:
+		return nil
+	case a.onConn && (id == NetTab || id == LocalTab):
+		a.Conn.Show(id)
+		return nil
+	case !a.onBoard && !a.onConn && len(m.pend)+len(m.skPend) > 0 && m.tabOf() != id:
+		m.toast = "Apply first (a), or turn back what you changed."
+		return nil
+	}
+	a.onBoard, a.onConn = false, false
+	m.screen, m.fromBoard, m.dialog, m.need = "home", false, nil, -1
+	m.sel = slices.IndexFunc(m.rows(), func(r menuRow) bool { return r.id == id })
+	if m.sel < 0 {
+		m.sel = 0
+		return nil
+	}
+	_, cmd := m.Update(keyMsg("enter"))
+	return a.after(cmd)
+}
+
 func (a *App) send(msg tea.Msg) tea.Cmd {
 	_, cmd := a.view().Update(msg)
 	return a.after(cmd)
@@ -420,18 +531,21 @@ func (a *App) send(msg tea.Msg) tea.Cmd {
 // result that ends the program.
 func (a *App) after(cmd tea.Cmd) tea.Cmd {
 	m, b, c := a.Menu, a.Board, a.Conn
-	// A key dismissed on Connection is off the home's panel too.
+	// A key dismissed on Network is off the home's Needs you too.
 	m.info.Keys = c.keys
 	switch {
 	case c.left:
-		// Home, on the row it was opened from.
+		// Home, on its tab.
 		c.left, a.onConn = false, false
-		m.screen = "home"
-		for n, r := range m.rows() {
-			if r.id == cmpOr(m.result.ID, "conn") && m.result.Kind == MenuConnection {
-				m.sel = n
-			}
-		}
+		m.screen, m.need = "home", -1
+		m.sel = max(0, slices.IndexFunc(m.rows(), func(r menuRow) bool { return r.id == c.tab }))
+		m.normalize()
+	case c.toAccess >= 0:
+		// Network access is the menu's screen; q on it comes back here.
+		n := c.toAccess
+		c.toAccess, a.onConn = -1, false
+		m.open("access")
+		m.sel = n
 		m.normalize()
 	case c.ended:
 		c.ended = false
@@ -439,7 +553,13 @@ func (a *App) after(cmd tea.Cmd) tea.Cmd {
 		a.result = AppResult{Conn: &r}
 		return tea.Quit
 	case m.ended && m.result.Kind == MenuConnection:
-		m.ended = false
+		// ID: the tab, and after a colon the row kind to be on (key).
+		m.ended, m.screen = false, "home"
+		tab, kind, _ := strings.Cut(m.result.ID, ":")
+		c.Show(tab)
+		if kind != "" {
+			c.focus(kind)
+		}
 		a.onConn = true
 	case b.CheckAsked():
 		// u on the Updates tab: the home's check, said here.
@@ -454,6 +574,11 @@ func (a *App) after(cmd tea.Cmd) tea.Cmd {
 		b.search, b.typing = nil, false
 		b.Open(UpdatesTab)
 		b.QueueUpdates()
+		a.onBoard = true
+	case m.ended && m.result.Kind == MenuFixes:
+		m.ended = false
+		b.search, b.typing = nil, false
+		b.Focus(m.result.ID)
 		a.onBoard = true
 	case m.ended && m.result.Kind == MenuTools:
 		m.ended = false
@@ -511,8 +636,21 @@ func (a *App) mouse(v tea.MouseMsg) tea.Cmd {
 	if a.keys || a.dialog != nil {
 		return nil
 	}
+	// The tabs along the top; not under a question, which takes clicks
+	// on its options only.
+	for id, s := range a.nav {
+		if v.Y == 1 && v.X >= s.x0 && v.X < s.x1 && !a.dialogUp() {
+			return a.goTab(id)
+		}
+	}
+	return a.bodyClick(v)
+}
+
+// bodyClick is a click on the view's body, under the header (and the
+// tabs).
+func (a *App) bodyClick(v tea.MouseMsg) tea.Cmd {
 	for _, h := range a.view().Hits() {
-		if !h.has(v.X, v.Y-1) { // the body starts under the header
+		if !h.has(v.X, v.Y-a.top) {
 			continue
 		}
 		if h.Key != "" {
@@ -565,27 +703,62 @@ func (a *App) View() string {
 	w, h := max(50, a.width), max(12, a.height)
 	cur := a.view()
 	path, keys, back := cur.Path(), cur.Keys(), cur.Back()
+	// The tabs along the top, but on a first run (no home yet).
+	var nav []string
+	a.nav = nil
+	tab := ""
+	if !a.first {
+		tabs, ids := a.Menu.navTabs()
+		sel := a.navSel(ids)
+		if c := a.Menu.navCur(); !a.onBoard && !a.onConn && c >= 0 {
+			tabs[c].cur = true
+		}
+		var spots []tabSpot
+		nav, spots = navLines(tabs, sel, w)
+		a.nav = map[string]tabSpot{}
+		for _, s := range spots {
+			a.nav[ids[s.n]] = s
+		}
+		if sel > 0 {
+			tab = a.Menu.rows()[sel-1].label // its name, without the count
+		}
+	}
+	a.top = 1 + len(nav)
+	bh := h - 3 - len(nav)
 	var body string
 	switch {
 	case a.keys:
 		path += " › Keys"
-		body = keysBody(cur.Help(), w)
-		keys, back = nil, "close"
+		body = keysBody(cur.Help(), w, bh)
+		keys, back = []Key{{Key: "q", What: "close"}}, ""
 	default:
-		body = cur.Body(w, h-3)
+		body = cur.Body(w, bh)
 	}
 	toast := cmpOr(a.toast, cur.Toast())
 	if a.dialog != nil {
-		var dl []string
 		lines := strings.Split(body, "\n")
-		dl = dialogLines(a.dialog, w, 0, nil)
-		cut := max(0, min(len(lines), h-3-len(dl)))
+		dl := dialogLines(a.dialog, w, 0, nil)
+		cut := max(0, min(len(lines), bh-len(dl)))
 		body = strings.Join(append(lines[:cut], dl...), "\n")
-		keys, back = dialogKeys(a.dialog), "stay"
+		keys, back = dialogKeys(a.dialog), ""
 	}
 	var foot string
 	foot, a.foot = footer(keys, back, w, h-1)
-	return frame(a.Menu.info, path, body, toast, foot, w, h)
+	return frame(a.Menu.info, crumb(path, tab, len(nav) > 0), nav, body, toast, foot, w, h)
+}
+
+// crumb is the path as the header says it: under the tabs, so without
+// Home, and nothing when it's only the tab the strip has selected (Home
+// too).
+func crumb(path, tab string, nav bool) string {
+	if !nav {
+		return path
+	}
+	p := strings.TrimPrefix(path, "Home › ")
+	if p == tab || p == "Home" {
+		return ""
+	}
+	return p
 }
 
 // cmpOr is the first of ss that isn't empty.
@@ -598,56 +771,199 @@ func cmpOr(ss ...string) string {
 	return ""
 }
 
-// frame lays out a screen w by h: the header, the body (cut or padded
-// to fit), the toast line, the footer.
-func frame(info HomeInfo, path, body, toast, foot string, w, h int) string {
-	b := []string{header(info, path, w)}
+// frame lays out a screen w by h: the header, the tabs along the top
+// (nav: none, or the strip and its rule), the body (cut or padded to
+// fit, each line cut to w: a wrapped one would push the rest down), the
+// toast line, the footer.
+func frame(info HomeInfo, path string, nav []string, body, toast, foot string, w, h int) string {
+	b := append([]string{header(info, path, w)}, nav...)
+	room := h - 3 - len(nav)
 	lines := strings.Split(body, "\n")
-	if len(lines) > h-3 {
-		lines = lines[:h-3]
+	if len(lines) > room {
+		lines = lines[:max(0, room)]
 	}
-	b = append(b, lines...)
+	for _, l := range lines {
+		if ansi.StringWidth(l) > w {
+			l = ansi.Truncate(l, w, "…")
+		}
+		b = append(b, l)
+	}
 	for len(b) < h-2 {
 		b = append(b, "")
 	}
-	t := ""
-	if toast != "" {
-		st := green
-		if strings.HasPrefix(toast, "✗") || strings.HasPrefix(toast, "▲") {
-			st = yellow
-		}
-		t = " " + st.Render(ansi.Truncate(toast, w-2, "…"))
-	}
-	return strings.Join(append(b, t, foot), "\n")
+	return strings.Join(append(b, toastLine(toast, w), foot), "\n")
 }
 
-// header is a screen's top line: yardo, the host and the user, then
-// where the screen is.
+// toastLine is the toast, w wide, in the colour of what it says, by its
+// first mark: done (✓, or the look's OK) green, a warning (▲, or Warn)
+// yellow, a failure (✗, or Down) red; anything else plain. Classic's
+// marks are written as the look's.
+func toastLine(t string, w int) string {
+	if t == "" {
+		return ""
+	}
+	mk := tui.Cur.Mark
+	st := lipgloss.NewStyle()
+	for _, s := range []struct {
+		classic, own string
+		st           lipgloss.Style
+	}{{"✓", mk.OK, green}, {"▲", mk.Warn, yellow}, {"✗", mk.Down, red}} {
+		for _, g := range []string{s.classic, s.own} {
+			if rest, ok := strings.CutPrefix(t, g+" "); ok {
+				t, st = fmt.Sprintf("%s %s", s.own, rest), s.st
+				break
+			}
+		}
+	}
+	return " " + st.Render(ansi.Truncate(t, w-2, "…"))
+}
+
+// header is a screen's top line: yardo, the host and the user (cut
+// first, when the line is short), then where the screen is.
 func header(info HomeInfo, path string, w int) string {
-	left := fmt.Sprintf(" %s%s", accentBd.Render(tui.Cur.Brand), muted.Render(fmt.Sprintf("  ·  %s  ·  %s", info.Host, info.User)))
-	parts := strings.Split(path, " › ")
 	right := ""
-	for n, p := range parts {
-		if n > 0 {
-			right += muted.Render(tui.Title(" › "))
+	if path != "" {
+		parts := strings.Split(path, " › ")
+		for n, p := range parts {
+			if n > 0 {
+				right += muted.Render(tui.Title(" › "))
+			}
+			if n == len(parts)-1 {
+				right += bold.Render(tui.Title(p))
+			} else {
+				right += muted.Render(tui.Title(p))
+			}
 		}
-		if n == len(parts)-1 {
-			right += bold.Render(tui.Title(p))
-		} else {
-			right += muted.Render(tui.Title(p))
+		right += " "
+	}
+	brand := " " + accentBd.Render(tui.Cur.Brand)
+	var who []string
+	for _, s := range []string{info.Host, info.User} {
+		if s != "" {
+			who = append(who, s)
 		}
 	}
-	right += " "
-	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 2 {
-		return left
+	rest := ""
+	if len(who) > 0 {
+		rest = "  ·  " + strings.Join(who, "  ·  ")
 	}
-	return left + strings.Repeat(" ", gap) + right
+	// The path keeps its room; the host and the user are cut to the rest.
+	room := w - lipgloss.Width(brand) - lipgloss.Width(right) - 2
+	if room < lipgloss.Width(rest) {
+		rest = ansi.Truncate(rest, max(0, room), "…")
+		if room < 6 {
+			rest = ""
+		}
+	}
+	left := brand + muted.Render(rest)
+	if lipgloss.Width(left)+lipgloss.Width(right)+2 > w {
+		right = ansi.Truncate(right, max(0, w-lipgloss.Width(left)-2), "…")
+	}
+	return left + strings.Repeat(" ", max(2, w-lipgloss.Width(left)-lipgloss.Width(right))) + right
+}
+
+// tabItem is one tab of a strip: its label and, beside it, a mark in
+// its style.
+type tabItem struct {
+	label, mark string
+	st          lipgloss.Style
+	// cur: the cursor is on it (the home's, along the tabs), a › before
+	// it saying so, without colour too.
+	cur bool
+}
+
+// tabSpot is where tab n of a strip is: columns x0 to x1.
+type tabSpot struct{ n, x0, x1 int }
+
+// tabStrip is tabs in a line w wide, sel's (none when sel < 0) in the
+// accent colour and in brackets, which show without colour too. Tabs that
+// don't fit scroll, sel kept in view, a ‹ or › saying some are hidden;
+// spots are where the ones shown are, to click.
+func tabStrip(tabs []tabItem, sel, w int) (string, []tabSpot) {
+	cell := func(t tabItem) int {
+		n := runewidth.StringWidth(t.label) + 2
+		if t.mark != "" {
+			n += 1 + runewidth.StringWidth(t.mark)
+		}
+		return n
+	}
+	// width is tabs lo to hi drawn, with the arrows they need.
+	width := func(lo, hi int) int {
+		n := 0
+		for i := lo; i < hi; i++ {
+			n += cell(tabs[i])
+			if i > lo {
+				n++
+			}
+		}
+		if lo > 0 {
+			n += 2
+		}
+		if hi < len(tabs) {
+			n += 2
+		}
+		return n
+	}
+	room := w - 2
+	lo, hi := 0, len(tabs)
+	if width(lo, hi) > room {
+		// From sel, as many before it as fit, then after.
+		lo = max(0, min(sel, len(tabs)-1))
+		hi = lo + 1
+		for lo > 0 && width(lo-1, hi) <= room {
+			lo--
+		}
+		for hi < len(tabs) && width(lo, hi+1) <= room {
+			hi++
+		}
+	}
+	line, x := " ", 1
+	if lo > 0 {
+		line += muted.Render("‹ ")
+		x += 2
+	}
+	var spots []tabSpot
+	for i := lo; i < hi; i++ {
+		if i > lo {
+			line += " "
+			x++
+		}
+		t := tabs[i]
+		switch {
+		case i == sel:
+			in := t.label
+			if t.mark != "" {
+				in += " " + t.mark
+			}
+			line += tabOn.Render("[" + in + "]")
+		case t.cur && t.mark != "":
+			line += fmt.Sprintf("%s %s ", accent.Render("›"+t.label), t.st.Render(t.mark))
+		case t.cur:
+			line += accent.Render("›"+t.label) + " "
+		case t.mark != "":
+			line += fmt.Sprintf(" %s %s ", t.label, t.st.Render(t.mark))
+		default:
+			line += fmt.Sprintf(" %s ", t.label)
+		}
+		spots = append(spots, tabSpot{n: i, x0: x, x1: x + cell(t)})
+		x += cell(t)
+	}
+	if hi < len(tabs) {
+		line += muted.Render(" ›")
+	}
+	return line, spots
+}
+
+// navLines are the tabs along the top, w wide, and a rule under them.
+func navLines(tabs []tabItem, sel, w int) ([]string, []tabSpot) {
+	line, spots := tabStrip(tabs, sel, w)
+	return []string{line, muted.Render(strings.Repeat("─", w))}, spots
 }
 
 // footer is the keys' line, at line y: each key and what it does, then
-// ? and q (back says what q does), which always fit; and where each key
-// is, to click.
+// ? and q (back says what q does; none, nor ?, when it's ""), which
+// always fit; and where each key is, to click. Keys that don't fit go,
+// the On and Keep ones last.
 func footer(keys []Key, back string, w, y int) (string, []Hit) {
 	var tail []Key
 	if back != "" {
@@ -660,21 +976,29 @@ func footer(keys []Key, back string, w, y int) (string, []Hit) {
 		}
 		return fmt.Sprintf("%s %s", st.Render(k.Key), wt.Render(k.What))
 	}
-	room := w - 2
+	// Each key costs its width and a gap of 3.
+	room := w - 2 + 3
 	for _, k := range tail {
 		room -= 3 + lipgloss.Width(render(k))
 	}
+	fits := make([]bool, len(keys))
+	for _, first := range []bool{true, false} {
+		for n, k := range keys {
+			if (k.On || k.Keep) != first {
+				continue
+			}
+			if c := lipgloss.Width(render(k)) + 3; c <= room {
+				fits[n], room = true, room-c
+			} else if !first {
+				room = -1 // the rest in order: none after a gap
+			}
+		}
+	}
 	var shown []Key
-	used := 0
-	for _, k := range keys {
-		pw := lipgloss.Width(render(k))
-		if len(shown) > 0 {
-			pw += 3
+	for n, k := range keys {
+		if fits[n] {
+			shown = append(shown, k)
 		}
-		if used+pw > room {
-			break
-		}
-		shown, used = append(shown, k), used+pw
 	}
 	var hits []Hit
 	line, x := " ", 1
@@ -707,11 +1031,18 @@ func footKey(k string) string {
 	return ""
 }
 
-// keysBody is the keys screen: the view's keys, then everyone's.
-func keysBody(own []Key, w int) string {
+// keysBody is the keys screen, w by h: the view's keys, then everyone's
+// (but those the view lists); cut, it says how many more.
+func keysBody(own []Key, w, h int) string {
 	out := []string{""}
 	col := 10
-	for _, k := range append(append([]Key{}, own...), sharedKeys...) {
+	var shared []Key
+	for _, k := range sharedKeys {
+		if !slices.ContainsFunc(own, func(o Key) bool { return slices.Contains(strings.Fields(o.Key), k.Key) }) {
+			shared = append(shared, k)
+		}
+	}
+	for _, k := range append(append([]Key{}, own...), shared...) {
 		col = max(col, runewidth.StringWidth(k.Key))
 	}
 	list := func(title string, ks []Key) {
@@ -724,8 +1055,12 @@ func keysBody(own []Key, w int) string {
 	if len(own) > 0 {
 		list("This screen", own)
 	}
-	list("Every screen", sharedKeys)
-	return strings.Join(append(out, "  "+muted.Render("q, esc or ? closes this")), "\n")
+	list("Every screen", shared)
+	out = append(out, "  "+muted.Render("q, esc or ? closes this"))
+	if len(out) > h && h > 1 {
+		out = append(out[:h-1], "  "+muted.Render(fmt.Sprintf("↓ %d more (a taller window shows them)", len(out)-h+1)))
+	}
+	return strings.Join(out, "\n")
 }
 
 // Run shows the app; it returns what it was left with.
@@ -739,10 +1074,11 @@ func (a *App) Run() (AppResult, error) {
 	return a.result, nil
 }
 
-// standalone draws v alone, as the app would, w by h: for a view's own
-// View.
-func standalone(v view, info HomeInfo, w, h int) string {
+// standalone draws v alone, as the app would, w by h, with nav (the
+// tabs along the top, or none; tab the name of the one it's on): for a
+// view's own View.
+func standalone(v view, info HomeInfo, nav []string, tab string, w, h int) string {
 	w, h = max(50, w), max(12, h)
 	foot, _ := footer(v.Keys(), v.Back(), w, h-1)
-	return frame(info, v.Path(), v.Body(w, h-3), v.Toast(), foot, w, h)
+	return frame(info, crumb(v.Path(), tab, len(nav) > 0), nav, v.Body(w, h-3-len(nav)), v.Toast(), foot, w, h)
 }

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
 // The Skills screens: the list (All skills, then each skill: where it's
@@ -281,7 +283,7 @@ func (m *Menu) skillsKey(k string, up, down bool) tea.Cmd {
 func skillWord(s SkillRow) string {
 	switch s.Off {
 	case "held":
-		return yellow.Render("▲ held: waiting for you")
+		return yellow.Render(tui.Cur.Mark.Warn + " held: waiting for you")
 	case "own":
 		return accent.Render("○ off")
 	case "all":
@@ -301,7 +303,7 @@ func skillFrom(s SkillRow) string {
 		}
 		return "checked " + s.Checked
 	case "drifted":
-		return "▲ changed"
+		return tui.Cur.Mark.Warn + " changed"
 	case "changed":
 		return "edited since"
 	case "held":
@@ -413,10 +415,10 @@ func (m *Menu) skillsView(w, room int) []string {
 		about = ss[m.sel].Where
 	}
 	n := room - len(b) - 4
-	start := windowStart(len(lines), selLine, n)
-	for c, l := range window(lines, selLine, n) {
-		if r := rowOf[start+c]; r > -2 {
-			m.hit(top+len(b), 0, 0, m.selects(r))
+	shown, at := window(lines, selLine, n)
+	for c, l := range shown {
+		if at[c] >= 0 && rowOf[at[c]] > -2 {
+			m.hit(top+len(b), 0, 0, m.selects(rowOf[at[c]]))
 		}
 		add(l)
 	}

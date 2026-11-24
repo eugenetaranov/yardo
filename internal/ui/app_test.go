@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,7 @@ func isQuit(cmd tea.Cmd) bool {
 
 // onHome moves the home's cursor onto row id.
 func onHome(a *App, id string) {
+	a.Menu.need = -1
 	for n, r := range a.Menu.rows() {
 		if r.id == id {
 			a.Menu.sel = n
@@ -68,18 +70,163 @@ func onHome(a *App, id string) {
 	}
 }
 
+// onNeedA moves the home's cursor onto Needs you's row id.
+func onNeedA(a *App, id string) {
+	a.Menu.need = slices.IndexFunc(a.Menu.needList(), func(r menuRow) bool { return r.id == id })
+}
+
 // Enter on Tools, then q: one program, the home back, no result.
 func TestAppHop(t *testing.T) {
 	a := testApp()
 	onHome(a, "tools")
-	if isQuit(ak(a, "enter")) || !a.onBoard || !strings.Contains(a.View(), "Home › Tools") {
+	if isQuit(ak(a, "enter")) || !a.onBoard || !strings.Contains(ansi.Strip(a.View()), "[Tools 3 ✗]") {
 		t.Fatalf("enter on Tools:\n%s", a.View())
 	}
 	if cmd := ak(a, "q"); isQuit(cmd) || a.onBoard || a.result.Board != nil || a.result.Quit {
 		t.Fatalf("q on Tools: left %v, result %+v", isQuit(cmd), a.result)
 	}
-	if v := a.View(); !strings.Contains(v, "─ Go to ") || !strings.Contains(v, "Home ") {
+	if v := a.View(); !strings.Contains(v, "─ Machine ") || !strings.Contains(v, tabOn.Render("[Home]")) {
 		t.Errorf("not the home:\n%s", v)
+	}
+}
+
+// The tabs along the top, on every screen: 1 to 9 jump to them (not
+// while typing, or in a question), a click opens one; the body starts
+// under them, its clicks too.
+func TestAppNav(t *testing.T) {
+	a := testApp()
+	lines := func() []string { return strings.Split(ansi.Strip(a.View()), "\n") }
+	if l := lines(); !strings.Contains(l[1], "Tools") || !strings.Contains(l[1], "Network") || !strings.Contains(l[1], "Settings") || !strings.HasPrefix(strings.TrimSpace(l[2]), "───") {
+		t.Fatalf("no tabs along the top:\n%s", strings.Join(l, "\n"))
+	}
+	n := func(id string) string {
+		_, ids := a.Menu.navTabs()
+		return fmt.Sprint(slices.Index(ids, id) + 1)
+	}
+	ak(a, n("settings"))
+	if a.Menu.screen != "settings" || !strings.Contains(lines()[1], "[Settings]") {
+		t.Fatalf("%s: on %s:\n%s", n("settings"), a.Menu.screen, a.View())
+	}
+	ak(a, n(NetTab))
+	a.Conn.focus("access")
+	ak(a, "enter") // Network access: Home › Network › Network access
+	if l := lines(); !strings.Contains(l[0], "Network › Network access") || strings.Contains(l[0], "Home") || !strings.Contains(l[1], "[Network]") {
+		t.Errorf("a screen under a tab says where:\n%s", strings.Join(l[:2], "\n"))
+	}
+	ak(a, n("tools"))
+	if !a.onBoard {
+		t.Fatalf("%s: not on Tools:\n%s", n("tools"), a.View())
+	}
+	// Typing a search: the digit is the search's.
+	ak(a, "/", n(NetTab))
+	if !a.onBoard || a.Board.search == nil || *a.Board.search != n(NetTab) {
+		t.Fatalf("typing: %v", a.onBoard)
+	}
+	ak(a, "esc", n(NetTab))
+	if !a.onConn || a.Conn.tab != NetTab {
+		t.Fatalf("%s: not on Network:\n%s", n(NetTab), a.View())
+	}
+	// A click on a tab along the top opens it.
+	a.View()
+	s := a.nav["tools"]
+	a.Update(tea.MouseMsg{X: s.x0 + 1, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if !a.onBoard || a.onConn {
+		t.Fatalf("click on Tools: board %v", a.onBoard)
+	}
+	// In a question, digits are its own.
+	ak(a, "q")
+	onHome(a, "tools")
+	ak(a, "enter", "right", "right", "right", "space", "q", "q")
+	if a.dialog == nil {
+		t.Fatalf("no question:\n%s", a.View())
+	}
+	ak(a, n("settings"))
+	if a.dialog == nil || a.Menu.screen != "home" {
+		t.Errorf("a digit left the question")
+	}
+}
+
+// The tabs scroll to keep the selected one in view, saying some are
+// hidden; only those shown are clicked. The selected one is in brackets,
+// which show without colour.
+func TestTabStrip(t *testing.T) {
+	var tabs []tabItem
+	for _, s := range []string{"Updates 3", "Tools 12", "MCP servers 5", "Skills", "Connection", "Settings", "Last run"} {
+		tabs = append(tabs, tabItem{label: s})
+	}
+	l, spots := tabStrip(tabs, 0, 200)
+	if strings.Contains(l, "‹") || strings.Contains(l, "›") || len(spots) != len(tabs) || !strings.Contains(ansi.Strip(l), "[Updates 3]") {
+		t.Errorf("wide: %q %v", l, spots)
+	}
+	for sel := range tabs {
+		l, spots := tabStrip(tabs, sel, 50)
+		p := ansi.Strip(l)
+		if ansi.StringWidth(l) > 50 || !strings.Contains(p, "["+tabs[sel].label+"]") {
+			t.Errorf("%d: %q", sel, p)
+		}
+		if spots[0].n > 0 != strings.Contains(p, "‹") || spots[len(spots)-1].n < len(tabs)-1 != strings.HasSuffix(p, "›") {
+			t.Errorf("%d: arrows: %q %v", sel, p, spots)
+		}
+		for _, s := range spots {
+			if got := strings.TrimSpace(strings.Trim(string([]rune(p)[s.x0:s.x1]), "[]")); got != tabs[s.n].label {
+				t.Errorf("%d: spot %v is %q", sel, s, got)
+			}
+		}
+	}
+}
+
+// The header cuts the host and user, not the path, and says no empty
+// one; a toast is coloured by its mark, in the look's marks.
+func TestAppHeaderToast(t *testing.T) {
+	h := ansi.Strip(header(HomeInfo{Host: "a-very-long-host-name.example.internal", User: "someone"}, "Settings › Network access", 60))
+	if !strings.HasSuffix(h, "Settings › Network access ") || !strings.Contains(h, "…") || ansi.StringWidth(h) > 60 {
+		t.Errorf("cut: %q", h)
+	}
+	if h := ansi.Strip(header(HomeInfo{}, "Home", 60)); strings.Contains(h, "·") {
+		t.Errorf("empty host and user: %q", h)
+	}
+	t.Cleanup(func() { SetLook("classic", "#D97757") })
+	SetLook("bridge", "")
+	if got := ansi.Strip(toastLine("✗ it failed", 60)); got != " ✕ it failed" {
+		t.Errorf("bridge's ✗: %q", got)
+	}
+	if got := toastLine("Saving…", 60); got != " Saving…" {
+		t.Errorf("plain: %q", got)
+	}
+}
+
+// esc always leaves a question; q picks its Q (quit) when it has one,
+// which its footer says.
+func TestDialogKeys(t *testing.T) {
+	picked := ""
+	d := &Dialog{Title: "Quit?", YN: true, Q: "yes", Opts: [][2]string{{"Quit without it (y)", "yes"}, {"Stay (n)", "no"}}, On: func(v string) tea.Cmd { picked = v; return nil }}
+	keys := dialogKeys(d)
+	if !slices.Contains(keys, Key{Key: "q", What: "quit without it", Keep: true}) || !slices.Contains(keys, Key{Key: "esc", What: "cancel", Keep: true}) {
+		t.Errorf("keys: %v", keys)
+	}
+	p := d
+	dialogKey(&p, "esc")
+	if p != nil || picked != "" {
+		t.Errorf("esc picked %q", picked)
+	}
+	p = d
+	dialogKey(&p, "q")
+	if picked != "yes" {
+		t.Errorf("q picked %q", picked)
+	}
+	// The frame is closed, the options' labels at one place.
+	ls := dialogLines(&Dialog{Title: "T", Lines: []string{"a line"}, Opts: [][2]string{{"One", "1"}, {"Two", "2"}}}, 60, 0, nil)
+	for _, l := range ls {
+		if ansi.StringWidth(l) != 59 {
+			t.Errorf("width %d: %q", ansi.StringWidth(l), ansi.Strip(l))
+		}
+	}
+	col := func(l, s string) int {
+		p := ansi.Strip(l)
+		return ansi.StringWidth(p[:strings.Index(p, s)])
+	}
+	if a, b := col(ls[2], "One"), col(ls[3], "Two"); a != b || !strings.HasSuffix(ansi.Strip(ls[1]), "│") {
+		t.Errorf("labels at %d and %d:\n%s", a, b, ansi.Strip(strings.Join(ls, "\n")))
 	}
 }
 
@@ -151,7 +298,7 @@ func TestAppChrome(t *testing.T) {
 	a := testApp()
 	onHome(a, "tools")
 	ak(a, "enter", "right", "right") // DevOps
-	if v := a.View(); !strings.Contains(strings.Split(v, "\n")[0], "Home › Tools › DevOps") {
+	if v := ansi.Strip(a.View()); strings.Contains(strings.Split(v, "\n")[0], "Tools") || !strings.Contains(v, "[DevOps") || !strings.Contains(v, "[Tools") {
 		t.Errorf("header:\n%s", v)
 	}
 	ak(a, "a")
@@ -221,7 +368,7 @@ func TestAppKeys(t *testing.T) {
 	c, _ := a.Board.selected(a.Board.rows())
 	ak(a, "?")
 	v := a.View()
-	for _, want := range []string{"This screen", "space", "apply the queue", "uninstall the row", "search", "←→ h l", "Every screen", "PgUp PgDn", "Home › Tools › Installed › Keys"} {
+	for _, want := range []string{"This screen", "space", "apply the queue", "uninstall the row", "search", "←→ h l", "Every screen", "PgUp PgDn", "Tools › Keys"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("keys lack %q:\n%s", want, v)
 		}
@@ -276,7 +423,7 @@ func TestAppMouse(t *testing.T) {
 	ak(a, "q", "q")
 	// The wheel on the home.
 	a.Menu.info.Dash = Dashboard{}
-	onHome(a, "updates")
+	onHome(a, "tools")
 	start := a.Menu.sel
 	a.Update(tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
 	if a.Menu.sel == start {
@@ -306,13 +453,13 @@ func testUpdates(pinned bool) *App {
 // home with the queue kept.
 func TestAppUpdates(t *testing.T) {
 	a := testUpdates(false)
-	onHome(a, "updates")
+	onNeedA(a, "updates")
 	ak(a, "enter")
 	v := ansi.Strip(a.View())
 	if !a.onBoard || a.Board.tabID != UpdatesTab || !strings.Contains(v, "Updates 3") {
 		t.Fatalf("enter on Install 3 updates:\n%s", v)
 	}
-	for _, want := range []string{"[↑]", "will update: terraform 1.9.8 → 1.10.1 · mise", "docker-ce 27.1 → 27.2 · apt", "Queued: 3 to update", "APPLY 3"} {
+	for _, want := range []string{"[↑]", "will update: terraform 1.9.8 → 1.10.1 · mise", "docker-ce 27.1 → 27.2 · apt", "Queued: 3 to update", "a apply 3"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("tab lacks %q:\n%s", want, v)
 		}
@@ -323,17 +470,50 @@ func TestAppUpdates(t *testing.T) {
 	}
 	// Leave one out.
 	a = testUpdates(false)
-	onHome(a, "updates")
+	onNeedA(a, "updates")
 	ak(a, "enter", "space", "a")
 	if got := strings.Join(a.result.Board.Updates, " "); got != "terraform keys" {
 		t.Errorf("updates %q", got)
 	}
 	// q: home, the queue kept.
 	a = testUpdates(false)
-	onHome(a, "updates")
+	onNeedA(a, "updates")
 	ak(a, "enter", "q")
 	if a.onBoard || a.Board.queued() != 3 {
 		t.Errorf("q: on board %v, queued %d", a.onBoard, a.Board.queued())
+	}
+	// u, from the home or Network: the Updates tab, nothing queued.
+	for _, from := range []string{"home", "network"} {
+		a = testUpdates(false)
+		a.Open(from)
+		ak(a, "u")
+		if !a.onBoard || a.Board.tabID != UpdatesTab || a.Board.queued() != 0 {
+			t.Errorf("u from %s: board %v, tab %s, queued %d", from, a.onBoard, a.Board.tabID, a.Board.queued())
+		}
+	}
+}
+
+// A fix or a value in Needs you opens Tools' Updates tab on its tool's
+// row, nothing queued; the keys open Network on them.
+func TestAppNeedsYou(t *testing.T) {
+	a := testApp()
+	onNeedA(a, "key:keys:OPENAI_API_KEY")
+	ak(a, "enter")
+	if _, r := a.Board.selected(a.Board.rows()); !a.onBoard || a.Board.tabID != UpdatesTab || r == nil || r.item.ID != "keys" || a.Board.queued() != 0 {
+		t.Fatalf("a value: board %v, tab %s, row %+v", a.onBoard, a.Board.tabID, r)
+	}
+	ak(a, "q")
+	a.Conn.keys = []AddKey{{Pub: "ssh-ed25519 AAAA", Where: []string{"github.com: Settings › SSH keys"}}}
+	a.Menu.info.Keys = a.Conn.keys
+	onNeedA(a, "keys")
+	ak(a, "enter")
+	if !a.onConn || a.Conn.tab != NetTab || a.Conn.row().kind != "key" {
+		t.Fatalf("keys: conn %v, %s", a.onConn, a.Conn.tab)
+	}
+	// Dismissed there, gone from Needs you.
+	ak(a, "d", "q")
+	if slices.ContainsFunc(a.Menu.needList(), func(r menuRow) bool { return r.id == "keys" }) {
+		t.Errorf("a dismissed key still needs you")
 	}
 }
 
@@ -355,7 +535,7 @@ func TestAppUpdatesByTab(t *testing.T) {
 // A pinned tool says so, and space only says why.
 func TestAppUpdatesPinned(t *testing.T) {
 	a := testUpdates(true)
-	onHome(a, "updates")
+	onNeedA(a, "updates")
 	ak(a, "enter")
 	if a.Board.queued() != 2 || a.Board.items[1].Pending != "" {
 		t.Fatalf("queued %d, terraform %q", a.Board.queued(), a.Board.items[1].Pending)
@@ -413,7 +593,7 @@ func TestAppUpdatesCheck(t *testing.T) {
 func TestAppFixes(t *testing.T) {
 	a := testUpdates(false)
 	a.Board.items[0].State = "drifted"
-	onHome(a, "updates")
+	onNeedA(a, "updates")
 	ak(a, "enter")
 	if a.Board.tabID != UpdatesTab || a.Board.items[0].Pending != "fix" {
 		t.Fatalf("tab %s, docker %q", a.Board.tabID, a.Board.items[0].Pending)
@@ -431,7 +611,7 @@ func TestAppFixes(t *testing.T) {
 // Reload keeps a queued update only while the tool still has one.
 func TestAppReloadUpdates(t *testing.T) {
 	a := testUpdates(false)
-	onHome(a, "updates")
+	onNeedA(a, "updates")
 	ak(a, "enter")
 	reload := func(updated bool) {
 		b := testBoard(false)

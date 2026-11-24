@@ -161,7 +161,7 @@ func paste(w io.Writer, indent string, lines ...string) {
 func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TSStatus, term string, tokens []string, pages bool) {
 	host, _ := os.Hostname()
 	ctxName := strings.SplitN(host, ".", 2)[0]
-	// The lines to paste are the Connection screen's.
+	// The lines to paste are Local settings'.
 	ss := laptopSetups(a, addrs, tokens, true, pages, ctxName)
 	fmt.Fprintf(w, "Connecting to %s from your laptop (as %s)\n\n", host, a.User)
 	fmt.Fprintln(w, "This machine's addresses:")
@@ -219,7 +219,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 	fmt.Fprintf(w, "  \"host=ssh://%s\": ssh takes its address, user and key from there.\n", ctxName)
 	fmt.Fprintf(w, "  docker context use makes it the default: every docker command, in every terminal, until you\n")
 	fmt.Fprintf(w, "  switch back. Just one terminal: export DOCKER_CONTEXT=%s. Just one command: docker --context %s ps.\n", ctxName, ctxName)
-	ports := map[string]string{"": "everywhere (Docker's way)", "vpn": "this machine and the VPNs", "local": "this machine only"}[a.DockerPorts]
+	ports := map[string]string{"": "everywhere (Docker's way)", "vpn": "local and VPN", "local": "local only"}[a.DockerPorts]
 	fmt.Fprintf(w, "  -v paths are this machine's; -p ports open here, reachable from %s.\n", ports)
 
 	fmt.Fprintln(w)
@@ -244,7 +244,7 @@ func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TS
 		fmt.Fprintln(w, "     or for Codex, add to ~/.codex/config.toml:")
 		paste(w, "       ", setupLines(ss, "mcp-codex")...)
 	} else {
-		fmt.Fprintln(w, "  this machine only: in 'sudo yardo', Settings → Network access opens it to your VPNs or")
+		fmt.Fprintln(w, "  this machine only: in 'sudo yardo', Network › Network access opens it to your VPNs or")
 		fmt.Fprintln(w, "  the internet. Or, with nothing to change, through SSH, on the laptop:")
 		paste(w, "    ", setupLines(ss, "mcp-claude")...)
 	}
@@ -266,7 +266,7 @@ func mcpPort(a *answers.Answers) int {
 func gatewayURL(a *answers.Answers, addr string) (url, who string, ok bool) {
 	switch a.MCPListen {
 	case "vpn", "tailscale":
-		return fmt.Sprintf("http://%s:%d/mcp", addr, mcpPort(a)), "this machine and the VPNs", true
+		return fmt.Sprintf("http://%s:%d/mcp", addr, mcpPort(a)), "local and VPN", true
 	case "0.0.0.0":
 		return fmt.Sprintf("http://%s:%d/mcp", addr, mcpPort(a)), "everywhere (plain HTTP)", true
 	case "public":
@@ -284,68 +284,6 @@ func laptopToken(user, name string) string {
 func laptopTokens(user string) []string {
 	ts, _ := filepath.Glob(laptopToken(user, "*"))
 	return ts
-}
-
-// connectRows are the home's How to connect panel: what to type on the
-// laptop, and where it goes or where its secret is kept (never the
-// secret); gateway: the MCP gateway is picked.
-func connectRows(a *answers.Answers, addrs []address, tokens []string, gateway bool) []ui.ConnectRow {
-	host, _ := os.Hostname()
-	ctxName := strings.SplitN(host, ".", 2)[0]
-	addr := host
-	if len(addrs) > 0 {
-		addr = addrs[0].ip // see printConnect
-	}
-	ssh := fmt.Sprintf("%s@%s", a.User, addr)
-	if len(addrs) > 0 && addrs[0].vpn != "" && addrs[0].kind() != vpnClient {
-		ssh += " over " + addrs[0].vpn
-	}
-	ports := map[string]string{"": "-p ports open everywhere", "vpn": "-p ports from the VPNs", "local": "-p ports here only"}[a.DockerPorts]
-	rows := []ui.ConnectRow{
-		{What: "SSH", Use: "ssh " + ctxName, Note: fmt.Sprintf("%s, your SSH key (Host %s in ~/.ssh/config)", ssh, ctxName)},
-		{What: "Docker", Use: "docker context use " + ctxName, Note: fmt.Sprintf("host=ssh://%s@%s · %s", a.User, addr, ports)},
-	}
-	clip := ui.ConnectRow{What: "Copies", Use: iterm2Clipboard, Note: "iTerm2, once, then reopen it: y in Neovim and a drag in tmux reach the laptop"}
-	if !gateway {
-		return append(rows, clip)
-	}
-	mcp := ui.ConnectRow{What: "MCP"}
-	if url, _, ok := gatewayURL(a, addr); ok {
-		mcp.Use = url
-		switch {
-		case len(tokens) > 0:
-			mcp.Note = "mcpjungle, with a token: sudo cat " + tildeOf(a.User, tokens[0])
-		default:
-			mcp.Note = "mcpjungle, with a token: sudo yardo --yes makes it, in ~/.mcp/clients/client.token"
-		}
-	} else {
-		p := mcpPort(a)
-		mcp.Use = fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s", p, p, ctxName)
-		mcp.Note = fmt.Sprintf("mcpjungle, then http://127.0.0.1:%d/mcp · no token: it's this machine's only, the tunnel is the login (Settings › Network access opens it, with a token)", p)
-	}
-	return append(rows, mcp, clip)
-}
-
-// pagesRows is the home's row for ~/pages (none when it isn't served):
-// its link from the laptop, as the Connection screen gives it.
-func pagesRows(a *answers.Answers, addrs []address, served bool) []ui.ConnectRow {
-	if !served {
-		return nil
-	}
-	host, _ := os.Hostname()
-	addr := host
-	if len(addrs) > 0 {
-		addr = addrs[0].ip
-	}
-	st := pagesSetup(a, addr)
-	r := ui.ConnectRow{What: "Pages", Use: st.Lines[0], Note: "~/pages: what agents make to look at (pages-url NAME prints a page's link)"}
-	switch {
-	case a.MCPListen == "public":
-		r.Note = "~/pages, " + st.Lines[1]
-	case len(st.Lines) == 2:
-		r.Note = fmt.Sprintf("then %s · ~/pages, this machine's only (Settings › MCP gateway and web pages opens it to your VPNs)", st.Lines[1])
-	}
-	return []ui.ConnectRow{r}
 }
 
 // tildeOf is path with user's home as ~.

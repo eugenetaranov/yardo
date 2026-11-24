@@ -3,43 +3,53 @@ package ui
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/mattn/go-runewidth"
 
 	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
-// The home is a board of panels that show: Machine in two lines,
-// Services & containers and MCP servers side by side, and Connection.
-// Under them, the tabs: the only place the cursor goes, the one it's on
-// a block of the accent colour. Under homeWide columns, Services and MCP
-// servers fold to a line each.
+// The home is a board of panels that show: Needs you (when something
+// does), Machine in two lines, Services & containers and MCP servers side
+// by side, and Connection, filling the screen. Its cursor is on the tabs
+// along the top (the app draws them; see navTabs), or in Needs you, on a
+// row that goes where it's done; what's under it is said on the home's
+// first line. Under homeWide columns, Services and MCP servers fold to a
+// line each, and Needs you is one to a line.
 
 const homeWide = 96
 
 // homeView is the home's body, w by h.
 func (m *Menu) homeView(w, h int) string {
-	rs := m.rows()
-	need := m.needs()
+	rs, ns := m.rows(), m.needList()
 	var b []string
 	add := func(s ...string) { b = append(b, s...) }
 
-	n := 0
-	var where []string
-	for _, r := range rs {
-		if len(need[r.id]) > 0 {
-			n += len(need[r.id])
-			where = append(where, r.label)
-		}
+	// What's under the cursor: the tab's, or the thing that needs you.
+	switch {
+	case m.need >= 0 && m.need < len(ns):
+		add(ansi.Truncate(fmt.Sprintf(" %s%s", bold.Render(ns[m.need].label), muted.Render(": "+ns[m.need].note)), w-1, "…"))
+	case m.sel >= 0 && m.sel < len(rs):
+		add(ansi.Truncate(fmt.Sprintf(" %s%s", bold.Render(rs[m.sel].label), muted.Render(": "+rs[m.sel].note)), w-1, "…"))
 	}
 	status := fmt.Sprintf(" %s%s", green.Render(tui.Cur.Mark.OK+" All good"), muted.Render("  ·  nothing needs you"))
-	if n > 0 {
-		status = fmt.Sprintf(" %s%s", yellow.Render("▲ "+plural(n, "thing needs you", "things need you")), muted.Render("  ·  marked below: "+strings.Join(where, ", ")))
+	if n := len(ns); n > 0 {
+		say := "  ·  below: ↓ chooses one, enter goes there"
+		if m.need >= 0 {
+			say = "  ·  below: enter goes there"
+		}
+		status = fmt.Sprintf(" %s%s", yellow.Render(fmt.Sprintf("%s %s", tui.Cur.Mark.Warn, plural(n, "thing needs you", "things need you"))), muted.Render(say))
 	}
-	add(status + strings.Repeat(" ", max(2, w-1-lipgloss.Width(status)-lipgloss.Width(m.sub))) + muted.Render(m.sub))
+	// The OS and address at the right, when they fit.
+	if sub := m.sub; sub != "" && lipgloss.Width(status)+2+lipgloss.Width(sub) < w {
+		status += strings.Repeat(" ", w-1-lipgloss.Width(status)-lipgloss.Width(sub)) + muted.Render(sub)
+	}
+	add(ansi.Truncate(status, w-1, "…"))
 	add("")
 
 	// fw: a panel the width of the screen; pw: one of two side by side.
@@ -48,19 +58,40 @@ func (m *Menu) homeView(w, h int) string {
 	if wide {
 		fw = 2*pw + 2
 	}
+	if len(ns) > 0 {
+		add(m.needBox(ns, fw, h, len(b))...)
+		add("")
+	}
 	add(box("Machine", "", m.machineShort(), fw, 2, false)...)
 
 	conL := m.connectLines(fw - 4)
-	// What's left for Services and Connection: the tabs (4 and a gap) and
-	// a line under them.
-	room := h - len(b) - 5
-	svcL, mcpL := m.serviceLines(), m.mcpLines()
-	if wide {
-		cn := 0
-		if len(conL) > 0 {
-			cn = min(len(conL), max(1, room-6)) + 3
+	// What's left for Services and Connection.
+	room := h - len(b)
+	// The services' columns fit the panel they're in: half the width beside
+	// MCP servers, else all of it.
+	sw := fw - 4
+	if wide && m.hasMCP() {
+		sw = pw - 4
+	}
+	svcL, mcpL := m.serviceLines(sw), m.mcpLines()
+	cn := 0
+	if len(conL) > 0 {
+		cn = min(len(conL), max(1, room-6)) + 3
+	}
+	// k: the panels, each a gap and its border's 2 lines more.
+	k := 1
+	if m.hasMCP() {
+		k = 2
+	}
+	switch {
+	case wide:
+		// Services and MCP servers side by side, as tall as they need, up
+		// to the rest of the screen.
+		tall := len(svcL)
+		if m.hasMCP() {
+			tall = max(tall, len(mcpL))
 		}
-		if bh := min(max(len(svcL), len(mcpL)), room-cn-3); bh >= 1 {
+		if bh := min(tall, room-cn-3); bh >= 1 {
 			add("")
 			if m.hasMCP() {
 				add(beside2(box("Services & containers", "", cut(svcL, bh), pw, bh, false), box("MCP servers", "", cut(mcpL, bh), pw, bh, false))...)
@@ -68,7 +99,19 @@ func (m *Menu) homeView(w, h int) string {
 				add(box("Services & containers", "", cut(svcL, bh), fw, bh, false)...)
 			}
 		}
-	} else {
+	case (room-cn-3*k)/k >= 3:
+		// Narrow but tall: one above the other, sharing the rest, each no
+		// taller than it needs.
+		left := room - cn - 3*k
+		bh := min(len(svcL), left/k)
+		add("")
+		add(box("Services & containers", "", cut(svcL, bh), fw, bh, false)...)
+		if m.hasMCP() {
+			bh = min(len(mcpL), left-bh)
+			add("")
+			add(box("MCP servers", "", cut(mcpL, bh), fw, bh, false)...)
+		}
+	default:
 		if s := services(m.info.Dash); len(s) > 0 {
 			add(fmt.Sprintf(" %s%s", muted.Render(padTo("Services", 10)), fit(s, fw-12)))
 		}
@@ -77,17 +120,11 @@ func (m *Menu) homeView(w, h int) string {
 		}
 	}
 	if len(conL) > 0 {
-		n := min(len(conL), max(1, h-len(b)-5-3))
-		add("")
-		add(box("Connection", "from a laptop", cut(conL, n), fw, n, false)...)
+		if n := min(len(conL), h-len(b)-3); n >= 1 {
+			add("")
+			add(box("Connection", "Local settings has the rest", cut(conL, n), fw, n, false)...)
+		}
 	}
-	add("")
-	gy := len(b) + 1
-	gl, xs := m.gotoLines(rs, fw-4)
-	for n, x := range xs {
-		m.hit(gy, 2+x[0], 2+x[1], m.selects(n))
-	}
-	add(box("Go to", "", gl, fw, 2, false)...)
 	return strings.Join(b, "\n")
 }
 
@@ -128,12 +165,16 @@ func beside2(a, b []string) []string {
 	return out
 }
 
-// cut is lines, at most n of them: the last says how many more.
+// cut is lines, at most n of them: the last says how many more (with
+// room for one, the first says it after itself).
 func cut(lines []string, n int) []string {
-	if len(lines) <= n {
+	switch {
+	case len(lines) <= n:
 		return lines
+	case n <= 1:
+		return []string{lines[0] + muted.Render(fmt.Sprintf("  ↓ %d more", len(lines)-1))}
 	}
-	return append(lines[:n-1:n-1], muted.Render(fmt.Sprintf("+ %d more", len(lines)-n+1)))
+	return append(lines[:n-1:n-1], muted.Render(fmt.Sprintf("↓ %d more", len(lines)-n+1)))
 }
 
 // machineLines are the Machine panel's: CPU (its average while yardo is
@@ -143,7 +184,7 @@ func (m *Menu) machineLines() []string {
 	if !x.Read {
 		return []string{muted.Render("Reading the machine…")}
 	}
-	label := func(s string) string { return muted.Render(padTo(s, 6)) }
+	label := func(s string) string { return muted.Render(padTo(s, max(6, len(s)+1))) }
 	cpu := muted.Render("…")
 	if len(x.CPU) > 0 {
 		avg := 0.0
@@ -170,18 +211,54 @@ func (m *Menu) machineLines() []string {
 		out = append(out, fmt.Sprintf("%s%s %s  %s", label("Disk"), bar(f, 10), padTo(fmt.Sprintf("%d%%", int(math.Round(f*100))), 4), muted.Render("of "+gb(x.DiskTotal))))
 	}
 	if x.Up > 0 {
-		out = append(out, label("Up")+uptime(x.Up))
+		out = append(out, label("Uptime")+uptime(x.Up))
 	}
 	return out
 }
 
-// machineShort is the Machine panel in two lines, for a narrow screen.
+// machineShort is the Machine panel in two lines, as short as they say
+// it: CPU and Load, then memory, disk and uptime; they fit 76 columns.
 func (m *Menu) machineShort() []string {
-	l := m.machineLines()
-	if len(l) < 2 {
-		return l
+	x := machine.m
+	if !x.Read {
+		return m.machineLines()
 	}
-	return []string{l[0] + muted.Render("  ·  ") + strings.TrimSpace(ansi.Strip(l[1])), strings.Join(l[2:], muted.Render("  ·  "))}
+	dot := muted.Render(" · ")
+	cpu := muted.Render("CPU ") + "…"
+	if len(x.CPU) > 0 {
+		avg := 0.0
+		for _, v := range x.CPU {
+			avg += v
+		}
+		avg /= float64(len(x.CPU))
+		cpu = fmt.Sprintf("%s%d%% %s %s", muted.Render("CPU "), int(math.Round(avg*100)), accent.Render(spark(x.CPU, 8)), muted.Render(cpuShort(len(x.CPU))))
+	}
+	load := fmt.Sprintf("%.2f %.2f %.2f", x.Load[0], x.Load[1], x.Load[2])
+	if x.Load[0] > float64(x.Cores) {
+		load = yellow.Render(load)
+	}
+	one := cpu + dot + muted.Render("Load ") + load + muted.Render(" on "+plural(x.Cores, "core", "cores"))
+	var two []string
+	if x.MemTotal > 0 {
+		f := float64(x.MemUsed) / float64(x.MemTotal)
+		two = append(two, fmt.Sprintf("%s%s %d%% %s", muted.Render("Mem "), bar(f, 6), int(math.Round(f*100)), muted.Render(gb(x.MemUsed)+" of "+gb(x.MemTotal))))
+	}
+	if x.DiskTotal > 0 {
+		f := float64(x.DiskUsed) / float64(x.DiskTotal)
+		two = append(two, fmt.Sprintf("%s%s %d%% %s", muted.Render("Disk "), bar(f, 6), int(math.Round(f*100)), muted.Render("of "+gb(x.DiskTotal))))
+	}
+	if x.Up > 0 {
+		two = append(two, muted.Render("Uptime ")+uptime(x.Up))
+	}
+	return []string{one, strings.Join(two, dot)}
+}
+
+// cpuShort is cpuSpan in a word or two.
+func cpuShort(n int) string {
+	if s := cpuSpan(n); s != "now" {
+		return fmt.Sprintf("%d-min avg", max(1, int((time.Duration(n) * machineEvery).Minutes())))
+	}
+	return "now"
 }
 
 // cpuSpan says what n readings average over.
@@ -251,95 +328,105 @@ func needMark(id string) (string, lipgloss.Style) {
 		return mk.Need, accent
 	case strings.HasPrefix(id, "mcpkey:"):
 		return mk.Need, accent
-	case strings.HasPrefix(id, "mcp:") || id == "mcporphans":
-		return "▲", yellow
+	case strings.HasPrefix(id, "mcp:") || id == "mcporphans" || strings.HasPrefix(id, "skill:"):
+		return mk.Warn, yellow
 	}
 	return mk.Down, red
 }
 
-// serviceLines are the Services & containers panel's: each service, the
-// ports it listens on and who can reach them, then the containers.
-func (m *Menu) serviceLines() []string {
+// serviceLines are the Services & containers panel's, w wide: each
+// service (the failed first), the ports it listens on and who can reach
+// them; then the containers, theirs, and the MCP servers' counted.
+func (m *Menu) serviceLines(w int) []string {
 	d := m.info.Dash
-	reach := map[string]string{"all": "anyone", "vpn": "VPN", "local": "this machine"}
-	type svc struct {
-		name  string
-		up    bool
-		ports []string
-		who   string
-	}
-	var ss []*svc
-	find := func(n string) *svc {
-		for _, s := range ss {
-			if s.name == n {
-				return s
-			}
-		}
-		return nil
-	}
-	for _, s := range d.Services {
-		ss = append(ss, &svc{name: s.Name, up: s.Up})
-	}
-	local := 0
-	for _, l := range d.Listening {
-		if l.Scope == "local" {
-			local++
-			continue
-		}
-		s := find(l.Name)
-		if s == nil {
-			s = &svc{name: l.Name, up: true}
-			if s.name == "" {
-				s.name = "port " + l.Port
-			}
-			ss = append(ss, s)
-		}
-		s.ports = append(s.ports, fmt.Sprintf("%s/%s", l.Port, l.Proto))
-		if s.who == "" {
-			s.who = reach[l.Scope]
-			if s.who == "" {
-				s.who = "on " + l.Scope
-			}
-		}
-	}
+	ss := svcs(d)
 	var out []string
-	for _, s := range ss {
-		g := green.Render("●")
-		if !s.up {
-			g = red.Render(tui.Cur.Mark.Down)
+	if len(ss) > 0 {
+		nw, pw, rw := len("service"), len("port"), 0
+		for _, s := range ss {
+			nw = max(nw, runewidth.StringWidth(s.name))
+			pw = max(pw, runewidth.StringWidth(strings.Join(s.ports, ", ")))
+			rw = max(rw, runewidth.StringWidth(reachWord(s.scope)))
 		}
-		port := "up"
-		if !s.up {
-			port = red.Render("failed")
-		}
-		if len(s.ports) > 0 {
-			port = s.ports[0]
-			if len(s.ports) > 1 {
-				port += fmt.Sprintf(" +%d", len(s.ports)-1)
+		nw = min(nw, 14)
+		// The ports take what the names and the reach leave.
+		pw = max(len("port"), min(pw, w-nw-rw-6))
+		out = append(out, muted.Render(fmt.Sprintf("  %s  %s  reachable from", padTo("service", nw), padTo("port", pw))))
+		for _, s := range ss {
+			switch {
+			case !s.up:
+				out = append(out, fmt.Sprintf("%s %s  %s", red.Render(tui.Cur.Mark.Down), padTo(s.name, nw), red.Render("failed to start")))
+			case len(s.ports) == 0:
+				out = append(out, fmt.Sprintf("%s %s  %s", green.Render("●"), padTo(s.name, nw), muted.Render("running")))
+			default:
+				out = append(out, fmt.Sprintf("%s %s  %s  %s", green.Render("●"), padTo(s.name, nw), padTo(portList(s.ports, pw), pw), reachSay(s.name, s.scope)))
 			}
 		}
-		out = append(out, fmt.Sprintf("%s %s %s %s", g, padTo(s.name, 12), padTo(port, 14), muted.Render(s.who)))
-	}
-	if local > 0 {
-		out = append(out, muted.Render(fmt.Sprintf("  + %s on this machine only", plural(local, "port", "ports"))))
 	}
 	if d.Docker {
-		out = append(out, muted.Render("─ containers ─────────────"))
+		out = append(out, muted.Render("─ containers "+strings.Repeat("─", max(0, w-13))))
 		if len(d.Containers) == 0 {
 			out = append(out, muted.Render("  none running"))
 		}
+		// Each column as wide as what's in it; the image takes what the
+		// others leave, its middle cut.
+		var cs []Container
+		var iw, nw, pw, rw int
 		for _, c := range d.Containers {
-			p := ""
-			if len(c.Ports) > 0 {
-				p = ":" + strings.Join(c.Ports, ",")
+			if c.MCP != "" {
+				continue
 			}
-			out = append(out, fmt.Sprintf("%s %s %s %s", green.Render("●"), padTo(c.Image, 14), padTo(c.Name, 14), p))
+			cs = append(cs, c)
+			iw = max(iw, runewidth.StringWidth(c.Image+times(c.Count)))
+			nw = max(nw, min(16, runewidth.StringWidth(c.Name)))
+			pw = max(pw, runewidth.StringWidth(colons(c.Ports)))
+			rw = max(rw, runewidth.StringWidth(reachWord(c.Reach)))
+		}
+		rest := 2
+		for _, x := range []int{nw, pw, rw} {
+			if x > 0 {
+				rest += x + 2
+			}
+		}
+		iw = max(8, min(iw, w-rest))
+		for _, c := range cs {
+			x := times(c.Count)
+			l := fmt.Sprintf("%s %s", green.Render("●"), middle(c.Image, iw-runewidth.StringWidth(x))+x)
+			if nw > 0 {
+				l += "  " + padTo(c.Name, nw)
+			}
+			if pw > 0 {
+				l += "  " + padTo(colons(c.Ports), pw)
+			}
+			if c.Reach != "" {
+				l += "  " + reachSay("", c.Reach)
+			}
+			out = append(out, strings.TrimRight(l, " "))
+		}
+		if s := mcpCounts(d.Containers); s != "" {
+			out = append(out, muted.Render(ansi.Truncate("MCP servers: "+s, w, "…")))
 		}
 	}
 	if len(out) == 0 {
 		out = append(out, muted.Render("Nothing running yet."))
 	}
 	return out
+}
+
+// times is " ×n" for more than one.
+func times(n int) string {
+	if n < 2 {
+		return ""
+	}
+	return fmt.Sprintf(" ×%d", n)
+}
+
+// colons are host ports as docker says them: :5432,8080.
+func colons(ports []string) string {
+	if len(ports) == 0 {
+		return ""
+	}
+	return ":" + strings.Join(ports, ",")
 }
 
 // mcpLines are the MCP servers panel's: the gateway, the ready servers
@@ -364,18 +451,22 @@ func (m *Menu) mcpLines() []string {
 			others++
 		case s.State == "off":
 			off = append(off, muted.Render(fmt.Sprintf("○ %s off", padTo(s.Name, 16))))
-		case s.State == "ok" || s.State == "unchecked":
+		case s.State == "ok":
 			ready = append(ready, s.Name)
 		default:
 			g, st := "▲", yellow
-			if s.State == "secret" || s.State == "pending" {
+			switch s.State {
+			case "secret", "pending":
 				g, st = "○", accent
+			case "unchecked":
+				g, st = "·", muted
 			}
 			bad = append(bad, fmt.Sprintf("%s %s %s", st.Render(g), padTo(s.Name, 16), muted.Render(strings.TrimPrefix(ansi.Strip(mcpWord(s)), g+" "))))
 		}
 	}
+	// Two to a line, the second where the others' words are.
 	for n := 0; n < len(ready); n += 2 {
-		l := fmt.Sprintf("%s %s", green.Render("●"), padTo(ready[n], 18))
+		l := fmt.Sprintf("%s %s", green.Render("●"), padTo(ready[n], 17))
 		if n+1 < len(ready) {
 			l += fmt.Sprintf("%s %s", green.Render("●"), ready[n+1])
 		}
@@ -395,30 +486,110 @@ func (m *Menu) mcpLines() []string {
 	return out
 }
 
-// connectLines are the How to connect panel's, w wide: what to type on
-// the laptop, then where it goes or where its secret is kept.
+// everyday are the setups the home's Connection panel says, by id, and
+// what it calls them ("": their own name); Local settings has the rest.
+var everyday = [][2]string{{"ssh", ""}, {"docker", ""}, {"mcp-other", "MCP"}, {"pages", ""}}
+
+// connectLines are the Connection panel's, w wide: of Local settings'
+// setups, the everyday ones, each what to type on your computer, then
+// the key fact (where it goes, where its secret is kept).
 func (m *Menu) connectLines(w int) []string {
-	var out []string
-	for _, r := range m.info.Connect {
-		l := fmt.Sprintf("%s %s", muted.Render(padTo(r.What, 8)), keyOn.Render(r.Use))
-		if r.Note != "" {
-			l += muted.Render("  ·  " + r.Note)
+	// What to type in a column as wide as the widest, the notes lined up
+	// after it: they're cut first, what to type only when it's that or
+	// no note at all.
+	type line struct{ what, use, note string }
+	var ls []line
+	uw := 0
+	for _, e := range everyday {
+		n := slices.IndexFunc(m.setups, func(s Setup) bool { return s.ID == e[0] })
+		if n < 0 {
+			continue
 		}
-		out = append(out, ansi.Truncate(l, w, "…"))
+		s := m.setups[n]
+		use, note := s.use()
+		ls = append(ls, line{cmpOr(e[1], s.What), use, note})
+		uw = max(uw, runewidth.StringWidth(use))
 	}
-	if n := len(m.info.Keys); n > 0 {
-		var fors []string
-		for _, k := range m.info.Keys {
-			fors = append(fors, k.For())
+	uw = min(uw, w-9-2-12)
+	var out []string
+	for _, l := range ls {
+		use := l.use
+		if runewidth.StringWidth(use) > uw {
+			use = middle(use, uw)
 		}
-		out = append(out, accent.Render(fmt.Sprintf("%s %s to add: %s", tui.Cur.Mark.Need, plural(n, "key", "keys"), strings.Join(fors, ", "))))
+		s := fmt.Sprintf("%s %s", muted.Render(padTo(l.what, 8)), keyOn.Render(use))
+		if l.note != "" {
+			s += strings.Repeat(" ", uw-runewidth.StringWidth(use)+2) + muted.Render(l.note)
+		}
+		out = append(out, ansi.Truncate(s, w, "…"))
 	}
 	return out
 }
 
+// needCols is how many of Needs you's rows go to a line, w wide: two on
+// a wide screen.
+func (m *Menu) needCols(w int) int {
+	if w >= homeWide && len(m.needList()) > 1 {
+		return 2
+	}
+	return 1
+}
+
+// needBox is the Needs you panel, w wide, at body line y, on a body h
+// tall: each row its mark, what to do, and the tab it's on at its right;
+// the cursor's in the accent colour. A quarter of h at most (the
+// cursor's among them); its rows' hits are recorded.
+func (m *Menu) needBox(ns []menuRow, w, h, y int) []string {
+	cols := m.needCols(m.width)
+	iw := max(4, w-4)
+	cw := iw
+	if cols == 2 {
+		cw = (iw - 3) / 2
+	}
+	tabs := map[string]string{}
+	for _, r := range m.rows() {
+		tabs[r.id] = r.label
+	}
+	cell := func(n int) string {
+		r := ns[n]
+		mk, st := needMark(r.id)
+		dest := tabs[needTab(r.id)]
+		lw := max(4, cw-runewidth.StringWidth(dest)-4)
+		label := runewidth.Truncate(r.label, lw, "…")
+		if n == m.need {
+			return rowOn.Render(padTo(fmt.Sprintf("›%s %s", mk, label), cw-runewidth.StringWidth(dest)-1)) + " " + accent.Render(dest)
+		}
+		return fmt.Sprintf(" %s %s%s", st.Render(mk), padTo(label, cw-runewidth.StringWidth(dest)-3), muted.Render(dest))
+	}
+	lines := (len(ns) + cols - 1) / cols
+	start, shown := 0, min(lines, max(2, h/4))
+	if m.need >= 0 {
+		start = clamp(m.need/cols-shown+1, 0, lines-shown)
+	}
+	var out []string
+	for l := start; l < start+shown; l++ {
+		var cs []string
+		for c := 0; c < cols && l*cols+c < len(ns); c++ {
+			n := l*cols + c
+			x := 2 + c*(cw+3)
+			m.hit(y+1+len(out), x, x+cw, func() { m.need = n })
+			cs = append(cs, cell(n))
+		}
+		out = append(out, strings.Join(cs, "   "))
+	}
+	right := "↓ chooses"
+	switch {
+	case shown < lines:
+		right = fmt.Sprintf("%d of %d", min(len(ns), (start+shown)*cols)-start*cols, len(ns))
+	case m.need >= 0:
+		right = "enter goes there"
+	}
+	return box("Needs you", right, out, w, shown, m.need >= 0)
+}
+
 // mcpSummary is the MCP servers in a line.
 func (m *Menu) mcpSummary() string {
-	ready, all, off := 0, 0, 0
+	ready, all, off, unchecked := 0, 0, 0, 0
 	for _, s := range m.mcpServers() {
 		switch {
 		case !s.Yardo:
@@ -426,12 +597,18 @@ func (m *Menu) mcpSummary() string {
 			off++
 		default:
 			all++
-			if s.State == "ok" || s.State == "unchecked" {
+			switch s.State {
+			case "ok":
 				ready++
+			case "unchecked":
+				unchecked++
 			}
 		}
 	}
 	s := fmt.Sprintf("%d of %d ready", ready, all)
+	if unchecked > 0 {
+		s += fmt.Sprintf(" · %d not checked", unchecked)
+	}
 	if m.info.MCPAllOff {
 		s = "all off"
 	} else if off > 0 {
@@ -443,11 +620,10 @@ func (m *Menu) mcpSummary() string {
 	return s
 }
 
-// gotoLines are the tabs': the tabs in a line, each with its count and
-// the mark of what on it needs you, the cursor's a block of the accent
-// colour; then what the one under the cursor holds; and where each tab is
-// on the line (from, to).
-func (m *Menu) gotoLines(nav []menuRow, w int) ([]string, [][2]int) {
+// navTabs are the tabs along the top (the home's rows), and their ids:
+// each with its count, and the mark of the first thing on it that needs
+// you.
+func (m *Menu) navTabs() ([]tabItem, []string) {
 	count := map[string]string{}
 	count["tools"] = fmt.Sprint(len(m.filter(func(i *BoardItem) bool { return i.Picked })))
 	n := 0
@@ -461,35 +637,63 @@ func (m *Menu) gotoLines(nav []menuRow, w int) ([]string, [][2]int) {
 		count["updates"] = fmt.Sprint(us)
 	}
 	need := m.needs()
-	var parts []string
-	var xs [][2]int
-	x := 0
-	note := muted.Render("or just start typing to search the tools")
-	for i, r := range nav {
-		l := r.label
+	tabs, ids := []tabItem{{label: tui.Title("Home")}}, []string{"home"}
+	for _, r := range m.rows() {
+		t := tabItem{label: tui.Title(r.label)}
 		if c := count[r.id]; c != "" {
-			l += " " + c
+			t.label += " " + c
 		}
-		mark := ""
 		if ns := need[r.id]; len(ns) > 0 {
-			g, st := needMark(ns[0].id)
-			mark, l = st.Render(g), fmt.Sprintf("%s %s", l, g)
+			t.mark, t.st = needMark(ns[0].id)
 		}
-		if i > 0 {
-			x += 3
-		}
-		xs = append(xs, [2]int{x, x + lipgloss.Width(l) + 2})
-		x += lipgloss.Width(l) + 2
-		if i == m.sel {
-			parts = append(parts, rowOn.Render(fmt.Sprintf(" %s ", l)))
-			note = muted.Render(ansi.Truncate(r.note, w, "…"))
-		} else if mark != "" {
-			parts = append(parts, fmt.Sprintf(" %s%s ", strings.TrimSuffix(l, ansi.Strip(mark)), mark))
-		} else {
-			parts = append(parts, fmt.Sprintf(" %s ", l))
-		}
+		tabs, ids = append(tabs, t), append(ids, r.id)
 	}
-	return []string{strings.Join(parts, "   "), note}, xs
+	return tabs, ids
+}
+
+// tabOf is the tab along the top the screen is under.
+func (m *Menu) tabOf() string {
+	switch m.screen {
+	case "home":
+		return ""
+	case "access":
+		return NetTab
+	case "look", "shell":
+		return "settings"
+	}
+	s, _, _ := strings.Cut(m.screen, ":")
+	return s
+}
+
+// navAt is the tab along the top the menu is on: Home, or the screen's
+// tab (-1 for none).
+func (m *Menu) navAt() int {
+	_, ids := m.navTabs()
+	return slices.Index(ids, cmpOr(m.tabOf(), "home"))
+}
+
+// navCur is the tab along the top the home's cursor is on (-1 for none:
+// off the home, or in Needs you): Home is first, the rows after it.
+func (m *Menu) navCur() int {
+	if m.screen != "home" || m.need >= 0 || m.sel >= len(m.rows()) {
+		return -1
+	}
+	return m.sel + 1
+}
+
+// nav are the tabs along the top, w wide, as the menu alone draws them,
+// and the name of the one it's on.
+func (m *Menu) nav(w int) ([]string, string) {
+	tabs, _ := m.navTabs()
+	at := m.navAt()
+	if c := m.navCur(); c >= 0 {
+		tabs[c].cur = true
+	}
+	l, _ := navLines(tabs, at, max(50, w))
+	if at <= 0 {
+		return l, ""
+	}
+	return l, m.rows()[at-1].label
 }
 
 // setting is the setting with key, if there is one.

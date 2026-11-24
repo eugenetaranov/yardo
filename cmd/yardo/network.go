@@ -19,9 +19,9 @@ import (
 	"github.com/eugenetaranov/yardo/internal/ui"
 )
 
-// The Connection screen's data: the machine's networks, read from the
-// VPNs themselves and the profiles' files and units; and what to set up
-// on a laptop, which `yardo connect` prints too.
+// Network's and Local settings' data: the machine's networks, read from
+// the VPNs themselves and the profiles' files and units; and what to set
+// up on your computer, which `yardo connect` prints too.
 
 // unitState is a unit's state as a network's (up, down or failed), and
 // whether it starts at boot (on, off).
@@ -207,22 +207,34 @@ func wayBack(nets []ui.Network, user string) string {
 	return ""
 }
 
-// laptopSetups are what to set up on a laptop to reach this machine, as
-// ctxName at addrs[0] (its VPN address first): SSH, Docker, and with the
-// gateway picked the MCP clients; with pages, ~/pages; then the script
-// that does it all.
+// laptopSetups are what to set up on your computer to reach this
+// machine, as ctxName at addrs[0] (its VPN address first), as Local
+// settings lists them: the script that does it all, SSH, Docker, and
+// with the gateway picked the MCP clients; with pages, ~/pages; then
+// what's once per computer (the clipboard). The home's Connection panel
+// says the everyday ones from their How: what to type, then the key fact.
 func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway, pages bool, ctxName string) []ui.Setup {
 	host, _ := os.Hostname()
 	addr := host
 	if len(addrs) > 0 {
-		addr = addrs[0].ip // a name needs the laptop to resolve it; the address doesn't
+		addr = addrs[0].ip // a name needs your computer to resolve it; the address doesn't
 	}
+	who := fmt.Sprintf("%s@%s", a.User, addr)
+	if len(addrs) > 0 && addrs[0].vpn != "" && addrs[0].kind() != vpnClient {
+		who += " via " + addrs[0].vpn
+	}
+	ports := map[string]string{"": "-p ports: any network", "vpn": "-p ports: VPN only", "local": "-p ports: local only"}[a.DockerPorts]
+	file := fmt.Sprintf("yardo-%s.sh", ctxName)
 	out := []ui.Setup{
-		{ID: "ssh", What: "SSH", How: fmt.Sprintf("ssh %s  ·  a Host in the laptop's ~/.ssh/config; your SSH key signs you in", ctxName),
+		{ID: "script", What: "All of it", How: "sh " + file + "  ·  one script for your computer: SSH, Docker, the gateway, copy and paste",
+			Lines: []string{fmt.Sprintf("ssh %s@%s sudo yardo connect --script > %s", a.User, addr, file), "sh " + file},
+			Say: []string{"On your computer: save it, read it, then run it. It adds the Host block, the Docker context, the gateway to Claude Code when claude is there, and lets iTerm2 take copies, each once; nothing else.",
+				"It holds no token: it reads the token over ssh when it runs."}},
+		{ID: "ssh", What: "SSH", How: fmt.Sprintf("ssh %s  ·  %s · Host %s in ~/.ssh/config", ctxName, who, ctxName),
 			Lines: []string{"Host " + ctxName, "  HostName " + addr, "  User " + a.User, "  HostKeyAlias " + ctxName, "  ServerAliveInterval 15", "  ServerAliveCountMax 8"},
-			Say: []string{fmt.Sprintf("Add it to ~/.ssh/config on the laptop; then ssh %s, and VS Code's Remote-SSH to %s.", ctxName, ctxName),
+			Say: []string{fmt.Sprintf("Add it to ~/.ssh/config on your computer; then ssh %s, and VS Code's Remote-SSH to %s.", ctxName, ctxName),
 				"You sign in with your SSH key: the one this machine has in ~/.ssh/authorized_keys."}},
-		{ID: "docker", What: "Docker", How: fmt.Sprintf("docker context use %s  ·  over SSH, no port to open", ctxName),
+		{ID: "docker", What: "Docker", How: fmt.Sprintf("docker context use %s  ·  over SSH, no port to open · %s", ctxName, ports),
 			Lines: []string{fmt.Sprintf("docker context create %s --docker \"host=ssh://%s@%s\"", ctxName, a.User, addr),
 				fmt.Sprintf("docker context use %s        # back: docker context use default", ctxName)},
 			Say: []string{fmt.Sprintf("Your SSH key signs you in. With the Host above, \"host=ssh://%s\" does too.", ctxName),
@@ -236,71 +248,69 @@ func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway,
 				tok = tokens[0]
 			}
 			sign := fmt.Sprintf("You sign in with the gateway's token for this client: %s (sudo cat it here). c copies the line with it filled in; it's never shown.", tildeOf(a.User, tok))
+			// The key fact: where the token is (never the token).
+			where := "token: sudo cat " + tildeOf(a.User, tok)
 			if len(tokens) == 0 {
 				sign = fmt.Sprintf("You sign in with a token for this client: none yet. n makes one (or sudo yardo --yes makes %s).", tildeOf(a.User, tok))
+				where = "token: sudo yardo --yes makes " + tildeOf(a.User, tok)
 			}
 			reach := fmt.Sprintf("The gateway is reachable from %s.", who)
 			out = append(out,
 				ui.Setup{ID: "mcp-claude", What: "Claude Code", How: fmt.Sprintf("claude mcp add %s %s", ctxName, url), Token: tok,
 					Lines: []string{fmt.Sprintf("claude mcp add --transport http %s %s --header \"Authorization: Bearer <token>\"", ctxName, url)},
-					Say:   []string{"Run it on the laptop. " + reach, sign}},
+					Say:   []string{"Run it on your computer. " + reach, sign}},
 				ui.Setup{ID: "mcp-codex", What: "Codex", How: fmt.Sprintf("~/.codex/config.toml  ·  [mcp_servers.%s]", ctxName), Token: tok,
 					Lines: []string{fmt.Sprintf("[mcp_servers.%s]", ctxName), fmt.Sprintf("url = %q", url), `http_headers = { "Authorization" = "Bearer <token>" }`},
-					Say:   []string{"Add it to ~/.codex/config.toml on the laptop. " + reach, sign}},
-				ui.Setup{ID: "mcp-other", What: "Other clients", How: url + "  ·  streamable HTTP, a bearer token", Token: tok,
+					Say:   []string{"Add it to ~/.codex/config.toml on your computer. " + reach, sign}},
+				ui.Setup{ID: "mcp-other", What: "Other clients", How: fmt.Sprintf("%s  ·  %s · streamable HTTP", url, where), Token: tok,
 					Lines: []string{url, "Authorization: Bearer <token>"},
 					Say:   []string{"Any MCP client that speaks streamable HTTP: the URL, and the header. " + reach, sign}})
 		} else {
 			tunnel := fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s@%s", port, port, a.User, addr)
 			local := fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
-			say := []string{"The gateway is this machine's only: on the laptop, the ssh tunnel first (it stays in the foreground), then the client. The tunnel is the login: no token.",
-				"Settings › Network access opens it to your VPNs, with a token per client."}
+			say := []string{"The gateway is this machine's only: on your computer, the ssh tunnel first (it stays in the foreground), then the client. The tunnel is the login: no token.",
+				"Network › Network access opens it to your VPNs, with a token per client."}
 			out = append(out,
 				ui.Setup{ID: "mcp-claude", What: "Claude Code", How: "through an ssh tunnel  ·  " + local,
 					Lines: []string{tunnel, fmt.Sprintf("claude mcp add --transport http %s %s", ctxName, local)}, Say: say},
 				ui.Setup{ID: "mcp-codex", What: "Codex", How: "through an ssh tunnel  ·  ~/.codex/config.toml",
 					Lines: []string{tunnel, fmt.Sprintf("[mcp_servers.%s]", ctxName), fmt.Sprintf("url = %q", local)}, Say: say},
-				ui.Setup{ID: "mcp-other", What: "Other clients", How: "through an ssh tunnel  ·  " + local,
+				ui.Setup{ID: "mcp-other", What: "Other clients", How: fmt.Sprintf("%s  ·  then %s · no token needed: the tunnel is the login · Network access opens it", tunnel, local),
 					Lines: []string{tunnel, local}, Say: say})
 		}
 	}
 	if pages {
 		out = append(out, pagesSetup(a, addr))
 	}
-	out = append(out, ui.Setup{ID: "clipboard", What: "Clipboard", How: "iTerm2  ·  let copies here (y in Neovim, a drag in tmux) reach the laptop",
+	return append(out, ui.Setup{ID: "clipboard", What: "iTerm2 clipboard", How: "iTerm2  ·  let copies here (y in Neovim, a drag in tmux) reach your computer", Once: true,
 		Lines: []string{iterm2Clipboard},
-		Say: []string{"Run it once on the laptop, then quit and reopen iTerm2. Copies here travel through the terminal (OSC 52), which iTerm2 blocks until then.",
+		Say: []string{"Run it once on your computer, then quit and reopen iTerm2. Copies here travel through the terminal (OSC 52), which iTerm2 blocks until then.",
 			"Ghostty, kitty, WezTerm, Alacritty: nothing to do. Terminal.app can't (hold fn to select)."}})
-	file := fmt.Sprintf("yardo-%s.sh", ctxName)
-	return append(out, ui.Setup{ID: "script", What: "All of it", How: "one script for the laptop: " + file,
-		Lines: []string{fmt.Sprintf("ssh %s@%s sudo yardo connect --script > %s", a.User, addr, file), "sh " + file},
-		Say: []string{"On the laptop: save it, read it, then run it. It adds the Host block, the Docker context, the gateway to Claude Code when claude is there, and lets iTerm2 take copies, each once; nothing else.",
-			"It holds no token: it reads the token over ssh when it runs."}})
 }
 
-// pagesSetup is how the laptop opens ~/pages (yardo-pages@user), reached
-// as the MCP gateway is.
+// pagesSetup is how your computer opens ~/pages (yardo-pages@user),
+// reached as the MCP gateway is.
 func pagesSetup(a *answers.Answers, addr string) ui.Setup {
 	p := mcpPort(a) + 1000 // steps.PagesPort
 	more := "pages-url NAME.html here prints a page's link; agents end their answers with it."
 	switch a.MCPListen {
 	case "vpn", "tailscale", "0.0.0.0":
 		url := fmt.Sprintf("http://%s:%d/", addr, p)
-		who := map[string]string{"vpn": "this machine and your VPNs", "tailscale": "this machine and your VPNs", "0.0.0.0": "everywhere (plain HTTP)"}[a.MCPListen]
+		who := map[string]string{"vpn": "local and VPN", "tailscale": "local and VPN", "0.0.0.0": "everywhere (plain HTTP)"}[a.MCPListen]
 		return ui.Setup{ID: "pages", What: "Pages", How: url + "  ·  ~/pages in your browser",
-			Lines: []string{url}, Say: []string{fmt.Sprintf("Open it in the laptop's browser: what agents made here (diagrams, reports), listed. Reachable from %s.", who), more}}
+			Lines: []string{url}, Say: []string{fmt.Sprintf("Open it in your browser: what agents made here (diagrams, reports), listed. Reachable from %s.", who), more}}
 	case "public":
 		url := fmt.Sprintf("https://%s/pages/", a.MCPDomain)
-		return ui.Setup{ID: "pages", What: "Pages", How: url + "  ·  user pages, a password",
+		return ui.Setup{ID: "pages", What: "Pages", How: url + "  ·  user pages, password: cat ~/.config/yardo/pages-password (here)",
 			Lines: []string{url, "user pages, password: cat ~/.config/yardo/pages-password (here)"},
-			Say:   []string{"Open it in the laptop's browser; it asks for the login. On the internet, under the gateway's domain.", more}}
+			Say:   []string{"Open it in your browser; it asks for the login. On the internet, under the gateway's domain.", more}}
 	}
 	tunnel := fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s@%s", p, p, a.User, addr)
 	local := fmt.Sprintf("http://127.0.0.1:%d/", p)
-	return ui.Setup{ID: "pages", What: "Pages", How: "through an ssh tunnel  ·  " + local,
+	return ui.Setup{ID: "pages", What: "Pages", How: fmt.Sprintf("%s  ·  then %s · ~/pages, local only (Network access opens it to your VPNs)", tunnel, local),
 		Lines: []string{tunnel, local},
-		Say: []string{"~/pages is this machine's only: on the laptop, the ssh tunnel first (it stays in the foreground), then the link in the browser.",
-			"Settings › MCP gateway and web pages opens it to your VPNs. " + more}}
+		Say: []string{"~/pages is this machine's only: on your computer, the ssh tunnel first (it stays in the foreground), then the link in the browser.",
+			"Network › Network access opens it to your VPNs. " + more}}
 }
 
 // setupLines are the lines of the setup with id.
@@ -325,12 +335,12 @@ func tokenRows(user string) []ui.Token {
 // copyHint is how to let the terminal copy, in a line.
 func copyHint(term string) string {
 	if term == "iTerm2" {
-		return "iTerm2 needs it allowed, once, on the laptop: defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true (then quit and reopen it). The lines stay here to select by hand."
+		return "iTerm2 needs it allowed, once, on your computer: defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true (then quit and reopen it). The lines stay here to select by hand."
 	}
 	return "Ghostty, kitty, WezTerm and Alacritty copy as is; iTerm2 needs it allowed (defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true, then quit and reopen it); Terminal.app can't (hold fn to select). The lines stay here to select by hand."
 }
 
-// connData is the Connection screen's data, for user a.
+// connData is Network's and Local settings' data, for user a.
 func (o *options) connData(ctx context.Context, a *answers.Answers, addrs []address, picked func(string) bool) ui.ConnData {
 	host, _ := os.Hostname()
 	ctxName := strings.SplitN(host, ".", 2)[0]
@@ -345,7 +355,7 @@ func (o *options) connData(ctx context.Context, a *answers.Answers, addrs []addr
 // tsLink is a login link in what tailscale said.
 var tsLink = regexp.MustCompile(`https://\S+`)
 
-// connHooks are what the Connection screen does, for user a.
+// connHooks are what Network and Local settings do, for user a.
 func (o *options) connHooks(ctx context.Context, a *answers.Answers) ui.ConnHooks {
 	picked := func(id string) bool { return slices.Contains(a.Picks, id) }
 	read := func() []ui.Network {
@@ -502,7 +512,7 @@ elif claude mcp get "$name" >/dev/null 2>&1; then
   # kept in this script.
   token=$(ssh -t "$name" sudo cat %s | tr -d '\r' | tail -n 1)
   if [ -z "$token" ]; then
-    echo "claude: no token from $name (in sudo yardo, Connection: n makes one); skipped." >&2
+    echo "claude: no token from $name (in sudo yardo, Local settings: n makes one); skipped." >&2
   else
     claude mcp add --transport http "$name" %s --header "Authorization: Bearer $token" >/dev/null
     echo "claude: added the MCP server $name."

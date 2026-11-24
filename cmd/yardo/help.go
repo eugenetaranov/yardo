@@ -111,8 +111,8 @@ stdout. Apply it elsewhere with: sudo yardo --profile FILE --yes
 	"connect": `Usage: sudo yardo connect [--script]
 
 Prints how to reach this machine from a laptop: Docker over SSH, the MCP
-gateway's URL and token, or an SSH tunnel to it. In sudo yardo, the
-Connection screen has the same lines (c copies them), and starts, stops,
+gateway's URL and token, or an SSH tunnel to it. In sudo yardo, Local
+settings has the same lines (c copies them), and Network starts, stops,
 sets up and removes the machine's networks.
 
   --script  print a shell script for the laptop that adds the ssh Host

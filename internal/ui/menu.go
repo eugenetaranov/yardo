@@ -11,16 +11,19 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
+
+	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
 // The menu is yardo's calm home: panels that show how the machine is,
-// and along the bottom the tabs that open everything else: Updates,
-// Tools (the board), MCP servers, Skills, Connection, Settings and Last
-// run. A
-// tab with something in it that needs you ("Start Docker", "Fill in
-// OPENAI_API_KEY", "Install 3 updates") carries its mark. Typing on the
-// home searches the tools. Each tab opens one focused screen; q comes
-// back. On the home, q quits. It's one of the app's views (see App).
+// Needs you first ("Start Docker", "Fill in OPENAI_API_KEY", "Install 3
+// updates"), each a row that goes where it's done; and along the top, on
+// every screen, the tabs that open everything else: Tools (the board),
+// MCP servers, Skills, Network, Local settings, Settings and Last run (1
+// to 9 jump to them), each with something in it that needs you carrying
+// its mark. Typing on the home searches the tools. Each tab opens one
+// focused screen; q comes back. On the home, q quits. It's one of the
+// app's views (see App).
 
 // Paste starts a Connection line that's typed or put in a file,
 // not said; the screen shows it apart. Unmark takes it out for a terminal.
@@ -50,11 +53,15 @@ const (
 	// MenuUpdatesTab opens Tools on the Updates tab, every fix and update
 	// queued.
 	MenuUpdatesTab
-	// MenuConnection opens the Connection screen.
+	// MenuConnection opens Connection on Result.ID's tab (NetTab,
+	// LocalTab), and after a colon on the first row of that kind (key).
 	MenuConnection
 	// MenuSkills does Result.MCP to a skill (Entry: its name): add (from
 	// elsewhere), check, review (one held) or delete it.
 	MenuSkills
+	// MenuFixes opens Tools on the Updates tab, on Result.ID's row (the
+	// first, with none); nothing queued.
+	MenuFixes
 )
 
 // MCPAct is what to do to an MCP server: Do (add, edit, on, rename,
@@ -120,8 +127,13 @@ type Menu struct {
 	skBeforeAll bool
 	skSel       int
 
-	screen string // home, fix, secrets, settings, access, look, shell, lastrun, mcp, mcp:server, mcp:add, mcp:name, skills, skills:skill
+	screen string // home, settings, access, look, shell, lastrun, mcp, mcp:server, mcp:add, mcp:name, skills, skills:skill
 	sel    int
+	// need is the home's cursor in Needs you (-1: on the tabs, at sel).
+	need int
+	// setups are Local settings' (the app's Connection's): the home's
+	// Connection panel says the everyday ones.
+	setups []Setup
 	// The MCP screens: the server and catalog row chosen, the name typed
 	// (for nameFor: a spec to add, or an entry to rename), its error;
 	// fromBoard: q on the list goes back to the board.
@@ -148,14 +160,13 @@ type Menu struct {
 // checked: updates were looked for (Items carry them).
 func NewMenu(info HomeInfo, sub string, items []*BoardItem, settings []*BoardSetting, checked bool) *Menu {
 	m := &Menu{info: info, sub: sub, items: items, settings: settings, checked: checked,
-		screen: "home", pick: map[string]string{}, width: 100, height: 30}
+		screen: "home", need: -1, pick: map[string]string{}, width: 100, height: 30}
 	m.sortMCP()
 	m.normalize()
-	// On the first tab that needs you, else Tools.
-	rs, need := m.rows(), m.needs()
-	m.sel = slices.IndexFunc(rs, func(r menuRow) bool { return len(need[r.id]) > 0 })
-	if m.sel < 0 {
-		m.sel = slices.IndexFunc(rs, func(r menuRow) bool { return r.id == "tools" })
+	// On Tools; in Needs you, on its first, when something needs you.
+	m.sel = max(0, slices.IndexFunc(m.rows(), func(r menuRow) bool { return r.id == "tools" }))
+	if len(m.needList()) > 0 {
+		m.need = 0
 	}
 	return m
 }
@@ -300,7 +311,7 @@ func (m *Menu) todo() []menuRow {
 			case x.State == "secret":
 				out = append(out, menuRow{id: "mcpkey:" + x.Name, label: "Fill in " + x.Name, note: strings.Join(x.Keys, ", ")})
 			case x.State == "failed" || x.State == "refused" || x.State == "retired" || x.State == "nospec":
-				out = append(out, menuRow{id: "mcp:" + x.Name, label: "Check " + x.Name, note: strings.TrimPrefix(ansi.Strip(mcpWord(x)), "▲ ")})
+				out = append(out, menuRow{id: "mcp:" + x.Name, label: "Check " + x.Name, note: strings.TrimPrefix(ansi.Strip(mcpWord(x)), tui.Cur.Mark.Warn+" ")})
 			}
 		}
 		if n := len(m.info.MCPOrphans); n > 0 {
@@ -317,25 +328,87 @@ func (m *Menu) todo() []menuRow {
 	return out
 }
 
-// needs are what needs you, by the tab it's on: the last run's failure
-// on Last run, the MCP servers' on MCP servers, the keys to add on
-// Connection, the rest (fixes, values, updates) on Updates.
-func (m *Menu) needs() map[string][]menuRow {
-	out := map[string][]menuRow{}
-	for _, r := range m.todo() {
-		tab := "updates"
-		switch {
-		case r.id == "why":
-			tab = "lastrun"
-		case strings.HasPrefix(r.id, "mcp"):
-			tab = "mcp"
-		}
-		out[tab] = append(out[tab], r)
-	}
+// needList is what needs you, as Needs you lists it: todo's, then the
+// keys to add, then the skills changed since checked or held for you.
+func (m *Menu) needList() []menuRow {
+	out := m.todo()
 	if n := len(m.info.Keys); n > 0 {
-		out["conn"] = append(out["conn"], menuRow{id: "keys", label: plural(n, "key", "keys") + " to add"})
+		var fors []string
+		for _, k := range m.info.Keys {
+			fors = append(fors, k.For())
+		}
+		out = append(out, menuRow{id: "keys", label: fmt.Sprintf("Add %s to %s", plural(n, "key", "keys"), strings.Join(fors, ", ")), note: "this machine's SSH keys, for git there: copy, then add"})
+	}
+	for _, s := range m.info.Skills {
+		switch {
+		case s.Source == "drifted":
+			out = append(out, menuRow{id: "skill:" + s.Name, label: fmt.Sprintf("Check %s again", s.Name), note: "a skill changed since checked: restore it, or check it again"})
+		case s.Off == "held":
+			out = append(out, menuRow{id: "skill:" + s.Name, label: "Review " + s.Name, note: "a skill held for your decision: its report"})
+		}
 	}
 	return out
+}
+
+// needTab is the tab along the top what needs you (by its row's id) is
+// on: the last run's failure on Last run, the MCP servers' on MCP
+// servers, the skills' on Skills, the keys to add on Network, the rest
+// (fixes, values, updates) on Tools.
+func needTab(id string) string {
+	switch {
+	case id == "why":
+		return "lastrun"
+	case strings.HasPrefix(id, "mcp"):
+		return "mcp"
+	case strings.HasPrefix(id, "skill:"):
+		return "skills"
+	case id == "keys":
+		return NetTab
+	}
+	return "tools"
+}
+
+// needs are what needs you, by the tab it's on (see needTab).
+func (m *Menu) needs() map[string][]menuRow {
+	out := map[string][]menuRow{}
+	for _, r := range m.needList() {
+		out[needTab(r.id)] = append(out[needTab(r.id)], r)
+	}
+	return out
+}
+
+// goNeed goes where r, a row of Needs you, is done: the board's Updates
+// tab for updates (queued) and fixes and values (on the tool's row), the
+// server or the skill, Network's keys, Last run.
+func (m *Menu) goNeed(r menuRow) tea.Cmd {
+	switch {
+	case r.id == "updates":
+		return m.quit(MenuResult{Kind: MenuUpdatesTab})
+	case r.id == "why":
+		m.open("lastrun")
+	case r.id == "keys":
+		return m.quit(MenuResult{Kind: MenuConnection, ID: NetTab + ":key"})
+	case strings.HasPrefix(r.id, "skill:"):
+		n := slices.IndexFunc(m.info.Skills, func(s SkillRow) bool { return "skill:"+s.Name == r.id })
+		m.open("skills")
+		if n >= 0 {
+			m.skSel, m.screen = n, "skills:skill"
+		}
+	case strings.HasPrefix(r.id, "mcp"):
+		_, name, _ := strings.Cut(r.id, ":")
+		m.open("mcp")
+		if n := slices.IndexFunc(m.mcpServers(), func(s *MCPServer) bool { return s.Name == name }); n >= 0 {
+			m.sel = n
+		}
+	default:
+		id := ""
+		if r.item != nil {
+			id = r.item.ID
+		}
+		return m.quit(MenuResult{Kind: MenuFixes, ID: id})
+	}
+	m.need = -1
+	return nil
 }
 
 // queued counts what's queued on Tools (the board shares the items).
@@ -349,13 +422,10 @@ func (m *Menu) queued() int {
 	return n
 }
 
-// hasConnect: the home has its Connection panel.
-func (m *Menu) hasConnect() bool { return len(m.info.Connect) > 0 || len(m.info.Keys) > 0 }
-
-// rows are the home's tabs: Updates, Tools, MCP servers (with the
-// gateway), Skills (when there are any), Connection, Settings and Last
-// run. A tab's note starts with
-// what on it needs you.
+// rows are the home's tabs: Tools, MCP servers (with the gateway), Skills
+// (when there are any), Network, Local settings (with something to set
+// up), Settings and Last run. A tab's note starts with what on it needs
+// you.
 func (m *Menu) rows() []menuRow {
 	need := m.needs()
 	tab := func(id, label, note string) menuRow {
@@ -365,29 +435,7 @@ func (m *Menu) rows() []menuRow {
 		}
 		return menuRow{id: id, label: label, note: strings.Join(append(ls, note), " · ")}
 	}
-	var upd string
-	switch us := m.filter(newer); {
-	case m.wait != nil:
-		upd = "checking for updates…"
-	case len(us) > 0:
-		var v []string
-		for _, i := range us {
-			v = append(v, strings.Join(i.Updates, ", "))
-		}
-		upd = strings.Join(v, " · ")
-	case m.checked:
-		upd = "nothing newer"
-	default:
-		upd = "not checked yet"
-	}
-	if m.info.Checked != "" && m.wait == nil {
-		upd += " · checked " + m.info.Checked
-	}
-	if len(need["updates"]) == 0 && m.wait == nil {
-		upd += " · enter checks apt and mise, in the background"
-	}
-	out := []menuRow{tab("updates", "Updates", upd)}
-
+	var out []menuRow
 	picked := len(m.filter(func(i *BoardItem) bool { return i.Picked }))
 	ok := len(m.filter(func(i *BoardItem) bool { return i.Picked && i.State == "ok" }))
 	tools := fmt.Sprintf("%d of %d tools working", ok, picked)
@@ -405,7 +453,24 @@ func (m *Menu) rows() []menuRow {
 	if team > 0 {
 		tools += fmt.Sprintf(" · %d from the team profile %s", team, strings.Join(slices.Sorted(maps.Keys(teams)), ", "))
 	}
+	// The updates: Needs you has what's newer; else whether they were
+	// looked for, and when.
+	switch {
+	case m.wait != nil:
+		tools += " · checking for updates…"
+	case len(m.filter(newer)) > 0:
+	case m.checked:
+		tools += " · nothing newer"
+	default:
+		tools += " · updates not checked yet"
+	}
+	if m.info.Checked != "" && m.wait == nil {
+		tools += " · checked " + m.info.Checked
+	}
 	tools += " · fix, add or uninstall · or just start typing"
+	if len(m.filter(newer)) == 0 && m.wait == nil {
+		tools += " · u checks apt and mise, in the background"
+	}
 	if n := m.queued(); n > 0 {
 		tools = plural(n, "change", "changes") + " queued · a there applies"
 	}
@@ -443,32 +508,24 @@ func (m *Menu) rows() []menuRow {
 		if m.info.SkillsAllOff {
 			note = "all off · space on All skills turns them back on"
 		}
-		// What needs the user: changed since checked, held, an update.
-		var drift, held, upd []string
+		// An update (what's changed since checked, or held, is Needs
+		// you's, said first).
+		var upd []string
 		for _, s := range m.info.Skills {
-			switch {
-			case s.Source == "drifted":
-				drift = append(drift, s.Name)
-			case s.Off == "held":
-				held = append(held, s.Name)
-			case s.Update != "":
+			if s.Update != "" && s.Source != "drifted" && s.Off != "held" {
 				upd = append(upd, s.Name)
 			}
 		}
-		switch {
-		case len(drift) > 0:
-			note = "▲ changed since checked: " + strings.Join(drift, ", ")
-		case len(held) > 0:
-			note = "▲ waiting for you: " + strings.Join(held, ", ")
-		case len(upd) > 0:
+		if len(upd) > 0 {
 			note = "update available: " + strings.Join(upd, ", ")
 		}
 		out = append(out, tab("skills", "Skills", note))
 	}
-	if m.hasConnect() {
-		out = append(out, tab("conn", "Connection", "the networks: start, stop, add, remove · from a laptop: SSH, Docker, the MCP gateway, copy and paste"))
+	out = append(out, tab(NetTab, "Network", "what this machine is on: start, stop, add, remove · who can reach what · keys to add"))
+	if len(m.setups) > 0 {
+		out = append(out, tab(LocalTab, "Local settings", "to use this machine from your computer: SSH, Docker, Claude Code, Codex, pages · c copies"))
 	}
-	out = append(out, tab("settings", "Settings", "network access, git, prompt, look"))
+	out = append(out, tab("settings", "Settings", "git, prompt, look"))
 	if l := m.info.LastRun; l != nil {
 		out = append(out, tab("lastrun", "Last run", fmt.Sprintf("%s · %s", l.When, l.say())))
 	}
@@ -482,36 +539,34 @@ var changeLabels = map[string]string{"git": "Git name and email", "prompt": "She
 // settingsRows are Settings' rows.
 func (m *Menu) settingsRows() []menuRow {
 	var out []menuRow
-	if as := m.access(); len(as) > 0 {
-		var now []string
-		for _, s := range as {
-			now = append(now, fmt.Sprintf("%s: %s", s.Label, s.label(s.Value)))
+	// now is what ss are set to; named, each says its name (a row named
+	// after its one setting says only its value).
+	now := func(ss []*BoardSetting, named bool) string {
+		var out []string
+		for _, s := range ss {
+			if named {
+				out = append(out, fmt.Sprintf("%s: %s", s.Label, s.label(s.Value)))
+			} else {
+				out = append(out, s.label(s.Value))
+			}
 		}
-		out = append(out, menuRow{id: "access", label: "Network access", note: strings.Join(now, " · ")})
+		return strings.Join(out, " · ")
 	}
 	// The look: one row (the theme, the accent colour), one screen.
 	if ls := m.section(LookSection); len(ls) > 0 {
-		var now []string
-		for _, s := range ls {
-			now = append(now, fmt.Sprintf("%s: %s", s.Label, s.label(s.Value)))
-		}
 		label := ls[0].Label
 		if len(ls) > 1 {
 			label = "Look"
 		}
-		out = append(out, menuRow{id: "look", label: label, note: strings.Join(now, " · ")})
+		out = append(out, menuRow{id: "look", label: label, note: now(ls, len(ls) > 1)})
 	}
 	// The shell: one row per setting, one screen.
 	if ss := m.section(ShellSection); len(ss) > 0 {
-		var now []string
-		for _, s := range ss {
-			now = append(now, fmt.Sprintf("%s: %s", s.Label, s.label(s.Value)))
-		}
 		label := ss[0].Label
 		if len(ss) > 1 {
 			label = "Shell"
 		}
-		out = append(out, menuRow{id: "shell", label: label, note: strings.Join(now, " · ")})
+		out = append(out, menuRow{id: "shell", label: label, note: now(ss, len(ss) > 1)})
 	}
 	for _, i := range m.items {
 		if !i.Picked {
@@ -635,7 +690,13 @@ func homeKey(k string) bool {
 // move moves the cursor n rows (normalize keeps it on one).
 func (m *Menu) move(n int) {
 	switch m.screen {
-	case "home", "settings", "access", "look", "shell", "mcp:server", "mcp:add", "lastrun", "skills:skill":
+	case "home":
+		if m.need >= 0 {
+			m.need = clamp(m.need+n, 0, len(m.needList())-1)
+		} else {
+			m.sel = clamp(m.sel+n, -toEnd, toEnd)
+		}
+	case "settings", "access", "look", "shell", "mcp:server", "mcp:add", "lastrun", "skills:skill":
 		m.sel = clamp(m.sel+n, -toEnd, toEnd)
 	case "skills":
 		m.sel = clamp(m.sel+n, -1, len(m.info.Skills)-1)
@@ -675,6 +736,7 @@ func (m *Menu) normalize() {
 	switch m.screen {
 	case "home":
 		m.sel = clamp(m.sel, 0, len(m.rows())-1)
+		m.need = clamp(m.need, -1, len(m.needList())-1)
 	case "settings":
 		m.sel = clamp(m.sel, 0, len(m.settingsRows())-1)
 	case "access", "look", "shell":
@@ -703,7 +765,7 @@ func (m *Menu) normalize() {
 }
 
 // listRoom is how many lines a screen has for its list.
-func (m *Menu) listRoom() int { return max(4, m.height-6) }
+func (m *Menu) listRoom() int { return max(4, m.height-8) }
 
 func (m *Menu) quit(r MenuResult) tea.Cmd {
 	if r.Kind != MenuQuit && r.Kind != MenuTools && len(m.pend)+len(m.skPend) > 0 {
@@ -726,14 +788,18 @@ func (m *Menu) open(screen string) {
 	}
 }
 
-// back goes up a screen (Settings' own go back to it, the rest home),
-// onto the row of the screen it came from.
+// back goes up a screen (Settings' own go back to it, Network access to
+// Network, the rest home), onto the row of the screen it came from.
 func (m *Menu) back() {
 	from := m.screen
-	m.screen, m.sel, m.dialog = "home", 0, nil
+	m.screen, m.sel, m.dialog, m.need = "home", 0, nil, -1
+	if from == "access" {
+		m.result, m.ended = MenuResult{Kind: MenuConnection, ID: NetTab}, true
+		return
+	}
 	rows := m.rows
 	switch from {
-	case "access", "look", "shell":
+	case "look", "shell":
 		m.screen, rows = "settings", m.settingsRows
 	}
 	for n, r := range rows() {
@@ -769,15 +835,23 @@ func (m *Menu) key(k string) tea.Cmd {
 	back := k == "esc" || k == "q"
 	switch m.screen {
 	case "home":
+		if m.need >= 0 {
+			return m.needKey(k, up, down, left, right)
+		}
 		rs := m.rows()
 		r := rs[m.sel]
 		switch {
-		case up || left:
+		case left:
 			m.sel--
-		case down || right:
+		case right:
 			m.sel++
+		case (down || k == "tab") && len(m.needList()) > 0:
+			// Into Needs you.
+			m.need = 0
 		case k == "tab":
 			m.sel = (m.sel + 1) % len(rs)
+		case k == "shift+tab" && len(m.needList()) > 0:
+			m.need = len(m.needList()) - 1
 		case k == "shift+tab":
 			m.sel = (m.sel + len(rs) - 1) % len(rs)
 		case k == "q":
@@ -787,13 +861,9 @@ func (m *Menu) key(k string) tea.Cmd {
 		case k == "u":
 			return m.checkUpdates()
 		case k != "enter":
-		case r.id == "updates" && len(m.needs()["updates"]) > 0:
-			return m.quit(MenuResult{Kind: MenuUpdatesTab})
-		case r.id == "updates":
-			return m.checkUpdates()
 		case r.id == "tools":
 			return m.quit(MenuResult{Kind: MenuTools})
-		case r.id == "conn":
+		case r.id == NetTab || r.id == LocalTab:
 			return m.quit(MenuResult{Kind: MenuConnection, ID: r.id})
 		default:
 			m.open(r.id)
@@ -864,6 +934,41 @@ func (m *Menu) key(k string) tea.Cmd {
 	return nil
 }
 
+// needKey is k with the home's cursor in Needs you: ↑↓ by line (two to a
+// line when wide: ←→ between them), up past the first line back to the
+// tabs, tab on to the next (past the last, the tabs), enter goes there.
+func (m *Menu) needKey(k string, up, down, left, right bool) tea.Cmd {
+	ns := m.needList()
+	cols := m.needCols(m.width)
+	switch {
+	case up && m.need < cols:
+		m.need = -1
+	case up:
+		m.need -= cols
+	case down:
+		m.need = min(len(ns)-1, m.need+cols)
+	case left:
+		m.need = max(0, m.need-1)
+	case right:
+		m.need = min(len(ns)-1, m.need+1)
+	case k == "tab":
+		if m.need++; m.need >= len(ns) {
+			m.need = -1
+		}
+	case k == "shift+tab":
+		m.need--
+	case k == "q":
+		return m.quit(MenuResult{Kind: MenuQuit})
+	case k == "esc":
+		m.need = -1
+	case k == "u":
+		return m.checkUpdates()
+	case k == "enter":
+		return m.goNeed(ns[m.need])
+	}
+	return nil
+}
+
 // value is a setting's choice on the access screen.
 func (m *Menu) value(s *BoardSetting) string {
 	if v, ok := m.pick[s.Key]; ok {
@@ -873,7 +978,10 @@ func (m *Menu) value(s *BoardSetting) string {
 }
 
 // View is the menu drawn alone, as the app draws it.
-func (m *Menu) View() string { return standalone(m, m.info, m.width, m.height) }
+func (m *Menu) View() string {
+	nav, tab := m.nav(m.width)
+	return standalone(m, m.info, nav, tab, m.width, m.height)
+}
 
 // Toast is the line the menu says above its keys.
 func (m *Menu) Toast() string { return m.toast }
@@ -901,7 +1009,7 @@ func (m *Menu) Path() string {
 	case "settings":
 		return "Home › Settings"
 	case "access":
-		return "Home › Settings › Network access"
+		return "Home › Network › Network access"
 	case "look":
 		return "Home › Settings › Look"
 	case "shell":
@@ -921,7 +1029,7 @@ func (m *Menu) Path() string {
 func (m *Menu) Back() string {
 	switch {
 	case m.dialog != nil:
-		return "cancel"
+		return "" // the dialog's keys say what esc and q do
 	case m.screen == "home":
 		return "quit"
 	case m.screen == "mcp:name":
@@ -939,7 +1047,10 @@ func (m *Menu) Keys() []Key {
 	}
 	switch m.screen {
 	case "home":
-		return []Key{{Key: "←→", What: "choose"}, {Key: "enter", What: "open"}, {Key: "u", What: "updates"}, {Key: "type", What: "search"}}
+		if m.need >= 0 {
+			return []Key{{Key: "↑↓", What: "choose", Keep: true}, {Key: "enter", What: "go there", Keep: true}, {Key: "esc", What: "the tabs"}, {Key: "u", What: "updates"}, {Key: "type", What: "search", Keep: true}}
+		}
+		return []Key{{Key: "←→", What: "choose", Keep: true}, {Key: "enter", What: "open", Keep: true}, {Key: "u", What: "updates"}, {Key: "type", What: "search", Keep: true}}
 	case "settings":
 		return []Key{{Key: "↑↓", What: "choose"}, {Key: "enter", What: "open"}}
 	case "access", "look", "shell":
@@ -956,9 +1067,10 @@ func (m *Menu) Keys() []Key {
 func (m *Menu) Help() []Key {
 	switch m.screen {
 	case "home":
-		return []Key{{Key: "←→ h l tab", What: "along the tabs at the bottom (↑↓ j k too)"},
-			{Key: "enter", What: "open the tab: a mark on it says something there needs you"},
-			{Key: "u", What: "check for updates, in the background"}, {Key: "a letter, /", What: "search the tools"}, {Key: "q", What: "quit"}}
+		return []Key{{Key: "←→ h l", What: "along the tabs at the top"},
+			{Key: "↓ j tab", What: "into Needs you (↑ back to the tabs, esc too)"},
+			{Key: "enter", What: "open the tab, or go where the thing that needs you is done"},
+			{Key: "u", What: "Tools' Updates tab; with nothing there, check for updates"}, {Key: "a letter, /", What: "search the tools"}, {Key: "q", What: "quit"}}
 	}
 	return m.Keys()
 }

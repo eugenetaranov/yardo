@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -17,11 +18,17 @@ import (
 // failed), and what listens on the network. Each comes from one quick
 // command; a command missing or slow leaves its part out.
 
-// dashboard gathers the home's dashboard.
-func dashboard(ctx context.Context) ui.Dashboard {
+// dashboard gathers the home's dashboard; user's MCP servers' containers
+// are said by server.
+func dashboard(ctx context.Context, user string) ui.Dashboard {
 	var d ui.Dashboard
-	if out, ok := quick(ctx, "docker", "ps", "--format", "{{.Names}}\t{{.Image}}\t{{.Ports}}"); ok {
-		d.Docker, d.Containers = true, parseContainers(out)
+	if ids, ok := quick(ctx, "docker", "ps", "-q"); ok {
+		d.Docker = true
+		if strings.TrimSpace(ids) != "" {
+			out, ok := quick(ctx, "docker", append([]string{"inspect", "--format", inspectFormat}, strings.Fields(ids)...)...)
+			d.Docker = ok
+			d.Containers = parseContainers(out, filepath.Join(homeOf(user), ".mcp"))
+		}
 	}
 	if out, ok := quick(ctx, "systemctl", "list-units", "--type=service", "--all", "--no-legend", "--plain"); ok {
 		d.Services = parseServices(out)
@@ -41,54 +48,79 @@ func quick(ctx context.Context, name string, args ...string) (string, bool) {
 	return string(out), err == nil
 }
 
-// parseContainers reads docker ps' names, images and ports: each
-// container, called by its image, with its name when it has one of its own
-// (not one docker made up: clever_franklin), and the host ports it
-// publishes.
-func parseContainers(out string) []ui.Container {
+// inspectFormat is what docker inspect says of a container, a line each:
+// its name, the image it was run as, the image's ID, its /mcp mount's
+// source, and the host address, host port and port of each it publishes.
+const inspectFormat = "{{.Name}}\t{{.Config.Image}}\t{{.Image}}\t" +
+	`{{range .Mounts}}{{if eq .Destination "/mcp"}}{{.Source}}{{end}}{{end}}` + "\t" +
+	`{{range $p, $b := .NetworkSettings.Ports}}{{range $b}}{{.HostIp}}|{{.HostPort}}|{{$p}} {{end}}{{end}}`
+
+// parseContainers reads docker inspect's lines: each container, called by
+// the image it was run as (by its ID only when that's all there is), with
+// its name when it has one of its own (not one docker made up:
+// clever_franklin), the MCP server in dir it runs, and the host ports it
+// publishes, to whom; the same ones once, counted.
+func parseContainers(out, dir string) []ui.Container {
 	var cs []ui.Container
-	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
-		f := strings.SplitN(l, "\t", 3)
-		if len(f) < 2 || f[0] == "" {
+	for _, l := range strings.Split(out, "\n") {
+		f := strings.Split(l, "\t")
+		if len(f) < 5 || f[0] == "" {
 			continue
 		}
-		name, image, ports := f[0], shortImage(f[1]), ""
-		if len(f) == 3 {
-			ports = f[2]
+		name, image := strings.TrimPrefix(f[0], "/"), shortImage(f[1])
+		c := ui.Container{Image: image, Count: 1}
+		if id := strings.TrimPrefix(f[2], "sha256:"); image == "" || imageID.MatchString(f[1]) {
+			c.Image = "image " + id[:min(7, len(id))]
 		}
-		c := ui.Container{Image: image}
-		if !madeUp.MatchString(name) && name != image && !strings.HasPrefix(image, name+":") {
+		if c.MCP, _ = mcpDirName(f[3], dir); c.MCP == "" && name != image && !strings.HasPrefix(image, name+":") &&
+			(!madeUp.MatchString(name) || strings.HasPrefix(c.Image, "image ")) {
 			c.Name = name
 		}
-		// 0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
-		for _, p := range strings.Split(ports, ", ") {
-			host, _, ok := strings.Cut(p, "->")
-			if !ok {
+		// 0.0.0.0|5432|5432/tcp ::|5432|5432/tcp
+		for _, p := range strings.Fields(f[4]) {
+			b := strings.Split(p, "|")
+			if len(b) != 3 || b[1] == "" {
 				continue
 			}
-			if i := strings.LastIndex(host, ":"); i >= 0 && !slices.Contains(c.Ports, host[i+1:]) {
-				c.Ports = append(c.Ports, host[i+1:])
+			if !slices.Contains(c.Ports, b[1]) {
+				c.Ports = append(c.Ports, b[1])
 			}
+			s := "all"
+			if b[0] != "" {
+				s = scopeOf(b[0])
+			}
+			if c.Reach == "" || reach(s) > reach(c.Reach) {
+				c.Reach = s
+			}
+		}
+		if n := slices.IndexFunc(cs, func(x ui.Container) bool {
+			x.Count = 1
+			return fmt.Sprint(x) == fmt.Sprint(c)
+		}); n >= 0 {
+			cs[n].Count++
+			continue
 		}
 		cs = append(cs, c)
 	}
 	return cs
 }
 
-// madeUp is a name docker made up for a container: adjective_surname.
-var madeUp = regexp.MustCompile(`^[a-z]+_[a-z]+$`)
+// madeUp is a name docker made up for a container: adjective_surname, a
+// digit after it when the first was taken.
+var madeUp = regexp.MustCompile(`^[a-z]+_[a-z]+[0-9]?$`)
 
-// shortImage is an image without its registry and path: postgres:16 for
-// docker.io/library/postgres:16, mcpjungle for ghcr.io/mcpjungle/mcpjungle;
-// a digest is cut to its start.
+// imageID is an image named by its ID: run by it, or its tag gone.
+var imageID = regexp.MustCompile(`^(sha256:)?[0-9a-f]{12,64}$`)
+
+// shortImage is an image without its registry, path, :latest or digest:
+// postgres:16 for docker.io/library/postgres:16, mcpjungle for
+// ghcr.io/mcpjungle/mcpjungle@sha256:….
 func shortImage(image string) string {
+	image, _, _ = strings.Cut(image, "@")
 	if i := strings.LastIndex(image, "/"); i >= 0 {
 		image = image[i+1:]
 	}
-	if name, d, ok := strings.Cut(image, "@sha256:"); ok {
-		image = fmt.Sprintf("%s@%s", name, d[:min(7, len(d))])
-	}
-	return image
+	return strings.TrimSuffix(image, ":latest")
 }
 
 // services are the services the dashboard shows, by unit (a template's
@@ -135,7 +167,7 @@ func parseServices(out string) []ui.Service {
 // listenNames are what a listening process is called on the dashboard.
 var listenNames = map[string]string{
 	"sshd": "ssh", "tailscaled": "tailscale", "netbird": "netbird", "openvpn": "openvpn", "smbd": "samba",
-	"docker-proxy": "docker", "dockerd": "docker", "k3s-server": "k3s", "ollama": "ollama", "mcpjungle": "mcp",
+	"dockerd": "docker", "k3s-server": "k3s", "ollama": "ollama", "mcpjungle": "mcp",
 	"rpcbind": "rpcbind", "nginx": "nginx", "caddy": "caddy",
 }
 
@@ -176,6 +208,8 @@ func parseListening(out string) []ui.Listener {
 			name = "nfs"
 		case name == "systemd-resolve", name == "chronyd":
 			continue
+		case name == "docker-proxy":
+			continue // a container's published port: on its row
 		}
 		x := ui.Listener{Port: port, Proto: proto, Name: name, Scope: scopeOf(addr)}
 		if n := slices.IndexFunc(ls, func(y ui.Listener) bool { return y.Port == x.Port && y.Proto == x.Proto && y.Name == x.Name }); n >= 0 {

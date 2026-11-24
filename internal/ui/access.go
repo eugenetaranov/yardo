@@ -4,7 +4,7 @@ package ui
 var accessSay = map[string]map[string]string{
 	"mcp": {
 		"127.0.0.1": "Only programs on this machine can use it.",
-		"vpn":       "Your laptop too, once it's on Tailscale, NetBird or WireGuard, with a token.",
+		"vpn":       "Your computer too, once it's on Tailscale, NetBird or WireGuard, with a token.",
 		"public":    "Anyone with a token, over HTTPS at your domain name.",
 		"0.0.0.0":   "Anyone who can reach this machine, with a token, over plain HTTP.",
 	},

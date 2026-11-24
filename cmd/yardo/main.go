@@ -467,8 +467,8 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	var d, shown *screen
 	var app *ui.App
 	var open, toast string
-	// back is the view a run comes back to instead of the home
-	// (Connection, after a login); link: Connection starts Tailscale's
+	// back is the view a run comes back to instead of the home (Network,
+	// after a login or a change to Network access); link: Network starts Tailscale's
 	// login by link; prof: the profile to add once its client is
 	// installed.
 	var back string
@@ -668,6 +668,12 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							}
 						}
 						board = &ui.BoardResult{Kind: ui.BoardApply, Settings: res.Settings}
+						// Network access's settings come back to Network.
+						for _, k := range []string{"mcp", "ports", "sshnew"} {
+							if _, ok := res.Settings[k]; ok {
+								back = "network"
+							}
+						}
 						break loop
 					case ui.MenuSkills:
 						r, err := (&asker{cat: cat, a: a, share: o.share(), out: stdout}).addons(ctx)
@@ -714,12 +720,12 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 					if err != nil {
 						return err
 					}
-					open, toast, link = "connection", c.toast, c.link
+					open, toast, link = "network", c.toast, c.link
 					if c.fix != nil {
 						if c.pick != "" && !slices.Contains(a.Picks, c.pick) {
 							a.Pick([]string{c.pick})
 						}
-						fix, sec, changed, back, prof = c.fix, c.sec, true, "connection", c.prof
+						fix, sec, changed, back, prof = c.fix, c.sec, true, "network", c.prof
 						break loop
 					}
 					d = nil
@@ -944,7 +950,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 			if bash == nil {
 				_ = os.Remove(notesFile) // bash's --begin does this when it runs
 			}
-			// The keys file is kept across runs (Connection lists what's
+			// The keys file is kept across runs (Network lists what's
 			// in it); keysBefore: the keys there before this run.
 			keysBefore := readKeys(o.state)
 			r := &run.Runner{Env: env, Progress: prog, TailLines: 25}
@@ -1287,7 +1293,7 @@ func (o *options) env(a *answers.Answers, sec *creds.Secrets, log io.Writer) (*s
 
 // keysFile holds the public keys runs made (host, where to add it, file,
 // key per line): printed after the run that made them, and listed on
-// Connection until added or dismissed.
+// Network until added or dismissed.
 const keysFile = ".keys"
 
 // newKeys are the keys in now that weren't in before: this run's.
@@ -1303,7 +1309,7 @@ func newKeys(before, now []ui.AddKey) []ui.AddKey {
 
 // printKeys shows the run's new public keys after everything else: where
 // to add each, then the key alone on a line between blank lines, so a
-// triple-click copies exactly it. (Connection lists them too, until
+// triple-click copies exactly it. (Network lists them too, until
 // they're added.)
 func printKeys(w io.Writer, keys []ui.AddKey, home string) {
 	for _, k := range keys {
@@ -1566,7 +1572,7 @@ func asRoot(args []string) error {
 	argv := []string{"sudo"}
 	// Keep a forwarded agent, the user's editor, and a proxy their shell has.
 	var keep []string
-	// SSH_CONNECTION and SSH_TTY tell Connection the network this session
+	// SSH_CONNECTION and SSH_TTY tell Network the network this session
 	// came by; TMUX, how to copy through to the laptop.
 	for _, k := range []string{"SSH_AUTH_SOCK", "SSH_CONNECTION", "SSH_TTY", "TMUX", "LC_TERMINAL", "VISUAL", "EDITOR", "http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} {
 		if os.Getenv(k) != "" {

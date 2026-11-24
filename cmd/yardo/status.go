@@ -258,7 +258,7 @@ func sshAcceptNew(a *answers.Answers) *ui.BoardSetting {
 
 // screen is what the menu and the board show: every item, ticked when
 // picked, with its health; the settings (who can reach what, the look);
-// how to connect from a laptop.
+// Network's and Local settings' (conn).
 type screen struct {
 	info     ui.HomeInfo
 	sub      string
@@ -381,10 +381,10 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		case !gw:
 			label = "Web pages (~/pages)"
 		}
-		choices := [][2]string{{"127.0.0.1", "this machine only"}, {"vpn", "this machine and your VPNs (with a token)"},
+		choices := [][2]string{{"127.0.0.1", "local only"}, {"vpn", "local and your VPNs (with a token)"},
 			{"public", "the internet, at a domain name (HTTPS, with a token)"}, {"0.0.0.0", "everywhere, plain HTTP (with a token)"}}
 		if !gw {
-			choices = [][2]string{{"127.0.0.1", "this machine only (an SSH tunnel)"}, {"vpn", "this machine and your VPNs"}, {"0.0.0.0", "everywhere, plain HTTP"}}
+			choices = [][2]string{{"127.0.0.1", "local only (an SSH tunnel)"}, {"vpn", "local and your VPNs"}, {"0.0.0.0", "everywhere, plain HTTP"}}
 			if v == "public" {
 				v = "127.0.0.1"
 			}
@@ -397,7 +397,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 			ports = "all"
 		}
 		settings = append(settings, &ui.BoardSetting{Key: "ports", Label: "Container ports", Value: ports, Choices: [][2]string{
-			{"all", "everywhere (Docker's way)"}, {"vpn", "this machine and your VPNs"}, {"local", "this machine only"}}})
+			{"all", "everywhere (Docker's way)"}, {"vpn", "local and your VPNs"}, {"local", "local only"}}})
 	}
 	if has("gitid") || has("github") || has("gitlab") || has("bitbucket") {
 		settings = append(settings, sshAcceptNew(a))
@@ -437,15 +437,14 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	}
 	settings = append(settings, look)
 	addrs, _ := withNames(ctx, steps.OSExec{}, addresses())
-	tokens := laptopTokens(a.User)
 	host, _ := os.Hostname()
 	sub := osName()
 	if len(addrs) > 0 {
 		sub += "  ·  " + addrs[0].ip
 	}
-	info := ui.HomeInfo{Host: host, User: a.User, Connect: append(connectRows(a, addrs, tokens, picked("mcpjungle")), pagesRows(a, addrs, inPlan("pages"))...)}
+	info := ui.HomeInfo{Host: host, User: a.User}
 	if !first {
-		info.Dash = dashboard(ctx)
+		info.Dash = dashboard(ctx, a.User)
 	}
 	if picked("mcpjungle") && !first {
 		specs := o.mcpSpecs(ctx)

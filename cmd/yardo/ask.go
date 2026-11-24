@@ -493,8 +493,8 @@ func (k *asker) askDotfiles() error {
 
 // askMCPListen asks where the gateway listens (its unit binds it).
 func (k *asker) askMCPListen() error {
-	one := "this machine only (no tokens)"
-	vpn := "this machine and your VPNs: Tailscale, NetBird, WireGuard, OpenVPN (clients need a token)"
+	one := "local only (no tokens)"
+	vpn := "local and your VPNs: Tailscale, NetBird, WireGuard, OpenVPN (clients need a token)"
 	pub := "the internet, at a domain name: HTTPS by Caddy, fail2ban (clients need a token)"
 	all := "everywhere, plain HTTP (clients need a token; trusted networks only)"
 	sel := map[string]string{"vpn": vpn, "tailscale": vpn, "public": pub, "0.0.0.0": all}[k.a.MCPListen]
@@ -530,8 +530,8 @@ func (k *asker) askMCPDomain() error {
 // askDockerPorts asks where containers' published ports can be reached
 // from, besides this machine.
 func (k *asker) askDockerPorts() error {
-	vpn := "this machine and your VPNs (Tailscale, NetBird, WireGuard, OpenVPN)"
-	local := "this machine only"
+	vpn := "local and your VPNs (Tailscale, NetBird, WireGuard, OpenVPN)"
+	local := "local only"
 	sel := vpn
 	if k.a.DockerPorts == "local" {
 		sel = local
@@ -681,9 +681,9 @@ func (k *asker) answered(c *choices) []string {
 		if port == 0 && k.port != nil {
 			port = k.port()
 		}
-		who := map[string]string{"vpn": "this machine and your VPNs", "tailscale": "this machine and your VPNs", "public": "the internet, at " + a.MCPDomain, "0.0.0.0": "everywhere"}[a.MCPListen]
+		who := map[string]string{"vpn": "local and VPN", "tailscale": "local and VPN", "public": "the internet, at " + a.MCPDomain, "0.0.0.0": "everywhere"}[a.MCPListen]
 		if who == "" {
-			who = "this machine only"
+			who = "local only"
 		}
 		l := fmt.Sprintf("MCP gateway: port %d, reached from %s", port, who)
 		if len(a.MCPServers) > 0 {
@@ -692,7 +692,7 @@ func (k *asker) answered(c *choices) []string {
 		out = append(out, l)
 	}
 	if has("docker-ports") {
-		out = append(out, fmt.Sprintf("Docker's published ports: reached from %s%s", map[string]string{"local": "this machine only"}[a.DockerPorts], map[bool]string{true: "this machine and your VPNs"}[a.DockerPorts != "local"]))
+		out = append(out, fmt.Sprintf("Docker's published ports: reached from %s%s", map[string]string{"local": "local only"}[a.DockerPorts], map[bool]string{true: "local and VPN"}[a.DockerPorts != "local"]))
 	}
 	if a.Dotfiles != "" && has("dotfiles") {
 		out = append(out, "Dotfiles: "+a.Dotfiles)

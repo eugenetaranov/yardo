@@ -583,9 +583,10 @@ func (s mcpSource) cached() string {
 		}
 		return "not pulled yet"
 	}
+	// The digest is a hash, plain beside a version: sha256: only alone.
 	v := "sha256:" + s.id
 	if s.version != "" {
-		v = fmt.Sprintf("%s · %s", s.version, v)
+		v = fmt.Sprintf("%s · %s", s.version, s.id)
 	}
 	if !s.built.IsZero() {
 		v += ", built " + s.built.Format("2006-01-02")

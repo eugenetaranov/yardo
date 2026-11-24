@@ -45,10 +45,9 @@ func TestSetLook(t *testing.T) {
 	t.Cleanup(func() { SetLook("classic", "#D97757") })
 	SetLook("bridge", "#D97757")
 	m := testMenu(false)
-	onRow(m, "settings")
-	mk(m, "enter")
+	m.open("access")
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"◢◤ YARDO ◥◣", "HOME ▸ SETTINGS"} {
+	for _, want := range []string{"◢◤ YARDO ◥◣", "NETWORK ▸ NETWORK ACCESS", "[NETWORK]"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("bridge lacks %q:\n%s", want, v)
 		}

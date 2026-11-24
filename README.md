@@ -56,85 +56,102 @@ apply|verify|gitkey`).
 account is created). Once something is set up, it opens on the home:
 
 ```
- yardo  ·  vm  ·  ada                                                                          Home
- ▲ 3 things need you  ·  marked below: Updates, MCP servers             Ubuntu 24.04  ·  100.64.0.7
+ yardo  ·  vm  ·  ada                                                       Ubuntu 24.04  ·  100.64.0.7
+ [Home]  Tools 4   MCP servers 4 ○   Skills 9   Network   Local settings   Settings   Last run
+──────────────────────────────────────────────────────────────────────────────────────────────────
+ ▲ 3 things need you  ·  below: enter goes there
 
-┌─ Machine ──────────────────────────────────────────────────────────────────────────────────────┐
-│ CPU   3%   ▁▂▁▁▃▁  now  ·  0.12 0.08 0.05 on 4 cores                                           │
-│ Mem   ▰▰▱▱▱▱▱▱▱▱ 23%   1.8 GB of 7.8 GB  ·  Disk  ▰▰▰▱▱▱▱▱▱▱ 31%   of 78 GB  ·  Up    3d 4h     │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Needs you ────────────────────────────────────────────────────────────────── enter goes there ┐
+│ ›↑ Install 1 update                          Tools    ○ jira: fill in JIRA_API_TOKEN     MCP    │
+│  ▲ Check review again                       Skills                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌─ Services & containers ──────────────────────┐  ┌─ MCP servers ────────────────────────────────┐
-│ ● ssh          22/tcp         anyone         │  │ Gateway ● up  this machine only              │
-│ ● fail2ban     up                            │  │                                              │
-│ ● tailscale    41641/udp      anyone         │  │ ● github            ● jira-work              │
-│ ● docker       8080/tcp       VPN            │  │ ○ jira             needs JIRA_API_TOKEN      │
-│ ─ containers ─────────────                   │  │ ▲ opensearch       didn't register: check i… │
-│ ● postgres:16    myapp-db-1     :5432        │  │ + 1 more in ~/.mcp                           │
-└──────────────────────────────────────────────┘  └──────────────────────────────────────────────┘
+┌─ Machine ───────────────────────────────────────────────────────────────────────────────────────┐
+│ CPU 3% ▁▂▁▁▃▁ now · Load 0.12 0.08 0.05 on 4 cores                                              │
+│ Mem ▰▱▱▱▱▱ 23% 1.8 GB of 7.8 GB · Disk ▰▰▱▱▱▱ 31% of 78 GB · Uptime 3d 4h                        │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌─ Connection ──────────────────────────────────────────────────────────────────── from a laptop ┐
-│ SSH      ssh vm  ·  ada@vm.tail1234.ts.net                                                     │
-│ MCP      http://vm.tail1234.ts.net:8081/mcp  ·  token: sudo cat ~/.mcp/clients/laptop.token    │
-│ Copies   defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true  ·  iTerm2      │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Services & containers ───────────────────────┐  ┌─ MCP servers ─────────────────────────────────┐
+│   service    port       reachable from        │  │ Gateway ● up  local only                      │
+│ ● ssh        22/tcp     any network           │  │                                               │
+│ ● fail2ban   running                          │  │ ● github           ● jira-work                │
+│ ● tailscale  41641/udp  any network           │  │ ○ jira             needs JIRA_API_TOKEN       │
+│ ─ containers ──────────────────────────────── │  │ ▲ opensearch       didn't register: check i…  │
+│ ● postgres:16  myapp-db-1  :5432  VPN only    │  │ + 1 more in ~/.mcp                            │
+│ MCP servers: github, jira-work ×2             │  │                                               │
+└───────────────────────────────────────────────┘  └───────────────────────────────────────────────┘
 
-┌─ Go to ────────────────────────────────────────────────────────────────────────────────────────┐
-│  Updates 1 ↑     Tools 4     MCP servers 4 ○     Connection     Settings     Last run          │
-│ Install 1 update · node 22.12 → 24.11, gh 2.80 → 2.83 · checked 09:12                          │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Connection ─────────────────────────────────────────────────────── Local settings has the rest ┐
+│ SSH      ssh vm                              ada@vm.tail1234.ts.net · Host vm in ~/.ssh/config  │
+│ Docker   docker context use vm               over SSH, no port to open · -p ports: VPN only     │
+│ MCP      http://vm.tail1234.ts.net:8081/mcp  token: sudo cat ~/.mcp/clients/client.token        │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
 
- ←→ choose   enter open   u updates   type search   ? keys   q quit
+ ↑↓ choose   enter go there   esc the tabs   u updates   type search   ? keys   q quit
 ```
 
-The panels only show: the **Machine** in two lines, **Services &
-containers** (what's up or failed, the ports it listens on beyond this
-machine and who can reach them; the containers by image), the **MCP
-servers** and **Connection**. Everything opens from the tabs at the
-bottom, the one under the cursor a block of the accent colour; ←→ go
-along them, enter opens one. A tab with something on it that needs you
-carries its mark, its note under the tabs saying what, named by what it
-does; the line at the top counts them and names the tabs:
+The tabs along the top are on every screen: the one you're on a block of
+the accent colour in brackets (it shows without colour too), the home's
+cursor a `›`. ←→ go along them, enter opens one, `1`–`9` jump to one from
+any screen; a tab with something on it that needs you carries its mark.
+Under them, the home's panels:
 
-- **Updates**: everything to bring back in line, marked while there's
-  anything. **Start** something stopped, **Restore** a file edited by
-  hand (putting back yardo's version), **Update** what an older yardo set
-  up (only what yardo set up: an item picked but never installed isn't a
-  problem), **Fill in** a value, and the newer versions. Enter opens
-  Tools on its Updates tab with every fix and update queued: **a**
-  applies them all in one run, space on one leaves it out, enter on a
-  value opens its file in your editor, q goes home with the queue kept.
-  With nothing there, enter checks for newer versions again, in the
-  background (**u** does it from anywhere on the home).
+- **Needs you**, only while something does: one row each, saying what and
+  the tab it's on; enter goes there. **Start** something stopped,
+  **Restore** a file edited by hand (putting back yardo's version),
+  **Update** what an older yardo set up, **Fill in** a value, **Install**
+  the newer versions, a key to add to a git host, a skill changed since
+  it was installed or held for review, a run that failed. Updates open
+  Tools on its Updates tab with every fix and update queued (**a** applies
+  them all in one run, space on one leaves it out); a fix or a value opens
+  Tools on that tool's row. The cursor starts in it; ↓ from the tabs goes
+  in, ↑ or esc goes back.
+- **Machine** in two lines: CPU (the average since yardo opened, up to 15
+  minutes, across all cores) and load, then memory, disk and uptime.
+- **Services & containers**: what's running or failed to start, the ports
+  each listens on and who can reach them (*any network*, *VPN only*,
+  *local*, or one address; *any network* in yellow when it isn't ssh or a
+  VPN), then the containers by image, name, ports and reach. Containers
+  the MCP gateway runs for its servers are counted on one line, by server.
+- **MCP servers** and **Connection**: the everyday lines to type on your
+  computer (ssh, the Docker context, the gateway's URL and where its
+  token is, pages), the same rows as Local settings, which has the rest.
+
+The tabs:
+
 - **Tools** (the full screen, below); its note says how many tools work,
-  or how many changes are queued there.
+  how many changes are queued there, and when updates were last checked.
 - **MCP servers** (the gateway's list: **space** marks one, or All
   servers, off or on, **a** applies what's marked, **n** adds one, or
   another instance of one, **e** edits its settings, **d** deletes one,
   asking first), marked when one needs a value or didn't register.
-- **Connection** (below), marked when there's a key to add.
-- **Settings** (**Network access**: the MCP gateway and containers'
-  published ports, each a row of choices with a sentence saying what it
-  means; **Accept new hosts' SSH keys**; **Session on login**; the
+- **Skills**, marked when one changed or is held.
+- **Network** (below): the machine's networks, **Network access** (who
+  reaches the MCP gateway, pages and containers' published ports) and
+  keys to add.
+- **Local settings** (below): what to set up on your own computer to use
+  this machine.
+- **Settings** (**Accept new hosts' SSH keys**; **Session on login**; the
   **Look**, theme and accent colour; your **Git name and email**, each
-  git host's **SSH key**, the **Shell prompt** and the **Dotfiles
-  repo**, asked again, then applied).
+  git host's **SSH key**, the **Shell prompt** and the **Dotfiles repo**,
+  asked again, then applied).
 - **Last run**, marked while it failed.
 
-The cursor starts on the first tab marked, else Tools. Typing on the
-home searches the tools, live on the
+**u** opens the updates from any screen, or checks for newer versions
+when there are none. Typing on the home searches the tools, live on the
 Tools screen.
 
 yardo looks for newer versions (apt and mise) in the background while
 the home is up, once a day; a run waits for it, as both use apt.
 
-**One program, one key map.** The home, Tools, Settings, Updates,
-Connection, Last run and the MCP servers are one screen that changes,
+**One program, one key map.** The home, Tools, the MCP servers, Skills,
+Network, Local settings, Settings and Last run are one screen that changes,
 without a flicker: Tools keeps its queue, its tab, each tab's row and
 its filter while you go home and back (q on the home with changes queued
 asks once). Only a question that needs typing (a name, a key) and a run
-leave the screen. Every screen has the same top line (who and where,
-then the path: `Home › Tools › Dev`) and the same bottom line, listing
+leave the screen. Every screen has the same top lines (who and where, the tabs, and
+the path when it's deeper than a tab: `Network › Network access`) and
+the same bottom line, listing
 every key that screen takes (zellij's status bar, Midnight Commander's
 key bar); the line above it says what just happened. The keys mean the
 same everywhere:
@@ -143,7 +160,8 @@ same everywhere:
 |---|---|
 | ↑↓ (`j` `k`) | move |
 | ←→ (`h` `l`) | switch tabs (the home, Tools); pick a choice on a setting |
-| tab | the next tab (the home, Tools) |
+| `1`–`9` | go to a tab along the top, from any screen |
+| tab | the next tab (Tools), the next section (Network, Local settings) |
 | enter | open the row, or do what it says |
 | space | tick: queue a tool, turn a server off or on |
 | `a` | apply what's queued or changed (Tools, Network access, Look, MCP servers) |
@@ -151,14 +169,14 @@ same everywhere:
 | `d` | delete or uninstall, asked first |
 | `e` | edit (an MCP server's settings) |
 | `/` | search |
-| `u` | check for updates (the home) |
+| `u` | the updates, from any screen; with none, check for them |
 | PgUp PgDn, Home End, `g` `G` | a screenful up or down, the first or last row |
 | `?` | every key of the screen, then the ones every screen shares (as in tmux) |
 | `q` | back; on the home, quit |
 | ctrl+c | quit, from anywhere |
 
 Every question (apply, uninstall, delete, quit with a queue) is the same
-framed box over the screen: enter, `y` or `n` answers it, `q` leaves it.
+framed box over the screen: enter, `y` or `n` answers it, esc cancels it.
 The mouse works too, over SSH and in tmux or zellij with their mouse on:
 a click selects a row, a double-click opens it, a click on a tab or a
 key in the bottom line does what it says, and the wheel
@@ -494,9 +512,9 @@ installed by hand.
 
 ### Configuring it
 
-1. **Network access** (Settings): who can reach the MCP gateway, containers'
-   published ports (everywhere, Docker's way; this machine and your VPNs;
-   or this machine only), each a row of choices.
+1. **Network access** (on Network): who can reach the MCP gateway,
+   containers' published ports (any network, Docker's way; local and your
+   VPNs; or local only), each a row of choices.
 2. **Git & SSH:** git name, email, your SSH key and defaults as one item,
    with lazygit (rebase on pull, push sets upstream, delta diffs, aliases,
    a global ignore file); one item per git host (GitHub with act to run
@@ -538,7 +556,7 @@ installed by hand.
    say how to let it write), no usage reports, and
    Docker is root on the machine), added to
    Claude Code, Codex, Gemini CLI, OpenCode and Goose. The gateway can be
-   reached from this machine only; from this machine and your VPNs
+   reached from local only; from local and your VPNs
    (Tailscale, NetBird, WireGuard, OpenVPN: it listens everywhere, and
    yardo's firewall lets its port in on those interfaces only, so a VPN
    that comes up later needs nothing redone); from the internet, at a
@@ -549,12 +567,12 @@ installed by hand.
    HTTP. Beyond this machine it needs a token
    (MCPJungle's enterprise mode): yardo makes the admin token (kept in
    `~/.mcp`, the gateway user's) and one for the agents on the VM, wired
-   into them, and one for your laptop, in `~/.mcp/clients/client.token`
+   into them, and one for your computer, in `~/.mcp/clients/client.token`
    (read it with `sudo cat`; the home's Connection says where). More
-   laptops: Connection's **n** (or `mcp-sync client <name>`), sent as
+   computers: Local settings' **n** (or `mcp-sync client <name>`), sent as
    `Authorization: Bearer <token>`; **d** there revokes one. Neither shows a token: it goes to
-   `~/.mcp/clients/<name>.token`. The
-   laptop only ever talks to the gateway: the servers' own tokens
+   `~/.mcp/clients/<name>.token`. Your
+   computer only ever talks to the gateway: the servers' own tokens
    (GitHub, Jira…) stay on this machine. On this machine only, there
    are no tokens: anything on the VM can use the gateway.
    **The servers** are the menu's **MCP servers**: each one you have, by
@@ -923,7 +941,7 @@ home too. At home Tailscale finds the
 direct path over your LAN, so it's as fast as the LAN; away it goes
 through the tunnel. The name and address don't change when the laptop
 changes network, so ssh, known_hosts and VS Code Remote-SSH keep one host.
-Connection's SSH row (and `yardo connect`) has the name and a ready
+Local settings' SSH row (and `yardo connect`) has the name and a ready
 `~/.ssh/config` block (one `Host`, `HostKeyAlias`, keep-alives), **c**
 copies it; tmux on the VM keeps sessions across sleep. Things to avoid:
 - The VM's LAN address: VPN-only services (the MCP gateway, container
@@ -937,7 +955,7 @@ copies it; tmux on the VM keeps sessions across sleep. Things to avoid:
   tagged auth key: tagged nodes never expire, and a grant like
   `{"src": ["autogroup:member"], "dst": ["tag:devvm"], "ip": ["tcp:22", "tcp:8081"]}`
   limits who reaches them. An untagged VM's key expires after 180 days;
-  Connection's Tailscale row (and `yardo connect`) says when.
+  Network's Tailscale row (and `yardo connect`) says when.
 - NetBird: the same with a reusable setup key (not ephemeral) whose
   auto-group, `devvm` say, is in a policy like *laptops → devvm, TCP 22
   and 8081*; a peer that needs approval waits for it in the dashboard
@@ -959,10 +977,9 @@ traffic to the local network go out the way they did before (a routing
 table of yardo's, set up each time the tunnel comes up), so ssh over the
 LAN still works, and Tailscale and NetBird keep their own routes.
 
-**Reaching this machine from a laptop: the Connection screen.** The
-home's **Connection** panel has the short version (`ssh vm`,
-`docker context use vm`, the gateway's URL and where its token is);
-enter on it, or Go to → Connection, opens the screen:
+**Network and Local settings.** The home's **Connection** panel has the
+short version (`ssh vm`, `docker context use vm`, the gateway's URL and
+where its token is). The **Network** tab is the machine's side:
 
 - **Networks**: Tailscale and NetBird when installed, each WireGuard and
   OpenVPN client profile (`/etc/wireguard/<name>.conf`,
@@ -994,36 +1011,44 @@ enter on it, or Go to → Connection, opens the screen:
   delete it there), NetBird is disconnected and logged out, a profile is
   stopped, taken off boot and its file deleted. `yardo forget` then has
   nothing left to log out.
-- **From your laptop**: SSH (the Host block), Docker (a context over SSH,
+- **Network access**: who reaches the MCP gateway and pages, and
+  containers' published ports (any network, Docker's way; local and your
+  VPNs; or local only); enter changes one.
+- **Keys to add**: a key a run made (a git host's, with where to add it
+  and the key alone on a line), until the host reads working on Tools or
+  you dismiss it with **d**.
+
+The **Local settings** tab is your computer's side:
+
+- **All of it, one script**: `ssh you@vm sudo yardo connect --script >
+  yardo-vm.sh`, read it, then `sh yardo-vm.sh` on your computer. It adds
+  the Host block, the Docker context and, with claude there, the gateway
+  to Claude Code, each once (run it again: it adds nothing). It holds no
+  token: it reads it over ssh when it runs.
+- **Connect**: SSH (the Host block), Docker (a context over SSH,
   which opens no port and needs no certificate; bind mounts are this
   machine's paths, `-p` ports open here), and with the MCP gateway
   Claude Code (`claude mcp add`), Codex (`~/.codex/config.toml`) and
   other clients (the URL and the header), each with this machine's
   address (its VPN's first), the exact lines and how you sign in. **c**
-  copies the row's lines to the laptop's clipboard through the terminal
+  copies the row's lines to your computer's clipboard through the terminal
   (OSC 52; through tmux too); with a token, it's read from its file as
   it's copied, never drawn. iTerm2 needs it allowed once (the screen
   says how), Terminal.app can't. When the gateway is this machine's
   only, the rows have the ssh tunnel to use instead.
+- **Once per computer**: the iTerm2 clipboard, so copies here (y in
+  Neovim, a drag in tmux) reach your computer.
 - **Gateway tokens**: a token per client, by name and file, never the
   value. **n** makes one (`mcp-sync client <name>`), **d** revokes one,
   asked first: the gateway refuses it from then on and its file goes
   (`mcp-sync client-rm <name>`).
-- **All of it, one script**: `ssh you@vm sudo yardo connect --script >
-  yardo-vm.sh`, read it, then `sh yardo-vm.sh` on the laptop. It adds the
-  Host block, the Docker context and, with claude there, the gateway to
-  Claude Code, each once (run it again: it adds nothing). It holds no
-  token: it reads it over ssh when it runs.
-- **Keys to add**: a key a run made (a git host's, with where to add it
-  and the key alone on a line), until the host reads working on Tools or
-  you dismiss it with **d**.
 
 Tools' VPN details say the same: Log in and Log out there run the same
-login and logout. `sudo yardo connect` prints the laptop's side as text.
+login and logout. `sudo yardo connect` prints your computer's side as text.
 
 Containers' published ports are
-reachable from everywhere, as Docker does it, unless Settings → Network
-access → "Container ports" keeps them to the VPNs or this machine.
+reachable from everywhere, as Docker does it, unless Network › Network
+access › "Container ports" keeps them to the VPNs or local only.
 yardo's firewall rules are nftables tables of its own in
 `/etc/yardo/firewall` (loaded at boot by `yardo-firewall.service`): they
 only keep these ports out, and leave Docker's, the VPNs' and anyone

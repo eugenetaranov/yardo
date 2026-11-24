@@ -495,34 +495,43 @@ func TestCachedStatus(t *testing.T) {
 	}
 }
 
-// The home's How to connect rows: what to type, and for the gateway's
+// The home's Connection panel says Local settings' everyday setups from
+// their How: what to type, then the key fact first; for the gateway's
 // token the file it's in, never the token.
 func TestConnectRows(t *testing.T) {
 	addrs := []address{{"100.64.1.7", "tailscale0", "Tailscale", "vm.tail.ts.net"}}
 	a := &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}
 	tok := laptopToken("ada", "client")
-	rows := connectRows(a, addrs, []string{tok}, true)
-	var got []string
-	for _, r := range rows {
-		got = append(got, fmt.Sprintf("%s|%s|%s", r.What, r.Use, r.Note))
+	how := func(ss []ui.Setup, id string) string {
+		for _, s := range ss {
+			if s.ID == id {
+				return s.How
+			}
+		}
+		return ""
 	}
-	all := strings.Join(got, "\n")
-	for _, want := range []string{"SSH|ssh ", "ada@100.64.1.7 over Tailscale", "Docker|docker context use ", "host=ssh://ada@100.64.1.7 · -p ports from the VPNs",
-		"MCP|http://100.64.1.7:8081/mcp|mcpjungle, with a token: sudo cat ~/.mcp/clients/client.token",
-		"Copies|defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true|iTerm2"} {
-		if !strings.Contains(all, want) {
-			t.Errorf("rows lack %q:\n%s", want, all)
+	ss := laptopSetups(a, addrs, []string{tok}, true, false, "vm")
+	for id, want := range map[string]string{"ssh": "ssh vm  ·  ada@100.64.1.7 via Tailscale · Host vm", "docker": "docker context use vm  ·  over SSH, no port to open · -p ports: VPN only",
+		"mcp-other": "http://100.64.1.7:8081/mcp  ·  token: sudo cat ~/.mcp/clients/client.token"} {
+		if !strings.HasPrefix(how(ss, id), want) {
+			t.Errorf("%s: %q, want %q…", id, how(ss, id), want)
 		}
 	}
-	if r := connectRows(a, addrs, nil, true); !strings.Contains(r[2].Note, "~/.mcp/clients/client.token") {
-		t.Errorf("no token yet: %+v", r[2])
+	// All of it first; copying to your computer, once per computer, last.
+	if ss[0].ID != "script" || ss[len(ss)-1].ID != "clipboard" || !ss[len(ss)-1].Once {
+		t.Errorf("order: %s … %s", ss[0].ID, ss[len(ss)-1].ID)
+	}
+	for _, s := range ss {
+		if strings.Contains(strings.Join(append([]string{s.How}, s.Say...), " "), "laptop") {
+			t.Errorf("%s says laptop: %+v", s.ID, s)
+		}
+	}
+	if h := how(laptopSetups(a, addrs, nil, true, false, "vm"), "mcp-other"); !strings.Contains(h, "token: sudo yardo --yes makes ~/.mcp/clients/client.token") {
+		t.Errorf("no token yet: %q", h)
 	}
 	a.MCPListen = ""
-	if r := connectRows(a, addrs, nil, true); !strings.HasPrefix(r[2].Use, "ssh -N -L 8081:127.0.0.1:8081 ") {
-		t.Errorf("this machine only: %+v", r[2])
-	}
-	if r := connectRows(a, addrs, nil, false); len(r) != 3 || r[2].What != "Copies" {
-		t.Errorf("no gateway: %+v", r)
+	if h := how(laptopSetups(a, addrs, nil, true, false, "vm"), "mcp-other"); !strings.HasPrefix(h, "ssh -N -L 8081:127.0.0.1:8081 ") || !strings.Contains(h, "no token needed: the tunnel is the login") {
+		t.Errorf("this machine only: %q", h)
 	}
 	var out strings.Builder
 	a.MCPListen = "vpn"
@@ -539,7 +548,7 @@ func TestPrintConnect(t *testing.T) {
 	var out bytes.Buffer
 	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}, addrs, nil, "", nil, false)
 	got := out.String()
-	for _, want := range []string{`docker context create`, `"host=ssh://ada@100.64.1.7"`, "reachable from this machine and the VPNs", "docker context use makes it the default", "export DOCKER_CONTEXT=",
+	for _, want := range []string{`docker context create`, `"host=ssh://ada@100.64.1.7"`, "reachable from local and VPN", "docker context use makes it the default", "export DOCKER_CONTEXT=",
 		"sudo cat /home/ada/.mcp/clients/client.token", "http://100.64.1.7:8081/mcp --header \"Authorization: Bearer <token>\"", "tailscale0 · Tailscale"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("vpn: lacks %q:\n%s", want, got)
