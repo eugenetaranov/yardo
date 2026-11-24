@@ -223,7 +223,7 @@ func cli(args []string, stdout, stderr io.Writer) error {
 				}
 				script = true
 			}
-			return o.connect(stdout, st, script)
+			return o.connect(stdout, cat, st, script)
 		case "remove", "uninstall":
 			return o.removeCmd(cat, st, fs.Args()[1:], stdout, stderr)
 		case "mcp":

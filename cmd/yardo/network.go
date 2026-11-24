@@ -209,8 +209,9 @@ func wayBack(nets []ui.Network, user string) string {
 
 // laptopSetups are what to set up on a laptop to reach this machine, as
 // ctxName at addrs[0] (its VPN address first): SSH, Docker, and with the
-// gateway picked the MCP clients; then the script that does it all.
-func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway bool, ctxName string) []ui.Setup {
+// gateway picked the MCP clients; with pages, ~/pages; then the script
+// that does it all.
+func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway, pages bool, ctxName string) []ui.Setup {
 	host, _ := os.Hostname()
 	addr := host
 	if len(addrs) > 0 {
@@ -263,7 +264,7 @@ func laptopSetups(a *answers.Answers, addrs []address, tokens []string, gateway 
 					Lines: []string{tunnel, local}, Say: say})
 		}
 	}
-	if slices.Contains(a.Picks, "pages") {
+	if pages {
 		out = append(out, pagesSetup(a, addr))
 	}
 	out = append(out, ui.Setup{ID: "clipboard", What: "Clipboard", How: "iTerm2  ·  let copies here (y in Neovim, a drag in tmux) reach the laptop",
@@ -337,7 +338,7 @@ func (o *options) connData(ctx context.Context, a *answers.Answers, addrs []addr
 	via, unsure := sessionVia(procEnviron, ttyName())
 	nets := networks(ctx, steps.OSExec{}, "", picked, addrs, via)
 	_, _, open := gatewayURL(a, "")
-	return ui.ConnData{Networks: nets, Setups: laptopSetups(a, addrs, tokens, picked("mcpjungle"), ctxName), Tokens: tokenRows(a.User),
+	return ui.ConnData{Networks: nets, Setups: laptopSetups(a, addrs, tokens, picked("mcpjungle"), picked("pages"), ctxName), Tokens: tokenRows(a.User),
 		Gateway: picked("mcpjungle") && open, WayBack: wayBack(nets, a.User), Unsure: unsure, CopyHint: copyHint(os.Getenv("LC_TERMINAL"))}
 }
 
@@ -435,8 +436,8 @@ func lastOfLines(s string) string {
 // laptop that adds the Host block, the Docker context and (with claude
 // there and the gateway picked) the gateway to Claude Code, each once. It
 // holds no token: it reads it over ssh as it runs.
-func connectScript(w io.Writer, a *answers.Answers, addrs []address, tokens []string, gateway bool, ctxName string) {
-	ss := laptopSetups(a, addrs, tokens, gateway, ctxName)
+func connectScript(w io.Writer, a *answers.Answers, addrs []address, tokens []string, gateway, pages bool, ctxName string) {
+	ss := laptopSetups(a, addrs, tokens, gateway, pages, ctxName)
 	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 	fmt.Fprintf(w, `#!/bin/sh
 # yardo connect --script: sets up this laptop to reach %s. It adds

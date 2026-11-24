@@ -104,3 +104,22 @@ func TestFirstRunOrder(t *testing.T) {
 		t.Errorf("customize: %v, %v", c2, err)
 	}
 }
+
+// Archify needs pages: it's in the plan (served, on Connection) without
+// being picked itself.
+func TestPlannedNeeds(t *testing.T) {
+	cat, err := catalog.Load(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	has := planned(cat, &answers.Answers{Picks: []string{"archify"}})
+	if !has("pages") || !has("archify") {
+		t.Error("archify's pages isn't in the plan")
+	}
+	if planned(cat, &answers.Answers{Picks: []string{"zsh"}})("pages") {
+		t.Error("pages in the plan without archify or pages")
+	}
+	if !planned(cat, &answers.Answers{Picks: []string{"pages", "no-such-item"}})("pages") {
+		t.Error("unresolvable picks: not the picks")
+	}
+}

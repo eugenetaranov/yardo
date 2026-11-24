@@ -333,6 +333,16 @@ func uiTabs(tabs []catalog.Tab) []ui.Tab {
 	return out
 }
 
+// planned reports whether an id is in a's plan: picked, or needed by a
+// pick (archify brings pages); just the picks when they don't resolve.
+func planned(cat *catalog.Catalog, a *answers.Answers) func(string) bool {
+	items, err := plan.Resolve(cat, a.Picks, len(a.MiseExtra) > 0)
+	if err != nil {
+		return func(id string) bool { return slices.Contains(a.Picks, id) }
+	}
+	return planHas(items)
+}
+
 // planHas reports whether an id is in the plan.
 func planHas(items []*catalog.Item) func(string) bool {
 	picks := " " + strings.Join(plan.IDs(items), " ") + " "

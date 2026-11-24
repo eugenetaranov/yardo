@@ -312,6 +312,8 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	}
 
 	picked := func(id string) bool { return slices.Contains(a.Picks, id) }
+	// inPlan: picked or needed by a pick, for what's served (Pages).
+	inPlan := planned(cat, a)
 	var items []*ui.BoardItem
 	for _, it := range cat.Items {
 		// Access settings are Settings' rows, not items.
@@ -357,7 +359,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	}
 	// Who can reach what: for what's picked (or, on a first run, queued).
 	has := func(id string) bool {
-		return picked(id) || (first && cat.Item(id) != nil && cat.Item(id).Default)
+		return inPlan(id) || (first && cat.Item(id) != nil && cat.Item(id).Default)
 	}
 	var settings []*ui.BoardSetting
 	// Who reaches the gateway reaches ~/pages too (at the gateway's domain
@@ -440,7 +442,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	if len(addrs) > 0 {
 		sub += "  ·  " + addrs[0].ip
 	}
-	info := ui.HomeInfo{Host: host, User: a.User, Connect: append(connectRows(a, addrs, tokens, picked("mcpjungle")), pagesRows(a, addrs, picked("pages"))...)}
+	info := ui.HomeInfo{Host: host, User: a.User, Connect: append(connectRows(a, addrs, tokens, picked("mcpjungle")), pagesRows(a, addrs, inPlan("pages"))...)}
 	if !first {
 		info.Dash = dashboard(ctx)
 	}
@@ -483,7 +485,7 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 	info.LastRun = loadLastRun(o.state, a.User, o.log, now)
 	info.Keys = keysToAdd(o.state, a, func(id string) bool { return status[id].State == "ok" })
 	return &screen{info: info, sub: sub, first: first,
-		tabs: tabs, items: items, settings: settings, conn: o.connData(ctx, a, addrs, picked)}, nil
+		tabs: tabs, items: items, settings: settings, conn: o.connData(ctx, a, addrs, inPlan)}, nil
 }
 
 // withUpdates gives the items the newer versions u found, once it's

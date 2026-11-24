@@ -102,9 +102,9 @@ func TestLaptopSetups(t *testing.T) {
 	short := strings.SplitN(host, ".", 2)[0]
 	addrs := []address{{"100.64.1.7", "tailscale0", "Tailscale", ""}}
 	a := &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081}
-	ss := laptopSetups(a, addrs, nil, true, short)
+	ss := laptopSetups(a, addrs, nil, true, false, short)
 	var out bytes.Buffer
-	printConnect(&out, a, addrs, nil, "", nil)
+	printConnect(&out, a, addrs, nil, "", nil, false)
 	for _, id := range []string{"ssh", "docker", "mcp-claude", "mcp-codex", "clipboard"} {
 		for _, l := range setupLines(ss, id) {
 			if !strings.Contains(ui.Unmark(out.String()), l) {
@@ -122,11 +122,11 @@ func TestLaptopSetups(t *testing.T) {
 		}
 	}
 	a.MCPListen = ""
-	ss = laptopSetups(a, addrs, nil, true, short)
+	ss = laptopSetups(a, addrs, nil, true, false, short)
 	if l := setupLines(ss, "mcp-claude"); len(l) != 2 || !strings.HasPrefix(l[0], "ssh -N -L 8081:127.0.0.1:8081 ada@100.64.1.7") || strings.Contains(l[1], "Bearer") {
 		t.Errorf("tunnel: %q", l)
 	}
-	if ss = laptopSetups(a, addrs, nil, false, short); len(ss) != 4 || ss[2].ID != "clipboard" || ss[3].ID != "script" || !strings.Contains(ss[3].Lines[0], "sudo yardo connect --script > yardo-"+short+".sh") {
+	if ss = laptopSetups(a, addrs, nil, false, false, short); len(ss) != 4 || ss[2].ID != "clipboard" || ss[3].ID != "script" || !strings.Contains(ss[3].Lines[0], "sudo yardo connect --script > yardo-"+short+".sh") {
 		t.Errorf("no gateway: %+v", ss)
 	}
 }
@@ -150,7 +150,7 @@ func TestConnectScript(t *testing.T) {
 	}
 	a := &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081}
 	var script bytes.Buffer
-	connectScript(&script, a, []address{{"100.64.1.7", "tailscale0", "Tailscale", ""}}, nil, true, "vm")
+	connectScript(&script, a, []address{{"100.64.1.7", "tailscale0", "Tailscale", ""}}, nil, true, false, "vm")
 	if strings.Contains(script.String(), "f00dfeed") {
 		t.Fatal("a token in the script")
 	}
@@ -199,8 +199,11 @@ func TestPagesSetup(t *testing.T) {
 	if s := pagesSetup(a, "100.1.2.3"); s.Lines[0] != "https://mcp.example.com/pages/" {
 		t.Errorf("public: %+v", s)
 	}
-	if ss := laptopSetups(a, nil, nil, false, "box"); !slices.ContainsFunc(ss, func(s ui.Setup) bool { return s.ID == "pages" }) {
+	if ss := laptopSetups(a, nil, nil, false, true, "box"); !slices.ContainsFunc(ss, func(s ui.Setup) bool { return s.ID == "pages" }) {
 		t.Error("no Pages on the Connection screen with pages picked")
+	}
+	if ss := laptopSetups(a, nil, nil, false, false, "box"); slices.ContainsFunc(ss, func(s ui.Setup) bool { return s.ID == "pages" }) {
+		t.Error("Pages on the Connection screen without pages")
 	}
 	if rows := pagesRows(a, nil, true); len(rows) != 1 || rows[0].Use != "https://mcp.example.com/pages/" {
 		t.Errorf("home row: %+v", rows)

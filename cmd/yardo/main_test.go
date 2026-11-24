@@ -525,7 +525,7 @@ func TestConnectRows(t *testing.T) {
 	}
 	var out strings.Builder
 	a.MCPListen = "vpn"
-	printConnect(&out, a, addrs, nil, "", []string{tok})
+	printConnect(&out, a, addrs, nil, "", []string{tok}, false)
 	if !strings.Contains(out.String(), "sudo cat "+tok) || strings.Contains(out.String(), "next run") {
 		t.Errorf("connect with a token:\n%s", out.String())
 	}
@@ -536,7 +536,7 @@ func TestConnectRows(t *testing.T) {
 func TestPrintConnect(t *testing.T) {
 	addrs := []address{{"100.64.1.7", "tailscale0", "Tailscale", ""}, {"10.0.0.5", "eth0", "", ""}}
 	var out bytes.Buffer
-	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}, addrs, nil, "", nil)
+	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081, DockerPorts: "vpn"}, addrs, nil, "", nil, false)
 	got := out.String()
 	for _, want := range []string{`docker context create`, `"host=ssh://ada@100.64.1.7"`, "reachable from this machine and the VPNs", "docker context use makes it the default", "export DOCKER_CONTEXT=",
 		"sudo cat /home/ada/.mcp/clients/client.token", "http://100.64.1.7:8081/mcp --header \"Authorization: Bearer <token>\"", "tailscale0 · Tailscale"} {
@@ -548,12 +548,12 @@ func TestPrintConnect(t *testing.T) {
 		t.Errorf("clipboard, unknown terminal:\n%s", got)
 	}
 	out.Reset()
-	printConnect(&out, &answers.Answers{User: "ada"}, addrs, nil, "iTerm2", nil)
+	printConnect(&out, &answers.Answers{User: "ada"}, addrs, nil, "iTerm2", nil, false)
 	if got := out.String(); !strings.Contains(got, "defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true") || strings.Contains(got, "Ghostty") {
 		t.Errorf("clipboard, iTerm2:\n%s", got)
 	}
 	out.Reset()
-	printConnect(&out, &answers.Answers{User: "ada"}, addrs, nil, "", nil)
+	printConnect(&out, &answers.Answers{User: "ada"}, addrs, nil, "", nil, false)
 	if got := out.String(); !strings.Contains(got, "ssh -N -L 8080:127.0.0.1:8080 ada@100.64.1.7") || strings.Contains(got, "Bearer") {
 		t.Errorf("local:\n%s", got)
 	}
@@ -570,7 +570,7 @@ func TestPrintConnectNames(t *testing.T) {
 	ts := &steps.TSStatus{BackendState: "Running"}
 	ts.Self.KeyExpiry = &exp
 	var out bytes.Buffer
-	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081}, addrs, ts, "", nil)
+	printConnect(&out, &answers.Answers{User: "ada", MCPListen: "vpn", MCPPort: 8081}, addrs, ts, "", nil, false)
 	got := ui.Unmark(out.String())
 	for _, want := range []string{"Use 100.64.1.7 at home and away", "Its name, payzoff.tail1234.ts.net, works too", "Host " + short + "\n    HostName 100.64.1.7\n    User ada\n    HostKeyAlias " + short,
 		"ServerAliveInterval 15", `"host=ssh://ada@100.64.1.7"`, `"host=ssh://` + short + `"`, "http://100.64.1.7:8081/mcp", "expires on 2027-04-28"} {
@@ -580,12 +580,12 @@ func TestPrintConnectNames(t *testing.T) {
 	}
 	ts.Self.Tags = []string{"tag:devvm"}
 	out.Reset()
-	printConnect(&out, &answers.Answers{User: "ada"}, addrs, ts, "", nil)
+	printConnect(&out, &answers.Answers{User: "ada"}, addrs, ts, "", nil, false)
 	if strings.Contains(out.String(), "expires") {
 		t.Error("tagged: expiry said")
 	}
 	out.Reset()
-	printConnect(&out, &answers.Answers{User: "ada"}, addrs[1:], nil, "", nil)
+	printConnect(&out, &answers.Answers{User: "ada"}, addrs[1:], nil, "", nil, false)
 	if got := out.String(); !strings.Contains(got, "works only on its own network") || strings.Contains(got, "HostKeyAlias") {
 		t.Errorf("no vpn:\n%s", got)
 	}
@@ -602,13 +602,13 @@ func TestConnectVPNKinds(t *testing.T) {
 	name, _ := vpnOf("tun0", "10.135.100.2")
 	client := []address{{"192.168.0.171", "eth0", "", ""}, {"10.135.100.2", "tun0", name, ""}}
 	var b bytes.Buffer
-	printConnect(&b, &answers.Answers{User: "ada"}, client, nil, "", nil)
+	printConnect(&b, &answers.Answers{User: "ada"}, client, nil, "", nil, false)
 	if got := b.String(); strings.Contains(got, "HostKeyAlias") || !strings.Contains(got, "tun0 · OpenVPN client (this machine's connection out)\n") {
 		t.Errorf("client:\n%s", got)
 	}
 	name, _ = vpnOf("tun0", "10.8.0.1")
 	b.Reset()
-	printConnect(&b, &answers.Answers{User: "ada"}, []address{{"10.8.0.1", "tun0", name, ""}}, nil, "", nil)
+	printConnect(&b, &answers.Answers{User: "ada"}, []address{{"10.8.0.1", "tun0", name, ""}}, nil, "", nil, false)
 	if got := b.String(); !strings.Contains(got, "keep OpenVPN (yardo's server) connected on your laptop") || !strings.Contains(got, "HostName 10.8.0.1") {
 		t.Errorf("server:\n%s", got)
 	}
@@ -817,7 +817,7 @@ func TestWithNamesNetbird(t *testing.T) {
 		t.Fatalf("netbird: %+v", got)
 	}
 	var b strings.Builder
-	printConnect(&b, &answers.Answers{User: "ada"}, got, ts, "", nil)
+	printConnect(&b, &answers.Answers{User: "ada"}, got, ts, "", nil, false)
 	if v := b.String(); !strings.Contains(v, "Use 100.92.0.7 at home and away") || !strings.Contains(v, "Its name, payzoff.netbird.cloud, works too") {
 		t.Errorf("connect:\n%s", v)
 	}
@@ -830,7 +830,7 @@ func TestWithNamesNetbird(t *testing.T) {
 	// Disconnected: no name; connect says why it has only the address.
 	got, _ = withNames(context.Background(), tsExec{nb: `{"management":{"connected":false}}`}, slices.Clone(lan))
 	b.Reset()
-	printConnect(&b, &answers.Answers{User: "ada"}, got, nil, "", nil)
+	printConnect(&b, &answers.Answers{User: "ada"}, got, nil, "", nil, false)
 	if got[0].name != "" || !strings.Contains(b.String(), "NetBird gave no name") {
 		t.Errorf("disconnected: %+v\n%s", got, b.String())
 	}
@@ -846,7 +846,7 @@ func TestWithNames(t *testing.T) {
 		t.Errorf("userspace: %+v", got)
 	}
 	var b strings.Builder
-	printConnect(&b, &answers.Answers{User: "ubuntu"}, got, ts, "", nil)
+	printConnect(&b, &answers.Answers{User: "ubuntu"}, got, ts, "", nil, false)
 	if !strings.Contains(b.String(), `host=ssh://ubuntu@100.64.1.7"`) {
 		t.Errorf("connect:\n%s", b.String())
 	}

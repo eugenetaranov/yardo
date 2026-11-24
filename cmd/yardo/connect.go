@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/eugenetaranov/yardo/internal/answers"
+	"github.com/eugenetaranov/yardo/internal/catalog"
 	"github.com/eugenetaranov/yardo/internal/steps"
 	"github.com/eugenetaranov/yardo/internal/ui"
 )
@@ -157,11 +158,11 @@ func paste(w io.Writer, indent string, lines ...string) {
 
 // printConnect says how to reach this machine from a laptop; term is the
 // laptop's terminal when it says (see clipboardHint).
-func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TSStatus, term string, tokens []string) {
+func printConnect(w io.Writer, a *answers.Answers, addrs []address, ts *steps.TSStatus, term string, tokens []string, pages bool) {
 	host, _ := os.Hostname()
 	ctxName := strings.SplitN(host, ".", 2)[0]
 	// The lines to paste are the Connection screen's.
-	ss := laptopSetups(a, addrs, tokens, true, ctxName)
+	ss := laptopSetups(a, addrs, tokens, true, pages, ctxName)
 	fmt.Fprintf(w, "Connecting to %s from your laptop (as %s)\n\n", host, a.User)
 	fmt.Fprintln(w, "This machine's addresses:")
 	addr := host
@@ -357,7 +358,7 @@ func tildeOf(user, path string) string {
 
 // connect is `yardo connect`: how to reach this machine from a laptop, for
 // the user who ran sudo (or --user); with script, the laptop's script.
-func (o *options) connect(stdout io.Writer, st *answers.Store, script bool) error {
+func (o *options) connect(stdout io.Writer, cat *catalog.Catalog, st *answers.Store, script bool) error {
 	u, err := o.userFor(st)
 	if err != nil {
 		return err
@@ -368,13 +369,14 @@ func (o *options) connect(stdout io.Writer, st *answers.Store, script bool) erro
 	}
 	a.User = u
 	addrs, ts := withNames(context.Background(), steps.OSExec{}, addresses())
+	pages := planned(cat, a)("pages")
 	if script {
 		host, _ := os.Hostname()
-		connectScript(stdout, a, addrs, laptopTokens(u), slices.Contains(a.Picks, "mcpjungle"), strings.SplitN(host, ".", 2)[0])
+		connectScript(stdout, a, addrs, laptopTokens(u), slices.Contains(a.Picks, "mcpjungle"), pages, strings.SplitN(host, ".", 2)[0])
 		return nil
 	}
 	var b strings.Builder
-	printConnect(&b, a, addrs, ts, os.Getenv("LC_TERMINAL"), laptopTokens(u))
+	printConnect(&b, a, addrs, ts, os.Getenv("LC_TERMINAL"), laptopTokens(u), pages)
 	_, err = io.WriteString(stdout, ui.Unmark(b.String()))
 	return err
 }
