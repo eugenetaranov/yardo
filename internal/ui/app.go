@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -88,6 +89,16 @@ type Dialog struct {
 	Q    string
 	// On is what a choice does.
 	On func(value string) tea.Cmd
+	// Input: it takes a line typed (Typed), after its lines, Ask before
+	// it; enter gives it to On, unless Bad says what's wrong with it:
+	// then it stays, saying so, the line cleared. Enter says what enter
+	// does, for the footer.
+	Input bool
+	Ask   string
+	Typed []rune
+	Bad   func(typed string) string
+	Enter string
+	bad   string
 }
 
 // dialogKey is key k on the dialog d points to: it closes it on an
@@ -98,6 +109,28 @@ func dialogKey(d **Dialog, k string) tea.Cmd {
 		*d = nil
 		if p.On != nil && v != "" {
 			return p.On(v)
+		}
+		return nil
+	}
+	if p.Input {
+		switch {
+		case k == "esc":
+			return pick("")
+		case k == "enter":
+			t := string(p.Typed)
+			if p.Bad != nil {
+				if why := p.Bad(t); why != "" {
+					p.bad, p.Typed = why, nil
+					return nil
+				}
+			}
+			return pick(t)
+		case k == "backspace":
+			if len(p.Typed) > 0 {
+				p.Typed = p.Typed[:len(p.Typed)-1]
+			}
+		case utf8.RuneCountInString(k) == 1:
+			p.Typed, p.bad = append(p.Typed, []rune(k)...), ""
 		}
 		return nil
 	}
@@ -143,9 +176,18 @@ func dialogLines(d *Dialog, w, y int, hits *[]Hit) []string {
 			out = append(out, edge(""))
 			continue
 		}
-		for _, wl := range wrap(body, iw-1-len(pad)) {
+		wls := []string{body}
+		if lipgloss.Width(body) > iw-1-len(pad) {
+			// Wrapped only when it must be: one that fits keeps its spacing.
+			wls = wrap(body, iw-1-len(pad))
+		}
+		for _, wl := range wls {
 			out = append(out, edge(fmt.Sprintf(" %s%s", pad, wl)))
 		}
+	}
+	if d.Input {
+		out = append(out, edge(fmt.Sprintf(" %s %s%s", d.Ask, bold.Render(string(d.Typed)), accent.Render("█"))))
+		out = append(out, edge(" "+red.Render(d.bad)))
 	}
 	for n, o := range d.Opts {
 		// The label at the same place, chosen or not.
@@ -165,6 +207,9 @@ func dialogLines(d *Dialog, w, y int, hits *[]Hit) []string {
 // dialogKeys are a dialog's footer keys: what its keys do (no ? or q
 // tail: q is esc's, or picks Q).
 func dialogKeys(d *Dialog) []Key {
+	if d.Input {
+		return []Key{{Key: "enter", What: cmpOr(d.Enter, "do it"), Keep: true}, {Key: "esc", What: "back", Keep: true}}
+	}
 	if len(d.Opts) == 0 {
 		return []Key{{Key: "enter", What: "close"}}
 	}
@@ -468,7 +513,7 @@ func (a *App) dialogUp() bool {
 	case a.onConn:
 		return a.Conn.dialog != nil
 	}
-	return a.Menu.dialog != nil
+	return a.Menu.asking()
 }
 
 // onTab is whether the view is a tab's own screen (the home, Tools,

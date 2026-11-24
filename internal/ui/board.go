@@ -63,6 +63,9 @@ type SkillRow struct {
 	Off string
 	// Where says which skills folders it's in, or is held off from.
 	Where string
+	// A held one's Verdict (block, ok, note, clean), and Held what's in
+	// its report, in a line ("3 to look at · runs node").
+	Verdict, Held string
 }
 
 // MCPServer is one MCP server on the menu's MCP servers screen.
@@ -95,6 +98,8 @@ type MCPServer struct {
 	// its image is pulled here ("cached: 0.23.1, built 2026-03-02", "not
 	// pulled yet"); "" for a URL.
 	From, Cached string
+	// A held one's Verdict and Held, as a skill's (SkillRow).
+	Verdict, Held string
 }
 
 // MCPSpec is a catalog server, to add.

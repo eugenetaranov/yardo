@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
@@ -62,6 +63,10 @@ const (
 	// MenuFixes opens Tools on the Updates tab, on Result.ID's row (the
 	// first, with none); nothing queued.
 	MenuFixes
+	// MenuReviewed: a review installed, declined or checked again
+	// Result.MCP.Entry (Do: what it did); the machine is read again and
+	// Result.ID's screen (skills, mcp, home) shown, saying Result.Toast.
+	MenuReviewed
 )
 
 // MCPAct is what to do to an MCP server: Do (add, edit, on, rename,
@@ -78,6 +83,7 @@ type MenuResult struct {
 	Inputs   []string
 	Settings map[string]string
 	MCP      MCPAct
+	Toast    string
 }
 
 // menuRow is one of the home's (or Settings') rows: item and input are
@@ -126,8 +132,14 @@ type Menu struct {
 	skBefore    []SkillRow
 	skBeforeAll bool
 	skSel       int
+	// reviewer runs the Review screen's checks and decisions; rv is the
+	// review open (screen review), rvFrom the screen it came from.
+	reviewer Reviewer
+	rvCtx    context.Context
+	rv       *review
+	rvFrom   string
 
-	screen string // home, settings, access, look, shell, lastrun, mcp, mcp:server, mcp:add, mcp:name, skills, skills:skill
+	screen string // home, settings, access, look, shell, lastrun, mcp, mcp:server, mcp:add, mcp:name, skills, skills:skill, review
 	sel    int
 	// need is the home's cursor in Needs you (-1: on the tabs, at sel).
 	need int
@@ -344,7 +356,12 @@ func (m *Menu) needList() []menuRow {
 		case s.Source == "drifted":
 			out = append(out, menuRow{id: "skill:" + s.Name, label: fmt.Sprintf("Check %s again", s.Name), note: "a skill changed since checked: restore it, or check it again"})
 		case s.Off == "held":
-			out = append(out, menuRow{id: "skill:" + s.Name, label: "Review " + s.Name, note: "a skill held for your decision: its report"})
+			out = append(out, menuRow{id: "held:skill:" + s.Name, label: "Review " + s.Name, note: cmpOr(s.Held, "a skill held for your decision")})
+		}
+	}
+	for _, s := range m.info.MCP {
+		if s.State == "held" {
+			out = append(out, menuRow{id: "held:mcp:" + s.Name, label: "Review " + s.Name, note: cmpOr(s.Held, "an MCP server held for your decision")})
 		}
 	}
 	return out
@@ -358,7 +375,9 @@ func needTab(id string) string {
 	switch {
 	case id == "why":
 		return "lastrun"
-	case strings.HasPrefix(id, "mcp"):
+	case strings.HasPrefix(id, "held:skill:"):
+		return "skills"
+	case strings.HasPrefix(id, "mcp"), strings.HasPrefix(id, "held:mcp:"):
 		return "mcp"
 	case strings.HasPrefix(id, "skill:"):
 		return "skills"
@@ -388,6 +407,9 @@ func (m *Menu) goNeed(r menuRow) tea.Cmd {
 		m.open("lastrun")
 	case r.id == "keys":
 		return m.quit(MenuResult{Kind: MenuConnection, ID: NetTab + ":key"})
+	case strings.HasPrefix(r.id, "held:"):
+		kind, name, _ := strings.Cut(strings.TrimPrefix(r.id, "held:"), ":")
+		return m.openReview(kind, name)
 	case strings.HasPrefix(r.id, "skill:"):
 		n := slices.IndexFunc(m.info.Skills, func(s SkillRow) bool { return "skill:"+s.Name == r.id })
 		m.open("skills")
@@ -646,6 +668,18 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.switched(v)
 	case skillsSwitched:
 		m.skillsSaved(v)
+	case reviewStage:
+		if v.r == m.rv {
+			return m, m.reviewed(m.rv.took(v))
+		}
+	case reviewRan:
+		if v.r == m.rv {
+			return m, m.reviewed(m.rv.took(v))
+		}
+	case editedMsg:
+		if m.rv != nil {
+			m.rv.took(v)
+		}
 	case UpdatesMsg:
 		for _, i := range m.items {
 			if i.Picked {
@@ -678,6 +712,8 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = dialogKey(&m.dialog, v.String())
 		case m.screen == "mcp:name":
 			cmd = m.nameKey(v)
+		case m.screen == "review" && m.rv != nil:
+			cmd = m.reviewed(m.rv.key(v.String()))
 		case m.screen == "home" && v.Type == tea.KeyRunes && !homeKey(string(v.Runes)) || m.screen == "home" && v.String() == "/":
 			// Typing searches the tools.
 			cmd = m.quit(MenuResult{Kind: MenuTools, Search: strings.TrimPrefix(string(v.Runes), "/")})
@@ -718,6 +754,10 @@ func (m *Menu) move(n int) {
 			top = -1
 		}
 		m.sel = clamp(m.sel+n, top, m.lastRow())
+	case "review":
+		if m.rv != nil {
+			m.rv.moveBy(n)
+		}
 	}
 }
 
@@ -743,6 +783,10 @@ func (m *Menu) normalize() {
 	case "skills:skill":
 		if m.skill() == nil {
 			m.screen, m.sel = "skills", 0
+		}
+	case "review":
+		if m.rv == nil {
+			m.screen = cmpOr(m.rvFrom, "home")
 		}
 	}
 	switch m.screen {
@@ -972,13 +1016,26 @@ func (m *Menu) View() string {
 }
 
 // Toast is the line the menu says above its keys.
-func (m *Menu) Toast() string { return m.toast }
+func (m *Menu) Toast() string {
+	if m.screen == "review" && m.rv != nil && m.rv.Toast() != "" {
+		return m.rv.Toast()
+	}
+	return m.toast
+}
 
 // Hits are where the last Body drew what a click selects.
 func (m *Menu) Hits() []Hit { return m.hits }
 
-// Typing: a name is being typed.
-func (m *Menu) Typing() bool { return m.screen == "mcp:name" && m.dialog == nil }
+// Typing: a name is being typed (or an add-on's, to install it).
+func (m *Menu) Typing() bool {
+	return m.screen == "mcp:name" && m.dialog == nil || m.screen == "review" && m.rv != nil && m.rv.typing()
+}
+
+// asking: the screen has a question open, or a review is running a
+// check (its keys are its own till it's done).
+func (m *Menu) asking() bool {
+	return m.dialog != nil || m.screen == "review" && m.rv != nil && (m.rv.dialog != nil || m.rv.busy != "")
+}
 
 // hit records that a click on body line y (columns x0 to x1; x1 0: all
 // of it) selects with do.
@@ -1009,6 +1066,10 @@ func (m *Menu) Path() string {
 		return "Home › Last run"
 	case "skills", "skills:skill":
 		return "Home › " + m.skillsPath()
+	case "review":
+		if m.rv != nil {
+			return "Home › " + m.rv.Path()
+		}
 	}
 	return "Home › " + m.mcpPath()
 }
@@ -1020,6 +1081,8 @@ func (m *Menu) Back() string {
 		return "" // the dialog's keys say what esc and q do
 	case m.screen == "home":
 		return "quit"
+	case m.screen == "review" && m.rv != nil:
+		return m.rv.Back()
 	case m.screen == "mcp:name":
 		return ""
 	case m.screen == "mcp" && m.fromBoard:
@@ -1050,6 +1113,10 @@ func (m *Menu) Keys() []Key {
 		return []Key{{Key: "↑↓", What: "scroll"}}
 	case "skills", "skills:skill":
 		return m.skillsKeys()
+	case "review":
+		if m.rv != nil {
+			return m.rv.Keys()
+		}
 	}
 	return m.mcpKeys()
 }
@@ -1062,6 +1129,10 @@ func (m *Menu) Help() []Key {
 			{Key: "↓ j tab", What: "into Needs you (↑ back to the tabs, esc too)"},
 			{Key: "enter", What: "open the tab, or go where the thing that needs you is done"},
 			{Key: "u", What: "Tools' Updates tab; with nothing there, check for updates"}, {Key: "a letter, /", What: "search the tools"}, {Key: "q", What: "quit"}}
+	case "review":
+		if m.rv != nil {
+			return m.rv.Help()
+		}
 	}
 	return m.Keys()
 }
@@ -1071,6 +1142,11 @@ func (m *Menu) Body(w, h int) string {
 	m.hits = nil
 	if m.screen == "home" {
 		return m.homeView(w, h)
+	}
+	if m.screen == "review" && m.rv != nil {
+		s := m.rv.Body(w, h)
+		m.hits = m.rv.Hits()
+		return s
 	}
 	var b []string
 	add := func(s ...string) { b = append(b, s...) }

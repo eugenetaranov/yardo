@@ -41,6 +41,55 @@ type Finding struct {
 	// Fix is a fix yardo can make (remove:<file>, drop-key:<key>,
 	// drop-opt:<option>), after which it checks again.
 	Fix string `json:"fix,omitempty"`
+	// Role is what its file is to the agent (see Roles); Kind what the
+	// finding is, in a few words ("Contacts the network"); Why says why
+	// it matters here, a line each; Look: it's worth the user's eyes
+	// (every block and ok is; a note may be).
+	Role string   `json:"role,omitempty"`
+	Kind string   `json:"kind,omitempty"`
+	Why  []string `json:"why,omitempty"`
+	Look bool     `json:"look,omitempty"`
+	// Also are the other layers that found the same file and line.
+	Also []string `json:"also,omitempty"`
+	// More is how many more places the same finding is in that file.
+	More int `json:"more,omitempty"`
+	// ID names it across reports (rule, file, what it matched; not the
+	// line), so an update can tell what's new since an approval.
+	ID string `json:"id,omitempty"`
+}
+
+// Roles a file has to the agent, most weight first: instructions (it
+// reads them: SKILL.md, what SKILL.md links to), script (SKILL.md tells
+// it to run them), code (its own, imported by those), vendored
+// (third-party, bundled, generated, minified), asset, doc, license.
+var Roles = []string{"instructions", "script", "code", "vendored", "asset", "doc", "license"}
+
+// Cap is something the add-on can do, found in its own code: Kind is
+// exec, network, env, home, secrets, writes, agent, grants, hooks,
+// install; What says it ("node, git, open", "tt-a1i.github.io");
+// Where are file:line places, first few; Count how many places in all;
+// Look: worth the user's eyes (a host it calls, writes outside its
+// folder, the agent's rules or settings).
+type Cap struct {
+	Kind  string   `json:"kind"`
+	What  string   `json:"what"`
+	Where []string `json:"where,omitempty"`
+	Count int      `json:"count,omitempty"`
+	Look  bool     `json:"look,omitempty"`
+}
+
+// Coverage is what each layer read: Files of All; Skipped and Unread
+// say what wasn't, in words ("389 licences, assets, vendored", "14 own
+// files past the budget"); Looks which files worth a look it read, and
+// how (Claude's); Off why a layer didn't run ("not installed").
+type Coverage struct {
+	Layer   string `json:"layer"`
+	Files   int    `json:"files"`
+	All     int    `json:"all"`
+	Skipped string `json:"skipped,omitempty"`
+	Unread  string `json:"unread,omitempty"`
+	Looks   string `json:"looks,omitempty"`
+	Off     string `json:"off,omitempty"`
 }
 
 // Where is the finding's file:line, or file, or "".
@@ -62,12 +111,34 @@ type Report struct {
 	Changes []Change `json:"changes,omitempty"`
 	// Rules is the version of yardo's rules it was made by.
 	Rules int `json:"rules,omitempty"`
+	// Caps is what it can do; Coverage what each layer read; Files each
+	// file's role (path → role).
+	Caps     []Cap             `json:"caps,omitempty"`
+	Coverage []Coverage        `json:"coverage,omitempty"`
+	Files    map[string]string `json:"files,omitempty"`
+	// Since: an update's report, against the approved one: Caps gained
+	// (+) and lost (−), and the IDs of findings the user OK'd then.
+	Gained   []Cap    `json:"gained,omitempty"`
+	Lost     []Cap    `json:"lost,omitempty"`
+	Accepted []string `json:"accepted,omitempty"`
+}
+
+// Looks are the findings worth the user's eyes, in report order: not
+// those the user OK'd in the version approved.
+func (r Report) Looks() []Finding {
+	var out []Finding
+	for _, f := range r.Findings {
+		if f.Look || f.Level == "block" || f.Level == "ok" && !slices.Contains(r.Accepted, f.ID) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // Rules is the version of yardo's rules (Basic): a report made by others
 // is checked again, as what blocked then may not now, or the reverse.
 // Raise it when a rule changes what it finds.
-const Rules = 3
+const Rules = 4
 
 // Current: the report was made, by these rules.
 func (r Report) Current() bool { return r.Hash != "" && r.Rules == Rules }
@@ -127,15 +198,32 @@ type Held struct {
 	Existing bool `json:"existing,omitempty"`
 	// Update: a newer version of one approved (its approved copy is what
 	// it's compared with).
-	Update   bool      `json:"update,omitempty"`
-	Added    time.Time `json:"added"`
-	Report   Report    `json:"report"`
+	Update bool      `json:"update,omitempty"`
+	Added  time.Time `json:"added"`
+	Report Report    `json:"report"`
+	// Found are the findings as the layers found them, before those on
+	// one line were merged: Check again carefully replaces Claude's.
+	Found []Finding `json:"found,omitempty"`
 }
 
 // dir is the holding area of user (root's, 0700).
 func dir(user string) string { return filepath.Join(Base, "quarantine", user) }
 
 func (h *Held) dir() string { return filepath.Join(dir(h.User), h.ID) }
+
+// Path is file's place on disk among h's held files, to open it: "" when
+// file isn't a path inside them; file "" is their folder.
+func (h *Held) Path(file string) string {
+	switch {
+	case !validUser(h.User) || !validUser(h.ID):
+		return ""
+	case file == "":
+		return filepath.Join(h.dir(), "files")
+	case !cleanRel(file):
+		return ""
+	}
+	return filepath.Join(h.dir(), "files", filepath.FromSlash(file))
+}
 
 // Hold puts files in a new held item for h (its ID is made here).
 func Hold(h *Held, files map[string][]byte) error {

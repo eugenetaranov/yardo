@@ -2,6 +2,8 @@ package addon
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"regexp"
@@ -38,7 +40,11 @@ const (
 
 // Basic runs yardo's rules on s: blocks (can't be installed as it is)
 // and notes, each with where and what to do.
-func Basic(s Subject) []Finding {
+func Basic(s Subject) []Finding { return Scan(s).Findings }
+
+// Scan runs yardo's rules on s: its findings, one per rule and file,
+// what it can do (Caps), each file's role, and what it read.
+func Scan(s Subject) Report {
 	var out []Finding
 	block := func(rule, file string, line int, text, next, fix string) {
 		out = append(out, Finding{Layer: "basic", Rule: rule, Level: "block", File: file, Line: line, Text: text, Next: next, Fix: fix})
@@ -49,6 +55,7 @@ func Basic(s Subject) []Finding {
 	note := func(rule, file string, line int, text, next string) {
 		out = append(out, Finding{Layer: "basic", Rule: rule, Level: "note", File: file, Line: line, Text: text, Next: next})
 	}
+	rl := roles(s.Files)
 	if !s.Pinned {
 		block("pin", "", 0, "the source isn't fixed to a commit or an image digest", "add it again from a commit (owner/repo@<commit>) or an image by digest", "")
 	}
@@ -77,7 +84,7 @@ func Basic(s Subject) []Finding {
 			continue
 		}
 		if len(b) > maxFile {
-			needsOK("size", p, 0, fmt.Sprintf("%.1f MB, more than the %d MB a file yardo reads through", float64(len(b))/(1<<20), maxFile>>20), "install it as it is (you type its name), or remove the file: the skill may not work without it", "remove:"+p)
+			out = append(out, big(p, b, rl[p]))
 		}
 		switch {
 		case program(b) != "":
@@ -85,13 +92,14 @@ func Basic(s Subject) []Finding {
 		case archive(p, b) != "":
 			block("archive", p, 0, fmt.Sprintf("an archive (%s): files that can't be read here", archive(p, b)), "remove this file", "remove:"+p)
 		default:
-			out = append(out, textRules(s, p, b)...)
+			out = append(out, textRules(p, b, rl[p])...)
 		}
 	}
 	if total > maxTotal || len(s.Files) > maxCount {
-		needsOK("size", "", 0, fmt.Sprintf("%d files, %d MB in all, more than the %d files or %d MB yardo reads through", len(s.Files), total>>20, maxCount, maxTotal>>20), "install it as it is (you type its name), or decline it", "")
+		needsOK("size", "", 0, fmt.Sprintf("%d files, %d MB in all: too much for Claude's review; yardo's rules read every line", len(s.Files), total>>20), "install it as it is (you type its name), or decline it", "")
 	}
-	out = oneEach(out)
+	caps, cfs := capsOf(s, rl)
+	out = append(out, cfs...)
 	if s.Kind == "skill" {
 		out = append(out, frontmatter(s.Files["SKILL.md"])...)
 		if s.Files["SKILL.md"] == nil {
@@ -101,52 +109,91 @@ func Basic(s Subject) []Finding {
 	if s.Kind == "mcp" {
 		out = append(out, specRules(s)...)
 	}
-	return out
+	return Report{Findings: onePer(out, rl), Caps: caps, Files: rl,
+		Coverage: []Coverage{{Layer: "basic", Files: len(s.Files), All: len(s.Files)}}}
 }
 
-// oneEach keeps one note per web address, where it's first, saying how
-// many more places have it: a bundle names the same one a hundred times.
-// A file with more than manyURLs gets one note for them all, by site.
-func oneEach(fs []Finding) []Finding {
+// big is the finding of file p, too big for Claude's review: it needs
+// your OK when it's the add-on's own; bundled code or an asset is a note
+// worth a look; a doc or licence, a note.
+func big(p string, b []byte, role string) Finding {
+	f := Finding{Layer: "basic", Rule: "size", Level: "note", File: p, Fix: "remove:" + p,
+		Text: fmt.Sprintf("%.1f MB: too big for Claude's review; yardo's rules read every line", float64(len(b))/(1<<20))}
+	first, _, _ := bytes.Cut(b[:min(len(b), 400)], []byte("\n"))
+	if utf8.Valid(first) && len(bytes.TrimSpace(first)) > 0 {
+		f.Why = append(f.Why, fmt.Sprintf("It starts %q.", clean(string(first), 100)))
+	}
+	switch {
+	case own(role):
+		f.Level = "ok"
+		f.Next = "install it as it is (you type its name), or remove the file: the skill may not work without it"
+	case role == "vendored" || role == "asset":
+		f.Look = true
+		f.Why = append(f.Why, "It's bundled from elsewhere: Claude's review skips it.")
+		f.Next = "install it as it is, or remove it from the held copy: what uses it then won't work"
+	default:
+		f.Next = "nothing to do: the agent isn't told to read it"
+	}
+	return f
+}
+
+// onePer keeps one finding per layer, rule and file: the worst, where
+// it's first, with More the other places. Each gets its file's role, its
+// kind in words and an ID: its layer, rule, file and the keys of what it
+// matched (a finding's ID, as made, is its key).
+func onePer(fs []Finding, rl map[string]string) []Finding {
+	type key struct{ layer, rule, file string }
 	var out []Finding
-	seen := map[string]int{}
-	more := map[string]int{}
-	per := map[string][]string{} // a file's addresses, first-seen order
+	at := map[key]int{}
+	keys := map[int][]string{}
 	for _, f := range fs {
-		if f.Rule != "url" {
+		k := key{f.Layer, f.Rule, f.File}
+		n, ok := at[k]
+		if !ok || f.File == "" {
+			at[k] = len(out)
+			keys[len(out)] = []string{f.ID}
 			out = append(out, f)
 			continue
 		}
-		if n, ok := seen[f.Text]; ok {
-			more[f.Text]++
-			u, _, _ := strings.Cut(out[n].Text, " (")
-			out[n].Text = fmt.Sprintf("%s (%d more %s)", u, more[f.Text], map[bool]string{true: "place", false: "places"}[more[f.Text] == 1])
-			continue
+		keys[n] = append(keys[n], f.ID)
+		o := &out[n]
+		more, look := o.More+f.More+1, o.Look || f.Look
+		if rank(f.Level) > rank(o.Level) {
+			*o = f
 		}
-		seen[f.Text] = len(out)
-		per[f.File] = append(per[f.File], strings.TrimPrefix(f.Text, "a web address: "))
-		out = append(out, f)
+		o.More, o.Look = more, look
 	}
-	var kept []Finding
-	said := map[string]bool{}
-	for _, f := range out {
-		us := per[f.File]
-		if f.Rule != "url" || len(us) <= manyURLs {
-			kept = append(kept, f)
-			continue
+	for n := range out {
+		f := &out[n]
+		if f.Role == "" && f.File != "" {
+			f.Role = rl[f.File]
 		}
-		if said[f.File] {
-			continue
+		if f.Kind == "" {
+			f.Kind = ruleWords[f.Rule]
 		}
-		said[f.File] = true
-		f.Text = fmt.Sprintf("%d web addresses: %s", len(us), sites(us))
-		kept = append(kept, f)
+		f.Look = f.Look || f.Level != "note"
+		f.ID = findingID(f.Layer, f.Rule, f.File, keys[n]...)
 	}
-	return kept
+	return out
 }
 
-// manyURLs is how many web addresses a file has said one by one.
-const manyURLs = 3
+// findingID names a finding across reports: by layer, rule, file and the
+// keys of what it matched (not the line).
+func findingID(layer, rule, file string, keys ...string) string {
+	keys = slices.Compact(slices.Sorted(slices.Values(keys)))
+	s := sha256.Sum256([]byte(strings.Join(append([]string{layer, rule, file}, keys...), "\x00")))
+	return hex.EncodeToString(s[:6])
+}
+
+// ruleWords say what each rule finds, in a few words.
+var ruleWords = map[string]string{
+	"pin": "Not fixed to a version", "name": "Its name", "near-name": "A name like one you have", "link": "A link, not a file",
+	"path": "A path out of its folder", "program": "A program", "archive": "An archive", "size": "Not read through",
+	"unicode": "Hidden characters", "url": "Web addresses", "fetch-run": "Runs what it fetches", "sudo": "Acts as root, or later",
+	"secrets": "Names your secrets", "hide": "Hides things from you", "html-comment": "A hidden comment",
+	"frontmatter": "Hooks or tools it grants itself", "code": "Code in its spec", "docker": "Docker options",
+	"kind": "Not a kind yardo runs", "root-image": "Runs as root",
+}
 
 // sites are the hosts of us, the most named first, at most five.
 func sites(us []string) string {
@@ -210,74 +257,136 @@ func archive(p string, b []byte) string {
 	return ""
 }
 
-// warning is a rule that notes each line its pattern matches.
-type warning struct {
-	rule, next string
-	re         *regexp.Regexp
-	say        func(m string) string
-}
+// Patterns of the text rules.
+var (
+	// Fetched and run: piped to a shell (in shell, a spec, markdown).
+	pipeRun = regexp.MustCompile(`(?i)\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b|\bbase64\s+(?:-d|--decode|-D)\b[^|\n]*\|\s*(?:sudo\s+)?(?:ba|z)?sh\b|\b(?:ba)?sh\s+-c\s+["']?\$\(\s*(?:curl|wget)\b|\bsource\s+<\(\s*(?:curl|wget)\b`)
+	// Text run as code: a call in code, not in a string or comment.
+	jsEval = regexp.MustCompile(`(?:^|[^.\w$])eval\s*\(|\bnew\s+Function\s*\(`)
+	pyEval = regexp.MustCompile(`(?:^|[^.\w])(?:eval|exec)\s*\(`)
+	sudoRe = regexp.MustCompile(`\b(sudo|crontab)\b`)
+	// Secrets, by path or name.
+	secretWords = regexp.MustCompile(`(?i)~/\.(ssh|aws|kube|docker|gnupg|netrc|git-credentials|npmrc)\b|\bid_(rsa|ed25519|ecdsa)\b|(^|[\s/"'])\.env\b|\b(api[_-]?key|access[_-]?token|secret[_-]?key|auth[_-]?token)s?\b`)
+	// Hiding from the user, or overriding the agent's rules: not "do not
+	// tell the user a link is clickable", nor "do not hide its target".
+	hideRe      = regexp.MustCompile(`(?i)\b(?:ignore|disregard|forget) (?:all |any |your |the )?(?:previous|prior|above|earlier|system|other) (?:instructions|rules|prompts?)\b|\b(?:do not|don't|never) (?:tell|inform|show|mention|reveal|disclose)(?: this| it| that| any of this)?(?: to)? the user(?:\s*$|\s*[.,;:!)]|\s+(?:about|that|what|where|how|why|anything|this|it)\b)|\bwithout (?:telling|asking|informing|notifying) the user\b|\bhide (?:this|it|that|what you\w*|your \w+) from (?:the user|them|your user)\b|\bkeep (?:this|it) (?:secret|hidden) from (?:the user|them)\b|\bkeep (?:this|it) (?:secret|hidden)\s*[.!]?\s*$`)
+	htmlComment = regexp.MustCompile(`<!--(.*?)(?:-->|$)`)
+)
 
-var warnings = []warning{
-	{"url", "check where it sends you, and what it fetches", regexp.MustCompile(`https?://[^\s"'<>)\]]+`),
-		func(m string) string { return "a web address: " + m }},
-	{"fetch-run", "an agent would run what this fetches: read what it is first", regexp.MustCompile(`(?i)\b(curl|wget)\b|\|\s*(ba|z)?sh\b|base64\s+(-d|--decode)\b|\beval\b`),
-		func(m string) string { return "fetch or run: " + m }},
-	{"sudo", "an agent would act as root, or leave something running later", regexp.MustCompile(`\b(sudo|crontab)\b`),
-		func(m string) string { return "root or later: " + m }},
-	{"secrets", "a skill rarely needs your keys: make sure this one does", regexp.MustCompile(`(?i)~/\.(ssh|aws|kube|docker|gnupg|netrc|git-credentials|npmrc)\b|\bid_(rsa|ed25519|ecdsa)\b|(^|[\s/"'])\.env\b|\b(api[_-]?key|access[_-]?token|secret[_-]?key|auth[_-]?token)s?\b`),
-		func(m string) string { return "your secrets: " + strings.TrimSpace(m) }},
-	{"hide", "a skill that tells an agent to hide things, or drop its rules, is working against you", regexp.MustCompile(`(?i)ignore (all |any |your |the )?(previous|prior|above|earlier|system) (instructions|rules|prompt)|(do not|don't|never) (tell|inform|show|mention|reveal)( this)?( to)? the user|without (telling|asking|informing) the user|hide (this|it|what you)|keep (this|it) (secret|hidden)`),
-		func(m string) string { return "hiding or overriding: " + m }},
-}
-
-// textRules are the warnings in a text file: each line that matches.
-func textRules(s Subject, p string, b []byte) []Finding {
+// textRules are the rules on text file p of role (see Roles): what's in
+// the instructions needs your OK; in bundled code or docs, it's a note.
+func textRules(p string, b []byte, role string) []Finding {
 	var out []Finding
-	hidden := false
+	add := func(rule, level string, line int, text, next, key string, look bool) {
+		out = append(out, Finding{Layer: "basic", Rule: rule, Level: level, File: p, Line: line, Text: text, Next: next,
+			Look: look || level != "note", ID: key})
+	}
+	lg := lang(p, b)
+	md := isMD(p)
+	var code []string
+	if lg == "js" || lg == "py" {
+		c, _ := strip(b, lg)
+		code = strings.Split(string(c), "\n")
+	}
+	shellish := lg == "sh" || md
+	words := shellish || strings.HasSuffix(p, ".txt")
+	var urls []string
+	urlLine := 0
+	hidden, fence := false, false
 	for n, line := range strings.Split(string(b), "\n") {
 		for i, r := range line {
-			if n == 0 && i == 0 && r == 0xFEFF {
-				continue // a byte order mark
-			}
-			if hiddenRune(r) && code(p) && !steering(r) {
-				// In code, a zero-width character or a direction mark in
-				// a string is data (an entity table's &lrm;): said, not
-				// blocked. What reorders or hides text still blocks.
-				out = append(out, Finding{Layer: "basic", Rule: "unicode", Level: "note", File: p, Line: n + 1,
-					Text: fmt.Sprintf("invisible character U+%04X in code", r), Next: "check it's in a string, as data"})
+			if i == 0 && ascii(line) {
 				break
 			}
-			if hiddenRune(r) {
-				out = append(out, Finding{Layer: "basic", Rule: "unicode", Level: "block", File: p, Line: n + 1,
+			if n == 0 && i == 0 && r == 0xFEFF || !hiddenRune(r) {
+				continue // a byte order mark, or seen
+			}
+			key := fmt.Sprintf("%04X", r)
+			switch {
+			case steering(r):
+				out = append(out, Finding{Layer: "basic", Rule: "unicode", Level: "block", File: p, Line: n + 1, ID: key,
 					Text: fmt.Sprintf("hidden character U+%04X: text an agent reads and you don't see", r), Next: "remove this file, or decline", Fix: "remove:" + p})
 				hidden = true
-				break
+			case role == "instructions":
+				add("unicode", "ok", n+1, fmt.Sprintf("invisible character U+%04X in what the agent reads", r), "read the line: it may say more than you see", key, true)
+			case lg != "":
+				// In code, a zero-width character or a direction mark in a
+				// string is data (an entity table's &lrm;).
+				add("unicode", "note", n+1, fmt.Sprintf("invisible character U+%04X in code", r), "check it's in a string, as data", key, false)
+			default:
+				add("unicode", "note", n+1, fmt.Sprintf("invisible character U+%04X", r), "the agent isn't told to read this file", key, false)
 			}
+			break
 		}
 		if !utf8.ValidString(line) || hidden {
 			continue
 		}
-		for _, w := range warnings {
-			m := w.re.FindString(line)
-			if w.rule == "url" {
-				m = strings.TrimRight(m, "`;,.")
-			}
-			if m != "" && (w.rule != "url" || !xmlName.MatchString(m)) {
-				out = append(out, Finding{Layer: "basic", Rule: w.rule, Level: "note", File: p, Line: n + 1, Text: w.say(m), Next: w.next})
+		if md && strings.HasPrefix(strings.TrimSpace(line), "```") {
+			fence = !fence
+		}
+		if strings.Contains(line, "://") {
+			for _, m := range urlRe.FindAllString(line, -1) {
+				if m = strings.TrimRight(m, "`;,.:"); !xmlName.MatchString(m) {
+					if urlLine == 0 {
+						urlLine = n + 1
+					}
+					urls = append(urls, m)
+				}
 			}
 		}
-		if p == "SKILL.md" && strings.Contains(line, "<!--") {
-			out = append(out, Finding{Layer: "basic", Rule: "html-comment", Level: "note", File: p, Line: n + 1,
-				Text: "an HTML comment: the agent reads it, a rendered page doesn't show it", Next: "read what it says"})
+		// Fetched and run (piped to a shell); text run as code.
+		m := ""
+		switch {
+		case shellish:
+			m = pipeRun.FindString(line)
+		case lg == "js" && n < len(code) && (strings.Contains(code[n], "eval") || strings.Contains(code[n], "Function")):
+			m = jsEval.FindString(code[n])
+		case lg == "py" && n < len(code) && (strings.Contains(code[n], "eval") || strings.Contains(code[n], "exec")):
+			m = pyEval.FindString(code[n])
+		}
+		if m = strings.TrimLeft(m, " \t=(,;!&|"); m != "" {
+			level := map[bool]string{true: "ok", false: "note"}[role == "instructions"]
+			add("fetch-run", level, n+1, "fetch or run: "+strings.TrimSpace(m), "an agent would run what this fetches or makes: read what it is first",
+				strings.Join(strings.Fields(strings.ToLower(m)), " "), role == "script" || role == "code")
+		}
+		if !words {
+			continue
+		}
+		look := role == "instructions" || role == "script"
+		if m := sudoRe.FindString(line); m != "" {
+			add("sudo", "note", n+1, "root or later: "+m, "an agent would act as root, or leave something running later", m, look)
+		}
+		if m := secretWords.FindString(line); m != "" {
+			m = strings.TrimSpace(m)
+			add("secrets", "note", n+1, "your secrets: "+m, "a skill rarely needs your keys: make sure this one does", strings.ToLower(m), look)
+		}
+		if m := hideRe.FindString(line); m != "" && look {
+			m = strings.TrimSpace(m)
+			level := map[bool]string{true: "ok", false: "note"}[role == "instructions"]
+			add("hide", level, n+1, "hiding or overriding: "+m, "read what it hides, and from whom", strings.ToLower(m), true)
+		}
+		if md {
+			for _, c := range htmlComment.FindAllStringSubmatchIndex(line, -1) {
+				if fence || strings.Count(line[:c[0]], "`")%2 == 1 {
+					continue // shown as code, not hidden
+				}
+				// A marker (<!-- toc -->) is a note; words, or more lines,
+				// in the instructions need your OK.
+				long := !strings.HasSuffix(line[c[0]:c[1]], "-->") || len(strings.Fields(line[c[2]:c[3]])) >= 4
+				level := map[bool]string{true: "ok", false: "note"}[role == "instructions" && long]
+				add("html-comment", level, n+1, "an HTML comment: the agent reads it, a rendered page doesn't show it", "read what it says", "", false)
+				break
+			}
 		}
 	}
-	switch path := p[strings.LastIndex(p, "/")+1:]; {
-	case path == "package.json" && regexp.MustCompile(`"(pre|post)?install"\s*:|"prepare"\s*:`).Match(b):
-		out = append(out, Finding{Layer: "basic", Rule: "install-script", Level: "note", File: p,
-			Text: "package.json has an install script: npm install runs it", Next: "read the script before installing its packages"})
-	case path == "setup.py":
-		out = append(out, Finding{Layer: "basic", Rule: "install-script", Level: "note", File: p,
-			Text: "setup.py: pip runs it to install", Next: "read it before installing the package"})
+	switch u := slices.Compact(slices.Sorted(slices.Values(urls))); {
+	case len(urls) == 0:
+	case len(u) == 1 && len(urls) == 1:
+		add("url", "note", urlLine, "a web address: "+urls[0], "check where it sends you, and what it fetches", "", false)
+	case len(u) == 1:
+		add("url", "note", urlLine, fmt.Sprintf("a web address: %s (%d places)", u[0], len(urls)), "check where it sends you, and what it fetches", "", false)
+	default:
+		add("url", "note", urlLine, fmt.Sprintf("%d web addresses: %s", len(urls), sites(urls)), "check where they send you; what its code calls is under what it can do", "", false)
 	}
 	return out
 }
@@ -285,13 +394,14 @@ func textRules(s Subject, p string, b []byte) []Finding {
 // xmlName is an XML namespace's name: a web address nothing fetches.
 var xmlName = regexp.MustCompile(`^https?://www\.w3\.org/(2000/svg|1999/xhtml|1999/xlink|1998/Math/MathML|XML/1998/namespace|2000/xmlns/?)$`)
 
-// code: p is a program's source, not text an agent reads as words.
-func code(p string) bool {
-	switch strings.ToLower(p[strings.LastIndex(p, ".")+1:]) {
-	case "js", "cjs", "mjs", "ts", "tsx", "jsx", "css", "go", "rs", "java", "py":
-		return true
+// ascii: s has no byte past ASCII (so no hidden character).
+func ascii(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
 	}
-	return false
+	return true
 }
 
 // steering: r reorders text (direction overrides and isolates) or hides

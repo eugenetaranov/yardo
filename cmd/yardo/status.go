@@ -491,8 +491,8 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		if hs, err := addon.List(a.User); err == nil {
 			for _, h := range hs {
 				if h.Kind == "mcp" {
-					info.MCP = append(info.MCP, ui.MCPServer{Entry: h.Name, Name: h.Name, State: "held",
-						About: fmt.Sprintf("From %s: %s.", h.Source, verdictSays(h.Report.Verdict()))})
+					info.MCP = append(info.MCP, ui.MCPServer{Entry: h.Name, Name: h.Name, State: "held", Verdict: h.Report.Verdict(), Held: heldSay(h),
+						About: fmt.Sprintf("From %s: enter reviews it.", addon.What(h.Kind, h.Source, h.Pin, ""))})
 				}
 			}
 		}

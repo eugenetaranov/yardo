@@ -34,6 +34,13 @@ type Approval struct {
 	Yardo    string    `toml:"yardo"`
 	// Tools is a remote server's tool list's hash, once it registered.
 	Tools string `toml:"tools,omitempty"`
+	// Accepted are the IDs of the findings the user OK'd; Caps what it
+	// could do then ("network: tt-a1i.github.io"), a line each; AI the
+	// model Claude read it with; Read what each layer read, a line each.
+	Accepted []string `toml:"accepted,omitempty"`
+	Caps     []string `toml:"caps,omitempty"`
+	AI       string   `toml:"ai,omitempty"`
+	Read     []string `toml:"read,omitempty"`
 }
 
 // recordFile is user's record (root's, 0644, in root's /var/lib/yardo).
@@ -157,4 +164,90 @@ func (r Report) Lines() []string {
 		out = append(out, strings.TrimSpace(fmt.Sprintf("%s %s %s %s %s", f.Level, f.Layer, f.Rule, f.Where(), f.Text)))
 	}
 	return out
+}
+
+// OKs are the IDs of the findings that need the user's OK: what they
+// accept by installing it.
+func (r Report) OKs() []string {
+	var out []string
+	for _, f := range r.Findings {
+		if f.Level == "ok" && !slices.Contains(out, f.ID) {
+			out = append(out, f.ID)
+		}
+	}
+	return out
+}
+
+// NeedsOK: a finding needs the user's OK that they didn't give an
+// earlier version (Accepted).
+func (r Report) NeedsOK() bool {
+	return slices.ContainsFunc(r.Findings, func(f Finding) bool { return f.Level == "ok" && !slices.Contains(r.Accepted, f.ID) })
+}
+
+// Quiet: nothing blocks it or needs an OK, nothing's worth a look and it
+// can do nothing it couldn't when approved: --yes installs it unasked.
+func (r Report) Quiet() bool {
+	for _, f := range r.Findings {
+		if f.Level == "block" || f.Look {
+			return false
+		}
+	}
+	return !r.NeedsOK() && len(r.Gained) == 0
+}
+
+// CapLines are what it can do as the record keeps it, "kind: what" a
+// line, one thing each.
+func (r Report) CapLines() []string {
+	var out []string
+	for _, c := range r.Caps {
+		for _, w := range strings.Split(c.What, ", ") {
+			if l := c.Kind + ": " + w; !slices.Contains(out, l) {
+				out = append(out, l)
+			}
+		}
+	}
+	return out
+}
+
+// ReadLines are what each layer read, as the record keeps it.
+func (r Report) ReadLines() []string {
+	var out []string
+	for _, c := range r.Coverage {
+		l := fmt.Sprintf("%s: %d of %d files", c.Layer, c.Files, c.All)
+		if c.Off != "" {
+			l = fmt.Sprintf("%s: off (%s)", c.Layer, c.Off)
+		}
+		for _, s := range []string{c.Looks, c.Skipped, c.Unread} {
+			if s != "" {
+				l += "; " + s
+			}
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
+// Since sets what r's add-on can do that it couldn't when a approved it
+// (Gained) and no longer can (Lost), and what the user OK'd then
+// (Accepted): those findings stay, no longer worth a look.
+func (r *Report) Since(a Approval) {
+	r.Accepted = a.Accepted
+	now := r.CapLines()
+	for _, c := range r.Caps {
+		for _, w := range strings.Split(c.What, ", ") {
+			if !slices.Contains(a.Caps, c.Kind+": "+w) && !slices.ContainsFunc(r.Gained, func(g Cap) bool { return g.Kind == c.Kind && g.What == w }) {
+				r.Gained = append(r.Gained, Cap{Kind: c.Kind, What: w, Where: c.Where, Look: c.Look})
+			}
+		}
+	}
+	for _, l := range a.Caps {
+		if k, w, ok := strings.Cut(l, ": "); ok && !slices.Contains(now, l) {
+			r.Lost = append(r.Lost, Cap{Kind: k, What: w})
+		}
+	}
+	for n := range r.Findings {
+		if slices.Contains(a.Accepted, r.Findings[n].ID) {
+			r.Findings[n].Look = false
+		}
+	}
 }

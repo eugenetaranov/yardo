@@ -152,15 +152,15 @@ func skillRows(env *steps.Env) ([]ui.SkillRow, bool, error) {
 			r.Where += " · " + v
 		}
 		if h := held[s.Name]; h != nil {
-			r.Source, r.Off = "held", "held"
-			r.Where = "Off while it's checked: " + verdictSays(h.Report.Verdict())
+			r.Source, r.Off, r.Verdict, r.Held = "held", "held", h.Report.Verdict(), heldSay(h)
+			r.Where = fmt.Sprintf("Off while it's checked: %s · enter reviews it", addon.What(h.Kind, h.Source, h.Pin, ""))
 			delete(held, s.Name)
 		}
 		out = append(out, r)
 	}
 	for _, h := range held {
-		out = append(out, ui.SkillRow{Name: h.Name, Source: "held", Off: "held",
-			Where: fmt.Sprintf("%s: %s", addon.What(h.Kind, h.Source, h.Pin, ""), verdictSays(h.Report.Verdict()))})
+		out = append(out, ui.SkillRow{Name: h.Name, Source: "held", Off: "held", Verdict: h.Report.Verdict(), Held: heldSay(h),
+			Where: fmt.Sprintf("From %s · enter reviews it", addon.What(h.Kind, h.Source, h.Pin, ""))})
 	}
 	slices.SortStableFunc(out, func(a, b ui.SkillRow) int { return strings.Compare(a.Name, b.Name) })
 	return out, all, err

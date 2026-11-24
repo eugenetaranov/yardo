@@ -494,6 +494,9 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	prep := func(x *ui.App) {
 		x.Menu.Switching(o.mcpSwitcher(ctx, a))
 		x.Menu.SwitchingSkills(o.skillSwitcher(a))
+		if rv := o.reviewer(ctx, cat, st, a); rv != nil {
+			x.Menu.Reviewing(ctx, rv)
+		}
 		x.Menu.Checker(func() func() ui.UpdatesMsg {
 			upd = o.checkUpdates(ctx, cat, a)
 			return upd.msg
@@ -675,6 +678,11 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 							}
 						}
 						break loop
+					case ui.MenuReviewed:
+						// Installed, declined or checked again in the app: the
+						// machine read again, the list saying so.
+						d, open, toast = nil, res.ID, res.Toast
+						continue
 					case ui.MenuSkills:
 						r, err := (&asker{cat: cat, a: a, share: o.share(), out: stdout}).addons(ctx)
 						if err == nil {

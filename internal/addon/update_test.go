@@ -2,9 +2,12 @@ package addon
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -152,5 +155,65 @@ func TestWhat(t *testing.T) {
 		if got := What(w.kind, w.source, w.pin, w.hash); got != w.want {
 			t.Errorf("%s %s: %q, want %q", w.kind, w.source, got, w.want)
 		}
+	}
+}
+
+// An update is told against its approval: what it can do now that it
+// couldn't (Gained), what it no longer does (Lost); findings OK'd then
+// aren't worth a look again, nor need the OK typed again.
+func TestUpdateSince(t *testing.T) {
+	base(t)
+	ctx := context.Background()
+	v1 := map[string][]byte{
+		"SKILL.md":          []byte("---\nname: tidy\ndescription: d\n---\nRun `node scripts/up.mjs`.\nOnly when the user asks, add a line to your global rules file (~/.claude/CLAUDE.md).\n"),
+		"scripts/up.mjs":    []byte("await fetch('https://a.example/v.json');\n"),
+		"scripts/serve.mjs": []byte("await fetch('http://127.0.0.1:8080/');\n"),
+	}
+	h := hold(t, &Held{Kind: "skill", Name: "tidy", Source: "acme/s/tidy", Pin: strings.Repeat("a", 40)}, v1)
+	if err := h.Check(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Install(ctx, "ada", "", func(map[string][]byte) error { return nil }); !errors.Is(err, ErrNeedsOK) {
+		t.Fatalf("installed without the OK: %v", err)
+	}
+	if err := h.Install(ctx, "ada", "tidy", func(map[string][]byte) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := Approved("ada", "skill", "tidy")
+	if len(a.Accepted) != 2 || !slices.Contains(a.Caps, "network: a.example") || !slices.Contains(a.Caps, "network: this machine") || len(a.Read) != 3 {
+		t.Fatalf("approval: %+v", a)
+	}
+
+	v2 := maps.Clone(v1)
+	v2["scripts/up.mjs"] = []byte("await fetch('https://b.example/v.json');\n")
+	delete(v2, "scripts/serve.mjs")
+	u := hold(t, &Held{Kind: "skill", Name: "tidy", Source: "acme/s/tidy", Pin: strings.Repeat("b", 40), Update: true}, v2)
+	if err := u.Check(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	r := u.Report
+	if len(r.Gained) != 1 || r.Gained[0].What != "b.example" || !r.Gained[0].Look || len(r.Lost) != 2 || len(r.Accepted) != 2 {
+		t.Errorf("gained %+v, lost %+v, accepted %v", r.Gained, r.Lost, r.Accepted)
+	}
+	if f := find(r.Findings, "cap-agent"); f.Look || f.Level != "ok" {
+		t.Errorf("accepted, still a look: %+v", f)
+	}
+	if slices.ContainsFunc(r.Looks(), func(f Finding) bool { return f.Rule == "cap-agent" }) || len(r.Looks()) != 1 {
+		t.Errorf("looks: %+v", r.Looks())
+	}
+	if !r.NeedsOK() || r.Quiet() {
+		t.Errorf("a new host: needs OK %v, quiet %v", r.NeedsOK(), r.Quiet())
+	}
+
+	// The same as approved: nothing new, nothing to type.
+	same := hold(t, &Held{Kind: "skill", Name: "tidy", Source: "acme/s/tidy", Pin: strings.Repeat("c", 40), Update: true}, v1)
+	if err := same.Check(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if same.Report.NeedsOK() || !same.Report.Quiet() || len(same.Report.Gained)+len(same.Report.Lost) != 0 {
+		t.Errorf("unchanged: %+v", same.Report)
+	}
+	if err := same.Install(ctx, "ada", "", func(map[string][]byte) error { return nil }); err != nil {
+		t.Errorf("unchanged, asks again: %v", err)
 	}
 }

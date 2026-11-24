@@ -71,6 +71,28 @@ func TestHold(t *testing.T) {
 	}
 }
 
+// Path is a held file's place on disk, to open; none for one outside.
+func TestHeldPath(t *testing.T) {
+	base(t)
+	h := hold(t, &Held{Kind: "skill", Name: "a", Source: "acme/s/a", Pin: strings.Repeat("a", 40)},
+		map[string][]byte{"SKILL.md": []byte("---\nname: a\n---\n"), "scripts/run.sh": []byte("#!/bin/sh\n")})
+	p := h.Path("scripts/run.sh")
+	if b, err := os.ReadFile(p); err != nil || string(b) != "#!/bin/sh\n" || !filepath.IsAbs(p) {
+		t.Errorf("%s: %v %q", p, err, b)
+	}
+	if d := h.Path(""); d != filepath.Dir(filepath.Dir(p)) {
+		t.Errorf("its folder: %s", d)
+	}
+	for _, f := range []string{"../meta.json", "../../b/files/x", "/etc/passwd", "a/../../x", ".", "..", "./SKILL.md"} {
+		if got := h.Path(f); got != "" {
+			t.Errorf("Path(%q) = %s", f, got)
+		}
+	}
+	if got := (&Held{User: "ada", ID: ".."}).Path("SKILL.md"); got != "" {
+		t.Errorf("an ID that's a path: %s", got)
+	}
+}
+
 // A fix changes the held files; installing then wants a check first.
 // Blocks refuse, an OK needs the name typed; installed, the approval is
 // recorded and nothing is held.
@@ -214,5 +236,38 @@ func TestHoldReplaces(t *testing.T) {
 		if h.Kind == "skill" && h.Pin != "new" {
 			t.Errorf("the old copy stayed: %+v", h)
 		}
+	}
+}
+
+// A report says what each layer read; Claude's and skill-veil's say why
+// they didn't.
+func TestCheckCoverage(t *testing.T) {
+	base(t)
+	h := hold(t, &Held{Kind: "skill", Name: "tidy", Source: "acme/s/tidy", Pin: strings.Repeat("b", 40)},
+		map[string][]byte{"SKILL.md": []byte("---\nname: tidy\ndescription: d\n---\nTidy up.\n"), "scripts/x.mjs": []byte("x\n")})
+	if err := h.Check(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"basic: 2 of 2 files", "skill-veil: off (not installed)", "claude: off (not run)"}
+	if got := h.Report.ReadLines(); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("read:\n%s", strings.Join(got, "\n"))
+	}
+	if h.Report.Files["scripts/x.mjs"] != "script" || !h.Report.Quiet() {
+		t.Errorf("files %v, quiet %v: %+v", h.Report.Files, h.Report.Quiet(), h.Report.Findings)
+	}
+}
+
+// Layers that found the same line are one finding: the worst, the others
+// named in Also.
+func TestMerge(t *testing.T) {
+	fs := merge([]Finding{
+		{Layer: "basic", Rule: "sudo", Level: "note", File: "a.sh", Line: 2},
+		{Layer: "skill-veil", Rule: "R", Level: "ok", File: "a.sh", Line: 2},
+		{Layer: "claude", Rule: "other", Level: "note", File: "a.sh", Line: 2},
+		{Layer: "basic", Rule: "url", Level: "note", File: "a.sh", Line: 2}, // one line, one finding
+		{Layer: "claude", Rule: "other", Level: "note", File: "a.sh", Line: 3},
+	}, map[string]string{"a.sh": "script"})
+	if len(fs) != 2 || fs[0].Layer != "skill-veil" || strings.Join(fs[0].Also, ",") != "basic,claude" || fs[0].Role != "script" || fs[0].ID == "" {
+		t.Errorf("merged: %+v", fs)
 	}
 }

@@ -36,7 +36,7 @@ var reviewPrompt string
 // PromptVersion and SchemaVersion name the reviewer's instructions and
 // answer format: a change to either misses the cache.
 var (
-	PromptVersion = "1"
+	PromptVersion = "2"
 	SchemaVersion = "1"
 )
 
@@ -105,6 +105,13 @@ var nextSteps = map[string]string{
 	"check_by_hand":    "read it yourself before deciding",
 }
 
+// categoryWords say each category, in a few words.
+var categoryWords = map[string]string{
+	"secret_access": "Reads your secrets", "exfiltration": "Sends data out", "remote_code": "Runs what it downloads",
+	"agent_instruction": "Steers the agent", "reviewer_injection": "Tries to steer the review", "install_script": "Runs code when installed",
+	"docker_privilege": "Docker privileges", "unpinned": "Not pinned", "obfuscation": "Hard-to-read code", "other": "Worth a second read",
+}
+
 var categories = []string{"secret_access", "exfiltration", "remote_code", "agent_instruction",
 	"reviewer_injection", "install_script", "docker_privilege", "unpinned", "obfuscation", "other"}
 
@@ -136,11 +143,12 @@ func notChecked(why string) Finding {
 		Next: "the other checks still count; read it yourself"}
 }
 
-// input is what Claude reads: the text, its marker, and the lines each
-// file has (to check the answer's).
+// input is what Claude reads: the text, its marker, the lines each file
+// has (to check the answer's) and each file's role.
 type input struct {
 	text, nonce string
 	lines       map[string]int
+	roles       map[string]string
 	extraHash   string
 }
 
@@ -162,72 +170,44 @@ func reviewInput(ctx context.Context, h *Held, files map[string][]byte, earlier 
 			in.extraHash = Hash(ex)
 		}
 	}
+	pl := planRead(h, all, earlier)
+	in.roles = pl.roles
 	var t strings.Builder
 	kind := map[string]string{"skill": "agent skill", "mcp": "MCP server"}[h.Kind]
 	fmt.Fprintf(&t, "Add-on: %s %q from %s @ %s\n", kind, h.Name, h.Source, h.Pin)
-	fmt.Fprintf(&t, "This review's marker value: %s\n\nFiles (path, bytes, sha256):\n", in.nonce)
-	paths := slices.Sorted(maps.Keys(all))
-	for _, p := range paths {
+	fmt.Fprintf(&t, "This review's marker value: %s\n\nFiles (path, bytes, sha256, role):\n", in.nonce)
+	for _, p := range slices.Sorted(maps.Keys(all)) {
 		s := sha256.Sum256(all[p])
-		fmt.Fprintf(&t, "- %s %d %s\n", p, len(all[p]), hex.EncodeToString(s[:]))
+		fmt.Fprintf(&t, "- %s %d %s %s\n", p, len(all[p]), hex.EncodeToString(s[:]), pl.roles[p])
 	}
-	total := 0
-	var cut, left []string
-	// An update: what changed since the approved version, first; then the
-	// new SKILL.md and each new or changed script in full, then the rest.
-	if h.Update {
-		if old, err := ApprovedFiles(h.User, h.Kind, h.Name); err == nil {
-			changed := map[string]bool{}
-			t.WriteString("\nThis is an update of a version the user approved. Changes since then:\n")
-			for _, c := range Changes(old, files) {
-				fmt.Fprintf(&t, "- %s %s\n", c.What, c.Path)
-				changed[c.Path] = c.What != "removed"
-			}
-			d := ""
-			for _, c := range Changes(old, files) {
-				d += c.Diff
-			}
-			if len(d) > reviewFileMax {
-				d, cut = d[:reviewFileMax], append(cut, "(the diff)")
-				for !utf8.Valid([]byte(d)) {
-					d = d[:len(d)-1]
-				}
-			}
-			total += len(d)
-			fmt.Fprintf(&t, "\n<<<DIFF n=%s>>>\n%s<<<END n=%s>>>\n", in.nonce, d, in.nonce)
-			first := func(p string) int {
-				switch {
-				case path.Base(p) == "SKILL.md" || p == "spec":
-					return 0
-				case changed[p] && isScript(p, all[p]):
-					return 1
-				}
-				return 2
-			}
-			slices.SortStableFunc(paths, func(a, b string) int { return first(a) - first(b) })
+	if pl.changes != nil {
+		t.WriteString("\nThis is an update of a version the user approved. Changes since then:\n")
+		for _, c := range pl.changes {
+			fmt.Fprintf(&t, "- %s %s\n", c.What, c.Path)
 		}
+		fmt.Fprintf(&t, "\n<<<DIFF n=%s>>>\n%s<<<END n=%s>>>\n", in.nonce, pl.diff, in.nonce)
 	}
-	for _, p := range paths {
+	for _, p := range pl.read {
 		c := all[p]
-		if !utf8.Valid(c) || bytes.IndexByte(c, 0) >= 0 {
-			continue // a binary file: listed only
+		if rs := pl.parts[p]; rs != nil {
+			nl := newlines(c)
+			in.lines[p] = len(nl) + 1
+			fmt.Fprintf(&t, "\n<<<FILE n=%s path=%s (only the lines around what was found)>>>\n", in.nonce, p)
+			for _, r := range rs {
+				for i, l := range strings.Split(string(lineRange(c, nl, r[0], r[1])), "\n") {
+					fmt.Fprintf(&t, "%5d  %s\n", r[0]+i, l)
+				}
+				t.WriteString("    …\n")
+			}
+			fmt.Fprintf(&t, "<<<END n=%s>>>\n", in.nonce)
+			continue
 		}
-		short := false
 		if len(c) > reviewFileMax {
 			c = c[:reviewFileMax]
 			for !utf8.Valid(c) {
 				c = c[:len(c)-1]
 			}
-			short = true
 		}
-		if total+len(c) > reviewTotalMax {
-			left = append(left, p)
-			continue
-		}
-		if short {
-			cut = append(cut, p)
-		}
-		total += len(c)
 		lines := strings.Split(strings.TrimSuffix(string(c), "\n"), "\n")
 		in.lines[p] = len(lines)
 		fmt.Fprintf(&t, "\n<<<FILE n=%s path=%s>>>\n", in.nonce, p)
@@ -242,20 +222,231 @@ func reviewInput(ctx context.Context, h *Held, files map[string][]byte, earlier 
 			fmt.Fprintf(&t, "- [%s %s] %s %s\n", f.Layer, f.Rule, f.Where(), f.Text)
 		}
 	}
-	if len(cut)+len(left) > 0 {
-		fmt.Fprintf(&t, "\nNot sent in full: cut at 32 KB: %s; left out (150 KB in all): %s\n", strings.Join(cut, ", "), strings.Join(left, ", "))
+	if len(pl.cut)+len(pl.left) > 0 {
+		fmt.Fprintf(&t, "\nNot sent in full: cut at 32 KB: %s; left out (150 KB in all): %s\n", strings.Join(pl.cut, ", "), strings.Join(pl.left, ", "))
 		var says []string
-		if len(cut) > 0 {
-			says = append(says, "cut short: "+strings.Join(cut, ", "))
+		if len(pl.cut) > 0 {
+			says = append(says, "cut short: "+strings.Join(pl.cut, ", "))
 		}
-		if len(left) > 0 {
-			says = append(says, "left out: "+strings.Join(left, ", "))
+		if len(pl.left) > 0 {
+			says = append(says, "left out: "+strings.Join(pl.left, ", "))
 		}
 		notes = append(notes, Finding{Layer: "claude", Rule: "too-big", Level: "note",
 			Text: fmt.Sprintf("too big for Claude to read in full (%s)", strings.Join(says, "; ")), Next: "read those files yourself"})
 	}
+	if len(pl.skipped) > 0 {
+		fmt.Fprintf(&t, "\nNot sent (licences, bundled code, assets): %d files\n", len(pl.skipped))
+	}
 	in.text = t.String()
 	return in, notes
+}
+
+// plan is what Claude is given of an add-on's files, in the order it
+// reads them: an update's diff first, then SKILL.md, the files with
+// something worth a look (a big one around each place), scripts, the
+// other instructions, its own code (where the other checks found most,
+// first) and docs. Licences, bundled code and assets are skipped while
+// there's anything else.
+type plan struct {
+	read, cut, left, skipped []string
+	// parts are the lines (from, to, from 1) read of a big file worth a
+	// look, around each place; looks the files worth a look.
+	parts map[string][][2]int
+	looks []string
+	// mine is how many files are its own (not skipped as a kind).
+	mine    int
+	roles   map[string]string
+	changes []Change
+	diff    string
+}
+
+// planRead plans Claude's read of files (an image's extras, named
+// "(…)", are instructions); earlier are the other layers' findings.
+func planRead(h *Held, files map[string][]byte, earlier []Finding) plan {
+	pl := plan{roles: roles(files)}
+	for p := range files {
+		if strings.HasPrefix(p, "(") {
+			pl.roles[p] = "instructions"
+		}
+	}
+	total := 0
+	changed := map[string]bool{}
+	if h.Update {
+		if old, err := ApprovedFiles(h.User, h.Kind, h.Name); err == nil {
+			pl.changes = Changes(old, files)
+			for _, c := range pl.changes {
+				changed[c.Path] = c.What != "removed"
+				pl.diff += c.Diff
+			}
+			if len(pl.diff) > reviewFileMax {
+				pl.diff, pl.cut = pl.diff[:reviewFileMax], append(pl.cut, "(the diff)")
+				for !utf8.ValidString(pl.diff) {
+					pl.diff = pl.diff[:len(pl.diff)-1]
+				}
+			}
+			total += len(pl.diff)
+		}
+	}
+	hits := map[string]int{}
+	at := map[string][]int{} // places worth a look, by file
+	for _, f := range earlier {
+		hits[f.File] += 1 + f.More
+		if (f.Look || f.Level != "note") && f.File != "" && (own(pl.roles[f.File]) || pl.roles[f.File] == "doc") {
+			at[f.File] = append(at[f.File], f.Line)
+		}
+	}
+	// An update's SKILL.md and new or changed scripts come first.
+	first := func(p string) int {
+		switch {
+		case !h.Update:
+			return 0
+		case path.Base(p) == "SKILL.md" || p == "spec":
+			return 0
+		case changed[p] && isScript(p, files[p]):
+			return 1
+		}
+		return 2
+	}
+	order := map[string]int{"script": 2, "instructions": 3, "code": 4, "doc": 5}
+	weight := func(p string) int {
+		switch o, ok := order[pl.roles[p]]; {
+		case path.Base(p) == "SKILL.md" && !strings.Contains(p, "/") || p == "spec":
+			return 0
+		case at[p] != nil:
+			return 1
+		case ok:
+			return o
+		}
+		return 6
+	}
+	paths := slices.Sorted(maps.Keys(files))
+	slices.SortStableFunc(paths, func(a, b string) int {
+		if d := first(a) - first(b); d != 0 {
+			return d
+		}
+		if d := weight(a) - weight(b); d != 0 {
+			return d
+		}
+		return hits[b] - hits[a]
+	})
+	for _, p := range paths {
+		if weight(p) < 6 {
+			pl.mine++
+		}
+		if at[p] != nil {
+			pl.looks = append(pl.looks, p)
+		}
+	}
+	for _, p := range paths {
+		c := files[p]
+		switch {
+		case !utf8.Valid(c) || bytes.IndexByte(c, 0) >= 0:
+			pl.skipped = append(pl.skipped, p) // a binary file: listed only
+			continue
+		case weight(p) == 6 && pl.mine > 0:
+			pl.skipped = append(pl.skipped, p)
+			continue
+		}
+		n := min(len(c), reviewFileMax)
+		if at[p] != nil && len(c) > reviewFileMax {
+			rs := around(c, at[p])
+			n = partSize(c, rs)
+			if total+n <= reviewTotalMax {
+				if pl.parts == nil {
+					pl.parts = map[string][][2]int{}
+				}
+				pl.parts[p] = rs
+				total += n
+				pl.read = append(pl.read, p)
+				continue
+			}
+		}
+		if total+n > reviewTotalMax {
+			pl.left = append(pl.left, p)
+			continue
+		}
+		if len(c) > reviewFileMax {
+			pl.cut = append(pl.cut, p)
+		}
+		total += n
+		pl.read = append(pl.read, p)
+	}
+	return pl
+}
+
+// aroundLines is how many lines either side of a place Claude reads of a
+// big file.
+const aroundLines = 40
+
+// around are the line ranges of b around each of lines (0: its start),
+// joined where they meet.
+func around(b []byte, lines []int) [][2]int {
+	n := bytes.Count(b, []byte("\n")) + 1
+	var rs [][2]int
+	for _, l := range slices.Sorted(slices.Values(lines)) {
+		r := [2]int{max(1, l-aroundLines), min(n, max(l, 1)+aroundLines)}
+		if k := len(rs) - 1; k >= 0 && r[0] <= rs[k][1]+1 {
+			rs[k][1] = max(rs[k][1], r[1])
+			continue
+		}
+		rs = append(rs, r)
+	}
+	return rs
+}
+
+// partSize is how many bytes the ranges rs of b are.
+func partSize(b []byte, rs [][2]int) int {
+	nl := newlines(b)
+	n := 0
+	for _, r := range rs {
+		n += len(lineRange(b, nl, r[0], r[1])) + 1
+	}
+	return n
+}
+
+// coverage is what pl has Claude read, in words.
+func (pl plan) coverage() Coverage {
+	c := Coverage{Layer: "claude", Files: len(pl.read), All: pl.mine}
+	if len(pl.skipped) > 0 {
+		n := map[string]int{}
+		for _, p := range pl.skipped {
+			n[pl.roles[p]]++
+		}
+		var kinds []string
+		for _, r := range []string{"license", "vendored", "asset", "doc", "code", "script", "instructions"} {
+			if n[r] > 0 {
+				kinds = append(kinds, map[string]string{"license": "licences", "vendored": "vendored", "asset": "assets", "doc": "docs"}[r])
+			}
+		}
+		c.Skipped = fmt.Sprintf("%d %s", len(pl.skipped), strings.Join(slices.DeleteFunc(kinds, func(s string) bool { return s == "" }), ", "))
+	}
+	if len(pl.looks) > 0 {
+		var read, part []string
+		for _, p := range pl.looks {
+			switch {
+			case pl.parts[p] != nil:
+				part = append(part, p)
+			case slices.Contains(pl.read, p):
+				read = append(read, p)
+			}
+		}
+		c.Looks = fmt.Sprintf("%d of the %d files worth a look", len(read)+len(part), len(pl.looks))
+		if len(read) > 0 {
+			c.Looks += "; whole: " + strings.Join(read, ", ")
+		}
+		if len(part) > 0 {
+			c.Looks += fmt.Sprintf("; %d lines around each place: %s", aroundLines, strings.Join(part, ", "))
+		}
+	}
+	var un []string
+	if len(pl.left) > 0 {
+		un = append(un, fmt.Sprintf("%d own files past the budget (%s/…)", len(pl.left), path.Dir(pl.left[0])))
+	}
+	if len(pl.cut) > 0 {
+		un = append(un, fmt.Sprintf("%d cut at 32 KB", len(pl.cut)))
+	}
+	c.Unread = strings.Join(un, "; ")
+	return c
 }
 
 // imageInput are an image's settings, the docker run yardo would use and
@@ -477,8 +668,10 @@ type answer struct {
 
 // checkAnswer checks Claude's answer against the run (its marker, the
 // format, the files and lines there are) and makes its findings. Claude's
-// block needs the user's OK; its warn is a note. A finding of a file or
-// line that isn't there is dropped.
+// block needs the user's OK, and its warn in the instructions or a script
+// the agent runs; elsewhere its warn is a note, worth a look in the
+// add-on's own files. A finding of a file or line that isn't there is
+// dropped.
 func checkAnswer(raw []byte, in input) ([]Finding, error) {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
@@ -506,8 +699,12 @@ func checkAnswer(raw []byte, in input) ([]Finding, error) {
 		if level == "" || !nok || !slices.Contains(categories, f.Category) {
 			return nil, errors.New("a value outside the fixed lists")
 		}
-		fd := Finding{Layer: "claude", Rule: f.Category, Level: level, File: f.File, Line: f.Line,
-			Text: clean(f.Explain, 300), Next: next}
+		r := in.roles[f.File]
+		if r == "instructions" || r == "script" {
+			level = "ok"
+		}
+		fd := Finding{Layer: "claude", Rule: f.Category, Level: level, File: f.File, Line: f.Line, Role: r,
+			Kind: categoryWords[f.Category], Look: level == "ok" || own(r) || r == "doc", Text: clean(f.Explain, 300), Next: next}
 		if f.Next == "remove_file" && !strings.HasPrefix(f.File, "(") {
 			fd.Fix = "remove:" + f.File
 		}
@@ -515,7 +712,7 @@ func checkAnswer(raw []byte, in input) ([]Finding, error) {
 	}
 	if len(fs) == 0 && a.Verdict != "ok" {
 		// A verdict with no finding that held up still counts.
-		fs = append(fs, Finding{Layer: "claude", Rule: "verdict", Level: map[string]string{"block": "ok", "warn": "note"}[a.Verdict],
+		fs = append(fs, Finding{Layer: "claude", Rule: "verdict", Level: map[string]string{"block": "ok", "warn": "note"}[a.Verdict], Look: true, Kind: "Claude's verdict",
 			Text: fmt.Sprintf("Claude judged it %s: %s", map[string]string{"block": "harmful", "warn": "worth a second read"}[a.Verdict], clean(a.Summary, 200)),
 			Next: nextSteps["check_by_hand"]})
 	}
@@ -584,15 +781,22 @@ func (h *Held) Recheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	found := h.Found
+	if found == nil {
+		found = h.Report.Findings // a report from before findings were kept as found
+	}
 	var rest []Finding
-	for _, f := range h.Report.Findings {
+	for _, f := range found {
 		if f.Layer != "claude" {
+			f.Also = slices.DeleteFunc(f.Also, func(l string) bool { return l == "claude" })
 			rest = append(rest, f)
 		}
 	}
 	fs, m := Review(ctx, h, files, rest, CarefulModel)
-	h.Report.Findings, h.Report.AI = append(rest, fs...), m
+	cov := slices.DeleteFunc(h.Report.Coverage, func(c Coverage) bool { return c.Layer == "claude" })
+	h.Report.Coverage = append(cov, h.claudeCoverage(files, rest, fs, m, true))
+	h.Found, h.Report.AI = append(rest, fs...), m
 	h.Report.Hash = Hash(files)
-	h.Report.Sort()
+	h.finish()
 	return h.Save()
 }

@@ -38,7 +38,16 @@ Commands:
   skills restore SKILL         put a checked skill's approved files back
   mcp add IMAGE|URL|SPEC [--name N] [--yes]
                                add an MCP server from elsewhere, checked the same way
-  addons [review NAME]         what's held for a decision and what was approved
+  addons                       what's held for a decision and what was approved
+  addons review NAME [--plain] [--notes]
+                               its review: on a terminal the Review screen, else
+                               printed (exit 2 needs your OK, 3 can't be installed)
+  addons install NAME [--ok NAME]
+                               install it; --ok, its name, OKs what it says to look at
+  addons decline NAME          its held files go
+  addons fix NAME FIX          change yardo's held copy (a fix its review names)
+  addons rescan NAME [--careful]
+                               every check again; --careful, with the larger model
   addons outdated              add-ons from elsewhere with a newer version
   addons update [NAME…] [--yes]
                                check each update like an install, then ask

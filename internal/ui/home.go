@@ -332,7 +332,7 @@ func needMark(id string) (string, lipgloss.Style) {
 		return mk.Need, accent
 	case strings.HasPrefix(id, "mcpkey:"):
 		return mk.Need, accent
-	case strings.HasPrefix(id, "mcp:") || id == "mcporphans" || strings.HasPrefix(id, "skill:"):
+	case strings.HasPrefix(id, "mcp:") || id == "mcporphans" || strings.HasPrefix(id, "skill:") || strings.HasPrefix(id, "held:"):
 		return mk.Warn, yellow
 	}
 	return mk.Down, red

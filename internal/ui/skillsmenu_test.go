@@ -103,7 +103,8 @@ func TestMenuSkillScreen(t *testing.T) {
 }
 
 // n adds from GitHub; a skill not checked offers Check it and Delete it;
-// a held one only Review it, and space can't switch it.
+// enter on a held one reviews it (no reviewer: on the terminal), and
+// space can't switch it.
 func TestMenuSkillsElsewhere(t *testing.T) {
 	m, _ := skillsMenu()
 	mk(m, "n")
@@ -132,12 +133,8 @@ func TestMenuSkillsElsewhere(t *testing.T) {
 	m, _ = skillsMenu()
 	m.info.Skills = append(m.info.Skills, SkillRow{Name: "zz-new", Source: "held", Off: "held"})
 	mk(m, "down", "down", "down", " ")
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "▲ held: waiting for you") || !strings.Contains(v, "enter reviews it") || len(m.skPend) != 0 {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "▲ held: needs your OK") || !strings.Contains(v, "enter reviews it") || len(m.skPend) != 0 {
 		t.Errorf("held, space:\n%s", v)
-	}
-	mk(m, "enter")
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "Review it") || strings.Contains(v, "Turn it") {
-		t.Errorf("held:\n%s", v)
 	}
 	mk(m, "enter")
 	if r := m.result; r.MCP != (MCPAct{Do: "review", Entry: "zz-new"}) {

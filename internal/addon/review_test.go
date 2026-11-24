@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -318,5 +319,79 @@ func TestReviewWords(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// Claude reads SKILL.md first, then the files worth a look (a big one
+// around each place), scripts, the other instructions, then its own code
+// where the other checks found most; never licences, bundled code or
+// assets while there's anything else. Its coverage says so.
+func TestReviewOrder(t *testing.T) {
+	f := newFakeClaude(t, claudeSays(noFindings))
+	files := map[string][]byte{
+		"LICENSE":         []byte("Apache\n"),
+		"SKILL.md":        []byte("---\nname: tidy\n---\nRun `node scripts/run.mjs`.\n"),
+		"scripts/run.mjs": []byte("import './../lib/b.mjs'\n"),
+		"lib/a.mjs":       []byte("a\n"),
+		"lib/net.mjs":     []byte(strings.Repeat("x\n", 300) + "fetch('https://a.example')\n" + strings.Repeat("y = 1 // padding the file past 32 KB\n", 1000)),
+		"references/r.md": []byte("ref\n"),
+		"lib/b.mjs":       []byte("b\n"),
+		"lib/c.mjs":       []byte(strings.Repeat("c\n", 100<<10)),
+		"vendor/v.js":     []byte("v\n"),
+		"assets/t.html":   []byte("<html>\n"),
+	}
+	earlier := []Finding{{Layer: "basic", Rule: "sudo", Level: "note", File: "lib/b.mjs", More: 2},
+		{Layer: "basic", Rule: "cap-network", Level: "ok", File: "lib/net.mjs", Line: 301, Look: true}}
+	h := &Held{User: "ada", Kind: "skill", Name: "tidy"}
+	Review(context.Background(), h, files, earlier, QuickModel)
+	in := f.read("stdin")
+	at := func(p string) int { return strings.Index(in, "path="+p+">>>") }
+	if order := []int{at("SKILL.md"), strings.Index(in, "path=lib/net.mjs (only"), at("scripts/run.mjs"), at("references/r.md"), at("lib/b.mjs"), at("lib/a.mjs")}; order[0] < 0 || order[1] < 0 || !slices.IsSorted(order) {
+		t.Errorf("order: %v", order)
+	}
+	for _, p := range []string{"LICENSE", "vendor/v.js", "assets/t.html"} {
+		if at(p) >= 0 {
+			t.Errorf("%s was sent", p)
+		}
+	}
+	c := planRead(h, files, earlier).coverage()
+	if !strings.Contains(in, "  301  fetch('https://a.example')") || !strings.Contains(in, "  261  x") || strings.Contains(in, "  260  x") {
+		t.Errorf("lib/net.mjs around line 301 isn't what was sent")
+	}
+	if c.Files != 7 || c.All != 7 || c.Skipped != "3 licences, vendored, assets" || c.Unread != "1 cut at 32 KB" ||
+		c.Looks != "1 of the 1 files worth a look; 40 lines around each place: lib/net.mjs" {
+		t.Errorf("coverage: %+v", c)
+	}
+	// With nothing of its own, what there is is read.
+	if pl := planRead(h, map[string][]byte{"LICENSE": []byte("x\n")}, nil); len(pl.read) != 1 {
+		t.Errorf("only a licence: %+v", pl)
+	}
+}
+
+// Check again carefully replaces Claude's findings: what a finding of
+// its had merged away on a line comes back, and its coverage is new.
+func TestRecheckMerged(t *testing.T) {
+	newFakeClaude(t, claudeSays(noFindings))
+	old := Extra
+	Extra = func(_ context.Context, _ *Held, _ map[string][]byte, _ []Finding) ([]Finding, string) {
+		return []Finding{{Layer: "claude", Rule: "other", Level: "ok", File: "SKILL.md", Line: 6, Text: "x"}}, "claude-haiku-5-5"
+	}
+	t.Cleanup(func() { Extra = old })
+	h := hold(t, &Held{Kind: "skill", Name: "tidy", Source: "acme/s/tidy", Pin: strings.Repeat("b", 40)},
+		map[string][]byte{"SKILL.md": []byte(okSkill + "Run sudo make.\n")})
+	if err := h.Check(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if f := find(h.Report.Findings, "other"); f.Where() != "SKILL.md:6" || !slices.Contains(f.Also, "basic") || find(h.Report.Findings, "sudo").Rule != "" {
+		t.Fatalf("merged: %+v", h.Report.Findings)
+	}
+	if err := h.Recheck(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if f := find(h.Report.Findings, "sudo"); f.Where() != "SKILL.md:6" || len(f.Also) != 0 || find(h.Report.Findings, "other").Rule != "" {
+		t.Errorf("rechecked: %+v", h.Report.Findings)
+	}
+	if c := h.Report.Coverage[len(h.Report.Coverage)-1]; c.Layer != "claude" || c.Files != 1 || c.Off != "" {
+		t.Errorf("coverage: %+v", h.Report.Coverage)
 	}
 }

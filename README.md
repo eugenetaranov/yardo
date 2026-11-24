@@ -703,14 +703,28 @@ installed by hand.
    and tool grants in a skill's frontmatter, Docker options beyond a short
    list, MOUNT_AWS, piping a download to a shell, your secrets' paths) and
    [skill-veil](https://github.com/seifreed/skill-veil), a pinned
-   scanner run as nobody with no network. The report lists each finding
-   by file and line, with a next step; you install, fix (drop a file or a
-   Docker option) and check again, decline (its files and a pulled image
-   go), or leave it held (`sudo yardo addons` lists what's held and what
-   was approved; `sudo yardo addons review <name>` decides). A blocked one
-   can't be installed as it is; one that needs your OK wants its name
-   typed. With `--yes`, only reports with nothing needing an OK install.
-   Installed, it's recorded with its source, pin and findings; mcp-sync
+   scanner run as nobody with no network. Its review opens at once:
+   what it can do (worked out from its own code: the programs it runs,
+   the hosts it contacts, what it reads and writes, what it does as the
+   agent), the few things to look at, numbered, what each check read and
+   what it didn't, and the rest as notes folded by kind. ←→ go along
+   Summary, Findings (each by file and line, its code beside it, enter
+   opens it read only in your editor), Changes (an update's) and Files
+   (by role, with where it's held). `i` installs, listing what you're
+   OK-ing; `x` fixes yardo's copy (drops a file or a Docker option) and
+   checks it all again; `r` rescans; `d` declines (its files and a pulled
+   image go); esc leaves it held, and enter on its row (on Skills, MCP
+   servers, or Needs you) reviews it again. A blocked one can't be
+   installed as it is; one that needs your OK wants its name typed. On
+   the command line, `sudo yardo addons` lists what's held and what was
+   approved; `sudo yardo addons review <name>` shows the review (printed
+   when it isn't on a terminal, or with `--plain`: exit 2 needs your OK,
+   3 can't be installed as it is), and `addons install <name> [--ok
+   <name>]`, `addons fix <name> <fix>`, `addons rescan <name>
+   [--careful]` and `addons decline <name>` decide. With `--yes`, only
+   an add-on with nothing to look at installs, a line each; the rest stay
+   held. Installed, it's recorded with its source, pin and findings, and
+   what you OK'd: an update shows only what's new since; mcp-sync
    registers a server from elsewhere only while its spec is the one you
    approved, and a skill reads as checked on the Skills tab. Check it, on
    a skill another tool put there, turns it off while a copy is checked.
@@ -729,16 +743,17 @@ installed by hand.
    Logged out, too old, or slower than 90 s, the report says Not checked
    by AI, and why. When it finds nothing, the report says Claude read it
    and found nothing harmful, and that it can miss things and be fooled.
-   esc stops a review; Check again carefully reads it again with the
-   larger model. A review is kept by content, so the same add-on isn't
+   esc stops Claude's reading (the review says Not checked by AI); `c`
+   reads it again with the larger model. A review is kept by content, so the same add-on isn't
    read twice. `scripts/review-eval` runs it on test skills.
    **Updates** are offered, never applied: when a skill's branch or tag
    moves, or a server image's tag points to a new digest (looked for at
    most once an hour, nothing pulled), its row reads update available.
    Update it, or `sudo yardo addons update [<name>…] [--yes]`
    (`sudo yardo addons outdated` lists them), fetches the new version into
-   the holding area and checks it like an install; the report lists the
-   files added, changed and removed, with a diff, and Claude is given the
+   the holding area and checks it like an install; Changes says what it
+   can do now that it couldn't, what's new since you approved it, and the
+   files added, changed and removed, each with its full diff, and Claude is given the
    diff and every new or changed script in full. The approved version
    stays installed until you approve the update; declined, it stays as it
    was. A commit or digest you pinned is never outdated. yardo keeps a

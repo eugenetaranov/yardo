@@ -247,8 +247,8 @@ func (k *asker) mcpDo(ctx context.Context, act ui.MCPAct, specs map[string]*mcp.
 		if err != nil {
 			return mcpOutcome{}, err
 		}
-		r.out = os.Stdout                         // the report, above the prompts
-		r.sync = func(context.Context, string) {} // the menu registers it
+		r.out = os.Stdout                                           // the report, above the prompts
+		r.sync = func(context.Context, string) string { return "" } // the menu registers it
 		before := len(k.a.MCPServers)
 		toast, err := r.menuDo(ctx, "mcp", act)
 		if err != nil {

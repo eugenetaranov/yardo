@@ -67,6 +67,8 @@ type asker struct {
 	// text and many stand in for typing a line and picking several.
 	text func(title, desc string) (string, error)
 	many func(title string, opts, picked []string) ([]string, error)
+	// held stands in for a held add-on's Review screen (ui.ReviewScreen).
+	held func(by ui.Reviewer, kind, name string) (ui.ReviewEnd, error)
 	home string
 	// asked are the first run's choices whose questions were asked (before
 	// its review), and secrets what they typed: Customize… then asks only

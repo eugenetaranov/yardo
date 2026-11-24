@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,7 +10,6 @@ import (
 	"maps"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -54,9 +52,14 @@ type addonRun struct {
 	cat *catalog.Catalog
 	out io.Writer
 	yes bool
+	// plain: no Review screen, even on a terminal (--plain).
+	plain bool
 	// sync registers the MCP servers after name's install, saying how
 	// name went (mcp-sync).
-	sync func(ctx context.Context, name string)
+	sync func(ctx context.Context, name string) string
+	// stage is told each check as it starts, when the Review screen runs
+	// them (nil: Claude's says so on the terminal).
+	stage func(string)
 }
 
 func (o *options) addonRun(ctx context.Context, cat *catalog.Catalog, st *answers.Store, out io.Writer, yes bool) (*addonRun, *answers.Answers, error) {
@@ -91,21 +94,31 @@ func (k *asker) addons(ctx context.Context) (*addonRun, error) {
 	u := k.a.User
 	addon.Token = func() string { return ghToken(ctx, u) }
 	r := &addonRun{k: k, env: env, cat: k.cat, out: k.out}
-	addon.Extra = func(ctx context.Context, h *addon.Held, files map[string][]byte, earlier []addon.Finding) (fs []addon.Finding, model string) {
-		r.progress(ctx, fmt.Sprintf("Claude is reading %s (%s)", h.Name, addon.QuickModel), func(ctx context.Context) {
-			fs, model = addon.ReviewLayer(ctx, h, files, earlier)
-		})
-		return fs, model
-	}
-	r.sync = func(ctx context.Context, name string) {
+	addon.Extra = r.extra
+	r.sync = func(ctx context.Context, name string) string {
 		// Another server failing isn't this one's: only its line counts.
+		var said []string
 		_ = k.syncAll(ctx, func(l string) {
 			if strings.HasPrefix(l, name+": ") {
-				fmt.Fprintln(r.out, l)
+				said = append(said, l)
 			}
 		})
+		return strings.Join(said, " ")
 	}
 	return r, nil
+}
+
+// extra is Check's Claude layer: the stage said to the Review screen, or
+// on the terminal while it reads.
+func (r *addonRun) extra(ctx context.Context, h *addon.Held, files map[string][]byte, earlier []addon.Finding) (fs []addon.Finding, model string) {
+	if r.stage != nil {
+		r.stage("claude:" + addon.QuickModel)
+		return addon.ReviewLayer(ctx, h, files, earlier)
+	}
+	r.progress(ctx, fmt.Sprintf("Claude is reading %s (%s)", h.Name, addon.QuickModel), func(ctx context.Context) {
+		fs, model = addon.ReviewLayer(ctx, h, files, earlier)
+	})
+	return fs, model
 }
 
 // syncAll registers k's user's servers: mcp-sync NAME… saves the names
@@ -348,126 +361,46 @@ func (r *addonRun) taken(h *addon.Held) []string {
 	return slices.Compact(out)
 }
 
-// decide checks h, shows its report and does what the user picks (with
-// --yes: installs it when nothing needs an OK, else leaves it held).
+// decide is what's done with h, held: with --yes, it's installed when
+// its report is quiet, else it stays held, a line saying so; on a
+// terminal, its Review screen decides; else its review is printed and it
+// stays held (the commands that decide are in it).
 func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
-	if !h.Report.Current() {
-		// Never checked, or by older rules.
-		fmt.Fprintf(r.out, "Checking %s…\n", h.Name)
-		if err := h.Check(ctx, r.taken(h)); err != nil {
+	if r.yes || !r.onTerminal() {
+		if err := r.current(ctx, h); err != nil {
 			return err
 		}
 	}
-	for {
-		printReport(r.out, h)
-		v := h.Report.Verdict()
-		if r.yes {
-			switch v {
-			case "block":
-				fmt.Fprintf(r.out, "%s stays held: it can't be installed as it is (sudo yardo addons, then decide).\n\n", h.Name)
-				return nil
-			case "ok":
-				fmt.Fprintf(r.out, "%s stays held: it needs your OK (sudo yardo addons review %s).\n\n", h.Name, h.Name)
-				return nil
-			}
-			return r.install(ctx, h, "")
+	switch {
+	case r.yes && h.Report.Quiet():
+		toast, err := r.install(ctx, h, "")
+		if err == nil {
+			fmt.Fprintln(r.out, toast)
 		}
-		install := "Install"
-		if v == "ok" {
-			install = fmt.Sprintf("Install it as it is (you type %s to confirm)", h.Name)
+		return err
+	case r.yes:
+		fmt.Fprintf(r.out, "%s stays held: %s (sudo yardo addons review %s).\n", h.Name, heldSay(h), h.Name)
+		return nil
+	case r.onTerminal():
+		end, err := r.review(ctx, h)
+		if end.Toast != "" {
+			fmt.Fprintln(r.out, end.Toast)
 		}
-		const decline, later = "Decline and remove", "Leave it held (decide later)"
-		var opts []string
-		if v != "block" {
-			opts = append(opts, install)
-		}
-		fixes := map[string]string{}
-		for _, f := range h.Report.Findings {
-			if f.Fix != "" && f.Level != "note" {
-				if l := fixSays(f.Fix); fixes[l] == "" {
-					fixes[l] = f.Fix
-					opts = append(opts, l)
-				}
-			}
-		}
-		// The report is long: what decides it again, by the question.
-		if n := slices.IndexFunc(h.Report.Findings, func(f addon.Finding) bool { return f.Level == v }); v != "note" && v != "clean" && n >= 0 {
-			f := h.Report.Findings[n]
-			fmt.Fprintf(r.out, "\n%s %s %s: %s\n", map[string]string{"block": "✗", "ok": "▲"}[v], h.Name, verdictSays(v), strings.TrimSuffix(cmp.Or(f.Where(), h.Name)+": "+f.Text, ": "))
-		}
-		// Every layer again on the files as they are: a rule, skill-veil or
-		// Claude Code may have changed since.
-		const rescan = "Rescan: run every check again on it as it is (nothing installed yet)"
-		opts = append(opts, rescan)
-		const careful = "Check again carefully (Claude, the larger model: slower, uses more of your plan)"
-		if !hasRule(h.Report, "claude", "not-checked") || h.Report.AI != "" {
-			opts = append(opts, careful)
-		}
-		opts = append(opts, decline, later)
-		pick, err := r.k.chooseOne(fmt.Sprintf("%s: what now?", h.Name), opts, opts[0])
-		if err != nil {
-			return err
-		}
-		switch {
-		case pick == install:
-			typed := ""
-			if v == "ok" {
-				if typed, err = r.k.typeIn(fmt.Sprintf("Type %s to install it", h.Name), "Its report needs your OK: you've read what it found."); err != nil {
-					return err
-				}
-			}
-			err := r.install(ctx, h, strings.TrimSpace(typed))
-			switch {
-			case errors.Is(err, addon.ErrChanged):
-				fmt.Fprintln(r.out, "▲ "+err.Error())
-				if err := h.Check(ctx, r.taken(h)); err != nil {
-					return err
-				}
-				continue
-			case errors.Is(err, addon.ErrNeedsOK):
-				fmt.Fprintln(r.out, "▲ That isn't its name: not installed.")
-				continue
-			}
-			return err
-		case fixes[pick] != "":
-			if err := h.Fix(fixes[pick]); err != nil {
-				return err
-			}
-			fmt.Fprintln(r.out, "Fixed; checking again…")
-			if err := h.Check(ctx, r.taken(h)); err != nil {
-				return err
-			}
-		case pick == rescan:
-			fmt.Fprintf(r.out, "Checking %s again…\n", h.Name)
-			if err := h.Check(ctx, r.taken(h)); err != nil {
-				return err
-			}
-		case pick == careful:
-			var err error
-			r.progress(ctx, fmt.Sprintf("Claude is reading %s carefully (%s)", h.Name, addon.CarefulModel), func(ctx context.Context) {
-				err = h.Recheck(ctx)
-			})
-			if err != nil {
-				return err
-			}
-		case pick == decline:
-			err := h.Decline(ctx)
-			switch {
-			case h.Kind == "mcp" && h.Existing:
-				fmt.Fprintf(r.out, "Declined: %s stays off; its tools aren't the ones you approved.\n\n", h.Name)
-			case h.Existing:
-				fmt.Fprintf(r.out, "Declined: %s stays off (sudo yardo skills delete %s removes it).\n\n", h.Name, h.Name)
-			case h.Update:
-				fmt.Fprintf(r.out, "Declined: the update is gone; %s stays as you approved it.\n\n", h.Name)
-			default:
-				fmt.Fprintf(r.out, "Declined: %s is gone from this machine.\n\n", h.Name)
-			}
-			return err
-		default:
-			fmt.Fprintf(r.out, "%s stays held: sudo yardo addons review %s decides.\n\n", h.Name, h.Name)
-			return nil
-		}
+		return err
 	}
+	printPlain(r.out, h, false)
+	fmt.Fprintln(r.out)
+	return nil
+}
+
+// current checks h when its report isn't current (never checked, or by
+// older rules), saying so.
+func (r *addonRun) current(ctx context.Context, h *addon.Held) error {
+	if h.Report.Current() {
+		return nil
+	}
+	fmt.Fprintf(r.out, "Checking %s…\n", h.Name)
+	return h.Check(ctx, r.taken(h))
 }
 
 func verdictSays(v string) string {
@@ -477,96 +410,6 @@ func verdictSays(v string) string {
 // hasRule says whether r has a finding of layer's rule.
 func hasRule(r addon.Report, layer, rule string) bool {
 	return slices.ContainsFunc(r.Findings, func(f addon.Finding) bool { return f.Layer == layer && f.Rule == rule })
-}
-
-// hasLayer says whether r has a finding of layer at one of levels, but
-// its notes on what it couldn't read.
-func hasLayer(r addon.Report, layer string, levels ...string) bool {
-	return slices.ContainsFunc(r.Findings, func(f addon.Finding) bool {
-		return f.Layer == layer && slices.Contains(levels, f.Level) &&
-			!slices.Contains([]string{"not-checked", "too-big", "image-program", "no-source"}, f.Rule)
-	})
-}
-
-// printReport shows h's report: what it is, the verdict, each finding.
-func printReport(out io.Writer, h *addon.Held) {
-	pin := h.Pin
-	if len(pin) == 40 {
-		pin = pin[:12]
-	}
-	switch {
-	case h.Existing && h.Kind == "mcp":
-		fmt.Fprintf(out, "\n%s · server from %s: its tools now\n", h.Name, h.Source)
-	case h.Existing:
-		fmt.Fprintf(out, "\n%s · skill %s, %s\n", h.Name, h.Source, pin)
-	default:
-		fmt.Fprintf(out, "\n%s · %s from %s @ %s\n", h.Name, h.Kind, h.Source, pin)
-	}
-	mark := map[string]string{"block": "✗", "ok": "▲", "note": "·", "clean": "✓"}
-	files, _ := h.Files()
-	// First what decides it, each in full: what, why it matters, what
-	// you can do; then the notes, by kind.
-	var decide, notes []addon.Finding
-	for _, f := range h.Report.Findings {
-		if f.Level == "note" {
-			notes = append(notes, f)
-		} else {
-			decide = append(decide, f)
-		}
-	}
-	fmt.Fprintf(out, "%s %s\n", mark[h.Report.Verdict()], strings.ToUpper(verdictSays(h.Report.Verdict())[:1])+verdictSays(h.Report.Verdict())[1:])
-	if len(decide) > 0 {
-		fmt.Fprintf(out, "\n  %s\n", map[bool]string{true: "What decides it:", false: "What decides it, one by one:"}[len(decide) == 1])
-	}
-	for n, f := range decide {
-		fmt.Fprintf(out, "\n  %d. %s %s\n", n+1, mark[f.Level], strings.TrimSuffix(cmp.Or(f.Where(), h.Name)+": "+f.Text, ": "))
-		for _, l := range why(f, files) {
-			fmt.Fprintln(out, "     "+l)
-		}
-		if f.Next != "" {
-			fmt.Fprintf(out, "     What you can do: %s.\n", f.Next)
-		}
-		fmt.Fprintf(out, "     (%s)\n", layerSays(f))
-	}
-	printNotes(out, notes)
-	if len(h.Report.Changes) > 0 {
-		fmt.Fprintln(out, "  Changed since the version you approved:")
-		for _, c := range h.Report.Changes {
-			fmt.Fprintf(out, "    %s %s\n", c.What, c.Path)
-			ls := strings.Split(strings.TrimRight(c.Diff, "\n"), "\n")
-			for n, l := range ls {
-				if n == 60 {
-					fmt.Fprintf(out, "      … %d more lines\n", len(ls)-n)
-					break
-				}
-				fmt.Fprintln(out, "      "+l)
-			}
-		}
-	}
-	switch {
-	case h.Report.AI != "" && !hasLayer(h.Report, "claude", "ok", "note"):
-		fmt.Fprintf(out, "  Claude (%s) read it and found nothing harmful. It can miss things, and it can be fooled.\n", h.Report.AI)
-	case h.Report.AI != "":
-		fmt.Fprintf(out, "  Claude (%s) read it: its findings are marked claude. It can miss things, and it can be fooled.\n", h.Report.AI)
-	}
-	if h.Kind == "mcp" {
-		if files, err := h.Files(); err == nil {
-			sp := addon.ParseSpec(string(files["spec"]))
-			if !sp.Data() {
-				fmt.Fprintln(out, "  The spec (lines marked > are code, not settings):")
-				for n, l := range sp.Lines {
-					m := " "
-					if slices.Contains(sp.Code, n+1) {
-						m = ">"
-					}
-					fmt.Fprintf(out, "   %s %3d  %s\n", m, n+1, l)
-				}
-			}
-		}
-		if h.Image && h.Report.AI == "" {
-			fmt.Fprintln(out, "  Not checked: the image's own files (its layers).")
-		}
-	}
 }
 
 // why says more about f than its line: what it means and what wasn't
@@ -681,25 +524,8 @@ func printNotes(out io.Writer, notes []addon.Finding) {
 	}
 }
 
-// fixSays is what a fix yardo makes does, as an option: it changes the
-// held copy only, and the report is made again before anything's
-// installed.
-func fixSays(fix string) string {
-	what, arg, _ := strings.Cut(fix, ":")
-	const after = "and show the report again (nothing installed yet)"
-	switch what {
-	case "remove":
-		return fmt.Sprintf("Delete %s from it %s", path.Base(arg), after)
-	case "drop-key":
-		return fmt.Sprintf("Take %s out of it %s", arg, after)
-	case "drop-opt":
-		return fmt.Sprintf("Take the option %s out %s", arg, after)
-	}
-	return "Fix: " + fix
-}
-
-// install installs h as approved.
-func (r *addonRun) install(ctx context.Context, h *addon.Held, typed string) error {
+// install installs h as approved, saying how it went.
+func (r *addonRun) install(ctx context.Context, h *addon.Held, typed string) (string, error) {
 	put := func(files map[string][]byte) error { return steps.InstallSkill(r.env, h.Name, files) }
 	switch {
 	case h.Kind == "skill" && h.Existing:
@@ -731,27 +557,37 @@ func (r *addonRun) install(ctx context.Context, h *addon.Held, typed string) err
 		put = func(files map[string][]byte) error { return r.putServer(ctx, h.Name, files["spec"]) }
 	}
 	files, _ := h.Files()
+	looks := len(h.Report.Looks())
 	if err := h.Install(ctx, r.env.User, typed, put); err != nil {
-		return err
+		return "", err
 	}
+	rec := "recorded"
+	if looks > 0 {
+		rec = "recorded what you OK'd"
+	}
+	var say string
 	switch {
 	case h.Kind == "mcp" && h.Existing:
 		if err := addon.SetTools(r.env.User, h.Name, addon.SpecHash(files["tools.json"])); err != nil {
-			return err
+			return "", err
 		}
 		if err := r.k.mcpSyncAs(ctx, "on", h.Name); err != nil {
-			return err
+			return "", err
 		}
-		fmt.Fprintf(r.out, "✓ %s's tools approved: it's on again.\n\n", h.Name)
-		r.sync(ctx, h.Name)
-		return nil
+		return strings.TrimSpace(fmt.Sprintf("✓ %s's tools approved: it's on again. %s", h.Name, r.sync(ctx, h.Name))), nil
 	case h.Update:
-		fmt.Fprintf(r.out, "✓ %s updated to %s and recorded.\n\n", h.Name, shortPin(h.Pin))
+		say = fmt.Sprintf("✓ %s updated to %s · %s", h.Name, shortPin(h.Pin), rec)
+	case h.Kind == "skill" && h.Existing:
+		say = fmt.Sprintf("✓ %s is on again · %s", h.Name, rec)
+	case h.Kind == "skill":
+		say = fmt.Sprintf("✓ %s installed to %s · %s", h.Name, strings.Join(steps.SkillDirs, " and "), rec)
 	default:
-		fmt.Fprintf(r.out, "✓ %s installed and recorded (sudo yardo addons lists it).\n\n", h.Name)
+		say = fmt.Sprintf("✓ %s installed · %s", h.Name, rec)
 	}
 	if h.Kind == "mcp" {
-		r.sync(ctx, h.Name)
+		if l := r.sync(ctx, h.Name); l != "" {
+			say += " · " + l
+		}
 		// A remote server's tools, as it registered with them, are the
 		// ones approved: mcp-sync turns it off when they change.
 		if sp := addon.ParseSpec(string(files["spec"])); sp.Fields["KIND"] == "http" {
@@ -762,7 +598,7 @@ func (r *addonRun) install(ctx context.Context, h *addon.Held, typed string) err
 			}
 		}
 	}
-	return nil
+	return say, nil
 }
 
 // mcpTools is server name's tool list as mcp-sync hashes it.
@@ -1009,8 +845,8 @@ func (r *addonRun) form(f *addon.Form, src string) error {
 	return nil
 }
 
-// addonsCmd is `yardo addons [review NAME]`: what's held and approved,
-// or the decision on one held.
+// addonsCmd is `yardo addons [review|install|decline|fix|rescan NAME
+// …]`: what's held and approved, or the decision on one held.
 func (o *options) addonsCmd(ctx context.Context, cat *catalog.Catalog, st *answers.Store, out io.Writer, args []string) error {
 	r, a, err := o.addonRun(ctx, cat, st, out, false)
 	if err != nil {
@@ -1020,22 +856,15 @@ func (o *options) addonsCmd(ctx context.Context, cat *catalog.Catalog, st *answe
 	if err != nil {
 		return err
 	}
-	const usage = "usage: sudo yardo addons [review NAME | outdated | update [NAME…] [--yes] | recheck SERVER [--yes]]"
 	if len(args) > 0 {
 		switch args[0] {
-		case "review":
-			if len(args) != 2 {
-				return errors.New(usage)
+		case "review", "install", "decline", "fix", "rescan":
+			// An MCP server installed is on the answers' list.
+			err := r.heldCmd(ctx, held, args)
+			if serr := st.Save(a); err == nil {
+				err = serr
 			}
-			for _, h := range held {
-				if h.Name == args[1] {
-					if err := r.decide(ctx, h); err != nil {
-						return err
-					}
-					return st.Save(a)
-				}
-			}
-			return fmt.Errorf("nothing named %s is held", args[1])
+			return err
 		case "outdated":
 			outdated, errs := addon.FindOutdated(ctx, r.env.User, true)
 			for _, u := range outdated {
@@ -1083,13 +912,13 @@ func (o *options) addonsCmd(ctx context.Context, cat *catalog.Catalog, st *answe
 				return err
 			}
 			if len(names) != 1 {
-				return errors.New(usage)
+				return errors.New(addonsUsage)
 			}
 			r.yes = *yes
 			r.ensureVeil(ctx)
 			return r.recheckTools(ctx, names[0])
 		}
-		return errors.New(usage)
+		return errors.New(addonsUsage)
 	}
 	approved, err := addon.Approvals(r.env.User)
 	if err != nil {
@@ -1102,7 +931,7 @@ func (o *options) addonsCmd(ctx context.Context, cat *catalog.Catalog, st *answe
 	if len(held) > 0 {
 		fmt.Fprintln(out, "Held (waiting for you: sudo yardo addons review NAME):")
 		for _, h := range held {
-			fmt.Fprintf(out, "  %-24s %-5s %s · %s\n", h.Name, h.Kind, addon.What(h.Kind, h.Source, h.Pin, ""), verdictSays(h.Report.Verdict()))
+			fmt.Fprintf(out, "  %-24s %-5s %s · %s\n", h.Name, h.Kind, addon.What(h.Kind, h.Source, h.Pin, ""), heldSay(h))
 		}
 	}
 	if len(approved) > 0 {

@@ -12,7 +12,9 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 )
@@ -33,9 +35,9 @@ var VeilSum = func() string {
 const veilLimit = 60 * time.Second
 
 // Veil scans h's files with skill-veil, offline: as nobody, with no
-// network, no home and a time limit. Its block needs the user's OK (it can
-// raise false alarms); its require_approval is a note. A scan that
-// doesn't finish says so, as a note.
+// network, no home and a time limit. Its high and critical need the
+// user's OK (it can raise false alarms); medium and low are notes. A scan
+// that doesn't finish says so, as a note.
 func Veil(ctx context.Context, kind, name string, files map[string][]byte) []Finding {
 	fs, err := veil(ctx, kind, name, files)
 	if err != nil {
@@ -113,7 +115,7 @@ func veil(ctx context.Context, kind, name string, files map[string][]byte) ([]Fi
 		}
 		return nil, err
 	}
-	return parseVeil(out, pkg, back)
+	return parseVeil(out, pkg, back, files)
 }
 
 // veilOK: skill-veil is there, and is the pinned release.
@@ -156,8 +158,10 @@ var VeilCmd = func(ctx context.Context, pkg, home string) *exec.Cmd {
 }
 
 // parseVeil reads skill-veil's JSON: its findings, by the held file's
-// path.
-func parseVeil(out []byte, pkg string, back map[string]string) ([]Finding, error) {
+// path, one per rule and file. High and critical need your OK, medium and
+// low are notes; a finding with no line is put where the file first does
+// what the rule is about; in bundled code, docs or assets it's a note.
+func parseVeil(out []byte, pkg string, back map[string]string, files map[string][]byte) ([]Finding, error) {
 	var res []struct {
 		Findings []struct {
 			RuleID            string `json:"rule_id"`
@@ -171,13 +175,13 @@ func parseVeil(out []byte, pkg string, back map[string]string) ([]Finding, error
 	if err := json.Unmarshal(out, &res); err != nil {
 		return nil, fmt.Errorf("its report didn't read: %w", err)
 	}
+	rl := roles(files)
 	var fs []Finding
-	seen := map[string]bool{}
 	for _, r := range res {
 		for _, f := range r.Findings {
-			level := map[string]string{"block": "ok", "require_approval": "note"}[f.RecommendedAction]
-			if level == "" {
-				continue // log: hygiene, not a risk
+			level := map[string]string{"critical": "ok", "high": "ok", "medium": "note", "low": "note"}[strings.ToLower(f.Severity)]
+			if level == "" || f.RecommendedAction == "log" {
+				continue // hygiene, not a risk
 			}
 			file := strings.TrimPrefix(filepath.ToSlash(strings.TrimPrefix(f.Path, pkg)), "/")
 			if b, ok := back[file]; ok {
@@ -186,25 +190,95 @@ func parseVeil(out []byte, pkg string, back map[string]string) ([]Finding, error
 				}
 				file = b
 			}
-			line := 0
-			if f.Line != nil {
-				line = *f.Line
+			if file != "" {
+				file = path.Clean(file)
 			}
-			key := fmt.Sprint(f.RuleID, file, line)
-			if seen[key] {
+			if dropVeil(f.RuleID, file) {
 				continue
 			}
-			seen[key] = true
+			line, more := 0, 0
+			if f.Line != nil {
+				line = *f.Line
+			} else {
+				line, more = locate(f.RuleID, files[file])
+			}
+			look := level == "ok"
+			if file != "" && !own(rl[file]) {
+				level, look = "note", false
+			}
 			next := "read the line: is it what the skill is for?"
 			if level == "ok" {
 				next = "read the line; installing needs your OK (skill-veil can be wrong)"
 			}
-			if file != "" {
-				file = path.Clean(file)
-			}
-			fs = append(fs, Finding{Layer: "skill-veil", Rule: f.RuleID, Level: level, File: file, Line: line,
-				Text: fmt.Sprintf("%s (%s)", strings.TrimSuffix(f.Reason, "."), f.Severity), Next: next})
+			fs = append(fs, Finding{Layer: "skill-veil", Rule: f.RuleID, Level: level, File: file, Line: line, More: more, Look: look,
+				Kind: veilWords(f.RuleID), Text: fmt.Sprintf("%s (%s)", strings.TrimSuffix(f.Reason, "."), f.Severity), Next: next})
 		}
 	}
-	return fs, nil
+	return onePer(fs, rl), nil
+}
+
+// dropVeil: rule is a false alarm on file, by yardo's overrides: a
+// "multilingual harmful verb" in code is a word in an identifier.
+func dropVeil(rule, file string) bool {
+	switch rule {
+	case "OFFICIAL_OBFUSCATION_MULTILINGUAL_HARMFUL_VERB":
+		switch path.Ext(file) {
+		case ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx":
+			return true
+		}
+	}
+	return false
+}
+
+// veilSigns are what each kind of rule is about, to find in a file: the
+// first that a rule's ID has a word of.
+var veilSigns = []struct {
+	words []string
+	re    *regexp.Regexp
+}{
+	{[]string{"CHILD_PROCESS", "EXEC", "SPAWN", "SHELL"}, regexp.MustCompile(`child_process|\bspawn\w*\s*\(|\bexec\w*\s*\(|subprocess\.|os\.system`)},
+	{[]string{"NETWORK", "FETCH", "HTTP", "EXFIL", "CURL", "DOWNLOAD"}, regexp.MustCompile(`\bfetch\s*\(|\bhttps?\.(?:request|get)\b|\b(?:curl|wget)\b|\brequests\.|urlopen`)},
+	{[]string{"SECRET", "CREDENTIAL", "FS", "FILE"}, regexp.MustCompile(`\bprocess\.env\b|\bfs\.|os\.homedir|os\.environ|\bopen\s*\(|readFile`)},
+	{[]string{"ENV"}, regexp.MustCompile(`\bprocess\.env\b|os\.environ|getenv`)},
+	{[]string{"EVAL", "DYNAMIC"}, regexp.MustCompile(`\beval\s*\(|new\s+Function\s*\(`)},
+}
+
+// locate is where in b rule's kind of thing is first, and how many more
+// lines have it (0, 0: not found).
+func locate(rule string, b []byte) (int, int) {
+	for _, s := range veilSigns {
+		if !slices.ContainsFunc(s.words, func(w string) bool { return strings.Contains(rule, w) }) {
+			continue
+		}
+		first, n := 0, 0
+		for i, l := range strings.Split(string(b), "\n") {
+			if s.re.MatchString(l) {
+				if first == 0 {
+					first = i + 1
+				}
+				n++
+			}
+		}
+		if first > 0 {
+			return first, n - 1
+		}
+	}
+	return 0, 0
+}
+
+// veilWords say what a skill-veil rule is about, in a few words.
+func veilWords(rule string) string {
+	for _, w := range []struct{ word, say string }{
+		{"REMOTE_EXEC", "Runs what it downloads"}, {"EXFIL", "Sends data out"}, {"SECRET", "Reads secrets or files"},
+		{"CREDENTIAL", "Reads secrets or files"}, {"CHILD_PROCESS", "Starts programs"}, {"EXEC", "Starts programs"},
+		{"SPAWN", "Starts programs"}, {"NETWORK", "Contacts the network"}, {"FETCH", "Contacts the network"},
+		{"CURL", "Contacts the network"}, {"OBFUSCAT", "Hard-to-read text"}, {"INJECTION", "Steers the agent"},
+		{"PROMPT", "Steers the agent"}, {"PERMISSION", "Asks for permissions"}, {"PERSIST", "Stays after it's used"},
+		{"FS", "Reads or writes files"}, {"ENV", "Reads the environment"},
+	} {
+		if strings.Contains(rule, w.word) {
+			return w.say
+		}
+	}
+	return "skill-veil: " + strings.ToLower(strings.ReplaceAll(rule, "_", " "))
 }

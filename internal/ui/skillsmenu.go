@@ -182,9 +182,6 @@ func (m *Menu) skillActions(s *SkillRow) []mcpAction {
 	if s == nil {
 		return nil
 	}
-	if s.Off == "held" {
-		return []mcpAction{{"review", "Review it", "its report: install, fix and check again, or decline"}, {"back", "Back", ""}}
-	}
 	act, _ := m.skillAct(slices.IndexFunc(m.info.Skills, func(r SkillRow) bool { return r.Name == s.Name }))
 	var out []mcpAction
 	switch act.Do {
@@ -241,6 +238,9 @@ func (m *Menu) skillsKey(k string, up, down bool) tea.Cmd {
 			}
 		case k == "n":
 			return m.quit(MenuResult{Kind: MenuSkills, MCP: MCPAct{Do: "add"}})
+		case k == "enter" && m.sel < n && m.info.Skills[m.sel].Off == "held":
+			m.skSel = m.sel
+			return m.openReview("skill", m.info.Skills[m.sel].Name)
 		case k == "enter":
 			m.skSel = m.sel
 			m.screen, m.sel = "skills:skill", 0
@@ -259,7 +259,7 @@ func (m *Menu) skillsKey(k string, up, down bool) tea.Cmd {
 			switch a := as[m.sel].id; a {
 			case "off", "on":
 				m.stageSkill(MCPAct{Do: a, Entry: name})
-			case "check", "review", "update", "restore":
+			case "check", "update", "restore":
 				return m.quit(MenuResult{Kind: MenuSkills, MCP: MCPAct{Do: a, Entry: name}})
 			case "delete":
 				m.dialog = &Dialog{Title: fmt.Sprintf("Delete %s?", name), YN: true, Sel: 1,
@@ -283,13 +283,21 @@ func (m *Menu) skillsKey(k string, up, down bool) tea.Cmd {
 func skillWord(s SkillRow) string {
 	switch s.Off {
 	case "held":
-		return yellow.Render(tui.Cur.Mark.Warn + " held: waiting for you")
+		return heldWord(s.Verdict)
 	case "own":
 		return accent.Render("○ off")
 	case "all":
 		return accent.Render("○ off") + muted.Render(" · with all skills")
 	}
 	return green.Render("● on")
+}
+
+// heldWord is how a held add-on is, by its verdict.
+func heldWord(v string) string {
+	if v == "block" {
+		return red.Render(tui.Cur.Mark.Down + " held: can't be installed as it is")
+	}
+	return yellow.Render(tui.Cur.Mark.Warn + " held: needs your OK")
 }
 
 // skillFrom says where a skill is from.
@@ -396,6 +404,9 @@ func (m *Menu) skillsView(w, room int) []string {
 		}
 		if _, marked := m.skPend[s.Name]; marked {
 			cols += accent.Render("  · not saved")
+		}
+		if s.Off == "held" && s.Held != "" {
+			cols += muted.Render("  " + s.Held)
 		}
 		if n == m.sel {
 			selLine = len(lines)

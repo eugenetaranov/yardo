@@ -118,7 +118,7 @@ func TestMenuNeedsYou(t *testing.T) {
 	for _, r := range m.needList() {
 		ids = append(ids, r.id)
 	}
-	if got := strings.Join(ids, " "); got != "why fix:docker key:keys:OPENAI_API_KEY updates keys skill:pdf skill:web" {
+	if got := strings.Join(ids, " "); got != "why fix:docker key:keys:OPENAI_API_KEY updates keys skill:pdf held:skill:web" {
 		t.Errorf("needs: %s", got)
 	}
 	// Skills count: a tab mark, and the status line's number.
@@ -150,8 +150,12 @@ func TestMenuNeedsYou(t *testing.T) {
 	if r := go1("keys").result; r.Kind != MenuConnection || r.ID != NetTab+":key" {
 		t.Errorf("keys: %+v", r)
 	}
-	if go1("skill:web"); m.screen != "skills:skill" || m.skill().Name != "web" {
+	if go1("skill:pdf"); m.screen != "skills:skill" || m.skill().Name != "pdf" {
 		t.Errorf("a skill: %s", m.screen)
+	}
+	// A held one, with no reviewer: on the terminal.
+	if r := go1("held:skill:web").result; r.Kind != MenuSkills || r.MCP != (MCPAct{Do: "review", Entry: "web"}) {
+		t.Errorf("a held skill: %+v", r)
 	}
 	if go1("why"); m.screen != "lastrun" {
 		t.Errorf("why: %s", m.screen)
@@ -172,7 +176,7 @@ func TestMenuNeedsYou(t *testing.T) {
 	if m.need != 1 {
 		t.Errorf("down down up: %d", m.need)
 	}
-	onNeed(m, "skill:web")
+	onNeed(m, "held:skill:web")
 	mk(m, "tab")
 	if m.need != -1 {
 		t.Errorf("tab past the last: %d", m.need)
@@ -644,7 +648,8 @@ func TestMenuMCPScroll(t *testing.T) {
 	}
 }
 
-// A server held for a decision reads held, and offers only Review it.
+// A server held for a decision reads held; enter reviews it (no
+// reviewer: on the terminal).
 func TestMenuMCPHeld(t *testing.T) {
 	m := mcpMenu()
 	m.info.MCP = append(m.info.MCP, MCPServer{Entry: "xmcp", Name: "xmcp", State: "held"})
@@ -658,12 +663,8 @@ func TestMenuMCPHeld(t *testing.T) {
 	for range at {
 		mk(m, "down")
 	}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "▲ held: waiting for you") || strings.Index(v, "xmcp") > strings.Index(v, "Also in ~/.mcp") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "▲ held: needs your OK") || strings.Index(v, "xmcp") > strings.Index(v, "Also in ~/.mcp") {
 		t.Fatalf("list:\n%s", v)
-	}
-	mk(m, "enter")
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "› Review it") || strings.Contains(v, "Edit its settings") {
-		t.Fatalf("server:\n%s", v)
 	}
 	mk(m, "enter")
 	if r := m.result; r.Kind != MenuMCP || r.MCP != (MCPAct{Do: "review", Entry: "xmcp"}) {

@@ -276,9 +276,6 @@ func (m *Menu) using(spec string) []string {
 type mcpAction struct{ id, label, note string }
 
 func (m *Menu) mcpActions(s *MCPServer) []mcpAction {
-	if s.State == "held" {
-		return []mcpAction{{"review", "Review it", "its report: install, fix and check again, or decline"}, {"back", "Back", ""}}
-	}
 	var out []mcpAction
 	if s.State == "off" && s.Off == "tools-changed" {
 		out = append(out, mcpAction{"recheck", "Check it again", "its tools changed since you approved it: their names and descriptions are checked"})
@@ -349,7 +346,7 @@ func mcpWord(s *MCPServer) string {
 	case "failed":
 		return yellow.Render(tui.Cur.Mark.Warn + " didn't register: check its settings")
 	case "held":
-		return yellow.Render(tui.Cur.Mark.Warn + " held: waiting for you")
+		return heldWord(s.Verdict)
 	case "refused":
 		if s.Detail == "unapproved" {
 			return yellow.Render(tui.Cur.Mark.Warn + " refused: its spec changed since you approved it")
@@ -470,6 +467,9 @@ func (m *Menu) mcpKey(k string, up, down, left, right bool) tea.Cmd {
 		case k == "n" || (k == "enter" && m.sel == n):
 			m.mcpSel = n
 			m.screen, m.sel = "mcp:add", m.addSel
+		case k == "enter" && m.mcpServers()[m.sel].State == "held":
+			m.mcpSel = m.sel
+			return m.openReview("mcp", m.mcpServers()[m.sel].Name)
 		case k == "enter":
 			m.mcpSel = m.sel
 			m.screen, m.sel = "mcp:server", 0
@@ -742,6 +742,9 @@ func (m *Menu) mcpView(w, room int) []string {
 			}
 			if _, marked := m.pend[s.Entry]; marked {
 				cols += accent.Render("  · not saved")
+			}
+			if s.State == "held" && s.Held != "" {
+				cols += muted.Render("  " + s.Held)
 			}
 			if n == m.sel {
 				selLine = len(lines)

@@ -26,13 +26,13 @@ func fakeVeil(t *testing.T, body string) {
 	t.Cleanup(func() { VeilBin, VeilSum, VeilCmd = oldB, oldS, oldC })
 }
 
-// skill-veil's block needs the user's OK, its require_approval is a note,
-// its log is left out; each by the held file's path and line.
+// skill-veil's high and critical need the user's OK, its medium and low
+// are notes, its log is left out; each by the held file's path and line.
 func TestVeil(t *testing.T) {
 	fakeVeil(t, `cat <<JSON
 [{"findings": [
  {"rule_id": "SKILL_REMOTE_EXEC_CURL_BASH", "severity": "critical", "recommended_action": "block", "line_number": 88, "artifact_path": "$2/SKILL.md", "reason": "Remote download and execution via curl piped to shell"},
- {"rule_id": "PIPELINE_FETCH_TO_SHELL", "severity": "high", "recommended_action": "require_approval", "line_number": 2, "artifact_path": "$2/scripts/x.sh", "reason": "Fetch to shell."},
+ {"rule_id": "PIPELINE_FETCH_TO_SHELL", "severity": "medium", "recommended_action": "require_approval", "line_number": 2, "artifact_path": "$2/scripts/x.sh", "reason": "Fetch to shell."},
  {"rule_id": "DECLARED_PERMISSION", "severity": "low", "recommended_action": "log", "line_number": null, "artifact_path": "$2/SKILL.md", "reason": "x"}
 ]}]
 JSON`)
@@ -82,5 +82,33 @@ func TestVeilNotScanned(t *testing.T) {
 	VeilBin = "/nonexistent/skill-veil"
 	if fs := Veil(context.Background(), "skill", "tidy", nil); len(fs) != 1 || !strings.Contains(fs[0].Text, "isn't installed") {
 		t.Errorf("missing: %+v", fs)
+	}
+}
+
+// A finding with no line is put where its file first does what the rule
+// is about, with how many more lines do; a "multilingual harmful verb" in
+// code is dropped; in bundled code a high finding is a note.
+func TestVeilLocate(t *testing.T) {
+	fakeVeil(t, `cat <<JSON
+[{"findings": [
+ {"rule_id": "SCRIPT_NODE_SECRET_OR_FS_ACCESS", "severity": "medium", "recommended_action": "require_approval", "line_number": null, "artifact_path": "$2/bin/a.mjs", "reason": "env or file access"},
+ {"rule_id": "OFFICIAL_OBFUSCATION_MULTILINGUAL_HARMFUL_VERB", "severity": "medium", "recommended_action": "require_approval", "line_number": 3, "artifact_path": "$2/bin/a.mjs", "reason": "x"},
+ {"rule_id": "SCRIPT_NODE_CHILD_PROCESS", "severity": "high", "recommended_action": "block", "line_number": null, "artifact_path": "$2/vendor/v.js", "reason": "child_process"}
+]}]
+JSON`)
+	files := map[string][]byte{
+		"SKILL.md":    []byte("x"),
+		"bin/a.mjs":   []byte("import os from 'node:os';\nconst h = process.env.HOME;\nconst backupCreated = true;\nfs.readFileSync(x);\n"),
+		"vendor/v.js": []byte("var a;\nrequire('child_process');\n"),
+	}
+	fs := Veil(context.Background(), "skill", "tidy", files)
+	if len(fs) != 2 {
+		t.Fatalf("findings: %+v", fs)
+	}
+	if f := fs[0]; f.Where() != "bin/a.mjs:2" || f.More != 1 || f.Level != "note" || f.Kind != "Reads secrets or files" || f.Role != "script" {
+		t.Errorf("located: %+v", f)
+	}
+	if f := fs[1]; f.Where() != "vendor/v.js:2" || f.Level != "note" || f.Look {
+		t.Errorf("bundled: %+v", f)
 	}
 }
