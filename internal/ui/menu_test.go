@@ -969,19 +969,23 @@ func TestMenuDashboard(t *testing.T) {
 ● ssh        22/tcp, 2222/tcp  any network
 ● docker     running
 ● tailscale  41641/udp         any network
-● ollama     11434/tcp         any network
+● ollama     11434/tcp         any network ▲
 ● cupsd      631/tcp           local
 ● other      9100/tcp          100.64.1.7 only
 ─ containers ───────────────────────────────────────
-● postgres:16         myapp-db-1  :5432  any network
+● postgres:16         myapp-db-1  :5432  any network ▲
 ● mcp-pro…e:1.2.3 ×2              :9000  VPN only
 MCP servers: aws ×4, github`
 	if got != want {
 		t.Errorf("panel:\n%s\nwant:\n%s", got, want)
 	}
-	// The reach is said in yellow when it's open and needn't be.
-	if l := m.serviceLines(52)[5]; !strings.Contains(l, yellow.Render("any network")) {
+	// The same words in the same colour; open when it needn't be, a
+	// yellow ▲ after them.
+	if l := m.serviceLines(52)[5]; !strings.Contains(l, "any network "+yellow.Render(tui.Cur.Mark.Warn)) {
 		t.Errorf("ollama, open: %q", l)
+	}
+	if l := m.serviceLines(52)[2]; strings.Contains(l, tui.Cur.Mark.Warn) {
+		t.Errorf("ssh, meant open: %q", l)
 	}
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "Services & containers") || !strings.Contains(v, "● ssh        22/tcp, 2222/tcp") {

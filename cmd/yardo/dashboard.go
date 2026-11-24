@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -36,7 +37,61 @@ func dashboard(ctx context.Context, user string) ui.Dashboard {
 	if out, ok := quick(ctx, "ss", "-H", "-tulnp"); ok {
 		d.Listening = parseListening(out)
 	}
+	fenced(&d, firewallFiles(fwDir))
 	return d
+}
+
+// fwDir is yardo's firewall tables; tests point it elsewhere.
+var fwDir = "/etc/yardo/firewall"
+
+// firewallFiles are the texts of yardo's firewall tables.
+func firewallFiles(dir string) []string {
+	var out []string
+	fs, _ := filepath.Glob(filepath.Join(dir, "*.nft"))
+	for _, f := range fs {
+		if b, err := os.ReadFile(f); err == nil {
+			out = append(out, string(b))
+		}
+	}
+	return out
+}
+
+var (
+	fwPort = regexp.MustCompile(`tcp dport (\d+) drop`)
+	fwVPN  = regexp.MustCompile(`iifname \{[^}]*"tailscale0"`)
+)
+
+// fenced narrows what yardo's firewall keeps in: a port listening
+// everywhere that a table lets in only from the VPNs (or this machine) is
+// reached from there, not any network; so are containers' published ports
+// under its Docker table.
+func fenced(d *ui.Dashboard, tables []string) {
+	ports := map[string]string{}
+	docker := ""
+	for _, t := range tables {
+		scope := "local"
+		if fwVPN.MatchString(t) {
+			scope = "vpn"
+		}
+		for _, m := range fwPort.FindAllStringSubmatch(t, -1) {
+			ports[m[1]] = scope
+		}
+		if strings.Contains(t, "ct status dnat drop") {
+			docker = scope
+		}
+	}
+	for n, l := range d.Listening {
+		if s, ok := ports[l.Port]; ok && l.Scope == "all" && l.Proto == "tcp" {
+			d.Listening[n].Scope = s
+		}
+	}
+	if docker != "" {
+		for n, c := range d.Containers {
+			if c.Reach == "all" {
+				d.Containers[n].Reach = docker
+			}
+		}
+	}
 }
 
 // quick runs a command for at most 3 seconds: its output, and whether it

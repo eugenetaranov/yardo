@@ -95,7 +95,7 @@ func TestAddonsYes(t *testing.T) {
 	if _, err := os.Stat(r.env.Path("~/.claude/skills/keys")); err == nil {
 		t.Error("keys was installed")
 	}
-	if !strings.Contains(out.String(), "keys stays held: it needs your OK") || !strings.Contains(out.String(), "SKILL.md:5: Steals keys (critical) [skill-veil CRED]") {
+	if !strings.Contains(out.String(), "keys stays held: it needs your OK") || !strings.Contains(out.String(), "1. ▲ SKILL.md:5: Steals keys (critical)") {
 		t.Errorf("output:\n%s", out)
 	}
 	if held, _ := addon.List("ada"); len(held) != 1 || held[0].Name != "keys" {
@@ -109,7 +109,7 @@ func TestAddonsYes(t *testing.T) {
 // A block offers its fix, then Install; needs-OK wants the name typed,
 // a wrong one installs nothing.
 func TestAddonsDecide(t *testing.T) {
-	r, out := addonTest(t, []string{"Fix: remove this file", "Install"}, nil)
+	r, out := addonTest(t, []string{"Remove bin/helper", "Install"}, nil)
 	h := holdSkill(t, r, "tidy", "Tidy up.", map[string][]byte{"bin/helper": []byte("\x7fELF\x02")})
 	if err := r.decide(context.Background(), h); err != nil {
 		t.Fatal(err)
@@ -214,9 +214,9 @@ func TestAddonsReportAI(t *testing.T) {
 		{"nothing", addon.Report{AI: "claude-haiku-5-5", Findings: []addon.Finding{{Layer: "claude", Rule: "too-big", Level: "note", Text: "too big"}}},
 			"Claude (claude-haiku-5-5) read it and found nothing harmful. It can miss things, and it can be fooled."},
 		{"findings", addon.Report{AI: "claude-sonnet-5-5", Findings: []addon.Finding{{Layer: "claude", Rule: "secret_access", Level: "ok", File: "SKILL.md", Line: 6, Text: "Reads your SSH key."}}},
-			"▲ SKILL.md:6: Reads your SSH key. [claude secret_access]"},
+			"1. ▲ SKILL.md:6: Reads your SSH key."},
 		{"not checked", addon.Report{Findings: []addon.Finding{{Layer: "claude", Rule: "not-checked", Level: "note", Text: "Not checked by AI: Claude Code isn't logged in (claude, then /login)"}}},
-			"· Not checked by AI: Claude Code isn't logged in"},
+			"Not checked by AI: Claude Code isn't logged in"},
 	} {
 		var out bytes.Buffer
 		printReport(&out, &addon.Held{Kind: "skill", Name: "x", Source: "a/b", Report: c.r})

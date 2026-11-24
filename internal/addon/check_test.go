@@ -127,7 +127,7 @@ func TestBasicURLsOnce(t *testing.T) {
 			urls = append(urls, f)
 		}
 	}
-	if len(urls) != 1 || urls[0].Where() != "a.js:1" || !strings.Contains(urls[0].Next, "2 more places") {
+	if len(urls) != 1 || urls[0].Where() != "a.js:1" || urls[0].Text != "a web address: https://x.example/api (2 more places)" {
 		t.Errorf("urls: %+v", urls)
 	}
 	// More than three in a file: one note for them all, by site.

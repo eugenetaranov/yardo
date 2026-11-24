@@ -77,7 +77,7 @@ func Basic(s Subject) []Finding {
 			continue
 		}
 		if len(b) > maxFile {
-			needsOK("size", p, 0, fmt.Sprintf("%.1f MB: too big to read through (%d MB a file)", float64(len(b))/(1<<20), maxFile>>20), "type its name to keep it as it is, or remove this file", "remove:"+p)
+			needsOK("size", p, 0, fmt.Sprintf("%.1f MB, more than the %d MB a file yardo reads through", float64(len(b))/(1<<20), maxFile>>20), "install it as it is (you type its name), or remove the file: the skill may not work without it", "remove:"+p)
 		}
 		switch {
 		case program(b) != "":
@@ -89,7 +89,7 @@ func Basic(s Subject) []Finding {
 		}
 	}
 	if total > maxTotal || len(s.Files) > maxCount {
-		needsOK("size", "", 0, fmt.Sprintf("%d files, %d MB: more than can be read through (%d files, %d MB)", len(s.Files), total>>20, maxCount, maxTotal>>20), "type its name to keep it as it is, or decline it", "")
+		needsOK("size", "", 0, fmt.Sprintf("%d files, %d MB in all, more than the %d files or %d MB yardo reads through", len(s.Files), total>>20, maxCount, maxTotal>>20), "install it as it is (you type its name), or decline it", "")
 	}
 	out = oneEach(out)
 	if s.Kind == "skill" {
@@ -119,7 +119,8 @@ func oneEach(fs []Finding) []Finding {
 		}
 		if n, ok := seen[f.Text]; ok {
 			more[f.Text]++
-			out[n].Next = fmt.Sprintf("check where it sends you, and what it fetches (%d more %s)", more[f.Text], map[bool]string{true: "place", false: "places"}[more[f.Text] == 1])
+			u, _, _ := strings.Cut(out[n].Text, " (")
+			out[n].Text = fmt.Sprintf("%s (%d more %s)", u, more[f.Text], map[bool]string{true: "place", false: "places"}[more[f.Text] == 1])
 			continue
 		}
 		seen[f.Text] = len(out)
@@ -139,7 +140,6 @@ func oneEach(fs []Finding) []Finding {
 		}
 		said[f.File] = true
 		f.Text = fmt.Sprintf("%d web addresses: %s", len(us), sites(us))
-		f.Next = "check where they send you, and what they fetch"
 		kept = append(kept, f)
 	}
 	return kept
@@ -258,7 +258,11 @@ func textRules(s Subject, p string, b []byte) []Finding {
 			continue
 		}
 		for _, w := range warnings {
-			if m := w.re.FindString(line); m != "" && (w.rule != "url" || !xmlName.MatchString(m)) {
+			m := w.re.FindString(line)
+			if w.rule == "url" {
+				m = strings.TrimRight(m, "`;,.")
+			}
+			if m != "" && (w.rule != "url" || !xmlName.MatchString(m)) {
 				out = append(out, Finding{Layer: "basic", Rule: w.rule, Level: "note", File: p, Line: n + 1, Text: w.say(m), Next: w.next})
 			}
 		}

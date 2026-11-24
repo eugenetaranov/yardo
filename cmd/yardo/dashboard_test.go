@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/eugenetaranov/yardo/internal/ui"
 )
 
 func TestParseContainers(t *testing.T) {
@@ -63,5 +65,25 @@ tcp   LISTEN 0      4096        10.0.0.5:9000       0.0.0.0:*    users:(("minio"
 	want := "[{41641 udp tailscale all} {22 tcp ssh all} {2049 tcp nfs all} {631 tcp cupsd local} {9000 tcp minio 10.0.0.5}]"
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+// yardo's firewall narrows a port listening everywhere: the gateway's
+// table lets it in from the VPNs only; its Docker table keeps published
+// ports to this machine.
+func TestFenced(t *testing.T) {
+	d := ui.Dashboard{
+		Listening:  []ui.Listener{{Port: "8081", Proto: "tcp", Name: "mcpjungle", Scope: "all"}, {Port: "22", Proto: "tcp", Name: "sshd", Scope: "all"}},
+		Containers: []ui.Container{{Image: "postgres:16", Reach: "all"}},
+	}
+	fenced(&d, []string{
+		"table inet yardo_mcp_ada {\n\tchain input {\n\t\ttcp dport 8081 iifname \"lo\" accept\n\t\ttcp dport 8081 iifname { \"tailscale0\", \"wt0\" } accept\n\t\ttcp dport 8081 drop\n\t}\n}\n",
+		"table inet yardo_docker_ports {\n\tchain forward {\n\t\tct state new ct status dnat iifname { \"lo\", \"docker0\" } accept\n\t\tct state new ct status dnat drop\n\t}\n}\n",
+	})
+	if d.Listening[0].Scope != "vpn" || d.Listening[1].Scope != "all" {
+		t.Errorf("listening: %+v", d.Listening)
+	}
+	if d.Containers[0].Reach != "local" {
+		t.Errorf("container: %+v", d.Containers[0])
 	}
 }

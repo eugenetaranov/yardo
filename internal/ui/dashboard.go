@@ -9,6 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
+
+	"github.com/eugenetaranov/yardo/internal/tui"
 )
 
 // Dashboard is what the home shows of the machine, under how it is: the
@@ -123,13 +125,17 @@ func reachWord(scope string) string {
 // isn't a warning.
 var meantOpen = map[string]bool{"ssh": true, "tailscale": true, "wireguard": true, "openvpn": true, "netbird": true}
 
-// reachSay is reachWord, in yellow when name is open to any network and
-// isn't meant to be.
+// reachSay is reachWord, each word the same colour wherever it is (this
+// machine's only muted), and a yellow ▲ after it when name is open to any
+// network and isn't meant to be.
 func reachSay(name, scope string) string {
-	if scope == "all" && !meantOpen[name] {
-		return yellow.Render(reachWord(scope))
+	if scope == "local" {
+		return muted.Render(reachWord(scope))
 	}
-	return muted.Render(reachWord(scope))
+	if scope == "all" && !meantOpen[name] {
+		return reachWord(scope) + " " + yellow.Render(tui.Cur.Mark.Warn)
+	}
+	return reachWord(scope)
 }
 
 // portList is ports joined in at most w cells: those that fit, then how

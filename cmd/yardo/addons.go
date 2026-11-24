@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -370,30 +371,35 @@ func (r *addonRun) decide(ctx context.Context, h *addon.Held) error {
 			}
 			return r.install(ctx, h, "")
 		}
-		const install, decline, later = "Install", "Decline and remove", "Leave it held (decide later)"
+		install := "Install"
+		if v == "ok" {
+			install = fmt.Sprintf("Install it as it is (you type %s to confirm)", h.Name)
+		}
+		const decline, later = "Decline and remove", "Leave it held (decide later)"
 		var opts []string
 		if v != "block" {
 			opts = append(opts, install)
 		}
 		fixes := map[string]string{}
 		for _, f := range h.Report.Findings {
-			if f.Fix != "" {
-				l := "Fix: " + f.Next
-				if w := f.Where(); w != "" {
-					l += fmt.Sprintf(" (%s)", w)
-				}
-				if _, dup := fixes[l]; !dup && !slices.ContainsFunc(opts, func(o string) bool { return fixes[o] == f.Fix }) {
+			if f.Fix != "" && f.Level != "note" {
+				if l := fixSays(f.Fix); fixes[l] == "" {
 					fixes[l] = f.Fix
 					opts = append(opts, l)
 				}
 			}
+		}
+		// The report is long: what decides it again, by the question.
+		if n := slices.IndexFunc(h.Report.Findings, func(f addon.Finding) bool { return f.Level == v }); v != "note" && v != "clean" && n >= 0 {
+			f := h.Report.Findings[n]
+			fmt.Fprintf(r.out, "\n%s %s %s: %s\n", map[string]string{"block": "✗", "ok": "▲"}[v], h.Name, verdictSays(v), strings.TrimSuffix(cmp.Or(f.Where(), h.Name)+": "+f.Text, ": "))
 		}
 		const careful = "Check again carefully (Claude, the larger model: slower, uses more of your plan)"
 		if !hasRule(h.Report, "claude", "not-checked") || h.Report.AI != "" {
 			opts = append(opts, careful)
 		}
 		opts = append(opts, decline, later)
-		pick, err := r.k.chooseOne(fmt.Sprintf("%s (%s): what now?", h.Name, verdictSays(v)), opts, opts[0])
+		pick, err := r.k.chooseOne(fmt.Sprintf("%s: what now?", h.Name), opts, opts[0])
 		if err != nil {
 			return err
 		}
@@ -487,17 +493,32 @@ func printReport(out io.Writer, h *addon.Held) {
 		fmt.Fprintf(out, "\n%s · %s from %s @ %s\n", h.Name, h.Kind, h.Source, pin)
 	}
 	mark := map[string]string{"block": "✗", "ok": "▲", "note": "·", "clean": "✓"}
-	fmt.Fprintf(out, "%s %s\n", mark[h.Report.Verdict()], strings.ToUpper(verdictSays(h.Report.Verdict())[:1])+verdictSays(h.Report.Verdict())[1:])
+	files, _ := h.Files()
+	// First what decides it, each in full: what, why it matters, what
+	// you can do; then the notes, by kind.
+	var decide, notes []addon.Finding
 	for _, f := range h.Report.Findings {
-		where := f.Where()
-		if where != "" {
-			where += ": "
-		}
-		fmt.Fprintf(out, "  %s %s%s [%s %s]\n", mark[f.Level], where, f.Text, f.Layer, f.Rule)
-		if f.Next != "" {
-			fmt.Fprintf(out, "      → %s\n", f.Next)
+		if f.Level == "note" {
+			notes = append(notes, f)
+		} else {
+			decide = append(decide, f)
 		}
 	}
+	fmt.Fprintf(out, "%s %s\n", mark[h.Report.Verdict()], strings.ToUpper(verdictSays(h.Report.Verdict())[:1])+verdictSays(h.Report.Verdict())[1:])
+	if len(decide) > 0 {
+		fmt.Fprintf(out, "\n  %s\n", map[bool]string{true: "What decides it:", false: "What decides it, one by one:"}[len(decide) == 1])
+	}
+	for n, f := range decide {
+		fmt.Fprintf(out, "\n  %d. %s %s\n", n+1, mark[f.Level], strings.TrimSuffix(cmp.Or(f.Where(), h.Name)+": "+f.Text, ": "))
+		for _, l := range why(f, files) {
+			fmt.Fprintln(out, "     "+l)
+		}
+		if f.Next != "" {
+			fmt.Fprintf(out, "     What you can do: %s.\n", f.Next)
+		}
+		fmt.Fprintf(out, "     (%s)\n", layerSays(f))
+	}
+	printNotes(out, notes)
 	if len(h.Report.Changes) > 0 {
 		fmt.Fprintln(out, "  Changed since the version you approved:")
 		for _, c := range h.Report.Changes {
@@ -536,6 +557,132 @@ func printReport(out io.Writer, h *addon.Held) {
 			fmt.Fprintln(out, "  Not checked: the image's own files (its layers).")
 		}
 	}
+}
+
+// why says more about f than its line: what it means and what wasn't
+// read, for the rules that decide; files are the held ones.
+func why(f addon.Finding, files map[string][]byte) []string {
+	switch {
+	case f.Layer == "basic" && f.Rule == "size" && f.File != "":
+		out := []string{
+			"yardo's rules looked at every line of it: what they found is under Notes.",
+			"No one has read it as a whole, though: Claude's review reads a file up to 32 KB,",
+			"so of this one it saw only the name. A file this big is mostly a bundled",
+			"library or generated code: check it's what its name and place say.",
+		}
+		if top := firstLines(files[f.File], 4); len(top) > 0 {
+			out = append(out, "It starts:")
+			for _, l := range top {
+				out = append(out, "  │ "+l)
+			}
+		}
+		return out
+	case f.Layer == "basic" && f.Rule == "size":
+		return []string{"yardo's rules looked at every file; no one has read them all through."}
+	}
+	return nil
+}
+
+// firstLines are b's first n lines with something on them, each cut at
+// 100 characters, invisible characters shown.
+func firstLines(b []byte, n int) []string {
+	var out []string
+	for _, l := range strings.SplitN(string(b[:min(len(b), 4096)]), "\n", 40) {
+		if l = strings.TrimSpace(l); l == "" {
+			continue
+		}
+		l = strings.Map(func(r rune) rune {
+			if r < ' ' || r == 0x7f {
+				return '·'
+			}
+			return r
+		}, l)
+		if rs := []rune(l); len(rs) > 100 {
+			l = string(rs[:99]) + "…"
+		}
+		if out = append(out, l); len(out) == n {
+			break
+		}
+	}
+	return out
+}
+
+// layerSays is who found f, in words.
+func layerSays(f addon.Finding) string {
+	switch f.Layer {
+	case "basic":
+		return "yardo's rules: " + f.Rule
+	case "claude":
+		return "Claude's review"
+	}
+	return fmt.Sprintf("%s: %s", f.Layer, f.Rule)
+}
+
+// noteKinds name yardo's notes, and the prefix of their lines the
+// heading says instead.
+var noteKinds = map[string][2]string{
+	"url":            {"Web addresses", "a web address: "},
+	"fetch-run":      {"Fetch or run", "fetch or run: "},
+	"sudo":           {"As root, or later", "root or later: "},
+	"secrets":        {"Your secrets", "your secrets: "},
+	"hide":           {"Hiding or overriding", "hiding or overriding: "},
+	"unicode":        {"Invisible characters", ""},
+	"html-comment":   {"HTML comments", ""},
+	"install-script": {"Install scripts", ""},
+	"near-name":      {"A name like one you have", ""},
+}
+
+// printNotes are the notes, by kind, in the order first found: a
+// heading with how many and what to do (when it's the same for each),
+// then one line each.
+func printNotes(out io.Writer, notes []addon.Finding) {
+	if len(notes) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "\n  Notes: %d, for you to read; none of them stops it.\n", len(notes))
+	var order []string
+	by := map[string][]addon.Finding{}
+	for _, f := range notes {
+		k := f.Layer + " " + f.Rule
+		if by[k] == nil {
+			order = append(order, k)
+		}
+		by[k] = append(by[k], f)
+	}
+	for _, k := range order {
+		fs := by[k]
+		name, cut := fmt.Sprintf("%s: %s", layerSays(fs[0]), ""), ""
+		name = strings.TrimSuffix(name, ": ")
+		if nk, ok := noteKinds[fs[0].Rule]; ok && fs[0].Layer == "basic" {
+			name, cut = nk[0], nk[1]
+		}
+		same := !slices.ContainsFunc(fs, func(f addon.Finding) bool { return f.Next != fs[0].Next })
+		head := fmt.Sprintf("\n  · %s (%d)", name, len(fs))
+		if same && fs[0].Next != "" {
+			head += ": " + fs[0].Next
+		}
+		fmt.Fprintln(out, head)
+		for _, f := range fs {
+			fmt.Fprintf(out, "      %s  %s\n", f.Where(), strings.TrimPrefix(f.Text, cut))
+			if !same && f.Next != "" {
+				fmt.Fprintf(out, "        → %s\n", f.Next)
+			}
+		}
+	}
+}
+
+// fixSays is what a fix yardo makes does, as an option.
+func fixSays(fix string) string {
+	what, arg, _ := strings.Cut(fix, ":")
+	switch what {
+	case "remove":
+		return fmt.Sprintf("Remove %s, then check it again", arg)
+	case "drop-key":
+		return fmt.Sprintf("Drop %s, then check it again", arg)
+	case "drop-opt":
+		return fmt.Sprintf("Drop the option %s, then check it again", arg)
+	}
+	return "Fix: " + fix
 }
 
 // install installs h as approved.
