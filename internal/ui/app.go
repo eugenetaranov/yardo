@@ -188,7 +188,8 @@ var sharedKeys = []Key{
 	{Key: "PgUp PgDn", What: "a screenful up or down"},
 	{Key: "Home g", What: "the first row"},
 	{Key: "End G", What: "the last row"},
-	{Key: "tab", What: "the next panel or tab"},
+	{Key: "←→ h l", What: "the tab along the top before or after this one"},
+	{Key: "tab", What: "the next section, or Tools' next tab"},
 	{Key: "1–9", What: "the tabs along the top, by number"},
 	{Key: "u", What: "Tools' Updates tab (nothing there: check for updates)"},
 	{Key: "enter", What: "open, or act on the row"},
@@ -415,6 +416,17 @@ func (a *App) key(v tea.KeyMsg) tea.Cmd {
 			if !a.first && (!a.onBoard || !a.Board.onUpdates() && a.Board.search == nil) {
 				return a.toUpdates()
 			}
+		case "left", "right", "h", "l":
+			// The tabs along the top, one either way: on a tab's own
+			// screen, not deeper (where ←→ picks a choice).
+			if !a.first && a.onTab() {
+				_, ids := a.Menu.navTabs()
+				d := 1
+				if k == "left" || k == "h" {
+					d = len(ids) - 1
+				}
+				return a.goTab(ids[(max(0, a.navSel(ids))+d)%len(ids)])
+			}
 		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 			// The tabs along the top, by number.
 			if _, ids := a.Menu.navTabs(); !a.first && int(k[0]-'1') < len(ids) {
@@ -459,8 +471,21 @@ func (a *App) dialogUp() bool {
 	return a.Menu.dialog != nil
 }
 
+// onTab is whether the view is a tab's own screen (the home, Tools,
+// Network…), not one under it, where ←→ go along the tabs.
+func (a *App) onTab() bool {
+	switch {
+	case a.onBoard:
+		return a.Board.search == nil
+	case a.onConn:
+		return true
+	}
+	return slices.Contains([]string{"home", "settings", "mcp", "skills", "lastrun"}, a.Menu.screen)
+}
+
 // navSel is the tab along the top the view is on: the board is Tools,
-// Connection the tab it shows; on the home, the cursor's.
+// Connection the tab it shows; the menu, its screen's tab (Home on the
+// home).
 func (a *App) navSel(ids []string) int {
 	id := ""
 	switch {
@@ -513,13 +538,10 @@ func (a *App) goTab(id string) tea.Cmd {
 	}
 	a.onBoard, a.onConn = false, false
 	m.screen, m.fromBoard, m.dialog, m.need = "home", false, nil, -1
-	m.sel = slices.IndexFunc(m.rows(), func(r menuRow) bool { return r.id == id })
-	if m.sel < 0 {
-		m.sel = 0
+	if !slices.ContainsFunc(m.rows(), func(r menuRow) bool { return r.id == id }) {
 		return nil
 	}
-	_, cmd := m.Update(keyMsg("enter"))
-	return a.after(cmd)
+	return a.after(m.openTab(id))
 }
 
 func (a *App) send(msg tea.Msg) tea.Cmd {
@@ -703,6 +725,10 @@ func (a *App) View() string {
 	w, h := max(50, a.width), max(12, a.height)
 	cur := a.view()
 	path, keys, back := cur.Path(), cur.Keys(), cur.Back()
+	// ←→ along the tabs, on a tab's own screen, first.
+	if !a.first && a.onTab() && !a.dialogUp() {
+		keys = append([]Key{{Key: "←→", What: "tabs", Keep: true}}, keys...)
+	}
 	// The tabs along the top, but on a first run (no home yet).
 	var nav []string
 	a.nav = nil
@@ -710,9 +736,6 @@ func (a *App) View() string {
 	if !a.first {
 		tabs, ids := a.Menu.navTabs()
 		sel := a.navSel(ids)
-		if c := a.Menu.navCur(); !a.onBoard && !a.onConn && c >= 0 {
-			tabs[c].cur = true
-		}
 		var spots []tabSpot
 		nav, spots = navLines(tabs, sel, w)
 		a.nav = map[string]tabSpot{}

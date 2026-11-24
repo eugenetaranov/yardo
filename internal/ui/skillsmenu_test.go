@@ -25,8 +25,7 @@ func skillsMenu() (*Menu, *[][]MCPAct) {
 		*ran = append(*ran, acts)
 		return slices.Clone(m.info.Skills), m.info.SkillsAllOff, "✓ saved", nil
 	})
-	onRow(m, "skills")
-	mk(m, "enter")
+	m.openTab("skills")
 	return m, ran
 }
 
@@ -159,8 +158,7 @@ func TestMenuSkillsDriftUpdate(t *testing.T) {
 	if i < 0 || m.rows()[i].note != "Check a-drift again · update available: b-new" {
 		t.Errorf("home's row: %+v", m.rows())
 	}
-	onRow(m, "skills")
-	mk(m, "enter")
+	m.openTab("skills")
 	v := ansi.Strip(m.View())
 	if !strings.Contains(v, "▲ changed") || !strings.Contains(v, "update available") {
 		t.Errorf("list:\n%s", v)

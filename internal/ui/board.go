@@ -1329,7 +1329,7 @@ func (b *Board) Keys() []Key {
 		if n := b.queued(); n > 0 {
 			keys = append(keys, Key{Key: "a", What: fmt.Sprintf("apply %d", n), On: true})
 		}
-		return append(keys, Key{Key: "←→", What: "tabs", Keep: true}, Key{Key: "/", What: "search", Keep: true})
+		return append(keys, Key{Key: "tab", What: "next list", Keep: true}, Key{Key: "/", What: "search", Keep: true})
 	}
 	first := Key{Key: "enter", What: "details"}
 	switch {
@@ -1352,7 +1352,7 @@ func (b *Board) Keys() []Key {
 	if n := b.queued(); n > 0 {
 		keys = append(keys, Key{Key: "a", What: fmt.Sprintf("apply %d", n), On: true})
 	}
-	return append(keys, Key{Key: "←→", What: "tabs", Keep: true}, Key{Key: "/", What: "search", Keep: true})
+	return append(keys, Key{Key: "tab", What: "next list", Keep: true}, Key{Key: "/", What: "search", Keep: true})
 }
 
 // Help are every key the board takes, for the keys screen.
@@ -1364,7 +1364,7 @@ func (b *Board) Help() []Key {
 		{Key: "a", What: "apply the queue, asked first"},
 		{Key: "d", What: "uninstall the row, asked first"},
 		{Key: "/", What: "search (or just type, from the home)"},
-		{Key: "←→ h l tab", What: "the previous or next tab (tab: the next; shift+tab: the previous)"},
+		{Key: "tab", What: "the next list (shift+tab: the previous); alone, without the tabs along the top, ←→ too"},
 		{Key: "ctrl+a", What: "in a search with no match: add it as an extra mise tool"},
 	}
 }

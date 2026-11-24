@@ -538,7 +538,7 @@ func TestBoardFooterNarrow(t *testing.T) {
 	b.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
 	ls := strings.Split(ansi.Strip(b.View()), "\n")
 	foot := ls[len(ls)-1]
-	for _, want := range []string{"a apply 1", "←→ tabs", "/ search", "q quit"} {
+	for _, want := range []string{"a apply 1", "tab next list", "/ search", "q quit"} {
 		if !strings.Contains(foot, want) {
 			t.Errorf("footer lacks %q: %q", want, foot)
 		}

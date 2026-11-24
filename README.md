@@ -59,7 +59,7 @@ account is created). Once something is set up, it opens on the home:
  yardo  ·  vm  ·  ada                                                       Ubuntu 24.04  ·  100.64.0.7
  [Home]  Tools 4   MCP servers 4 ○   Skills 9   Network   Local settings   Settings   Last run
 ──────────────────────────────────────────────────────────────────────────────────────────────────
- ▲ 3 things need you  ·  below: enter goes there
+ ▲ 3 things need you  ·  Install 1 update: node 22.12 → 24.11, gh 2.80 → 2.83
 
 ┌─ Needs you ────────────────────────────────────────────────────────────────── enter goes there ┐
 │ ›↑ Install 1 update                          Tools    ○ jira: fill in JIRA_API_TOKEN     MCP    │
@@ -87,13 +87,13 @@ account is created). Once something is set up, it opens on the home:
 │ MCP      http://vm.tail1234.ts.net:8081/mcp  token: sudo cat ~/.mcp/clients/client.token        │
 └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 
- ↑↓ choose   enter go there   esc the tabs   u updates   type search   ? keys   q quit
+ ←→ tabs   ↑↓ choose   enter go there   u updates   type search   ? keys   q quit
 ```
 
 The tabs along the top are on every screen: the one you're on a block of
-the accent colour in brackets (it shows without colour too), the home's
-cursor a `›`. ←→ go along them, enter opens one, `1`–`9` jump to one from
-any screen; a tab with something on it that needs you carries its mark.
+the accent colour in brackets (it shows without colour too).
+←→ open the one before or after, `1`–`9` jump to one, a click opens one;
+a tab with something on it that needs you carries its mark.
 Under them, the home's panels:
 
 - **Needs you**, only while something does: one row each, saying what and
@@ -104,8 +104,8 @@ Under them, the home's panels:
   it was installed or held for review, a run that failed. Updates open
   Tools on its Updates tab with every fix and update queued (**a** applies
   them all in one run, space on one leaves it out); a fix or a value opens
-  Tools on that tool's row. The cursor starts in it; ↓ from the tabs goes
-  in, ↑ or esc goes back.
+  Tools on that tool's row. The cursor starts in it; ↑↓ go one row at a
+  time, ↑ past the first leaves it, ↓ or tab goes back in.
 - **Machine** in two lines: CPU (the average since yardo opened, up to 15
   minutes, across all cores) and load, then memory, disk and uptime.
 - **Services & containers**: what's running or failed to start, the ports
@@ -159,9 +159,9 @@ same everywhere:
 | Key | Does |
 |---|---|
 | ↑↓ (`j` `k`) | move |
-| ←→ (`h` `l`) | switch tabs (the home, Tools); pick a choice on a setting |
+| ←→ (`h` `l`) | the tab along the top before or after, on any tab's own screen; deeper, pick a setting's choice |
 | `1`–`9` | go to a tab along the top, from any screen |
-| tab | the next tab (Tools), the next section (Network, Local settings) |
+| tab | Tools' next list, the next section (Network, Local settings), into Needs you (the home) |
 | enter | open the row, or do what it says |
 | space | tick: queue a tool, turn a server off or on |
 | `a` | apply what's queued or changed (Tools, Network access, Look, MCP servers) |

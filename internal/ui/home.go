@@ -26,24 +26,28 @@ const homeWide = 96
 
 // homeView is the home's body, w by h.
 func (m *Menu) homeView(w, h int) string {
-	rs, ns := m.rows(), m.needList()
+	ns := m.needList()
 	var b []string
 	add := func(s ...string) { b = append(b, s...) }
 
-	// What's under the cursor: the tab's, or the thing that needs you.
-	switch {
-	case m.need >= 0 && m.need < len(ns):
-		add(ansi.Truncate(fmt.Sprintf(" %s%s", bold.Render(ns[m.need].label), muted.Render(": "+ns[m.need].note)), w-1, "…"))
-	case m.sel >= 0 && m.sel < len(rs):
-		add(ansi.Truncate(fmt.Sprintf(" %s%s", bold.Render(rs[m.sel].label), muted.Render(": "+rs[m.sel].note)), w-1, "…"))
-	}
+	// One line, so nothing under it moves: how things are, then what's
+	// under the cursor in Needs you, else what's going on: a queue on
+	// Tools, a check for updates.
 	status := fmt.Sprintf(" %s%s", green.Render(tui.Cur.Mark.OK+" All good"), muted.Render("  ·  nothing needs you"))
 	if n := len(ns); n > 0 {
 		say := "  ·  below: ↓ chooses one, enter goes there"
-		if m.need >= 0 {
-			say = "  ·  below: enter goes there"
+		if m.need >= 0 && m.need < len(ns) {
+			say = fmt.Sprintf("  ·  %s: %s", ns[m.need].label, ns[m.need].note)
 		}
 		status = fmt.Sprintf(" %s%s", yellow.Render(fmt.Sprintf("%s %s", tui.Cur.Mark.Warn, plural(n, "thing needs you", "things need you"))), muted.Render(say))
+	}
+	if m.need < 0 {
+		if q := m.queued(); q > 0 {
+			status += accent.Render(fmt.Sprintf("  ·  %s on Tools", plural(q, "change queued", "changes queued")))
+		}
+		if m.wait != nil {
+			status += muted.Render("  ·  checking for updates…")
+		}
 	}
 	// The OS and address at the right, when they fit.
 	if sub := m.sub; sub != "" && lipgloss.Width(status)+2+lipgloss.Width(sub) < w {
@@ -256,7 +260,7 @@ func (m *Menu) machineShort() []string {
 // cpuShort is cpuSpan in a word or two.
 func cpuShort(n int) string {
 	if s := cpuSpan(n); s != "now" {
-		return fmt.Sprintf("%d-min avg", max(1, int((time.Duration(n) * machineEvery).Minutes())))
+		return fmt.Sprintf("%d-min avg", max(1, int((time.Duration(n)*machineEvery).Minutes())))
 	}
 	return "now"
 }
@@ -672,23 +676,11 @@ func (m *Menu) navAt() int {
 	return slices.Index(ids, cmpOr(m.tabOf(), "home"))
 }
 
-// navCur is the tab along the top the home's cursor is on (-1 for none:
-// off the home, or in Needs you): Home is first, the rows after it.
-func (m *Menu) navCur() int {
-	if m.screen != "home" || m.need >= 0 || m.sel >= len(m.rows()) {
-		return -1
-	}
-	return m.sel + 1
-}
-
 // nav are the tabs along the top, w wide, as the menu alone draws them,
 // and the name of the one it's on.
 func (m *Menu) nav(w int) ([]string, string) {
 	tabs, _ := m.navTabs()
 	at := m.navAt()
-	if c := m.navCur(); c >= 0 {
-		tabs[c].cur = true
-	}
 	l, _ := navLines(tabs, at, max(50, w))
 	if at <= 0 {
 		return l, ""

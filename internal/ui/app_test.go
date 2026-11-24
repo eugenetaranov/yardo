@@ -70,6 +70,9 @@ func onHome(a *App, id string) {
 	}
 }
 
+// goTo opens the tab along the top with id, as a click on it does.
+func goTo(a *App, id string) tea.Cmd { return a.goTab(id) }
+
 // onNeedA moves the home's cursor onto Needs you's row id.
 func onNeedA(a *App, id string) {
 	a.Menu.need = slices.IndexFunc(a.Menu.needList(), func(r menuRow) bool { return r.id == id })
@@ -78,8 +81,7 @@ func onNeedA(a *App, id string) {
 // Enter on Tools, then q: one program, the home back, no result.
 func TestAppHop(t *testing.T) {
 	a := testApp()
-	onHome(a, "tools")
-	if isQuit(ak(a, "enter")) || !a.onBoard || !strings.Contains(ansi.Strip(a.View()), "[Tools 3 ✗]") {
+	if isQuit(goTo(a, "tools")) || !a.onBoard || !strings.Contains(ansi.Strip(a.View()), "[Tools 3 ✗]") {
 		t.Fatalf("enter on Tools:\n%s", a.View())
 	}
 	if cmd := ak(a, "q"); isQuit(cmd) || a.onBoard || a.result.Board != nil || a.result.Quit {
@@ -133,16 +135,73 @@ func TestAppNav(t *testing.T) {
 	if !a.onBoard || a.onConn {
 		t.Fatalf("click on Tools: board %v", a.onBoard)
 	}
-	// In a question, digits are its own.
+	// In a question, digits and ←→ are its own, its footer without the tabs.
 	ak(a, "q")
-	onHome(a, "tools")
-	ak(a, "enter", "right", "right", "right", "space", "q", "q")
+	goTo(a, "tools")
+	ak(a, "tab", "tab", "tab", "space", "q", "q")
 	if a.dialog == nil {
 		t.Fatalf("no question:\n%s", a.View())
 	}
-	ak(a, n("settings"))
-	if a.dialog == nil || a.Menu.screen != "home" {
-		t.Errorf("a digit left the question")
+	ak(a, n("settings"), "right")
+	if a.dialog == nil || a.Menu.screen != "home" || a.onBoard {
+		t.Errorf("a digit or → left the question")
+	}
+	if l := lines(); strings.Contains(l[len(l)-1], "←→ tabs") {
+		t.Errorf("tabs under a question: %q", l[len(l)-1])
+	}
+}
+
+// ←→ (h l) on a tab's own screen go along the tabs, round at the ends,
+// the footer saying so; on the board tab is its own lists; deeper, and
+// in a search, ←→ are the screen's.
+func TestAppArrows(t *testing.T) {
+	a := testApp()
+	_, ids := a.Menu.navTabs()
+	foot := func() string {
+		ls := strings.Split(ansi.Strip(a.View()), "\n")
+		return ls[len(ls)-1]
+	}
+	if !strings.HasPrefix(foot(), " ←→ tabs") {
+		t.Errorf("home's footer: %q", foot())
+	}
+	ak(a, "right")
+	if !a.onBoard || !strings.HasPrefix(foot(), " ←→ tabs") || !strings.Contains(foot(), "tab next list") {
+		t.Fatalf("→ from Home: board %v, %q", a.onBoard, foot())
+	}
+	tab := a.Board.tabID
+	ak(a, "tab")
+	if !a.onBoard || a.Board.tabID == tab {
+		t.Errorf("tab on Tools: board %v, tab %s", a.onBoard, a.Board.tabID)
+	}
+	ak(a, "l")
+	if !a.onConn || a.Conn.tab != NetTab {
+		t.Fatalf("l from Tools: on %s", a.Conn.tab)
+	}
+	ak(a, "h", "left", "left")
+	if a.onBoard || a.onConn || a.Menu.screen != ids[len(ids)-1] {
+		t.Errorf("← past Home: on %s (want %s)", a.Menu.screen, ids[len(ids)-1])
+	}
+	ak(a, "right")
+	if a.Menu.screen != "home" {
+		t.Errorf("→ past the last: on %s", a.Menu.screen)
+	}
+	// Deeper: ←→ pick a choice.
+	ak(a, "left", "enter") // Settings: Accent colour
+	if a.Menu.screen != "look" {
+		t.Fatalf("enter on Accent colour: on %s", a.Menu.screen)
+	}
+	ak(a, "right")
+	if a.Menu.screen != "look" || a.Menu.pick["accent"] != "green" || strings.Contains(foot(), "←→ tabs") {
+		t.Errorf("→ on look: on %s, %q, %q", a.Menu.screen, a.Menu.pick["accent"], foot())
+	}
+	// A search on the board, typed or done: ←→ stay.
+	ak(a, "esc", "esc", "n", "right")
+	if !a.onBoard || a.Board.search == nil || !a.Board.typing {
+		t.Fatalf("→ typing a search: board %v", a.onBoard)
+	}
+	ak(a, "enter", "right")
+	if !a.onBoard || a.Board.search == nil || a.Board.typing {
+		t.Errorf("→ in a search: board %v, typing %v", a.onBoard, a.Board.typing)
 	}
 }
 
@@ -230,23 +289,19 @@ func TestDialogKeys(t *testing.T) {
 	}
 }
 
-// The board's queue stays across a hop home and back; the home's Tools
-// row says so; q on the home asks once, then quits.
+// The board's queue stays across a hop home and back, its footer says
+// so; q on the home asks once, then quits.
 func TestAppQueueKept(t *testing.T) {
 	a := testApp()
-	onHome(a, "tools")
-	ak(a, "enter", "right", "right", "right", "space") // System: WireGuard
+	goTo(a, "tools")
+	ak(a, "tab", "tab", "tab", "space") // System: WireGuard
 	if a.Board.queued() != 1 {
 		t.Fatalf("not queued:\n%s", a.View())
 	}
 	tab := a.Board.tabID
 	ak(a, "q")
-	onHome(a, "tools")
-	if v := ansi.Strip(a.View()); !strings.Contains(v, "1 change queued") {
-		t.Errorf("Tools' note:\n%s", v)
-	}
-	ak(a, "enter")
-	if a.Board.queued() != 1 || a.Board.tabID != tab {
+	goTo(a, "tools")
+	if a.Board.queued() != 1 || a.Board.tabID != tab || !strings.Contains(ansi.Strip(a.View()), "a apply 1") {
 		t.Errorf("back on Tools: queued %d, tab %s (was %s)", a.Board.queued(), a.Board.tabID, tab)
 	}
 	ak(a, "q")
@@ -261,8 +316,8 @@ func TestAppQueueKept(t *testing.T) {
 // Reload keeps the tab, the cursors and the queue but what the run did.
 func TestAppReload(t *testing.T) {
 	a := testApp()
-	onHome(a, "tools")
-	ak(a, "enter", "right", "right", "right", "space") // System: WireGuard
+	goTo(a, "tools")
+	ak(a, "tab", "tab", "tab", "space") // System: WireGuard
 	tab := a.Board.tabID
 	reload := func(installed bool) {
 		m, b := testMenu(true), testBoard(false)
@@ -296,8 +351,8 @@ func TestAppTypeOnHome(t *testing.T) {
 // board says something.
 func TestAppChrome(t *testing.T) {
 	a := testApp()
-	onHome(a, "tools")
-	ak(a, "enter", "right", "right") // DevOps
+	goTo(a, "tools")
+	ak(a, "tab", "tab") // DevOps
 	if v := ansi.Strip(a.View()); strings.Contains(strings.Split(v, "\n")[0], "Tools") || !strings.Contains(v, "[DevOps") || !strings.Contains(v, "[Tools") {
 		t.Errorf("header:\n%s", v)
 	}
@@ -317,8 +372,8 @@ func TestAppChrome(t *testing.T) {
 func TestAppDialog(t *testing.T) {
 	a := testApp()
 	a.Board.items[0].Removable = true
-	onHome(a, "tools")
-	ak(a, "enter", "right", "right", "d") // DevOps: Docker
+	goTo(a, "tools")
+	ak(a, "tab", "tab", "d") // DevOps: Docker
 	v := a.View()
 	if !strings.Contains(v, "┌ Uninstall 1 tool?") || !strings.Contains(v, "y yes") || !strings.Contains(v, "n no") {
 		t.Fatalf("uninstall:\n%s", v)
@@ -328,8 +383,8 @@ func TestAppDialog(t *testing.T) {
 		t.Error("q didn't close it")
 	}
 	m := mcpMenu()
-	onRow(m, "mcp")
-	mk(m, "enter", "d")
+	m.openTab("mcp")
+	mk(m, "d")
 	v2 := m.View()
 	if !strings.Contains(v2, "┌ Delete github?") || !strings.Contains(v2, "y yes") || !strings.Contains(v2, "n no") {
 		t.Errorf("delete:\n%s", v2)
@@ -342,8 +397,7 @@ func TestAppPaging(t *testing.T) {
 	for n := range 40 {
 		a.Board.items = append(a.Board.items, &BoardItem{ID: fmt.Sprintf("x%s%s", string(rune('a'+n%26)), string(rune('a'+n/26))), Label: fmt.Sprintf("Tool %s%s", string(rune('A'+n%26)), string(rune('A'+n/26))), Tab: "iac", Picked: true, State: "ok"})
 	}
-	onHome(a, "tools")
-	ak(a, "enter") // Installed
+	goTo(a, "tools")
 	ak(a, "G")
 	rs := a.Board.rows()
 	c, _ := a.Board.selected(rs)
@@ -363,8 +417,8 @@ func TestAppPaging(t *testing.T) {
 // ? lists the screen's keys, then everyone's; q goes back, same row.
 func TestAppKeys(t *testing.T) {
 	a := testApp()
-	onHome(a, "tools")
-	ak(a, "enter", "down")
+	goTo(a, "tools")
+	ak(a, "down")
 	c, _ := a.Board.selected(a.Board.rows())
 	ak(a, "?")
 	v := a.View()
@@ -380,7 +434,7 @@ func TestAppKeys(t *testing.T) {
 }
 
 // The mouse: a click on a tab opens it; on a row selects it, twice acts;
-// on a footer key presses it; the wheel on the home moves along the tabs.
+// on a footer key presses it; the wheel on the home moves in Needs you.
 func TestAppMouse(t *testing.T) {
 	a := testApp()
 	at := time.Unix(1000, 0)
@@ -398,8 +452,7 @@ func TestAppMouse(t *testing.T) {
 		t.Fatalf("no %q:\n%s", s, a.View())
 		return 0, 0
 	}
-	onHome(a, "tools")
-	ak(a, "enter")
+	goTo(a, "tools")
 	x, y := find(" System ")
 	click(x+2, y)
 	if a.Board.tabID != "group:System" {
@@ -421,13 +474,17 @@ func TestAppMouse(t *testing.T) {
 		t.Errorf("footer ? click:\n%s", a.View())
 	}
 	ak(a, "q", "q")
-	// The wheel on the home.
+	// The wheel on the home: along Needs you; out of it, no cursor to move.
 	a.Menu.info.Dash = Dashboard{}
-	onHome(a, "tools")
-	start := a.Menu.sel
+	onNeedA(a, "fix:docker")
 	a.Update(tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
-	if a.Menu.sel == start {
-		t.Errorf("wheel didn't move: %d", a.Menu.sel)
+	if a.Menu.need != len(a.Menu.needList())-1 {
+		t.Errorf("wheel didn't move: %d", a.Menu.need)
+	}
+	onHome(a, "tools")
+	a.Update(tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	if a.Menu.need != -1 || a.Menu.rows()[a.Menu.sel].id != "tools" {
+		t.Errorf("wheel off Needs you: need %d, on %s", a.Menu.need, a.Menu.rows()[a.Menu.sel].id)
 	}
 }
 
@@ -521,12 +578,12 @@ func TestAppNeedsYou(t *testing.T) {
 func TestAppUpdatesByTab(t *testing.T) {
 	a := testUpdates(false)
 	a.Board.items[1].Removable = true
-	onHome(a, "tools")
-	ak(a, "enter", "right")
+	goTo(a, "tools")
+	ak(a, "tab")
 	if a.Board.tabID != UpdatesTab || a.Board.queued() != 0 {
 		t.Fatalf("tab %s, queued %d", a.Board.tabID, a.Board.queued())
 	}
-	ak(a, "right", "down", "space") // DevOps: Terraform
+	ak(a, "tab", "down", "space") // DevOps: Terraform
 	if a.Board.items[1].Pending != "uninstall" {
 		t.Errorf("space on DevOps: %q", a.Board.items[1].Pending)
 	}
@@ -563,8 +620,8 @@ func TestAppUpdatesCheck(t *testing.T) {
 			return UpdatesMsg{ByID: map[string][]string{"terraform": {"terraform 1.9.8 → 1.11.0"}, "keys": {"gh 2.60 → 2.62"}}, At: "09:05"}
 		}
 	})
-	onHome(a, "tools")
-	ak(a, "enter", "right")
+	goTo(a, "tools")
+	ak(a, "tab")
 	if a.Board.tabID != UpdatesTab {
 		t.Fatalf("tab %s", a.Board.tabID)
 	}

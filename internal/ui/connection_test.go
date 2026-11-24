@@ -389,8 +389,7 @@ func TestAppConnection(t *testing.T) {
 	a.Conn.d.Setups = []Setup{{ID: "ssh", What: "SSH", How: "ssh vm  ·  ada@10.0.0.5"}}
 	a.Menu.setups = a.Conn.d.Setups
 	for _, row := range []string{NetTab, LocalTab} {
-		onHome(a, row)
-		ak(a, "enter")
+		goTo(a, row)
 		v := ansi.Strip(a.View())
 		if !a.onConn || a.Conn.tab != row || !strings.Contains(v, map[string]string{NetTab: "[Network]", LocalTab: "[Local settings]"}[row]) ||
 			!strings.Contains(v, map[string]string{NetTab: "Local network", LocalTab: "ada@10.0.0.5"}[row]) {
@@ -420,8 +419,7 @@ func TestAppConnection(t *testing.T) {
 	}
 	ak(a, "q")
 	// Leaving to type: the app ends with it.
-	onHome(a, NetTab)
-	ak(a, "enter")
+	goTo(a, NetTab)
 	a.Conn.focus("net")
 	if cmd := ak(a, "n"); !isQuit(cmd) || a.result.Conn == nil || a.result.Conn.Do != "profile" {
 		t.Errorf("n: %+v", a.result)

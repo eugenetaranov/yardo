@@ -411,6 +411,18 @@ func (m *Menu) goNeed(r menuRow) tea.Cmd {
 	return nil
 }
 
+// openTab opens the tab along the top with id, from the home.
+func (m *Menu) openTab(id string) tea.Cmd {
+	switch id {
+	case "tools":
+		return m.quit(MenuResult{Kind: MenuTools})
+	case NetTab, LocalTab:
+		return m.quit(MenuResult{Kind: MenuConnection, ID: id})
+	}
+	m.open(id)
+	return nil
+}
+
 // queued counts what's queued on Tools (the board shares the items).
 func (m *Menu) queued() int {
 	n := 0
@@ -691,10 +703,10 @@ func homeKey(k string) bool {
 func (m *Menu) move(n int) {
 	switch m.screen {
 	case "home":
+		// Needs you's; out of it, no cursor to move (the tabs are the
+		// app's).
 		if m.need >= 0 {
 			m.need = clamp(m.need+n, 0, len(m.needList())-1)
-		} else {
-			m.sel = clamp(m.sel+n, -toEnd, toEnd)
 		}
 	case "settings", "access", "look", "shell", "mcp:server", "mcp:add", "lastrun", "skills:skill":
 		m.sel = clamp(m.sel+n, -toEnd, toEnd)
@@ -836,37 +848,20 @@ func (m *Menu) key(k string) tea.Cmd {
 	switch m.screen {
 	case "home":
 		if m.need >= 0 {
-			return m.needKey(k, up, down, left, right)
+			return m.needKey(k, up, down)
 		}
-		rs := m.rows()
-		r := rs[m.sel]
+		// The tabs are the app's (←→, 1–9, a click); here, Needs you.
 		switch {
-		case left:
-			m.sel--
-		case right:
-			m.sel++
 		case (down || k == "tab") && len(m.needList()) > 0:
-			// Into Needs you.
 			m.need = 0
-		case k == "tab":
-			m.sel = (m.sel + 1) % len(rs)
 		case k == "shift+tab" && len(m.needList()) > 0:
 			m.need = len(m.needList()) - 1
-		case k == "shift+tab":
-			m.sel = (m.sel + len(rs) - 1) % len(rs)
 		case k == "q":
 			return m.quit(MenuResult{Kind: MenuQuit})
 		case k == "esc":
 			m.toast = "q quits"
 		case k == "u":
 			return m.checkUpdates()
-		case k != "enter":
-		case r.id == "tools":
-			return m.quit(MenuResult{Kind: MenuTools})
-		case r.id == NetTab || r.id == LocalTab:
-			return m.quit(MenuResult{Kind: MenuConnection, ID: r.id})
-		default:
-			m.open(r.id)
 		}
 	case "settings":
 		r := m.settingsRows()[m.sel]
@@ -934,22 +929,15 @@ func (m *Menu) key(k string) tea.Cmd {
 	return nil
 }
 
-// needKey is k with the home's cursor in Needs you: ↑↓ by line (two to a
-// line when wide: ←→ between them), up past the first line back to the
-// tabs, tab on to the next (past the last, the tabs), enter goes there.
-func (m *Menu) needKey(k string, up, down, left, right bool) tea.Cmd {
+// needKey is k with the home's cursor in Needs you: ↑↓ one row at a time
+// (across a line's two, then down; ←→ are the tabs'), up past the first
+// out of it, tab on to the next (past the last, out), enter goes there.
+func (m *Menu) needKey(k string, up, down bool) tea.Cmd {
 	ns := m.needList()
-	cols := m.needCols(m.width)
 	switch {
-	case up && m.need < cols:
-		m.need = -1
 	case up:
-		m.need -= cols
+		m.need--
 	case down:
-		m.need = min(len(ns)-1, m.need+cols)
-	case left:
-		m.need = max(0, m.need-1)
-	case right:
 		m.need = min(len(ns)-1, m.need+1)
 	case k == "tab":
 		if m.need++; m.need >= len(ns) {
@@ -1048,9 +1036,12 @@ func (m *Menu) Keys() []Key {
 	switch m.screen {
 	case "home":
 		if m.need >= 0 {
-			return []Key{{Key: "↑↓", What: "choose", Keep: true}, {Key: "enter", What: "go there", Keep: true}, {Key: "esc", What: "the tabs"}, {Key: "u", What: "updates"}, {Key: "type", What: "search", Keep: true}}
+			return []Key{{Key: "↑↓", What: "choose", Keep: true}, {Key: "enter", What: "go there", Keep: true}, {Key: "u", What: "updates"}, {Key: "type", What: "search", Keep: true}}
 		}
-		return []Key{{Key: "←→", What: "choose", Keep: true}, {Key: "enter", What: "open", Keep: true}, {Key: "u", What: "updates"}, {Key: "type", What: "search", Keep: true}}
+		if len(m.needList()) > 0 {
+			return []Key{{Key: "↓", What: "needs you", Keep: true}, {Key: "u", What: "updates"}, {Key: "type", What: "search", Keep: true}}
+		}
+		return []Key{{Key: "u", What: "updates"}, {Key: "type", What: "search", Keep: true}}
 	case "settings":
 		return []Key{{Key: "↑↓", What: "choose"}, {Key: "enter", What: "open"}}
 	case "access", "look", "shell":
