@@ -15,7 +15,8 @@ import (
 
 // The menu is yardo's calm home: panels that show how the machine is,
 // and along the bottom the tabs that open everything else: Updates,
-// Tools (the board), MCP servers, Connection, Settings and Last run. A
+// Tools (the board), MCP servers, Skills, Connection, Settings and Last
+// run. A
 // tab with something in it that needs you ("Start Docker", "Fill in
 // OPENAI_API_KEY", "Install 3 updates") carries its mark. Typing on the
 // home searches the tools. Each tab opens one focused screen; q comes
@@ -107,8 +108,16 @@ type Menu struct {
 	pend      map[string]string
 	before    HomeInfo
 	leaving   bool
+	// The same for the skills (skBefore, skBeforeAll: as they're saved),
+	// and the skill chosen.
+	skSwitcher  SkillSwitcher
+	skSwitching bool
+	skPend      map[string]string
+	skBefore    []SkillRow
+	skBeforeAll bool
+	skSel       int
 
-	screen string // home, fix, secrets, settings, access, look, shell, lastrun, mcp, mcp:server, mcp:add, mcp:name
+	screen string // home, fix, secrets, settings, access, look, shell, lastrun, mcp, mcp:server, mcp:add, mcp:name, skills, skills:skill
 	sel    int
 	// The MCP screens: the server and catalog row chosen, the name typed
 	// (for nameFor: a spec to add, or an entry to rename), its error;
@@ -341,7 +350,8 @@ func (m *Menu) queued() int {
 func (m *Menu) hasConnect() bool { return len(m.info.Connect) > 0 || len(m.info.Keys) > 0 }
 
 // rows are the home's tabs: Updates, Tools, MCP servers (with the
-// gateway), Connection, Settings and Last run. A tab's note starts with
+// gateway), Skills (when there are any), Connection, Settings and Last
+// run. A tab's note starts with
 // what on it needs you.
 func (m *Menu) rows() []menuRow {
 	need := m.needs()
@@ -418,6 +428,19 @@ func (m *Menu) rows() []menuRow {
 			}
 		}
 		out = append(out, tab("mcp", "MCP servers", note))
+	}
+	if n := len(m.info.Skills); n > 0 {
+		on := 0
+		for _, s := range m.info.Skills {
+			if s.Off == "" {
+				on++
+			}
+		}
+		note := fmt.Sprintf("%d of %d on · turn one off, or all", on, n)
+		if m.info.SkillsAllOff {
+			note = "all off · space on All skills turns them back on"
+		}
+		out = append(out, tab("skills", "Skills", note))
 	}
 	if m.hasConnect() {
 		out = append(out, tab("conn", "Connection", "the networks: start, stop, add, remove · from a laptop: SSH, Docker, the MCP gateway, copy and paste"))
@@ -531,6 +554,8 @@ func (m *Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tickMachine(machineEvery)
 	case mcpSwitched:
 		m.switched(v)
+	case skillsSwitched:
+		m.skillsSaved(v)
 	case UpdatesMsg:
 		for _, i := range m.items {
 			if i.Picked {
@@ -587,8 +612,10 @@ func homeKey(k string) bool {
 // move moves the cursor n rows (normalize keeps it on one).
 func (m *Menu) move(n int) {
 	switch m.screen {
-	case "home", "settings", "access", "look", "shell", "mcp:server", "mcp:add", "lastrun":
+	case "home", "settings", "access", "look", "shell", "mcp:server", "mcp:add", "lastrun", "skills:skill":
 		m.sel = clamp(m.sel+n, -toEnd, toEnd)
+	case "skills":
+		m.sel = clamp(m.sel+n, -1, len(m.info.Skills)-1)
 	case "mcp":
 		top := 0
 		if m.hasAll() {
@@ -617,6 +644,10 @@ func (m *Menu) normalize() {
 		if m.mcpServer() == nil {
 			m.screen, m.sel = "mcp", 0
 		}
+	case "skills:skill":
+		if m.skill() == nil {
+			m.screen, m.sel = "skills", 0
+		}
 	}
 	switch m.screen {
 	case "home":
@@ -637,6 +668,14 @@ func (m *Menu) normalize() {
 		m.sel = clamp(m.sel, 0, len(m.mcpActions(m.mcpServer()))-1)
 	case "mcp:add":
 		m.sel = clamp(m.sel, 0, len(m.info.MCPSpecs)-1)
+	case "skills":
+		top := -1 // All skills, above the skills
+		if len(m.info.Skills) == 0 {
+			top = 0
+		}
+		m.sel = clamp(m.sel, top, len(m.info.Skills)-1)
+	case "skills:skill":
+		m.sel = clamp(m.sel, 0, len(m.skillActions(m.skill()))-1)
 	}
 }
 
@@ -644,7 +683,7 @@ func (m *Menu) normalize() {
 func (m *Menu) listRoom() int { return max(4, m.height-6) }
 
 func (m *Menu) quit(r MenuResult) tea.Cmd {
-	if r.Kind != MenuQuit && r.Kind != MenuTools && len(m.pend) > 0 {
+	if r.Kind != MenuQuit && r.Kind != MenuTools && len(m.pend)+len(m.skPend) > 0 {
 		// It leaves the menu: what's marked would be lost.
 		m.toast = "Apply first (a), or turn back what you changed."
 		return nil
@@ -787,6 +826,8 @@ func (m *Menu) key(k string) tea.Cmd {
 		}
 	case "mcp", "mcp:server", "mcp:add":
 		return m.mcpKey(k, up, down, left, right)
+	case "skills", "skills:skill":
+		return m.skillsKey(k, up, down)
 	case "lastrun":
 		switch {
 		case back:
@@ -847,6 +888,8 @@ func (m *Menu) Path() string {
 		return "Home › Settings › Shell"
 	case "lastrun":
 		return "Home › Last run"
+	case "skills", "skills:skill":
+		return "Home › " + m.skillsPath()
 	}
 	return "Home › " + m.mcpPath()
 }
@@ -880,6 +923,8 @@ func (m *Menu) Keys() []Key {
 		return []Key{{Key: "↑↓", What: "setting"}, {Key: "←→", What: "choose"}, {Key: "a", What: "apply", On: len(m.changed()) > 0}}
 	case "lastrun":
 		return []Key{{Key: "↑↓", What: "scroll"}}
+	case "skills", "skills:skill":
+		return m.skillsKeys()
 	}
 	return m.mcpKeys()
 }
@@ -970,6 +1015,8 @@ func (m *Menu) Body(w, h int) string {
 		add(ls[start:min(len(ls), start+room)]...)
 	case "mcp", "mcp:server", "mcp:add", "mcp:name":
 		add(m.mcpView(w, h-len(b))...)
+	case "skills", "skills:skill":
+		add(m.skillsView(w, h-len(b))...)
 	}
 	if m.dialog != nil {
 		dl := dialogLines(m.dialog, w, 0, nil)

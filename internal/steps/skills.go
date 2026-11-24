@@ -189,6 +189,7 @@ func (k skillsStep) Check(_ context.Context, e *Env) (bool, error) {
 			return false, err
 		}
 		for _, d := range SkillDirs {
+			d = skillTarget(e, d, n) // where it's held, while it's off
 			if skillLink(e, d, n) != "" {
 				continue // not yardo's to write: Apply says so
 			}
@@ -212,6 +213,7 @@ func (k skillsStep) Apply(ctx context.Context, e *Env) error {
 		}
 		var files map[string][]byte // fetched only when written
 		for _, d := range SkillDirs {
+			d = skillTarget(e, d, n)
 			if l := skillLink(e, d, n); l != "" {
 				e.note(fmt.Sprintf("%s is a link: yardo didn't write skill %s through it (put a folder there to have it)", l, n))
 				continue
@@ -241,7 +243,7 @@ func (k skillsStep) Apply(ctx context.Context, e *Env) error {
 // (no mark) isn't yardo's to mention.
 func (k skillsStep) PlanUndo(_ context.Context, e *Env, p *RemovePlan) error {
 	for _, n := range k.s.Skills {
-		for _, d := range SkillDirs {
+		for _, d := range append(slices.Clone(SkillDirs), heldDir(SkillDirs[0]), heldDir(SkillDirs[1])) {
 			dir := e.Path(path.Join(d, n))
 			cur, mark, err := onDisk(dir)
 			switch {
@@ -260,21 +262,23 @@ func (k skillsStep) PlanUndo(_ context.Context, e *Env, p *RemovePlan) error {
 	return nil
 }
 
-// write puts the skill's files in d/name (replacing yardo's old copy),
-// marked, owned by the user. Everything goes through an os.Root on d, so
-// neither a link nor a ".." in a file's path takes a write out of it.
+// write puts the skill's files in d/name (a skills folder, or where it's
+// held while off), replacing yardo's old copy, marked, owned by the user.
+// Everything goes through an os.Root on d, so neither a link nor a ".." in
+// a file's path takes a write out of it.
 func (skillsStep) write(e *Env, d, name string, files map[string][]byte) error {
 	// The folders it's in (~/.agents, ~/.agents/skills) are the user's.
-	if err := os.MkdirAll(e.Path(path.Dir(path.Dir(d))), 0o755); err != nil {
+	if err := os.MkdirAll(e.Path("~"), 0o755); err != nil {
 		return err
 	}
-	for _, p := range []string{path.Dir(d), d} {
-		if err := os.Mkdir(e.Path(p), 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
-			return err
-		}
-		if err := e.chown(e.Path(p), e.UID, e.GID); err != nil {
-			return err
-		}
+	h, err := home(e)
+	if err != nil {
+		return err
+	}
+	err = userDirs(e, h, d)
+	_ = h.Close()
+	if err != nil {
+		return err
 	}
 	root, err := os.OpenRoot(e.Path(d))
 	if err != nil {

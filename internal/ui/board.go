@@ -35,6 +35,10 @@ type HomeInfo struct {
 	MCPDown    bool
 	MCPAllOff  bool
 	MCPOrphans []string
+	// Skills are the agent skills, in the skills folders or held off;
+	// SkillsAllOff: all of them are turned off.
+	Skills       []SkillRow
+	SkillsAllOff bool
 	// Dash is the home's dashboard.
 	Dash Dashboard
 	// Connect is the home's Connection panel; Keys the public keys runs
@@ -49,6 +53,19 @@ type HomeInfo struct {
 // the MCP gateway), the Use to type, and a Note: where it goes, or where
 // a secret it needs is kept (never the secret).
 type ConnectRow struct{ What, Use, Note string }
+
+// SkillRow is one agent skill on the menu's Skills screen.
+type SkillRow struct {
+	Name string
+	// Source is yardo (as yardo wrote it), changed (yardo's, edited
+	// since) or theirs.
+	Source string
+	// Off is "" for a skill that's on, "own" for one turned off by
+	// itself, "all" for one off only because all are.
+	Off string
+	// Where says which skills folders it's in, or is held off from.
+	Where string
+}
 
 // MCPServer is one MCP server on the menu's MCP servers screen.
 type MCPServer struct {

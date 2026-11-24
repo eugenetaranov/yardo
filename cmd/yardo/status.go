@@ -482,6 +482,9 @@ func (o *options) screenData(ctx context.Context, cat *catalog.Catalog, a *answe
 		info.MCPAllOff = sync["*"].state == "off"
 		info.MCPOrphans = orphanNames(mcpOrphans(ctx, a.User))
 	}
+	if env, err := newEnv(a.User, o.share(), io.Discard, false); err == nil && !first {
+		info.Skills, info.SkillsAllOff, _ = skillRows(env)
+	}
 	info.LastRun = loadLastRun(o.state, a.User, o.log, now)
 	info.Keys = keysToAdd(o.state, a, func(id string) bool { return status[id].State == "ok" })
 	return &screen{info: info, sub: sub, first: first,

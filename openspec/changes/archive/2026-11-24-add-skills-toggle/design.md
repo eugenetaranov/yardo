@@ -41,9 +41,11 @@
   as the held path when the skill is held. Its ownership check (marker
   equals content) runs there as it would in place. When ALL is set, the
   step writes new skills straight into the held place.
-- **Moves run as the user**, through `Cmd{AsUser}`-style file operations.
-  The folders are the user's and stay the user's. Phase 1's `os.Root` rule
-  applies: a link as a skill folder is not moved.
+- **Moves go through an `os.Root` on the home.** yardo runs as root, so
+  every move, folder and state file goes through a root opened at the
+  user's home: a link can't take one outside it, and a skill folder that
+  is a link isn't moved (phase 1's rule). The folders yardo makes are
+  chowned to the user; a renamed folder keeps its owner.
 - **Screen** reuses the MCP servers list model: the All row, marks,
   dimming when all are off, `a` applies in the background, a confirm on
   leaving. The source column comes from the marker check: `yardo`,
@@ -56,8 +58,9 @@
   The list shows the new folder as on and not yardo's.
 - [An agent session already running keeps a skill it loaded] → the screen
   says changes apply to new sessions, as MCP does.
-- [`~/.local/share` on another filesystem than `~`] → rename fails; fall
-  back to copy, compare hashes, then remove.
+- [`~/.local/share` on another filesystem than `~`] → the rename fails
+  and the skill stays where it was; yardo says why. No copy fallback: a
+  home split across filesystems is rare on a dev VM.
 
 ## Migration Plan
 

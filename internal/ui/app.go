@@ -264,7 +264,7 @@ func (a *App) Reload(d AppData) {
 	}
 	nb, nm := a.Board, a.Menu
 	nb.tabID, nb.tab, nb.cursor, nb.search, nb.typing = b.tabID, b.tab, b.cursor, b.search, false
-	nm.screen, nm.sel, nm.mcpSel, nm.addSel, nm.fromBoard = m.screen, m.sel, m.mcpSel, m.addSel, m.fromBoard
+	nm.screen, nm.sel, nm.mcpSel, nm.addSel, nm.fromBoard, nm.skSel = m.screen, m.sel, m.mcpSel, m.addSel, m.fromBoard, m.skSel
 	a.Conn.sel = c.sel
 	if nm.screen == "mcp:name" {
 		nm.screen = "mcp"

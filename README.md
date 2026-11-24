@@ -654,6 +654,18 @@ installed by hand.
    skill's folder or a file in it is a link, that place is skipped and
    the run says so. Skill names must be lowercase letters, digits and
    hyphens.
+   **Turning skills off**: the home's Skills tab lists every skill in
+   either folder (yardo's, yardo's but edited, or not yardo's), and space
+   on one, or on All skills, marks it off or on; `a` applies. From a shell:
+   `sudo yardo skills` lists them, `sudo yardo skills off|on [<skill>…]`
+   switches them (no name: all). Off moves a skill's folders, as they are,
+   to `~/.local/share/yardo/skills-off/{claude,agents}/`, out of every
+   agent's reach, and on puts them back; new agent sessions see the change.
+   A skill that's off stays off through yardo runs and profiles: an update
+   of yardo's goes to the copy held off. While all are off, a skill that
+   appears is moved off too, and all back on returns each skill to what
+   you chose for it. If another copy of the same name was put in a skills
+   folder meanwhile, turning it on leaves both and says which is in the way.
 4. **VPN logins** (in Tailscale's and NetBird's rows): the Tailscale login (an auth key, or `sudo tailscale
    up` later), the NetBird login (a setup key, on NetBird's cloud or your
    own management URL, or `sudo netbird up` later).

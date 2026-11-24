@@ -233,6 +233,8 @@ func cli(args []string, stdout, stderr io.Writer) error {
 				return o.mcpCmd(ctx, stdout, st, fs.Args()[1:])
 			}
 			o.startMCP = true // the menu, on its MCP servers
+		case "skills":
+			return o.skillsCmd(stdout, st, fs.Args()[1:])
 		case "status":
 			sfs := flag.NewFlagSet("yardo status", flag.ContinueOnError)
 			sfs.SetOutput(stderr)
@@ -243,7 +245,7 @@ func cli(args []string, stdout, stderr io.Writer) error {
 			}
 			o.status, o.verify = true, true
 		default:
-			return fmt.Errorf("unknown command %q (commands: status, remove, mcp, export, connect, gitkey, version, forget; see yardo --help)", fs.Arg(0))
+			return fmt.Errorf("unknown command %q (commands: status, remove, mcp, skills, export, connect, gitkey, version, forget; see yardo --help)", fs.Arg(0))
 		}
 	}
 	if !o.dryRun && !o.verify {
@@ -458,6 +460,7 @@ func (o *options) runUser(ctx context.Context, cat *catalog.Catalog, st *answers
 	}
 	prep := func(x *ui.App) {
 		x.Menu.Switching(o.mcpSwitcher(ctx, a))
+		x.Menu.SwitchingSkills(o.skillSwitcher(a))
 		x.Menu.Checker(func() func() ui.UpdatesMsg {
 			upd = o.checkUpdates(ctx, cat, a)
 			return upd.msg
