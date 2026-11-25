@@ -16,6 +16,7 @@ import (
 
 	"github.com/eugenetaranov/yardo/internal/answers"
 	"github.com/eugenetaranov/yardo/internal/mcp"
+	"github.com/eugenetaranov/yardo/internal/steps"
 	"github.com/eugenetaranov/yardo/internal/ui"
 )
 
@@ -489,11 +490,14 @@ func (k *asker) editNow(ctx context.Context, name string) (bool, error) {
 // nospec, noenv, off (detail: own or all). "*" is off when all are.
 type syncState struct{ state, detail string }
 
-// mcpSyncCmd is this version's mcp-sync (unpacked at start; else the
-// installed one) with args, as login's ~/.mcp owner on its gateway.
+// mcpSyncCmd is this version's mcp-sync (unpacked at start) with args,
+// as login's ~/.mcp owner on its gateway: the installed one until a run
+// has put this version's catalog in place, as the specs it reads are the
+// installed ones (a newer script with older specs ran servers with limits
+// the specs don't say they can't have).
 func mcpSyncCmd(ctx context.Context, share string, a *answers.Answers, args ...string) *exec.Cmd {
 	sync := filepath.Join(share, "mcp-sync")
-	if _, err := os.Stat(sync); share == "" || err != nil {
+	if _, err := os.Stat(sync); share == "" || err != nil || !catalogCurrent(share) {
 		sync = "/usr/local/bin/mcp-sync"
 	}
 	port := a.MCPPort
@@ -504,6 +508,9 @@ func mcpSyncCmd(ctx context.Context, share string, a *answers.Answers, args ...s
 		"MCP_DIR=" + filepath.Join(homeOf(a.User), ".mcp"), fmt.Sprintf("MCPJUNGLE_REGISTRY=http://127.0.0.1:%d", port),
 		"MCP_SYNC_QUIET=1", sync}, args...)...)
 }
+
+// catalogCurrent is steps.MCPCatalogCurrent; tests set it.
+var catalogCurrent = func(share string) bool { return steps.MCPCatalogCurrent("", share) }
 
 // mcpStatus is each server's state (mcp-sync status), and whether the
 // gateway can't be reached; nil when mcp-sync can't say.

@@ -6,6 +6,9 @@ KIND=docker
 IMAGE=node:lts-slim
 IMAGE_ARGS="npx -y @benborla29/mcp-server-mysql"
 REQUIRED="MYSQL_HOST MYSQL_USER MYSQL_PASS"
+# npx fetches 325 MB at start: more than the 256 MB scratch /tmp holds,
+# so its root stays writable.
+LIMITS="writable"
 # Host networking, so a database on this VM is reachable at 127.0.0.1.
 DOCKER_ARGS="--network host"
 # What it needs beyond what mcp-sync allows a container (yardo's specs only).

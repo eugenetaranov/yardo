@@ -81,6 +81,18 @@ func TestMCPFiles(t *testing.T) {
 	if !check(t, e, st) {
 		t.Error("Check after Apply = false")
 	}
+	// The catalog is this version's: its mcp-sync may run on it; one spec
+	// older, and it isn't.
+	if !MCPCatalogCurrent(e.Root, e.Share) {
+		t.Error("MCPCatalogCurrent after Apply = false")
+	}
+	if err := os.WriteFile(e.Path(mcpCatalog+"/github.spec"), []byte("older"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if MCPCatalogCurrent(e.Root, e.Share) {
+		t.Error("MCPCatalogCurrent with an older spec = true")
+	}
+	apply(t, e, st)
 	// A retired spec installed before goes; a team's of that name stays.
 	if err := os.WriteFile(e.Path(mcpCatalog+"/aws-api.spec"), []byte("old"), 0o644); err != nil {
 		t.Fatal(err)

@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -266,5 +269,26 @@ func TestSwitchArgs(t *testing.T) {
 	}
 	if _, _, err := switchArgs([]string{"off", "nope"}, servers); err == nil || !strings.Contains(err.Error(), "aws, jira-work") {
 		t.Errorf("off nope: %v", err)
+	}
+}
+
+// The unpacked mcp-sync runs only on this version's catalog: until a run
+// puts it in place, the installed one does, as the specs are installed.
+func TestMCPSyncCmdCatalog(t *testing.T) {
+	share := t.TempDir()
+	if err := os.WriteFile(filepath.Join(share, "mcp-sync"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := catalogCurrent
+	t.Cleanup(func() { catalogCurrent = old })
+	a := &answers.Answers{User: "ada"}
+	for _, c := range []struct {
+		current bool
+		want    string
+	}{{false, "/usr/local/bin/mcp-sync"}, {true, filepath.Join(share, "mcp-sync")}} {
+		catalogCurrent = func(string) bool { return c.current }
+		if args := mcpSyncCmd(context.Background(), share, a, "status").Args; !slices.Contains(args, c.want) {
+			t.Errorf("current %v: %v, want %s", c.current, args, c.want)
+		}
 	}
 }

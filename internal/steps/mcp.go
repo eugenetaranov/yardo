@@ -246,6 +246,16 @@ func (mcpFilesStep) files(e *Env) ([]wantFile, error) {
 	return append(out, wantFile{mcpSync, b, 0o755}), nil
 }
 
+// MCPCatalogCurrent: the installed catalog and mcp-sync are share's (an
+// unpacked yardo's), so its mcp-sync can run against the installed specs.
+// One version's script with another's specs runs servers with limits
+// their specs don't know of (or the reverse).
+// root is where the system is ("" in a run; a folder in tests).
+func MCPCatalogCurrent(root, share string) bool {
+	ok, err := mcpFilesStep{}.Check(context.Background(), &Env{Root: root, Share: share})
+	return err == nil && ok
+}
+
 func (mcpFilesStep) Plan(*Env) []Action {
 	return []Action{{"file", mcpCatalog + "/*.spec"}, {"file", mcpSync}}
 }
